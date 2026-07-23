@@ -1,0 +1,74 @@
+[
+  {
+    "results": [
+      {
+        "type_id": "Fam_Default_Type_Asset",
+        "family_id": "Fam_Default",
+        "name": "Asset",
+        "behavior": "ASSET",
+        "created_at": "2026-06-22 06:57:25",
+        "default_entity_id": null,
+        "default_contact_id": null,
+        "default_type": null
+      },
+      {
+        "type_id": "Fam_Default_Type_Liability",
+        "family_id": "Fam_Default",
+        "name": "Liability",
+        "behavior": "LIABILITY",
+        "created_at": "2026-06-22 06:57:25",
+        "default_entity_id": null,
+        "default_contact_id": null,
+        "default_type": null
+      },
+      {
+        "type_id": "Fam_Default_Type_Investment",
+        "family_id": "Fam_Default",
+        "name": "Investment",
+        "behavior": "ASSET",
+        "created_at": "2026-06-22 06:57:25",
+        "default_entity_id": null,
+        "default_contact_id": null,
+        "default_type": null
+      },
+      {
+        "type_id": "Fam_Default_Type_Revenue",
+        "family_id": "Fam_Default",
+        "name": "Revenue",
+        "behavior": "REVENUE",
+        "created_at": "2026-06-22 06:57:25",
+        "default_entity_id": null,
+        "default_contact_id": null,
+        "default_type": null
+      },
+      {
+        "type_id": "Fam_Default_Type_Expense",
+        "family_id": "Fam_Default",
+        "name": "Expense",
+        "behavior": "EXPENSE",
+        "created_at": "2026-06-22 06:57:25",
+        "default_entity_id": null,
+        "default_contact_id": null,
+        "default_type": null
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "APAC",
+      "served_by_colo": "SIN",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 0.1892
+      },
+      "duration": 0.1892,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 208896,
+      "rows_read": 5,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  }
+]

@@ -1,0 +1,13 @@
+# dependencies
+node_modules/
+frontend/node_modules/
+venv/
+
+# secrets & local config
+.dev.vars
+.wrangler/
+*.env
+
+# os / logs
+.DS_Store
+*.log

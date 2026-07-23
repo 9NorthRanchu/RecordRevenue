@@ -1,0 +1,328 @@
+📑 สรุปขั้นตอนและ Logic การทำงานของระบบ (System Workflow)
+1. ขั้นตอนการรับรูปภาพและการทำ OCR (Image Processing & OCR)
+Action: เมื่อ User ส่งสลิปเข้า LINE Bot ระบบจะดึงไฟล์ภาพผ่าน LINE API
+Logic: สร้าง Trans_ID ทันทีโดยใช้ "เวลาปัจจุบันของระบบ" (System Time) เพื่อป้องกันรหัสซ้ำซาก จากนั้นบันทึกภาพลง Google Drive โฟลเดอร์ Slip Bot Expense แล้วสั่งให้ Google Docs ช่วยอ่านตัวอักษรจากภาพ (OCR) ให้กลายเป็น Text
+2. ขั้นตอนการสกัดข้อมูลวันที่ (Date Extraction & Transformation) [ส่วนที่จัดการปัญหา 1970 และ 1483]
+Action: ค้นหาวันที่จากข้อความ OCR
+Logic: ใช้ Regex กวาดหาวันที่ทั้งแบบไทยและอังกฤษ หากเจอปี 2 หลัก (เช่น 69) หรือปี พ.ศ. (เช่น 2569) ระบบจะเข้าฟังก์ชัน convertYear เพื่อแปลงเป็นปี ค.ศ. เสมอ (เช่น 2026)
+Format Control: ส่งค่าเข้า Google Sheet เป็นรูปแบบ 'yyyy-MM-dd (ไม่มีเวลาติดไป และมีฝนทองนำหน้า) เพื่อบังคับให้ Sheet อ่านเป็นข้อความ (ป้องกัน Sheet แปลงเป็นปี 1483) และทำให้ช่อง Date ใน AppSheet สามารถเปิดปฏิทินแก้ไขได้ปกติ (แก้ปัญหาปี 1970)
+3. ขั้นตอนการสกัดข้อมูลธนาคารและยอดเงิน (Bank & Amount Parsing)
+Action: หาบัญชีผู้โอน (Source) และผู้รับ (Destination) พร้อมยอดเงิน
+Logic: นำข้อความที่อ่านได้ไปเทียบกับ Keyword ใน Sheet MD_Statement เพื่อระบุบัญชีต้นทาง-ปลายทางอัตโนมัติ ส่วนยอดเงินจะใช้ Regex ดึงตัวเลขที่มีทศนิยม 2 ตำแหน่งออกมาเป็น Number เพื่อให้ AppSheet นำไปคำนวณต่อได้ทันที
+4. ขั้นตอนการสกัดบันทึกช่วยจำ (Note Extraction) [ส่วนที่จัดการปัญหา Note ไม่ขึ้น]
+Action: หาข้อความที่ระบุถึงรายการใช้จ่าย
+Logic: ใช้ Regex ค้นหาคำว่า "บันทึกช่วยจำ", "Note" ฯลฯ โดยรองรับการอ่านแบบ "ข้ามบรรทัด" ในกรณีที่ OCR ตัดบรรทัดผิด และทำการกรองคำขยะ เช่น "Ref." หรือตัวเลขจำนวนเงินทิ้งไป เพื่อให้ได้เนื้อหาที่แท้จริง (เช่น "ปลาเผา")
+5. ขั้นตอนการส่งข้อมูลเข้า Database และแจ้งเตือน (Database Commit & Notification)
+Action: บันทึกข้อมูลลง Sheet TB_Transactions และส่ง Flex Message กลับไปที่ LINE
+Logic: ข้อมูลที่ผ่านการจัด Format แล้วจะถูกเขียนลงบรรทัดใหม่ทันที พร้อมกำหนด Status เป็น "New" และส่งลิงก์ Deep Link กลับไปให้ผู้ใช้กดเข้าไปตรวจสอบหรือแก้ไขรายการนั้นๆ ใน AppSheet ได้โดยตรง
+
+/* =========================================================================
+ * Project: Expense Slip Auto-Data Entry (Google Apps Script)
+ * Description: ระบบสกัดข้อมูลจากสลิปโอนเงิน (OCR) เพื่อบันทึกเข้า Google Sheet
+ * และรองรับการทำงานร่วมกับ AppSheet 
+ * ========================================================================= */
+
+// ---------------------------------------------------------
+// ⚙️ 1. CONFIGURATION (ส่วนตั้งค่าระบบ)
+// ---------------------------------------------------------
+const CHANNEL_ACCESS_TOKEN = 'XMd516HUq+v4Hnw+M/LMyLJxRFW/WX5HfYVA03vVrlPsNBwZTKDEnvR3OLhMl2oQ4woOMpjHSSbwCN6w6b48vnX0z+LvifIiVVWuFi2LM3OoO26eYGKjGpz5XYikPgQXozPJ78slzbN4FfRXCvvCygdB04t89/1O/w1cDnyilFU='; 
+const SHEET_ID = '1hnWWL1apFmlKfyTUAneqdOZoU_XQxQd_O2zr8c_eOhs';
+const APP_ID = '694e79b0-5ad4-47f1-b6d4-ef9095c9996c'; 
+const FOLDER_ID = '1rjPnfbyBIwRT9h5_0sHcOtDwtr-5ec1i'; 
+const FOLDER_NAME = 'Slip Bot Expense'; 
+
+// ---------------------------------------------------------
+// 🚀 2. MAIN FUNCTION (จุดรับข้อมูลจาก LINE Webhook)
+// ---------------------------------------------------------
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const event = data.events[0];
+    if (!event || event.type !== 'message' || event.message.type !== 'image') return;
+    
+    handleSlipProcess(event, event.replyToken);
+    return ContentService.createTextOutput(JSON.stringify({'content': 'ok'})).setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({'content': 'error', 'msg': error.message})).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ---------------------------------------------------------
+// 🔄 3. CORE PROCESS (กระบวนการจัดการรูปภาพและข้อมูล)
+// ---------------------------------------------------------
+function handleSlipProcess(event, replyToken) {
+  const imageBlob = getLineImage(event.message.id);
+  
+  // ใช้เวลาปัจจุบันของระบบเป็น Trans_ID เสมอเพื่อไม่ให้รหัสซ้ำ
+  const systemNow = new Date();
+  const transId = 'TX-' + Utilities.formatDate(systemNow, 'GMT+7', 'yyyyMMdd-HHmmss');
+  
+  // บันทึกรูปภาพลง Google Drive
+  let file;
+  if (FOLDER_ID && FOLDER_ID !== '') {
+    file = DriveApp.getFolderById(FOLDER_ID).createFile(imageBlob).setName(transId + ".jpg");
+  } else {
+    file = DriveApp.createFile(imageBlob).setName(transId + ".jpg");
+  }
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const imagePath = FOLDER_NAME + "/" + transId + ".jpg";
+
+  // เริ่มกระบวนการ OCR
+  var ocrText = "";
+  try {
+    ocrText = extractTextFromImage(file.getId());
+  } catch (e) { console.error("OCR Error:", e); }
+
+  // --- 3.1 จัดการวันที่ (Date Handling) ---
+  var slipDateObj = parseSmartDate(ocrText);
+  var dateForSheet = "";
+  var dateForLine = "";
+
+  if (slipDateObj) {
+    // บังคับ Format เป็น 'yyyy-MM-dd (ตัดเวลาทิ้ง และบังคับเป็น Text) เพื่อแก้ปัญหา AppSheet Error 1970 และ 1483
+    dateForSheet = "'" + Utilities.formatDate(slipDateObj, 'GMT+7', 'yyyy-MM-dd');
+    dateForLine = Utilities.formatDate(slipDateObj, 'GMT+7', 'dd/MM/yyyy');
+  } else {
+    // ถ้าอ่านไม่ได้ ส่งค่าว่าง เพื่อให้ AppSheet เปิดปฏิทินให้กรอกเองได้
+    dateForSheet = ""; 
+    dateForLine = "⚠️ ไม่พบวันที่";
+  }
+
+  // --- 3.2 สกัดข้อมูลอื่นๆ ---
+  var banks = analyzeBankTransaction(ocrText);
+  var finalNote = parseNote(ocrText);
+  var amount = parseAmount(ocrText);
+
+  var quickOwner = (banks.destination !== "รอระบุ") ? banks.destination : "Select Item";
+  var quickCategory = (banks.destination !== "รอระบุ") ? "Bank Transfer" : "Select Item";
+
+  // --- 3.3 บันทึกลงตาราง (Google Sheet) ---
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const sheet = ss.getSheetByName('TB_Transactions');
+  
+  sheet.appendRow([
+    transId,                // A: Trans_ID
+    dateForSheet,           // B: Date ('yyyy-MM-dd)
+    banks.source,           // C: Bank_Account
+    amount,                 // D: Statement_Amount
+    imagePath,              // E: Slip_Image
+    "New",                  // F: Status
+    true,                   // G: Is_Single_Item
+    "",                     // H: Quick_Customer
+    quickOwner,             // I: Quick_Owner
+    quickCategory,          // J: Quick_Category
+    finalNote,              // K: Quick_Description (Note)
+    amount,                 // L: Gross_Amount
+    0,                      // M: Fee
+    0,                      // N: WHT
+    amount                  // O: Net_Amount
+  ]);
+
+  // --- 3.4 ส่งข้อความแจ้งเตือนกลับไปที่ LINE ---
+  const deepLink = `https://www.appsheet.com/start/${APP_ID}?openExternalBrowser=1#control=TB_Transactions_Detail&row=${transId}`;
+  replyFlexButton(replyToken, transId, deepLink, banks.source, banks.destination, amount, finalNote, dateForLine);
+}
+
+// ---------------------------------------------------------
+// 🧠 4. PARSER FUNCTIONS (ฟังก์ชันช่วยสกัดข้อมูล)
+// ---------------------------------------------------------
+
+// --- ฟังก์ชันแยกแยะบันทึกช่วยจำ (รองรับข้ามบรรทัด) ---
+function parseNote(text) {
+  let cleanText = text.replace(/\r\n/g, "\n");
+  const regex = /(?:บันทึกช่วยจำ|บันทึกความทรงจำ|Note|ช่วยจำ|ชวยจำ|Memo)\s*[:.\-]?\s*([\s\S]*?)(?=\n|$)/i;
+  const match = cleanText.match(regex);
+  
+  if (match && match[1]) {
+    let extracted = match[1].trim();
+    if (extracted === "" || extracted === "-") {
+       const lines = cleanText.split('\n');
+       const keywordIndex = lines.findIndex(l => l.match(/(?:บันทึกช่วยจำ|Note|ช่วยจำ)/i));
+       if (keywordIndex !== -1 && lines[keywordIndex+1]) {
+         extracted = lines[keywordIndex+1].trim();
+       }
+    }
+    if (extracted.includes("Ref") || extracted.match(/[\d,]+\.\d{2}/)) return "";
+    return extracted;
+  }
+  return "";
+}
+
+// --- ฟังก์ชันวิเคราะห์วันที่ให้เป็น ค.ศ. เสมอ ---
+function parseSmartDate(text) {
+  try {
+    const thaiMonths = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+    const engMonths = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    
+    // แบบไทย
+    let regexThai = /(\d{1,2})\s+(ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)\s+(\d{2,4})/;
+    let match = text.match(regexThai);
+    if (match) {
+      let d = parseInt(match[1]);
+      let m = thaiMonths.indexOf(match[2]);
+      return new Date(normalizeYear(parseInt(match[3])), m, d);
+    }
+    
+    // แบบอังกฤษ
+    let regexEng = /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i;
+    match = text.match(regexEng);
+    if (match) {
+      let d = parseInt(match[1]);
+      let m = engMonths.findIndex(mo => match[2].toLowerCase().startsWith(mo));
+      return new Date(parseInt(match[3]), m, d);
+    }
+    
+    // แบบตัวเลขทับ/ขีด
+    let regexSlash = /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/;
+    match = text.match(regexSlash);
+    if (match) {
+      let d = parseInt(match[1]);
+      let m = parseInt(match[2]) - 1; 
+      let y = normalizeYear(parseInt(match[3]));
+      if (m > 11) { let t=d; d=m+1; m=t-1; } // สลับวัน/เดือน กรณี OCR อ่านสลับ
+      return new Date(y, m, d);
+    }
+    return null;
+  } catch (e) { return null; }
+}
+
+function normalizeYear(y) {
+  if (y > 2400) return y - 543; 
+  if (y < 100) {
+    if (y > 50) return y + 2500 - 543; 
+    else return y + 2000; 
+  }
+  return y; 
+}
+
+// --- ฟังก์ชันแยกแยะธนาคาร ---
+function analyzeBankTransaction(ocrText) {
+  const cleanOCR = ocrText.toLowerCase().replace(/[\s\-]/g, ''); 
+  const lowerOCR = ocrText.toLowerCase();
+  let appOwner = "Unknown";
+  if (cleanOCR.includes("kplus") || cleanOCR.includes("kbiz") || lowerOCR.includes("กสิกร")) appOwner = "Kbank";
+  else if (cleanOCR.includes("scb") || lowerOCR.includes("ไทยพาณิชย์") || cleanOCR.includes("easy")) appOwner = "SCB";
+  else if (cleanOCR.includes("krungsri") || lowerOCR.includes("กรุงศรี")) appOwner = "Krungsri";
+  else if (cleanOCR.includes("truemoney") || lowerOCR.includes("วอลเล็ท")) appOwner = "TrueMoney";
+  else if (cleanOCR.includes("bualuang") || lowerOCR.includes("bangkokbank")) appOwner = "BBL";
+  else if (cleanOCR.includes("krungthai") || lowerOCR.includes("next")) appOwner = "KTB";
+
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const sheet = ss.getSheetByName('MD_Statement');
+  let matches = []; 
+  if (sheet) {
+    const lastRow = sheet.getLastRow();
+    const data = sheet.getRange(2, 1, lastRow - 1, 3).getValues(); 
+    for (let i = 0; i < data.length; i++) {
+      const accName = data[i][1];      
+      const keywordStr = data[i][2];   
+      if (!keywordStr) continue;
+      const keywords = keywordStr.toString().split(",");
+      for (let k = 0; k < keywords.length; k++) {
+        let key = keywords[k].trim().toLowerCase().replace(/[\s\-]/g, ''); 
+        if (key !== "" && cleanOCR.includes(key)) {
+          let idx = cleanOCR.indexOf(key);
+          if (!matches.find(m => m.name === accName)) matches.push({ name: accName, index: idx });
+          break; 
+        }
+      }
+    }
+  }
+  matches.sort((a, b) => a.index - b.index);
+  let source = "รอระบุ"; let destination = "รอระบุ";
+  if (matches.length >= 2) { source = matches[0].name; destination = matches[1].name; } 
+  else if (matches.length === 1) {
+    let foundAcc = matches[0].name; let isAppOwner = false;
+    if (appOwner === "Kbank" && foundAcc.toLowerCase().includes("kbank")) isAppOwner = true;
+    if (appOwner === "SCB" && foundAcc.toLowerCase().includes("scb")) isAppOwner = true;
+    if (appOwner === "Krungsri" && (foundAcc.toLowerCase().includes("bay") || foundAcc.toLowerCase().includes("krungsri"))) isAppOwner = true;
+    if (appOwner === "TrueMoney" && (foundAcc.toLowerCase().includes("true") || foundAcc.toLowerCase().includes("wallet"))) isAppOwner = true;
+    if (isAppOwner) { source = foundAcc; destination = "รอระบุ"; } else { source = appOwner; destination = foundAcc; }
+  } else { if (appOwner !== "Unknown") source = appOwner; }
+  return { source: source, destination: destination };
+}
+
+// --- ฟังก์ชันดึงตัวอักษรจากภาพ (OCR) ---
+function extractTextFromImage(fileId) {
+  const resource = { title: "Temp OCR Doc", mimeType: "application/vnd.google-apps.document" };
+  const tempFile = Drive.Files.copy(resource, fileId, {ocr: true, ocrLanguage: "th"});
+  const doc = DocumentApp.openById(tempFile.id);
+  const text = doc.getBody().getText();
+  Drive.Files.remove(tempFile.id);
+  return text;
+}
+
+// --- ฟังก์ชันสกัดยอดเงิน ---
+function parseAmount(text) {
+  try {
+    let cleanText = text.replace(/,/g, ''); 
+    let matches = cleanText.match(/(\d+\.\d{2})/g);
+    if (matches && matches.length > 0) return parseFloat(matches[0]);
+    return 0;
+  } catch (e) { return 0; }
+}
+
+// --- ฟังก์ชันดึงรูปภาพจาก LINE API ---
+function getLineImage(messageId) {
+  const url = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
+  const response = UrlFetchApp.fetch(url, { 'headers': { 'Authorization': 'Bearer ' + CHANNEL_ACCESS_TOKEN } });
+  return response.getBlob();
+}
+
+// --- ฟังก์ชันส่ง Flex Message แจ้งสถานะกลับ ---
+function replyFlexButton(replyToken, transId, link, source, dest, amount, note, dateText) {
+  const displayNote = note ? note : "-";
+  const payload = {
+    "replyToken": replyToken,
+    "messages": [{
+      "type": "flex",
+      "altText": "บันทึกข้อมูลแล้ว",
+      "contents": {
+        "type": "bubble",
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            { "type": "text", "text": "✅ บันทึกสลิปแล้ว", "weight": "bold", "size": "lg", "color": "#1DB446" },
+            { "type": "text", "text": `Ref: ${transId}`, "size": "xxs", "color": "#aaaaaa", "margin": "xs" },
+            { "type": "separator", "margin": "md" },
+            { 
+              "type": "box", "layout": "vertical", "margin": "md", "spacing": "sm",
+              "contents": [
+                { "type": "text", "text": `📅 ${dateText}`, "size": "sm", "weight": "bold" },
+                { "type": "box", "layout": "baseline", "contents": [
+                    { "type": "text", "text": "📤 จาก:", "size": "sm", "color": "#888888", "flex": 2 },
+                    { "type": "text", "text": source, "size": "sm", "color": "#000000", "flex": 4, "weight": "bold" }
+                  ]},
+                { "type": "box", "layout": "baseline", "contents": [
+                    { "type": "text", "text": "📥 ไปยัง:", "size": "sm", "color": "#888888", "flex": 2 },
+                    { "type": "text", "text": dest, "size": "sm", "color": "#000000", "flex": 4, "weight": "bold" }
+                  ]},
+                { "type": "separator", "margin": "sm" },
+                { "type": "box", "layout": "baseline", "margin": "sm", "contents": [
+                    { "type": "text", "text": "💰 ยอดเงิน:", "size": "sm", "color": "#888888", "flex": 2 },
+                    { "type": "text", "text": amount.toLocaleString() + " บ.", "size": "sm", "color": "#ff5500", "flex": 4, "weight": "bold" }
+                  ]},
+                { "type": "box", "layout": "baseline", "contents": [
+                    { "type": "text", "text": "📝 Note:", "size": "sm", "color": "#888888", "flex": 2 },
+                    { "type": "text", "text": displayNote, "size": "sm", "color": "#666666", "flex": 4, "wrap": true }
+                  ]}
+              ]
+            }
+          ]
+        },
+        "footer": {
+          "type": "box", "layout": "vertical",
+          "contents": [
+            { "type": "button", "style": "primary", "action": { "type": "uri", "label": "🚀 ตรวจสอบ (Chrome)", "uri": link } }
+          ]
+        }
+      }
+    }]
+  };
+  UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+    'method': 'post',
+    'headers': { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CHANNEL_ACCESS_TOKEN },
+    'payload': JSON.stringify(payload)
+  });
+}

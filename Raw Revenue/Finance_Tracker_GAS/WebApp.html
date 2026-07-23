@@ -1,0 +1,2040 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="candy">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>💰 Finance Tracker</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap');
+body{font-family:'Sarabun',Cambria,'Times New Roman',sans-serif;background:#F0F4F8;color:#2D3748;font-size:14px}
+/* ── Base palette (non-themed) ──────────────────────────── */
+:root{
+  --green:#2E7D32;--green-light:#E8F5E9;
+  --red:#C62828;--red-light:#FFEBEE;
+  --orange:#E65100;--orange-light:#FFF3E0;
+  --gray:#607D8B;--gray-light:#ECEFF1;
+  --white:#FFFFFF;--shadow:0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* ── Theme: Candy Pop (default) — Purple ────────────────── */
+[data-theme="candy"]{
+  --navy:#534AB7;--navy-dark:#3C3489;--navy-light:#EEEDFE;
+  --purple:#7F77DD;--purple-light:#EEEDFE;
+  --th-accent:#AFA9EC;--th-nav-active:rgba(255,255,255,0.18);
+  --th-sidebar-logo-bg:#26215C;
+  --th-badge-bg:#EF5350;
+  --th-mark:'✦';
+}
+/* ── Theme: Sakura Kawaii — Pink ────────────────────────── */
+[data-theme="sakura"]{
+  --navy:#993556;--navy-dark:#72243E;--navy-light:#FBEAF0;
+  --purple:#D4537E;--purple-light:#FBEAF0;
+  --th-accent:#F4C0D1;--th-nav-active:rgba(255,255,255,0.18);
+  --th-sidebar-logo-bg:#4B1528;
+  --th-badge-bg:#D4537E;
+  --th-mark:'🌸';
+}
+/* ── Theme: Powder Snow — Blue Hokkaido ─────────────────── */
+[data-theme="powder"]{
+  --navy:#185FA5;--navy-dark:#042C53;--navy-light:#E6F1FB;
+  --purple:#378ADD;--purple-light:#E6F1FB;
+  --th-accent:#B5D4F4;--th-nav-active:rgba(255,255,255,0.18);
+  --th-sidebar-logo-bg:#042C53;
+  --th-badge-bg:#378ADD;
+  --th-mark:'❄';
+}
+
+/* ── Theme switcher strip in sidebar ───────────────────── */
+.theme-switcher{padding:10px 12px;border-top:1px solid rgba(255,255,255,0.12)}
+.theme-switcher-label{font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px}
+.theme-dots{display:flex;gap:7px}
+.theme-dot{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:border-color 0.15s,transform 0.15s;position:relative;flex-shrink:0}
+.theme-dot:hover{transform:scale(1.15)}
+.theme-dot.active{border-color:#fff}
+.theme-dot[data-t="candy"]{background:#7F77DD}
+.theme-dot[data-t="sakura"]{background:#D4537E}
+.theme-dot[data-t="powder"]{background:#185FA5}
+.theme-dot .dot-tip{
+  display:none;position:absolute;bottom:28px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.75);color:#fff;font-size:10px;white-space:nowrap;
+  padding:3px 8px;border-radius:6px;pointer-events:none;
+}
+.theme-dot:hover .dot-tip{display:block}
+
+/* Layout */
+#app{display:flex;height:100vh;overflow:hidden}
+#sidebar{width:220px;min-width:220px;background:var(--navy-dark);display:flex;flex-direction:column}
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* Sidebar */
+.sidebar-logo{padding:20px 16px 12px;border-bottom:1px solid rgba(255,255,255,0.15)}
+.sidebar-logo h1{font-size:18px;font-weight:700;color:#fff}
+.sidebar-logo small{font-size:11px;color:rgba(255,255,255,0.6)}
+.sidebar-nav{flex:1;padding:8px 0}
+.nav-item{display:flex;align-items:center;gap:10px;padding:11px 16px;cursor:pointer;color:rgba(255,255,255,0.75);transition:all 0.15s;border-left:3px solid transparent;font-size:13px}
+.nav-item:hover{background:rgba(255,255,255,0.1);color:#fff}
+.nav-item.active{background:rgba(255,255,255,0.15);color:#fff;border-left-color:var(--th-accent,#90CAF9);font-weight:600}
+.nav-item .icon{width:20px;text-align:center;font-size:16px}
+.nav-badge{margin-left:auto;background:#EF5350;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;min-width:20px;text-align:center}
+.sidebar-footer{padding:12px 16px;border-top:1px solid rgba(255,255,255,0.15);font-size:11px;color:rgba(255,255,255,0.45)}
+
+/* Top bar */
+#topbar{background:var(--white);border-bottom:1px solid #E2E8F0;padding:10px 20px;display:flex;align-items:center;gap:12px;min-height:52px}
+#topbar h2{font-size:16px;font-weight:600;color:#2D3748;flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;transition:all 0.15s;font-family:inherit}
+.btn-primary{background:var(--navy);color:#fff}.btn-primary:hover{background:var(--navy-dark)}
+.btn-success{background:var(--green);color:#fff}.btn-success:hover{background:#1B5E20}
+.btn-danger{background:var(--red);color:#fff}.btn-danger:hover{background:#B71C1C}
+.btn-gray{background:var(--gray-light);color:#2D3748}.btn-gray:hover{background:#CFD8DC}
+.btn-orange{background:#E65100;color:#fff}.btn-orange:hover{background:#BF360C}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+
+/* Content area */
+#content{flex:1;overflow-y:auto;padding:20px}
+.page{display:none}.page.active{display:block}
+
+/* Stats cards */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--white);border-radius:10px;padding:16px;box-shadow:var(--shadow);border-top:4px solid transparent}
+.stat-card.blue{border-color:var(--navy)}.stat-card.green{border-color:var(--green)}
+.stat-card.orange{border-color:var(--orange)}.stat-card.purple{border-color:var(--purple)}
+.stat-card.red{border-color:var(--red)}
+.stat-value{font-size:26px;font-weight:700;line-height:1.1;margin-bottom:4px}
+.stat-label{font-size:12px;color:var(--gray)}
+.stat-card.blue .stat-value{color:var(--navy)}
+.stat-card.green .stat-value{color:var(--green)}
+.stat-card.orange .stat-value{color:var(--orange)}
+.stat-card.red .stat-value{color:var(--red)}
+.stat-card.purple .stat-value{color:var(--purple)}
+
+/* Filter bar */
+.filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.filter-bar select,.filter-bar input{padding:6px 10px;border:1px solid #CBD5E0;border-radius:6px;font-size:13px;background:#fff;color:#2D3748}
+.filter-bar select:focus,.filter-bar input:focus{outline:none;border-color:var(--navy)}
+
+/* Staging table */
+.table-wrap{background:var(--white);border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
+table{width:100%;border-collapse:collapse}
+thead tr{background:#F7FAFC}
+th{padding:10px 12px;text-align:left;font-size:12px;font-weight:600;color:var(--gray);text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #E2E8F0;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #EDF2F7;vertical-align:middle;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#F7FAFC}
+.amount{text-align:right;font-weight:600;font-family:monospace}
+.amount.out{color:var(--red)}
+.amount.in{color:var(--green)}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-pending{background:#FFF9C4;color:#F57F17}
+.badge-transfer{background:#E3F2FD;color:#1565C0}
+.badge-review{background:#FCE4EC;color:#C62828}
+.badge-matched{background:#E8F5E9;color:#2E7D32}
+.badge-done{background:#E8F5E9;color:#1B5E20}
+.badge-dup{background:#FCE4EC;color:#C62828}
+.source-chip{display:inline-block;padding:1px 6px;background:#ECEFF1;border-radius:4px;font-size:11px;color:#607D8B}
+.empty-state{padding:60px 20px;text-align:center;color:var(--gray)}
+.empty-state .emoji{font-size:48px;margin-bottom:12px}
+.empty-state p{font-size:15px}
+.loading{padding:40px;text-align:center;color:var(--gray)}
+.loading::after{content:'...';animation:dots 1.2s infinite}
+@keyframes dots{0%,100%{content:''}33%{content:'.'}66%{content:'..'}100%{content:'...'}}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:12px;width:640px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
+.modal-header{padding:16px 20px;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:16px;font-weight:600}
+.modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--gray);padding:2px 6px;border-radius:4px}
+.modal-close:hover{background:var(--gray-light)}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{padding:14px 20px;border-top:1px solid #E2E8F0;display:flex;gap:8px;justify-content:flex-end}
+
+/* Form */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group.full{grid-column:1/-1}
+.form-group label{font-size:12px;font-weight:600;color:var(--gray);text-transform:uppercase;letter-spacing:0.3px}
+.form-group input,.form-group select,.form-group textarea{padding:8px 10px;border:1px solid #CBD5E0;border-radius:6px;font-size:13px;color:#2D3748;background:#fff}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px rgba(21,101,192,0.1)}
+.form-group textarea{resize:vertical;min-height:60px}
+.info-box{background:var(--navy-light);border:1px solid #90CAF9;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px}
+.info-row{display:flex;justify-content:space-between;padding:3px 0}
+.info-label{color:var(--gray);font-weight:500}
+.info-value{font-weight:600}
+.info-value.amount{color:var(--red);font-size:16px}
+.calc-box{background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px}
+.calc-row{display:flex;justify-content:space-between;padding:3px 0}
+.calc-total{font-weight:700;color:var(--green);border-top:1px solid #CBD5E0;margin-top:4px;padding-top:6px}
+
+/* Upload area */
+.upload-area{border:2px dashed #CBD5E0;border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:all 0.2s;background:#FAFAFA}
+.upload-area:hover,.upload-area.drag{border-color:var(--navy);background:var(--navy-light)}
+.upload-area input[type=file]{display:none}
+.upload-area .icon{font-size:40px;margin-bottom:8px}
+.upload-area p{color:var(--gray);font-size:14px}
+.upload-area strong{color:var(--navy)}
+
+/* Toast */
+#toast{position:fixed;bottom:24px;right:24px;z-index:999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{background:#2D3748;color:#fff;padding:12px 18px;border-radius:8px;font-size:13px;box-shadow:var(--shadow);pointer-events:auto;max-width:320px;animation:slideIn 0.3s ease}
+.toast.success{background:#2E7D32}.toast.error{background:#C62828}.toast.info{background:var(--navy)}
+@keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* Manual entry */
+.section-card{background:#fff;border-radius:10px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px}
+.section-card h3{font-size:15px;font-weight:600;margin-bottom:14px;color:#2D3748;border-bottom:1px solid #EDF2F7;padding-bottom:10px}
+
+/* Action pair in table */
+.action-pair{display:flex;gap:4px;white-space:nowrap}
+
+/* Status row dim for Done */
+tr.row-done td{opacity:0.45}
+tr.row-done:hover td{opacity:0.7}
+
+/* Reconcile summary bar */
+#recon-bar{background:#fff;border:1px solid #E2E8F0;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;font-size:13px}
+.recon-item{display:flex;flex-direction:column;gap:1px}
+.recon-label{font-size:11px;color:var(--gray);font-weight:600;text-transform:uppercase}
+.recon-value{font-weight:700;font-size:15px}
+.recon-value.in{color:var(--green)}.recon-value.out{color:var(--red)}.recon-value.pending{color:var(--orange)}
+
+/* Responsive */
+@media(max-width:768px){
+  #sidebar{display:none}
+  #mobile-nav{display:flex!important}
+  .form-grid{grid-template-columns:1fr}
+  .action-pair .btn-sm{padding:4px 7px;font-size:11px}
+}
+
+/* Mobile bottom nav */
+#mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--navy-dark);z-index:50;justify-content:space-around;padding:6px 0;border-top:1px solid rgba(255,255,255,0.1)}
+#mobile-nav .m-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;color:rgba(255,255,255,0.65);cursor:pointer;font-size:10px;padding:4px 8px}
+#mobile-nav .m-nav-item.active{color:var(--th-accent,#90CAF9)}
+#mobile-nav .m-nav-item .micon{font-size:20px}
+@media(min-width:769px){#mobile-nav{display:none!important}}
+</style>
+</head>
+<body>
+<!-- Login Overlay (multi-user member selector + PIN) -->
+<div id="pin-overlay" style="position:fixed;inset:0;background:#0D47A1;z-index:9999;display:flex;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:36px 40px;text-align:center;width:340px;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
+    <div style="font-size:40px;margin-bottom:8px">💰</div>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:4px;color:#0D47A1">FinTrack</h2>
+
+    <!-- Step 1: Member selector (shown when MD_Members exists) -->
+    <div id="login-step-member" style="display:none">
+      <p style="font-size:13px;color:#718096;margin-bottom:16px">เลือกสมาชิก</p>
+      <div id="member-buttons" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+    </div>
+
+    <!-- Step 2: PIN input -->
+    <div id="login-step-pin">
+      <p style="font-size:13px;color:#718096;margin-bottom:8px" id="login-greeting">กรุณาใส่ PIN เพื่อเข้าใช้งาน</p>
+      <div id="login-back-wrap" style="display:none;margin-bottom:10px">
+        <button onclick="loginBack()" style="background:none;border:1px solid #CBD5E0;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;color:#718096">← เปลี่ยนสมาชิก</button>
+      </div>
+      <input id="pin-input" type="password" inputmode="numeric" maxlength="6"
+        style="width:100%;padding:14px;font-size:22px;letter-spacing:8px;text-align:center;border:2px solid #CBD5E0;border-radius:8px;margin-bottom:14px;font-family:monospace"
+        placeholder="••••" onkeydown="if(event.key==='Enter')checkPin()">
+      <button onclick="checkPin()" style="width:100%;padding:12px;background:#1565C0;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">เข้าสู่ระบบ</button>
+    </div>
+
+    <p id="pin-error" style="color:#C62828;font-size:12px;margin-top:10px;display:none">PIN ไม่ถูกต้อง</p>
+  </div>
+</div>
+
+<div id="app">
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-logo">
+      <h1>💰 FinTrack</h1>
+      <small>Finance Tracker v1.0</small>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showPage('dashboard')">
+        <span class="icon">📊</span> Dashboard
+      </div>
+      <div class="nav-item" onclick="showPage('staging')" id="nav-staging">
+        <span class="icon">📥</span> รายการรอตรวจสอบ
+        <span class="nav-badge" id="badge-pending">0</span>
+      </div>
+      <div class="nav-item" onclick="showPage('confirmed')">
+        <span class="icon">✅</span> ยืนยันแล้ว
+      </div>
+      <div class="nav-item" onclick="showPage('manual')">
+        <span class="icon">✏️</span> บันทึกด้วยตัวเอง
+      </div>
+      <div class="nav-item" onclick="showPage('batch')">
+        <span class="icon">📋</span> บันทึกหลายรายการ
+      </div>
+      <div class="nav-item" onclick="showPage('import')">
+        <span class="icon">📤</span> Import Statement
+      </div>
+    </nav>
+    <!-- Theme switcher -->
+    <div class="theme-switcher">
+      <div class="theme-switcher-label">เลือกธีม</div>
+      <div class="theme-dots">
+        <div class="theme-dot active" data-t="candy" onclick="switchTheme('candy')" title="Candy Pop" aria-label="Candy Pop theme">
+          <span class="dot-tip">🍬 Candy Pop</span>
+        </div>
+        <div class="theme-dot" data-t="sakura" onclick="switchTheme('sakura')" title="Sakura Kawaii" aria-label="Sakura Kawaii theme">
+          <span class="dot-tip">🌸 Sakura</span>
+        </div>
+        <div class="theme-dot" data-t="powder" onclick="switchTheme('powder')" title="Powder Snow" aria-label="Powder Snow theme">
+          <span class="dot-tip">❄ Powder Snow</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-footer">Finance Tracker GAS v1.0</div>
+  </aside>
+
+  <!-- Main -->
+  <div id="main">
+    <div id="topbar">
+      <h2 id="page-title">Dashboard</h2>
+      <button class="btn btn-gray btn-sm" onclick="refreshAll()">🔄 Refresh</button>
+    </div>
+    <div id="content">
+
+      <!-- ── Dashboard ── -->
+      <div id="page-dashboard" class="page active">
+        <div class="stats-grid" id="stats-grid">
+          <div class="loading">กำลังโหลด</div>
+        </div>
+        <!-- Account balances section -->
+        <div class="section-card" id="acc-balance-card" style="margin-bottom:16px">
+          <h3>💳 ยอดบัญชี (เดือนนี้)</h3>
+          <div id="acc-balance-grid" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
+            <div class="loading">กำลังโหลด</div>
+          </div>
+        </div>
+        <div class="section-card">
+          <h3>🕐 รายการล่าสุด (Confirmed)</h3>
+          <div class="table-wrap" style="margin-top:0;box-shadow:none">
+            <table id="recent-table">
+              <thead><tr>
+                <th>วันที่</th><th>บัญชี</th><th>รายการ</th><th>หมวด</th>
+                <th>จำนวน</th><th>ประเภท</th>
+              </tr></thead>
+              <tbody id="recent-body"><tr><td colspan="6" class="loading">กำลังโหลด</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Staging Inbox ── -->
+      <div id="page-staging" class="page">
+
+        <!-- Reconcile summary bar -->
+        <div id="recon-bar">
+          <div class="recon-item">
+            <span class="recon-label">รอตรวจสอบ</span>
+            <span class="recon-value pending" id="recon-pending">0</span>
+          </div>
+          <div class="recon-item">
+            <span class="recon-label">รายรับ (staging)</span>
+            <span class="recon-value in" id="recon-in">0</span>
+          </div>
+          <div class="recon-item">
+            <span class="recon-label">รายจ่าย (staging)</span>
+            <span class="recon-value out" id="recon-out">0</span>
+          </div>
+          <div class="recon-item">
+            <span class="recon-label">โอน (staging)</span>
+            <span class="recon-value" id="recon-transfer" style="color:var(--navy)">0</span>
+          </div>
+          <div style="margin-left:auto;font-size:12px;color:var(--gray)">กระทบยอดกับ Statement ก่อนยืนยัน</div>
+        </div>
+        <!-- Per-account breakdown (populated by JS) -->
+        <div id="recon-accounts" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid #EDF2F7;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start"></div>
+
+        <div class="filter-bar">
+          <select id="filter-status" onchange="filterStaging()">
+            <option value="">ทุกสถานะ (รอ review)</option>
+            <option value="all">ทั้งหมด (รวม Done)</option>
+            <option value="Pending">Pending</option>
+            <option value="Transfer_Unmatched">Transfer รอจับคู่</option>
+            <option value="Transfer_Matched">Transfer จับคู่แล้ว</option>
+            <option value="NeedReview">NeedReview</option>
+            <option value="Done">Done แล้ว</option>
+          </select>
+          <select id="filter-owner" onchange="filterStaging()">
+            <option value="">ทุก Owner</option>
+          </select>
+          <select id="filter-group" onchange="filterStaging()">
+            <option value="">ทุกประเภท</option>
+            <option value="Expense">Expense</option>
+            <option value="Income">Income</option>
+            <option value="Transfer">Transfer</option>
+            <option value="AR">AR</option>
+            <option value="AP">AP</option>
+          </select>
+          <input type="text" id="filter-search" placeholder="🔍 ค้นหา..." oninput="filterStaging()" style="width:180px">
+          <span style="margin-left:auto;color:#718096;font-size:13px" id="staging-count">0 รายการ</span>
+        </div>
+
+        <div class="table-wrap">
+          <table id="staging-table">
+            <thead><tr>
+              <th>วันที่</th>
+              <th>Owner</th>
+              <th>บัญชี</th>
+              <th>รายการ / Note</th>
+              <th>ประเภท</th>
+              <th>หมวด</th>
+              <th style="text-align:right">จำนวน</th>
+              <th>สถานะ</th>
+              <th style="min-width:140px;text-align:center">จัดการ</th>
+            </tr></thead>
+            <tbody id="staging-body">
+              <tr><td colspan="9" class="loading">กำลังโหลด</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Confirmed ── -->
+      <div id="page-confirmed" class="page">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Trans ID</th><th>วันที่</th><th>Owner</th>
+              <th>บัญชี</th><th>ลูกค้า</th><th>หมวด</th>
+              <th>รายการ</th><th>ยอดสุทธิ</th><th>ประเภท</th><th></th>
+            </tr></thead>
+            <tbody id="confirmed-body">
+              <tr><td colspan="10" class="loading">กำลังโหลด</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Edit Confirmed Modal -->
+      <div id="edit-confirmed-overlay" class="modal-overlay">
+        <div class="modal" style="max-width:480px">
+          <div class="modal-header">
+            <h3>✏️ แก้ไขรายการที่ยืนยันแล้ว</h3>
+            <button class="modal-close" onclick="closeEditConfirmed()">✕</button>
+          </div>
+          <div class="modal-body">
+            <div id="ec-info" class="info-box" style="margin-bottom:14px"></div>
+            <div class="form-grid">
+              <div class="form-group"><label>Owner</label><select id="ec-owner"></select></div>
+              <div class="form-group"><label>ประเภท</label>
+                <select id="ec-group" onchange="onGroupChange('ec')">
+                  <option value="">-- เลือก --</option>
+                  <option value="Expense">Expense</option><option value="Income">Income</option>
+                  <option value="Transfer">Transfer</option><option value="AR">AR</option><option value="AP">AP</option>
+                </select>
+              </div>
+              <div class="form-group"><label>หมวดหมู่</label><select id="ec-cat" onchange="onCatChange('ec')"></select></div>
+              <div class="form-group"><label>Sub Category</label><select id="ec-subcat"></select></div>
+              <div class="form-group"><label>บัญชีออก</label><select id="ec-acc-out"></select></div>
+              <div class="form-group"><label>บัญชีรับ</label><select id="ec-acc-in"></select></div>
+              <div class="form-group"><label>ลูกค้า</label><select id="ec-customer"></select></div>
+              <div class="form-group"><label>Trip Tag</label><select id="ec-trip"></select></div>
+              <div class="form-group full"><label>รายละเอียด</label><input type="text" id="ec-detail"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-gray" onclick="closeEditConfirmed()">ยกเลิก</button>
+            <button class="btn btn-primary" id="btn-ec-save" onclick="saveEditConfirmed()">💾 บันทึก</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Manual Entry ── -->
+      <div id="page-manual" class="page">
+        <div class="section-card" style="max-width:780px">
+          <h3>✏️ บันทึกรายการ Manual</h3>
+
+          <!-- Row 1: วันที่ | รับ/จ่าย toggle -->
+          <div class="form-grid" style="grid-template-columns:1fr 2fr;margin-bottom:12px">
+            <div class="form-group">
+              <label>วันที่ *</label>
+              <input type="date" id="m-date">
+            </div>
+            <div class="form-group">
+              <label>รับหรือจ่าย *</label>
+              <div style="display:flex;gap:0;border:1px solid #CBD5E0;border-radius:6px;overflow:hidden">
+                <label id="m-toggle-out" style="flex:1;padding:8px;text-align:center;cursor:pointer;background:var(--red);color:#fff;font-weight:600;font-size:13px" onclick="setDirection('out')">💸 จ่าย</label>
+                <label id="m-toggle-in"  style="flex:1;padding:8px;text-align:center;cursor:pointer;background:#eee;color:#666;font-weight:600;font-size:13px" onclick="setDirection('in')">💰 รับ</label>
+                <label id="m-toggle-tr"  style="flex:1;padding:8px;text-align:center;cursor:pointer;background:#eee;color:#666;font-weight:600;font-size:13px" onclick="setDirection('tr')">🔄 โอน</label>
+              </div>
+              <input type="hidden" id="m-direction" value="out">
+            </div>
+          </div>
+
+          <!-- Row 2: บัญชีที่ทำรายการ | ลูกค้า/คู่ค้า -->
+          <div class="form-grid" style="margin-bottom:12px">
+            <div class="form-group" id="m-acc-single-wrap">
+              <label>บัญชีที่ทำรายการ *</label>
+              <select id="m-acc-single"><option value="">-- เลือก --</option></select>
+            </div>
+            <!-- โอน: show both -->
+            <div class="form-group" id="m-acc-from-wrap" style="display:none">
+              <label>โอนจากบัญชี</label>
+              <select id="m-acc-from"><option value="">-- เลือก --</option></select>
+            </div>
+            <div class="form-group" id="m-acc-to-wrap" style="display:none">
+              <label>โอนไปบัญชี</label>
+              <select id="m-acc-to"><option value="">-- เลือก --</option></select>
+            </div>
+            <div class="form-group">
+              <label>ลูกค้า / คู่ค้า</label>
+              <select id="m-customer"><option value="">-- เลือก --</option></select>
+            </div>
+          </div>
+
+          <!-- Row 3: เจ้าของ | ประเภทรายการ | หมวดหมู่ | ทริป -->
+          <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-bottom:12px">
+            <div class="form-group">
+              <label>เจ้าของ *</label>
+              <select id="m-owner"><option value="">-- เลือก --</option></select>
+            </div>
+            <div class="form-group">
+              <label>ประเภทรายการ *</label>
+              <select id="m-group" onchange="onGroupChange('m')">
+                <option value="">-- เลือก --</option>
+                <option value="Expense">Expense</option>
+                <option value="Income">Income</option>
+                <option value="Transfer">Transfer</option>
+                <option value="AR">AR (ลูกหนี้)</option>
+                <option value="AP">AP (เจ้าหนี้)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>หมวดหมู่ *</label>
+              <select id="m-cat"><option value="">-- เลือก --</option></select>
+            </div>
+            <div class="form-group">
+              <label>ทริป</label>
+              <select id="m-trip"><option value="">-- ไม่ระบุ --</option></select>
+            </div>
+          </div>
+
+          <!-- Row 4: จำนวนเงิน | ยอดรวม | ค่าธรรมเนียม | WHT (บาท) -->
+          <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-bottom:12px">
+            <div class="form-group">
+              <label>จำนวนเงิน *</label>
+              <input type="number" id="m-gross" step="0.01" placeholder="0.00" oninput="calcNet()">
+            </div>
+            <div class="form-group">
+              <label>ยอดรวม (รวม VAT แล้ว)</label>
+              <input type="number" id="m-gross-vat" step="0.01" placeholder="= จำนวนเงิน" oninput="calcNet()">
+            </div>
+            <div class="form-group">
+              <label>ค่าธรรมเนียม</label>
+              <input type="number" id="m-fee" step="0.01" placeholder="0.00" oninput="calcNet()">
+            </div>
+            <div class="form-group">
+              <label>WHT หัก ณ ที่จ่าย (บาท)</label>
+              <input type="number" id="m-wht-amt" step="0.01" placeholder="0.00" oninput="calcNet()">
+            </div>
+          </div>
+
+          <!-- Note -->
+          <div class="form-group" style="margin-bottom:12px">
+            <label>รายละเอียด / Note</label>
+            <input type="text" id="m-detail" placeholder="รายละเอียดเพิ่มเติม...">
+          </div>
+
+          <!-- Net calc bar -->
+          <div class="calc-box" style="margin-bottom:14px">
+            <div class="calc-row"><span>จำนวนเงิน</span><span id="m-c-gross">0.00</span></div>
+            <div class="calc-row"><span>- ค่าธรรมเนียม</span><span id="m-c-fee">0.00</span></div>
+            <div class="calc-row"><span>- WHT</span><span id="m-c-wht">0.00</span></div>
+            <div class="calc-row calc-total"><span>💵 Net Amount</span><span id="m-c-net">0.00</span></div>
+          </div>
+
+          <!-- Sub-items section -->
+          <div style="border:1px dashed #CBD5E0;border-radius:8px;padding:14px;margin-bottom:14px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span style="font-size:13px;font-weight:600;color:#2D3748">📋 รายการย่อย (ถ้ามี) — แยกย่อยจากยอดรวมด้านบน</span>
+              <button class="btn btn-gray btn-sm" onclick="addSubItem()">+ เพิ่มรายการย่อย</button>
+            </div>
+            <div id="sub-items-list"></div>
+            <div id="sub-items-sum" style="display:none;font-size:12px;margin-top:8px;color:var(--gray);text-align:right"></div>
+          </div>
+
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-success" onclick="submitManual()">✅ บันทึก</button>
+            <button class="btn btn-gray" onclick="resetManual()">🔄 Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Batch Entry ── -->
+      <div id="page-batch" class="page">
+        <div class="section-card">
+          <h3>📋 บันทึกหลายรายการพร้อมกัน</h3>
+          <p style="font-size:13px;color:var(--gray);margin-bottom:14px">กรอกข้อมูลหลายแถวแล้วบันทึกทีเดียว — เหมาะสำหรับกรอกย้อนหลัง หรือ copy จากโน้ตบุ๊ก</p>
+
+          <!-- Batch global defaults -->
+          <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-bottom:14px">
+            <div class="form-group">
+              <label>เจ้าของ (Default)</label>
+              <select id="bt-owner"><option value="">-- เลือก --</option></select>
+            </div>
+            <div class="form-group">
+              <label>บัญชี (Default)</label>
+              <select id="bt-account"><option value="">-- เลือก --</option></select>
+            </div>
+            <div class="form-group">
+              <label>ประเภท (Default)</label>
+              <select id="bt-group">
+                <option value="Expense">Expense</option>
+                <option value="Income">Income</option>
+                <option value="Transfer">Transfer</option>
+              </select>
+            </div>
+            <div class="form-group" style="justify-content:flex-end">
+              <label>&nbsp;</label>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-gray btn-sm" onclick="addBatchRow()">+ แถว</button>
+                <button class="btn btn-gray btn-sm" onclick="clearBatch()">🗑 Clear</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Batch table -->
+          <div style="overflow-x:auto">
+            <table id="bt-table" style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead>
+                <tr style="background:#F7FAFC">
+                  <th style="padding:8px;border-bottom:2px solid #E2E8F0;text-align:left;min-width:120px">วันที่ *</th>
+                  <th style="padding:8px;border-bottom:2px solid #E2E8F0;text-align:left;min-width:80px">ประเภท *</th>
+                  <th style="padding:8px;border-bottom:2px solid #E2E8F0;text-align:left;min-width:140px">บัญชี *</th>
+                  <th style="padding:8px;border-bottom:2px solid #E2E8F0;text-align:left;min-width:130px">หมวดหมู่</th>
+                  <th style="padding:8px;border-bottom:2px solid #E2E8F0;text-align:left;min-width:180px">รายละเอียด</th>
+                  <th style="padding:8px;border-bottom:2px solid #E2E8F0;text-align:right;min-width:110px">จำนวน *</th>
+                  <th style="padding:8px;border-bottom:2px solid #E2E8F0;width:36px"></th>
+                </tr>
+              </thead>
+              <tbody id="bt-body">
+              </tbody>
+            </table>
+          </div>
+          <div id="bt-summary" style="display:none;margin-top:8px;font-size:13px;color:var(--gray);text-align:right"></div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <button class="btn btn-success" onclick="submitBatch()" id="btn-bt-save">✅ บันทึกทั้งหมด</button>
+            <span style="font-size:12px;color:var(--gray);align-self:center" id="bt-count">0 แถว</span>
+          </div>
+          <div id="bt-result" style="display:none;margin-top:12px"></div>
+        </div>
+      </div>
+
+      <!-- ── Import Statement ── -->
+      <div id="page-import" class="page">
+        <div class="section-card" style="max-width:720px">
+          <h3>📤 Import Statement</h3>
+
+          <!-- Tabs -->
+          <div style="display:flex;gap:0;border-bottom:2px solid #E2E8F0;margin-bottom:20px">
+            <button id="imp-tab-csv" onclick="switchImportTab('csv')"
+              style="padding:8px 20px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:none;color:var(--navy);border-bottom:3px solid var(--navy);margin-bottom:-2px">
+              📄 CSV / TXT
+            </button>
+            <button id="imp-tab-pdf" onclick="switchImportTab('pdf')"
+              style="padding:8px 20px;border:none;cursor:pointer;font-size:13px;font-weight:600;background:none;color:var(--gray);border-bottom:3px solid transparent;margin-bottom:-2px">
+              📑 PDF (Drive OCR)
+            </button>
+          </div>
+
+          <!-- CSV Tab -->
+          <div id="imp-csv-tab">
+            <div class="form-grid" style="margin-bottom:16px">
+              <div class="form-group">
+                <label>ธนาคาร *</label>
+                <select id="imp-bank">
+                  <option value="kbank">KBank (กสิกรไทย)</option>
+                  <option value="scb">SCB (ไทยพาณิชย์)</option>
+                  <option value="ktb">KTB (กรุงไทย)</option>
+                  <option value="krungsri">Krungsri (กรุงศรี)</option>
+                  <option value="bbl">BBL (กรุงเทพ)</option>
+                  <option value="cc">Credit Card</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>บัญชีหลัก (Default Account)</label>
+                <select id="imp-account"><option value="">-- เลือก --</option></select>
+              </div>
+            </div>
+            <div class="upload-area" id="upload-area" onclick="document.getElementById('imp-file').click()"
+                 ondragover="event.preventDefault();this.classList.add('drag')"
+                 ondragleave="this.classList.remove('drag')"
+                 ondrop="handleDrop(event)">
+              <input type="file" id="imp-file" accept=".csv,.txt" onchange="handleFileSelect(event)">
+              <div class="icon">📂</div>
+              <p>คลิกเพื่อเลือกไฟล์ หรือ <strong>ลากวาง</strong> ที่นี่</p>
+              <p style="font-size:12px;margin-top:4px">รองรับ .csv และ .txt</p>
+            </div>
+            <div id="imp-preview" style="display:none;margin-top:14px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <strong id="imp-filename" style="color:var(--navy)"></strong>
+                <button class="btn btn-success" onclick="doImport()">🚀 Import CSV</button>
+              </div>
+              <div class="table-wrap" style="max-height:280px;overflow-y:auto">
+                <table>
+                  <thead><tr id="imp-head"></tr></thead>
+                  <tbody id="imp-body"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="imp-result" style="display:none;margin-top:14px"></div>
+          </div>
+
+          <!-- PDF Tab -->
+          <div id="imp-pdf-tab" style="display:none">
+            <div class="info-box" style="margin-bottom:16px;font-size:13px">
+              <strong>📌 วิธีใช้:</strong><br>
+              1. อัปโหลดไฟล์ PDF statement ไปที่ Google Drive ก่อน<br>
+              2. คัดลอก link (Share link) หรือ File ID แล้ววางด้านล่าง<br>
+              3. คลิก Import PDF<br>
+              <span style="color:#C62828;font-size:12px;margin-top:6px;display:block">
+                ⚠️ ต้องเปิด <strong>Drive API Advanced Service</strong> ใน GAS Editor ก่อน<br>
+                (Services → Google Drive API → Add)
+              </span>
+            </div>
+            <div class="form-group" style="margin-bottom:12px">
+              <label>Google Drive Link หรือ File ID *</label>
+              <input type="text" id="pdf-url" placeholder="https://drive.google.com/file/d/xxx... หรือ 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+                style="padding:9px 12px;border:1px solid #CBD5E0;border-radius:6px;font-size:13px;width:100%">
+            </div>
+            <div class="form-grid" style="margin-bottom:16px">
+              <div class="form-group">
+                <label>ธนาคาร *</label>
+                <select id="pdf-bank">
+                  <option value="kbank">KBank (กสิกรไทย)</option>
+                  <option value="scb">SCB (ไทยพาณิชย์)</option>
+                  <option value="ktb">KTB (กรุงไทย)</option>
+                  <option value="krungsri">Krungsri (กรุงศรี)</option>
+                  <option value="bbl">BBL (กรุงเทพ)</option>
+                  <option value="cc">Credit Card</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>บัญชีหลัก (Default Account)</label>
+                <select id="pdf-account"><option value="">-- เลือก --</option></select>
+              </div>
+            </div>
+            <button class="btn btn-success" onclick="doImportPDF()" id="btn-import-pdf">🚀 Import PDF</button>
+            <div id="pdf-result" style="display:none;margin-top:14px"></div>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Mobile Bottom Nav -->
+<nav id="mobile-nav">
+  <div class="m-nav-item active" onclick="showPage('dashboard')"><span class="micon">📊</span>Dashboard</div>
+  <div class="m-nav-item" onclick="showPage('staging')"><span class="micon">📥</span>รอตรวจสอบ<span class="nav-badge" id="m-badge" style="font-size:9px;padding:1px 4px">0</span></div>
+  <div class="m-nav-item" onclick="showPage('manual')"><span class="micon">✏️</span>บันทึก</div>
+  <div class="m-nav-item" onclick="showPage('batch')"><span class="micon">📋</span>Batch</div>
+  <div class="m-nav-item" onclick="showPage('import')"><span class="micon">📤</span>Import</div>
+  <div class="m-nav-item" id="m-theme-btn" onclick="cycleTheme()" title="เปลี่ยนธีม" aria-label="เปลี่ยนธีม">
+    <span class="micon" id="m-theme-icon">🍬</span><span>ธีม</span>
+  </div>
+</nav>
+
+<!-- Classify / Edit Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">📝 แก้ไขรายการ</h3>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="info-box" id="modal-info"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>เจ้าของ (Head Owner)</label>
+          <select id="cl-owner"><option value="">-- เลือก --</option></select>
+        </div>
+        <div class="form-group">
+          <label>ประเภทรายการ</label>
+          <select id="cl-group" onchange="onGroupChange('cl')">
+            <option value="">-- เลือก --</option>
+            <option value="Expense">Expense</option>
+            <option value="Income">Income</option>
+            <option value="Transfer">Transfer</option>
+            <option value="AR">AR (ลูกหนี้)</option>
+            <option value="AP">AP (เจ้าหนี้)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>หมวดหมู่</label>
+          <select id="cl-cat" onchange="onCatChange('cl')"><option value="">-- เลือก --</option></select>
+        </div>
+        <div class="form-group">
+          <label>หมวดย่อย</label>
+          <select id="cl-subcat"><option value="">-- เลือก --</option></select>
+        </div>
+        <div class="form-group">
+          <label>บัญชีที่จ่าย (Out)</label>
+          <select id="cl-acc-out"><option value="">-- เลือก --</option></select>
+        </div>
+        <div class="form-group">
+          <label>บัญชีที่รับ (In)</label>
+          <select id="cl-acc-in"><option value="">-- เลือก --</option></select>
+        </div>
+        <div class="form-group">
+          <label>ลูกค้า / คู่ค้า</label>
+          <select id="cl-customer"><option value="">-- เลือก --</option></select>
+        </div>
+        <div class="form-group">
+          <label>WHT หัก ณ ที่จ่าย (%) — เฉพาะรายรับ</label>
+          <select id="cl-wht" onchange="calcWHT('cl')">
+            <option value="0" selected>0% (ไม่มี / เงินเดือน / Expense)</option>
+            <option value="1">1% (ค่าเช่า)</option>
+            <option value="3">3% (ค่าบริการ/ค่าจ้าง)</option>
+            <option value="5">5%</option>
+            <option value="15">15% (ดอกเบี้ย/เงินปันผล)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>ทริป (Trip Tag)</label>
+          <select id="cl-trip"><option value="">-- ไม่ระบุ --</option></select>
+        </div>
+        <div class="form-group full">
+          <label>รายละเอียด / Note</label>
+          <input type="text" id="cl-detail" placeholder="แก้ไข note ได้">
+        </div>
+      </div>
+      <div class="calc-box" id="cl-calc" style="margin-top:10px">
+        <div class="calc-row"><span>Gross</span><span id="cl-c-gross">0</span></div>
+        <div class="calc-row"><span>- WHT</span><span id="cl-c-wht">0</span></div>
+        <div class="calc-row calc-total"><span>💵 Net</span><span id="cl-c-net">0</span></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-gray btn-sm" onclick="skipItem()" title="ทำเครื่องหมายว่า NeedReview">⏭ Skip</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn btn-orange" onclick="saveDetails()" id="btn-save" title="บันทึกข้อมูลกลับ staging ยังไม่ย้ายไป Transactions">
+          💾 บันทึก (ยังรอ)
+        </button>
+        <button class="btn btn-success" onclick="confirmClassify()" id="btn-confirm" title="ยืนยันและย้ายไป TB_Transactions">
+          ✅ ยืนยัน
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// State
+// ══════════════════════════════════════════════════════════════
+var state = {
+  dropdowns   : { headOwners:[], accounts:[], customers:[], trips:[], categories:{}, subCategories:{} },
+  staging     : [],
+  currentId   : null,
+  currentGross: 0,
+  csvContent  : null,
+  // Multi-user
+  memberId    : '',
+  memberName  : '',
+  sheetId     : '',   // TB_Staging / TB_Transactions of the active member
+  // Edit confirmed
+  ecTransId   : null,
+};
+
+// ══════════════════════════════════════════════════════════════
+// Login — Multi-user member selector + PIN
+// ══════════════════════════════════════════════════════════════
+var _loginMembers = [];
+var _loginMemberId = ''; // which member button was clicked
+
+function _startLogin() {
+  // Try to restore session
+  try {
+    var sess = JSON.parse(sessionStorage.getItem('ft_session') || 'null');
+    if (sess && sess.sheetId !== undefined) {
+      state.memberId   = sess.memberId || '';
+      state.memberName = sess.memberName || '';
+      state.sheetId    = sess.sheetId || '';
+      document.getElementById('pin-overlay').style.display = 'none';
+      _afterLogin();
+      return;
+    }
+  } catch(e){}
+
+  // Load member list
+  google.script.run
+    .withSuccessHandler(function(members){
+      _loginMembers = members || [];
+      if (members.length === 0) {
+        // No MD_Members: single-user PIN flow
+        _showPinStep('');
+        // Try empty PIN (open access)
+        google.script.run
+          .withSuccessHandler(function(res){
+            if (res && res.ok) { _onLoginSuccess('','Admin',res.sheetId||''); }
+            else { document.getElementById('pin-input').focus(); }
+          })
+          .api_verifyMemberPin('','');
+      } else if (members.length === 1) {
+        // Auto-select single member; prompt PIN if set
+        _loginMemberId = members[0].memberId;
+        _showPinStep(members[0].name);
+        if (!members[0].hasPin) {
+          google.script.run
+            .withSuccessHandler(function(res){ if(res&&res.ok) _onLoginSuccess(members[0].memberId, members[0].name, res.sheetId||''); })
+            .api_verifyMemberPin(members[0].memberId,'');
+        } else {
+          document.getElementById('pin-input').focus();
+        }
+      } else {
+        // Show member picker
+        document.getElementById('login-step-member').style.display = 'block';
+        document.getElementById('login-step-pin').style.display    = 'none';
+        var html = members.map(function(m){
+          return '<button onclick="selectMember(\''+m.memberId+'\',\''+encodeURIComponent(m.name)+'\','+m.hasPin+')" '+
+            'style="padding:12px;background:#EBF5FB;border:1px solid #90CAF9;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;color:#1565C0;width:100%">'+
+            '👤 '+m.name+'</button>';
+        }).join('');
+        document.getElementById('member-buttons').innerHTML = html;
+      }
+    })
+    .withFailureHandler(function(){ _showPinStep(''); document.getElementById('pin-input').focus(); })
+    .api_getMembers();
+}
+
+function selectMember(memberId, nameEncoded, hasPin) {
+  var name = decodeURIComponent(nameEncoded);
+  _loginMemberId = memberId;
+  document.getElementById('login-step-member').style.display = 'none';
+  _showPinStep(name);
+  if (!hasPin) {
+    google.script.run
+      .withSuccessHandler(function(res){ if(res&&res.ok) _onLoginSuccess(memberId, name, res.sheetId||''); })
+      .api_verifyMemberPin(memberId,'');
+  } else {
+    document.getElementById('pin-input').focus();
+  }
+}
+
+function _showPinStep(name) {
+  document.getElementById('login-step-pin').style.display = 'block';
+  if (name) {
+    document.getElementById('login-greeting').textContent = 'สวัสดี ' + name + ' — กรุณาใส่ PIN';
+    if (_loginMembers.length > 1) document.getElementById('login-back-wrap').style.display = 'block';
+  } else {
+    document.getElementById('login-greeting').textContent = 'กรุณาใส่ PIN เพื่อเข้าใช้งาน';
+  }
+}
+
+function loginBack() {
+  document.getElementById('login-step-member').style.display = 'block';
+  document.getElementById('login-step-pin').style.display    = 'none';
+  document.getElementById('login-back-wrap').style.display   = 'none';
+  document.getElementById('pin-error').style.display         = 'none';
+  document.getElementById('pin-input').value = '';
+  _loginMemberId = '';
+}
+
+function checkPin() {
+  var pin = document.getElementById('pin-input').value;
+  google.script.run
+    .withSuccessHandler(function(res){
+      if (res && res.ok) {
+        var name = res.name || (_loginMembers.find(function(m){ return m.memberId===_loginMemberId; })||{}).name || 'Admin';
+        _onLoginSuccess(_loginMemberId, name, res.sheetId||'');
+      } else {
+        document.getElementById('pin-error').style.display = 'block';
+        document.getElementById('pin-input').value = '';
+        document.getElementById('pin-input').focus();
+      }
+    })
+    .withFailureHandler(function(e){ toast('Login error: '+e.message,'error'); })
+    .api_verifyMemberPin(_loginMemberId, pin);
+}
+
+function _onLoginSuccess(memberId, name, sheetId) {
+  state.memberId   = memberId;
+  state.memberName = name;
+  state.sheetId    = sheetId;
+  try { sessionStorage.setItem('ft_session', JSON.stringify({ memberId:memberId, memberName:name, sheetId:sheetId })); } catch(e){}
+  document.getElementById('pin-overlay').style.display = 'none';
+  document.querySelector('.sidebar-logo small').textContent = name ? '👤 '+name : 'Finance Tracker v1.0';
+  _afterLogin();
+}
+
+function _afterLogin() {
+  document.querySelector('.sidebar-logo small').textContent = state.memberName ? '👤 '+state.memberName : 'Finance Tracker v1.0';
+  loadAll();
+}
+
+// ══════════════════════════════════════════════════════════════
+// Init
+// ══════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', function(){
+  initTheme();
+  document.getElementById('m-date').value = new Date().toISOString().split('T')[0];
+  _startLogin();
+});
+
+function loadAll() {
+  google.script.run
+    .withSuccessHandler(function(data){
+      state.dropdowns = data.dropdowns;
+      state.staging   = data.staging || [];
+      renderStats(data.stats);
+      populateAllDropdowns();
+      renderStaging();
+      loadConfirmed();
+      loadAccountBalances();
+      // Update sidebar badge = non-Done items
+      var pending = state.staging.filter(function(it){ return it.status !== 'Done'; }).length;
+      document.getElementById('badge-pending').textContent = pending;
+      if (document.getElementById('m-badge')) document.getElementById('m-badge').textContent = pending;
+    })
+    .withFailureHandler(function(e){ toast('โหลดข้อมูลล้มเหลว: '+e.message,'error'); })
+    .api_getPageData(state.sheetId);
+}
+
+function refreshAll() { loadAll(); toast('🔄 Refreshed','info'); }
+
+// ── Account balance cards ─────────────────────────────────────
+function loadAccountBalances() {
+  google.script.run
+    .withSuccessHandler(function(rows){
+      var el = document.getElementById('acc-balance-grid');
+      if (!el) return;
+      if (!rows || rows.length === 0) {
+        el.innerHTML = '<span style="color:#718096;font-size:13px">ยังไม่มีข้อมูลบัญชี (เดือนนี้)</span>';
+        return;
+      }
+      var fmt = function(n){ return Math.round(n).toLocaleString(); };
+      el.innerHTML = rows.map(function(r){
+        var netColor = r.net >= 0 ? 'var(--green)' : 'var(--red)';
+        var netTxt   = r.net >= 0 ? '+'+fmt(r.net) : '('+fmt(Math.abs(r.net))+')';
+        return '<div style="background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;min-width:160px">'+
+          '<div style="font-size:12px;font-weight:700;color:#2D3748;margin-bottom:6px">'+r.account+'</div>'+
+          '<div style="font-size:11px;color:var(--gray)">รับ: <span style="color:var(--green);font-weight:600">'+fmt(r.totalIn)+'</span></div>'+
+          '<div style="font-size:11px;color:var(--gray)">จ่าย: <span style="color:var(--red);font-weight:600">'+fmt(r.totalOut)+'</span></div>'+
+          '<div style="font-size:13px;font-weight:700;color:'+netColor+';margin-top:4px">สุทธิ: '+netTxt+'</div>'+
+          '</div>';
+      }).join('');
+    })
+    .withFailureHandler(function(){})
+    .api_getAccountBalances(state.sheetId, '');
+}
+
+// ══════════════════════════════════════════════════════════════
+// Navigation
+// ══════════════════════════════════════════════════════════════
+var pages = { dashboard:'Dashboard', staging:'Staging Inbox', confirmed:'Confirmed',
+              manual:'Manual Entry', batch:'บันทึกหลายรายการ', import:'Import Statement' };
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(function(n){ n.classList.remove('active'); });
+  document.querySelectorAll('.m-nav-item').forEach(function(n){ n.classList.remove('active'); });
+  document.getElementById('page-'+id).classList.add('active');
+  document.querySelectorAll('[onclick="showPage(\''+id+'\')"]').forEach(function(el){ el.classList.add('active'); });
+  document.getElementById('page-title').textContent = pages[id]||id;
+  if (id==='confirmed') loadConfirmed();
+}
+
+// ══════════════════════════════════════════════════════════════
+// Stats
+// ══════════════════════════════════════════════════════════════
+function renderStats(s) {
+  if (!s) return;
+  var total = (s.pending||0) + (s.unmatched||0) + (s.needReview||0);
+  document.getElementById('badge-pending').textContent = total;
+  if (document.getElementById('m-badge')) document.getElementById('m-badge').textContent = total;
+  document.getElementById('stats-grid').innerHTML =
+    card('blue','📥','รอ Review',s.pending||0,'Pending') +
+    card('orange','🔄','Transfer รอจับคู่',s.unmatched||0,'Transfer_Unmatched') +
+    card('red','🚩','ต้องตรวจ',s.needReview||0,'NeedReview') +
+    card('green','✅','ยืนยันแล้ว',s.confirmed||0,'รายการ') +
+    card('green','💰','รายรับ '+(s.month||''),(s.totalIn||0).toLocaleString(),'เดือนนี้') +
+    card('red','💸','รายจ่าย '+(s.month||''),(s.totalOut||0).toLocaleString(),'เดือนนี้');
+}
+function card(color,icon,label,value,sub){
+  return '<div class="stat-card '+color+'"><div class="stat-value">'+value+'</div>'+
+    '<div class="stat-label">'+icon+' '+label+'</div>'+
+    (sub?'<div class="stat-label" style="font-size:11px;margin-top:2px">'+sub+'</div>':'')+
+    '</div>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// Dropdowns
+// ══════════════════════════════════════════════════════════════
+function populateAllDropdowns() {
+  var d = state.dropdowns;
+  // filter bar owners
+  var ownerEl = document.getElementById('filter-owner');
+  if (ownerEl) {
+    ownerEl.innerHTML = '<option value="">ทุก Owner</option>';
+    (d.headOwners||[]).forEach(function(v){ ownerEl.innerHTML += '<option value="'+v+'">'+v+'</option>'; });
+  }
+  ['m-owner','cl-owner','ec-owner','bt-owner'].forEach(function(id){ fillSelect(id, d.headOwners, true); });
+  ['m-acc-single','m-acc-from','m-acc-to','cl-acc-out','cl-acc-in','ec-acc-out','ec-acc-in',
+   'imp-account','pdf-account','bt-account'].forEach(function(id){
+    fillSelect(id, d.accounts, true);
+  });
+  ['m-customer','cl-customer','ec-customer'].forEach(function(id){ fillSelect(id, d.customers, true); });
+  ['m-trip','cl-trip','ec-trip'].forEach(function(id){ fillSelect(id, d.trips, true); });
+}
+
+function fillSelect(id, arr, blank) {
+  var el = document.getElementById(id); if(!el) return;
+  var val = el.value;
+  el.innerHTML = blank ? '<option value="">-- เลือก --</option>' : '';
+  (arr||[]).forEach(function(v){ el.innerHTML+='<option value="'+v+'">'+v+'</option>'; });
+  if(val) el.value = val;
+}
+
+function onGroupChange(prefix) {
+  var gd   = document.getElementById(prefix+'-group').value;
+  var cats = (state.dropdowns.categories||{})[gd] || [];
+  fillSelect(prefix+'-cat', cats, true);
+  fillSelect(prefix+'-subcat', [], true);
+  // Auto-set WHT default: only Income can have WHT; Expense/Transfer/salary = 0%
+  var whtEl = document.getElementById(prefix+'-wht');
+  if (whtEl && whtEl.value === '0' && gd === 'Income') {
+    // leave as 0 — user will manually select if needed
+  } else if (whtEl && gd !== 'Income') {
+    whtEl.value = '0';
+  }
+  if (typeof calcWHT === 'function') calcWHT(prefix);
+}
+
+function onCatChange(prefix) {
+  var cat = document.getElementById(prefix+'-cat').value;
+  var subs = (state.dropdowns.subCategories||{})[cat] || [];
+  fillSelect(prefix+'-subcat', subs, true);
+}
+
+// ══════════════════════════════════════════════════════════════
+// Staging table
+// ══════════════════════════════════════════════════════════════
+function renderStaging() {
+  var items = filterItems();
+  document.getElementById('staging-count').textContent = items.length + ' รายการ';
+
+  // Update reconcile summary bar
+  var reconIn = 0, reconOut = 0, reconTransfer = 0, reconPending = 0;
+  items.forEach(function(it) {
+    if (it.status === 'Done') return;
+    reconPending++;
+    var g = it.groupDetail, a = it.grossAmount || 0;
+    if (g === 'Income') reconIn += a;
+    else if (g === 'Expense') reconOut += a;
+    else if (g === 'Transfer') reconTransfer += a;
+  });
+  var fmt = function(n){ return Math.round(n).toLocaleString(); };
+  document.getElementById('recon-pending').textContent   = reconPending;
+  document.getElementById('recon-in').textContent        = fmt(reconIn);
+  document.getElementById('recon-out').textContent       = fmt(reconOut);
+  document.getElementById('recon-transfer').textContent  = fmt(reconTransfer);
+
+  // Per-account breakdown
+  var accMap = {};
+  items.forEach(function(it) {
+    if (it.status === 'Done') return;
+    if (it.accountOut) {
+      if (!accMap[it.accountOut]) accMap[it.accountOut] = {in:0, out:0};
+      accMap[it.accountOut].out += it.grossAmount || 0;
+    }
+    if (it.accountIn) {
+      if (!accMap[it.accountIn]) accMap[it.accountIn] = {in:0, out:0};
+      accMap[it.accountIn].in += it.grossAmount || 0;
+    }
+  });
+  var accKeys = Object.keys(accMap);
+  var accEl = document.getElementById('recon-accounts');
+  if (accKeys.length > 0) {
+    accEl.style.display = 'flex';
+    accEl.innerHTML =
+      '<span style="font-size:10px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:0.4px;width:100%;margin-bottom:4px">ยอดต่อบัญชี (ถ้ายืนยันทั้งหมด)</span>' +
+      accKeys.map(function(acc) {
+        var d = accMap[acc];
+        var net = d.in - d.out;
+        var netColor = net >= 0 ? 'var(--green)' : 'var(--red)';
+        var netStr  = net >= 0 ? '+'+fmt(net) : '('+fmt(Math.abs(net))+')';
+        return '<div style="background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:8px 12px;min-width:130px">'+
+          '<div style="font-size:11px;font-weight:700;color:#2D3748;margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">'+acc+'</div>'+
+          (d.in  > 0 ? '<div style="font-size:11px;display:flex;justify-content:space-between;gap:10px"><span style="color:var(--gray)">รับเข้า</span><span style="color:var(--green);font-weight:600">+'+fmt(d.in)+'</span></div>' : '')+
+          (d.out > 0 ? '<div style="font-size:11px;display:flex;justify-content:space-between;gap:10px"><span style="color:var(--gray)">จ่ายออก</span><span style="color:var(--red);font-weight:600">('+fmt(d.out)+')</span></div>' : '')+
+          '<div style="font-size:11px;display:flex;justify-content:space-between;gap:10px;border-top:1px solid #E2E8F0;margin-top:4px;padding-top:4px">'+
+            '<span style="color:var(--gray)">สุทธิ</span><span style="font-weight:700;color:'+netColor+'">'+netStr+'</span>'+
+          '</div>'+
+        '</div>';
+      }).join('');
+  } else {
+    accEl.style.display = 'none';
+  }
+
+  var tbody = document.getElementById('staging-body');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="emoji">📭</div><p>ไม่มีรายการ</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(function(it){
+    var amt   = it.grossAmount || 0;
+    var isDone = it.status === 'Done';
+    var cls   = it.groupDetail==='Income' ? 'in' : (it.groupDetail==='Transfer'?'':'out');
+    var amtStr = Number(amt).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    var fmtAmt = it.groupDetail==='Income' ? '+'+amtStr : (it.groupDetail==='Transfer' ? '↔'+amtStr : '('+amtStr+')');
+    var badge = getBadge(it.status);
+    var acc   = it.accountOut ? it.accountOut : (it.accountIn ? it.accountIn : '-');
+    // For transfer show both sides
+    if (it.groupDetail==='Transfer' && it.accountOut && it.accountIn) acc = it.accountOut+'→'+it.accountIn;
+    var rowCls = isDone ? 'row-done' : '';
+    // Buttons: disabled for Done
+    var disabled = isDone ? 'disabled' : '';
+    var btnEdit = '<button class="btn btn-gray btn-sm" '+disabled+' onclick="openEdit(\''+it.transId+'\')">✏️ แก้ไข</button>';
+    var btnConfirm = '<button class="btn btn-success btn-sm" '+disabled+' onclick="openConfirm(\''+it.transId+'\')">✅ ยืนยัน</button>';
+    return '<tr class="'+rowCls+'">'+
+      '<td style="white-space:nowrap">'+it.date+'</td>'+
+      '<td>'+(it.headOwner||'<span style="color:#CBD5E0">-</span>')+'</td>'+
+      '<td style="font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="'+acc+'">'+acc+'</td>'+
+      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" title="'+(it.detail||'')+'">'+(it.detail||'<span style="color:#CBD5E0;font-size:12px">ยังไม่ระบุ</span>')+'</td>'+
+      '<td><span class="source-chip">'+(it.groupDetail||'-')+'</span></td>'+
+      '<td style="font-size:12px;color:var(--gray)">'+(it.category||'<span style="color:#E2E8F0">-</span>')+'</td>'+
+      '<td class="amount '+cls+'" style="text-align:right">'+fmtAmt+'</td>'+
+      '<td>'+badge+'</td>'+
+      '<td style="text-align:center"><div class="action-pair">'+btnEdit+btnConfirm+'</div></td>'+
+    '</tr>';
+  }).join('');
+}
+
+function filterItems() {
+  var status = document.getElementById('filter-status').value;
+  var owner  = document.getElementById('filter-owner').value;
+  var group  = (document.getElementById('filter-group')||{}).value || '';
+  var search = (document.getElementById('filter-search').value||'').toLowerCase();
+  return state.staging.filter(function(it){
+    // Default view (status='') hides Done rows
+    if (status === '' && it.status === 'Done') return false;
+    if (status === 'all') { /* show everything */ }
+    else if (status && it.status !== status) return false;
+    if (owner  && it.headOwner  !== owner)  return false;
+    if (group  && it.groupDetail !== group) return false;
+    if (search && !(
+      (it.detail||'').toLowerCase().includes(search) ||
+      (it.transId||'').toLowerCase().includes(search) ||
+      (it.accountOut||'').toLowerCase().includes(search) ||
+      (it.accountIn||'').toLowerCase().includes(search) ||
+      (it.category||'').toLowerCase().includes(search)
+    )) return false;
+    return true;
+  });
+}
+
+function filterStaging() { renderStaging(); }
+
+function getBadge(status) {
+  var map = {
+    'Pending'            :'badge-pending',
+    'Transfer_Unmatched' :'badge-transfer',
+    'Transfer_Matched'   :'badge-matched',
+    'NeedReview'         :'badge-review',
+    'Done'               :'badge-done',
+  };
+  var cls = map[status] || (status && status.startsWith('Duplicate') ? 'badge-dup' : 'badge-pending');
+  var label = status || '-';
+  return '<span class="badge '+cls+'" title="'+label+'">'+label+'</span>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// Modal — Edit / Confirm
+// ══════════════════════════════════════════════════════════════
+function _fillModal(item) {
+  state.currentId    = item.transId;
+  state.currentGross = item.grossAmount || 0;
+
+  document.getElementById('modal-info').innerHTML =
+    '<div class="info-row"><span class="info-label">Trans ID</span><span class="info-value" style="font-family:monospace;font-size:12px">'+item.transId+'</span></div>'+
+    '<div class="info-row"><span class="info-label">วันที่</span><span class="info-value">'+item.date+'</span></div>'+
+    '<div class="info-row"><span class="info-label">Source</span><span class="info-value">'+(item.source||'-')+'</span></div>'+
+    '<div class="info-row"><span class="info-label">บัญชี Out / In</span><span class="info-value">'+(item.accountOut||'-')+' / '+(item.accountIn||'-')+'</span></div>'+
+    '<div class="info-row"><span class="info-label">Note (OCR/Import)</span><span class="info-value">'+(item.detail||'-')+'</span></div>'+
+    '<div class="info-row"><span class="info-label">จำนวน</span><span class="info-value amount">'+Number(item.grossAmount||0).toLocaleString(undefined,{minimumFractionDigits:2})+'</span></div>'+
+    (item.slipImage ? '<div class="info-row"><span class="info-label">Slip</span><a class="info-value" href="'+item.slipImage+'" target="_blank" style="color:var(--navy)">📎 ดูสลิป</a></div>' : '');
+
+  setVal('cl-owner',   item.headOwner);
+  setVal('cl-group',   item.groupDetail);
+  setVal('cl-detail',  item.detail);
+  setVal('cl-acc-out', item.accountOut);
+  setVal('cl-acc-in',  item.accountIn);
+  setVal('cl-customer',item.customer);
+  // WHT default: 0% for Expense/Transfer, 3% for Income
+  var defaultWHT = (item.groupDetail === 'Income') ? '3' : '0';
+  setVal('cl-wht', item.whtRate !== undefined && item.whtRate !== '' ? String(item.whtRate) : defaultWHT);
+  setVal('cl-trip',    item.tripTag);
+  onGroupChange('cl');
+  setVal('cl-cat', item.category);
+  onCatChange('cl');
+  setVal('cl-subcat', item.subCategory);
+  calcWHT('cl');
+}
+
+// Open modal in "edit/add details" mode
+function openEdit(transId) {
+  var item = state.staging.find(function(it){ return it.transId===transId; });
+  if (!item) return;
+  document.getElementById('modal-title').textContent = '✏️ แก้ไขรายการ (บันทึกไว้ก่อน)';
+  document.getElementById('btn-save').style.fontWeight = '700';
+  _fillModal(item);
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+// Open modal in "confirm" mode
+function openConfirm(transId) {
+  var item = state.staging.find(function(it){ return it.transId===transId; });
+  if (!item) return;
+  document.getElementById('modal-title').textContent = '✅ ยืนยันรายการ → TB_Transactions';
+  document.getElementById('btn-confirm').style.fontWeight = '700';
+  _fillModal(item);
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  state.currentId = null;
+}
+
+function setVal(id, val) {
+  var el = document.getElementById(id);
+  if (el && val !== undefined && val !== null) el.value = val;
+}
+
+function _collectModalData() {
+  return {
+    headOwner  : document.getElementById('cl-owner').value,
+    groupDetail: document.getElementById('cl-group').value,
+    category   : document.getElementById('cl-cat').value,
+    subCategory: document.getElementById('cl-subcat').value,
+    accountOut : document.getElementById('cl-acc-out').value,
+    accountIn  : document.getElementById('cl-acc-in').value,
+    customer   : document.getElementById('cl-customer').value,
+    whtRate    : parseFloat(document.getElementById('cl-wht').value)||0,
+    tripTag    : document.getElementById('cl-trip').value,
+    detail     : document.getElementById('cl-detail').value,
+  };
+}
+
+// ── 💾 บันทึก — save details back to staging, stay in staging ──
+function saveDetails() {
+  if (!state.currentId) return;
+  var data = _collectModalData();
+  var btn  = document.getElementById('btn-save');
+  btn.disabled = true; btn.textContent = '⏳ กำลังบันทึก...';
+
+  google.script.run
+    .withSuccessHandler(function(res){
+      btn.disabled = false; btn.innerHTML = '💾 บันทึก (ยังรอ)';
+      if (res.success) {
+        toast('💾 บันทึกแล้ว — รายการยังรอใน staging','success');
+        // Update local state
+        var idx = state.staging.findIndex(function(it){ return it.transId === state.currentId; });
+        if (idx >= 0) {
+          Object.assign(state.staging[idx], data);
+        }
+        closeModal();
+        renderStaging();
+      } else { toast('❌ Error: '+res.error,'error'); }
+    })
+    .withFailureHandler(function(e){
+      btn.disabled = false; btn.innerHTML = '💾 บันทึก (ยังรอ)';
+      toast('❌ Error: '+e.message,'error');
+    })
+    .api_updateDetails(state.currentId, data, state.sheetId);
+}
+
+// ── ✅ ยืนยัน — confirm and move to TB_Transactions ──
+function confirmClassify() {
+  if (!state.currentId) return;
+  var data = _collectModalData();
+  if (!data.groupDetail) { toast('กรุณาเลือกประเภทรายการ','error'); return; }
+  if (!data.category)    { toast('กรุณาเลือกหมวดหมู่','error'); return; }
+
+  var btn = document.getElementById('btn-confirm');
+  btn.disabled = true; btn.textContent = '⏳ กำลังยืนยัน...';
+
+  var idToConfirm = state.currentId;
+  google.script.run
+    .withSuccessHandler(function(res){
+      btn.disabled = false; btn.innerHTML = '✅ ยืนยัน';
+      if (res.success) {
+        toast('✅ ยืนยันแล้ว → TB_Transactions','success');
+        // Mark as Done in local state (keep in array, show as Done/dimmed)
+        var idx = state.staging.findIndex(function(it){ return it.transId === idToConfirm; });
+        if (idx >= 0) { Object.assign(state.staging[idx], data); state.staging[idx].status = 'Done'; }
+        closeModal();
+        renderStaging();
+        refreshStats();
+      } else { toast('❌ Error: '+res.error,'error'); }
+    })
+    .withFailureHandler(function(e){
+      btn.disabled = false; btn.innerHTML = '✅ ยืนยัน';
+      toast('❌ Error: '+e.message,'error');
+    })
+    .api_classify(idToConfirm, data, state.sheetId);
+}
+
+function skipItem() {
+  if (!state.currentId) return;
+  var id = state.currentId;
+  google.script.run
+    .withSuccessHandler(function(){
+      toast('⏭ ทำเครื่องหมาย NeedReview แล้ว','info');
+      var idx = state.staging.findIndex(function(it){ return it.transId===id; });
+      if (idx >= 0) state.staging[idx].status = 'NeedReview';
+      closeModal();
+      renderStaging();
+    })
+    .api_skipItem(id, state.sheetId);
+}
+
+// ══════════════════════════════════════════════════════════════
+// Net Calculator — Manual Entry (new direct-amount WHT)
+// ══════════════════════════════════════════════════════════════
+function calcNet() {
+  var gross = parseFloat(document.getElementById('m-gross').value)||0;
+  var fee   = parseFloat(document.getElementById('m-fee').value)||0;
+  var wht   = parseFloat(document.getElementById('m-wht-amt').value)||0;
+  var net   = gross - fee - wht;
+  var fmt   = function(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2}); };
+  document.getElementById('m-c-gross').textContent = fmt(gross);
+  document.getElementById('m-c-fee').textContent   = fmt(fee);
+  document.getElementById('m-c-wht').textContent   = fmt(wht);
+  document.getElementById('m-c-net').textContent   = fmt(net);
+}
+
+// Modal WHT calc (% based — keep for classify modal)
+function calcWHT(prefix) {
+  if (prefix === 'm') { calcNet(); return; }
+  var gross = state.currentGross;
+  var rate  = parseFloat(document.getElementById(prefix+'-wht').value)||0;
+  var wht   = Math.round(gross * rate) / 100;
+  var net   = gross - wht;
+  var fmt   = function(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2}); };
+  document.getElementById(prefix+'-c-gross').textContent = fmt(gross);
+  document.getElementById(prefix+'-c-wht').textContent   = fmt(wht);
+  document.getElementById(prefix+'-c-net').textContent   = fmt(net);
+}
+
+// ══════════════════════════════════════════════════════════════
+// รับ/จ่าย/โอน direction toggle
+// ══════════════════════════════════════════════════════════════
+function setDirection(dir) {
+  var colors = { out:{out:'var(--red)',in:'#eee',tr:'#eee'}, in:{out:'#eee',in:'var(--green)',tr:'#eee'}, tr:{out:'#eee',in:'#eee',tr:'var(--navy)'} };
+  var txtcol = { out:{out:'#fff',in:'#666',tr:'#666'}, in:{out:'#666',in:'#fff',tr:'#666'}, tr:{out:'#666',in:'#666',tr:'#fff'} };
+  ['out','in','tr'].forEach(function(k){
+    var el = document.getElementById('m-toggle-'+k);
+    el.style.background = colors[dir][k];
+    el.style.color = txtcol[dir][k];
+  });
+  document.getElementById('m-direction').value = dir;
+  // Show/hide account fields
+  var single = dir !== 'tr';
+  document.getElementById('m-acc-single-wrap').style.display = single ? '' : 'none';
+  document.getElementById('m-acc-from-wrap').style.display   = dir === 'tr' ? '' : 'none';
+  document.getElementById('m-acc-to-wrap').style.display     = dir === 'tr' ? '' : 'none';
+  // Auto-set group
+  var groupMap = {out:'Expense', in:'Income', tr:'Transfer'};
+  document.getElementById('m-group').value = groupMap[dir];
+  onGroupChange('m');
+}
+
+// ══════════════════════════════════════════════════════════════
+// Sub-items
+// ══════════════════════════════════════════════════════════════
+var subItems = [];
+
+function addSubItem() {
+  var id = Date.now();
+  subItems.push({ id: id });
+  renderSubItems();
+}
+
+function removeSubItem(id) {
+  subItems = subItems.filter(function(s){ return s.id !== id; });
+  renderSubItems();
+}
+
+function renderSubItems() {
+  var cats = state.dropdowns.categories || {};
+  var allCats = [];
+  Object.keys(cats).forEach(function(g){ (cats[g]||[]).forEach(function(c){ allCats.push(c); }); });
+  var catOpts = allCats.map(function(c){ return '<option value="'+c+'">'+c+'</option>'; }).join('');
+
+  var html = subItems.map(function(s){
+    return '<div id="sub-'+s.id+'" style="display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:8px;align-items:end;margin-bottom:8px">'+
+      '<div class="form-group" style="margin:0"><label style="font-size:11px">หมวดหมู่</label>'+
+      '<select onchange="updateSubTotal()" style="padding:7px;border:1px solid #CBD5E0;border-radius:6px;font-size:13px;width:100%"><option value="">-- เลือก --</option>'+catOpts+'</select></div>'+
+      '<div class="form-group" style="margin:0"><label style="font-size:11px">จำนวน</label>'+
+      '<input type="number" step="0.01" placeholder="0.00" oninput="updateSubTotal()" style="padding:7px;border:1px solid #CBD5E0;border-radius:6px;font-size:13px;width:100%;"></div>'+
+      '<div class="form-group" style="margin:0"><label style="font-size:11px">Note</label>'+
+      '<input type="text" placeholder="รายละเอียด..." style="padding:7px;border:1px solid #CBD5E0;border-radius:6px;font-size:13px;width:100%;"></div>'+
+      '<button onclick="removeSubItem('+s.id+')" style="padding:7px 10px;background:#FFEBEE;border:none;border-radius:6px;cursor:pointer;color:var(--red);font-size:14px;align-self:end">✕</button>'+
+    '</div>';
+  }).join('');
+  document.getElementById('sub-items-list').innerHTML = html;
+  updateSubTotal();
+}
+
+function updateSubTotal() {
+  var total = 0;
+  document.querySelectorAll('#sub-items-list input[type=number]').forEach(function(el){
+    total += parseFloat(el.value)||0;
+  });
+  var sumEl = document.getElementById('sub-items-sum');
+  var gross = parseFloat(document.getElementById('m-gross').value)||0;
+  if (subItems.length > 0) {
+    sumEl.style.display = 'block';
+    var diff = gross - total;
+    var color = Math.abs(diff) < 0.01 ? 'var(--green)' : 'var(--red)';
+    sumEl.innerHTML = 'รวมรายการย่อย: <strong>'+total.toLocaleString(undefined,{minimumFractionDigits:2})+'</strong> | ยอดรวมหลัก: '+gross.toLocaleString(undefined,{minimumFractionDigits:2})+' | <span style="color:'+color+'">ต่าง: '+diff.toLocaleString(undefined,{minimumFractionDigits:2})+'</span>';
+  } else {
+    sumEl.style.display = 'none';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Manual Entry
+// ══════════════════════════════════════════════════════════════
+function submitManual() {
+  var gross   = parseFloat(document.getElementById('m-gross').value)||0;
+  var fee     = parseFloat(document.getElementById('m-fee').value)||0;
+  var wht     = parseFloat(document.getElementById('m-wht-amt').value)||0;
+  var dir     = document.getElementById('m-direction').value;
+  var group   = document.getElementById('m-group').value;
+  if (!gross)  { toast('กรุณาใส่จำนวนเงิน','error'); return; }
+  if (!group)  { toast('กรุณาเลือกประเภทรายการ','error'); return; }
+
+  // Resolve account based on direction
+  var accSingle = document.getElementById('m-acc-single').value;
+  var accOut = dir === 'out' ? accSingle : (dir === 'tr' ? document.getElementById('m-acc-from').value : '');
+  var accIn  = dir === 'in'  ? accSingle : (dir === 'tr' ? document.getElementById('m-acc-to').value   : '');
+
+  var baseData = {
+    date       : document.getElementById('m-date').value,
+    headOwner  : document.getElementById('m-owner').value,
+    groupDetail: group,
+    category   : document.getElementById('m-cat').value,
+    accountOut : accOut, accountIn: accIn,
+    customer   : document.getElementById('m-customer').value,
+    tripTag    : document.getElementById('m-trip').value,
+    detail     : document.getElementById('m-detail').value,
+    grossAmount: gross, fee: fee, whtRate: 0, whtAmount: wht,
+    netAmount  : gross - fee - wht, source: 'manual',
+  };
+
+  // If sub-items exist → create one row per sub-item
+  var subRows = [];
+  document.querySelectorAll('#sub-items-list > div').forEach(function(row){
+    var inputs = row.querySelectorAll('input,select');
+    var cat    = inputs[0].value;
+    var amt    = parseFloat(inputs[1].value)||0;
+    var note   = inputs[2].value;
+    if (amt > 0) subRows.push({ category: cat, grossAmount: amt, detail: note });
+  });
+
+  // Hard block: sub-items sum must equal gross exactly
+  if (subRows.length > 0) {
+    var subSum = subRows.reduce(function(acc, s){ return acc + s.grossAmount; }, 0);
+    if (Math.abs(subSum - gross) > 0.01) {
+      toast('❌ ผลรวมรายการย่อย ('+subSum.toFixed(2)+') ไม่เท่ากับยอดหลัก ('+gross.toFixed(2)+') — กรุณาแก้ไขก่อนบันทึก', 'error');
+      return;
+    }
+  }
+
+  var toSave = subRows.length > 0
+    ? subRows.map(function(s){ return Object.assign({}, baseData, { category: s.category, grossAmount: s.grossAmount, detail: s.detail || baseData.detail, netAmount: s.grossAmount - fee - wht }); })
+    : [baseData];
+
+  var saved = 0;
+  var total = toSave.length;
+  function saveNext(i) {
+    if (i >= total) {
+      toast('✅ บันทึก '+total+' รายการ — รอตรวจสอบ','success');
+      resetManual();
+      google.script.run.withSuccessHandler(function(items){
+        state.staging = items;
+        var cnt = items.filter(function(it){ return it.status !== 'Done'; }).length;
+        document.getElementById('badge-pending').textContent = cnt;
+        if (document.getElementById('m-badge')) document.getElementById('m-badge').textContent = cnt;
+        renderStaging();
+      }).api_getStagingItems({}, state.sheetId);
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (res.success) { saved++; saveNext(i+1); }
+        else toast('❌ Error (รายการ '+(i+1)+'): '+res.error,'error');
+      })
+      .api_addManual(toSave[i], state.sheetId);
+  }
+  saveNext(0);
+}
+
+function resetManual() {
+  ['m-owner','m-group','m-cat','m-acc-single','m-acc-from','m-acc-to',
+   'm-customer','m-trip'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
+  });
+  ['m-gross','m-gross-vat','m-fee','m-wht-amt','m-detail'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('m-date').value = new Date().toISOString().split('T')[0];
+  subItems = [];
+  document.getElementById('sub-items-list').innerHTML = '';
+  document.getElementById('sub-items-sum').style.display = 'none';
+  setDirection('out');
+  calcNet();
+}
+
+// ══════════════════════════════════════════════════════════════
+// Confirmed table
+// ══════════════════════════════════════════════════════════════
+function loadConfirmed() {
+  google.script.run
+    .withSuccessHandler(function(items){
+      var tbody = document.getElementById('confirmed-body');
+      if (!items.length) {
+        tbody.innerHTML='<tr><td colspan="10" class="empty-state"><div class="emoji">📭</div><p>ยังไม่มีรายการ</p></td></tr>';
+        return;
+      }
+      tbody.innerHTML = items.map(function(it){
+        var cls = it.groupDetail==='Income'?'in':'out';
+        var netStr = Number(it.netAmount||0).toLocaleString(undefined,{minimumFractionDigits:2});
+        var fmtNet = it.groupDetail==='Income' ? '+'+netStr : (it.groupDetail==='Transfer'?'↔'+netStr:'('+netStr+')');
+        var txIdEsc = it.transId.replace(/'/g,"\\'");
+        return '<tr>'+
+          '<td style="font-family:monospace;font-size:11px;color:#718096">'+it.transId+'</td>'+
+          '<td>'+it.date+'</td>'+
+          '<td>'+(it.headOwner||'-')+'</td>'+
+          '<td style="font-size:12px">'+(it.accountOut||it.accountIn||'-')+'</td>'+
+          '<td>'+(it.customer||'-')+'</td>'+
+          '<td>'+(it.category||'-')+'</td>'+
+          '<td style="max-width:180px" title="'+(it.detail||'')+'">'+(it.detail||'-')+'</td>'+
+          '<td class="amount '+cls+'">'+fmtNet+'</td>'+
+          '<td>'+getBadge(it.groupDetail)+'</td>'+
+          '<td><button class="btn btn-gray btn-sm" onclick="openEditConfirmed(\''+txIdEsc+'\')">✏️</button></td>'+
+        '</tr>';
+      }).join('');
+    })
+    .api_getConfirmed(100, state.sheetId);
+}
+
+// ══════════════════════════════════════════════════════════════
+// Edit Confirmed
+// ══════════════════════════════════════════════════════════════
+function openEditConfirmed(transId) {
+  state.ecTransId = transId;
+  document.getElementById('ec-info').textContent = 'Trans ID: ' + transId;
+  // Pre-fill dropdowns (reset)
+  ['ec-owner','ec-group','ec-cat','ec-subcat','ec-acc-out','ec-acc-in','ec-customer','ec-trip'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('ec-detail').value = '';
+  document.getElementById('edit-confirmed-overlay').classList.add('open');
+}
+
+function closeEditConfirmed() {
+  document.getElementById('edit-confirmed-overlay').classList.remove('open');
+  state.ecTransId = null;
+}
+
+function saveEditConfirmed() {
+  if (!state.ecTransId) return;
+  var data = {
+    headOwner  : document.getElementById('ec-owner').value,
+    groupDetail: document.getElementById('ec-group').value,
+    category   : document.getElementById('ec-cat').value,
+    subCategory: document.getElementById('ec-subcat').value,
+    accountOut : document.getElementById('ec-acc-out').value,
+    accountIn  : document.getElementById('ec-acc-in').value,
+    customer   : document.getElementById('ec-customer').value,
+    tripTag    : document.getElementById('ec-trip').value,
+    detail     : document.getElementById('ec-detail').value,
+  };
+  // Remove empty strings so we don't overwrite existing values with blanks
+  Object.keys(data).forEach(function(k){ if(data[k]==='') delete data[k]; });
+
+  var btn = document.getElementById('btn-ec-save');
+  btn.disabled = true; btn.textContent = '⏳...';
+  var txId = state.ecTransId;
+  google.script.run
+    .withSuccessHandler(function(res){
+      btn.disabled = false; btn.innerHTML = '💾 บันทึก';
+      if (res && res.success) {
+        toast('✅ แก้ไขรายการที่ยืนยันแล้ว','success');
+        closeEditConfirmed();
+        loadConfirmed();
+      } else { toast('❌ Error: '+(res&&res.error||'Unknown'),'error'); }
+    })
+    .withFailureHandler(function(e){ btn.disabled=false; btn.innerHTML='💾 บันทึก'; toast('❌ '+e.message,'error'); })
+    .api_editConfirmed(txId, data, state.sheetId);
+}
+
+// ══════════════════════════════════════════════════════════════
+// CSV Import
+// ══════════════════════════════════════════════════════════════
+function handleFileSelect(e) { loadCSV(e.target.files[0]); }
+function handleDrop(e) { e.preventDefault(); document.getElementById('upload-area').classList.remove('drag'); loadCSV(e.dataTransfer.files[0]); }
+
+function loadCSV(file) {
+  if (!file) return;
+  var ext = file.name.split('.').pop().toLowerCase();
+  if (ext !== 'csv' && ext !== 'txt') {
+    toast('❌ รองรับเฉพาะ .csv และ .txt เท่านั้น (ไฟล์ที่เลือก: .'+ext+')','error');
+    document.getElementById('imp-file').value = '';
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    state.csvContent = e.target.result;
+    // Sanity check — PDF binary starts with %PDF
+    if (state.csvContent.startsWith('%PDF')) {
+      toast('❌ ไฟล์นี้เป็น PDF — กรุณาดาวน์โหลด Statement แบบ CSV จากธนาคาร','error');
+      state.csvContent = null;
+      document.getElementById('imp-file').value = '';
+      return;
+    }
+    previewCSV(file.name, state.csvContent);
+  };
+  reader.readAsText(file,'utf-8');
+}
+
+function previewCSV(name, content) {
+  var lines = content.split('\n').slice(0,6);
+  document.getElementById('imp-filename').textContent = '📄 '+name;
+  var firstRow = lines[0] ? lines[0].split(',') : [];
+  document.getElementById('imp-head').innerHTML = firstRow.map(function(h){ return '<th>'+h.replace(/"/g,'')+'</th>'; }).join('');
+  document.getElementById('imp-body').innerHTML = lines.slice(1,6).map(function(l){
+    return '<tr>'+l.split(',').map(function(c){ return '<td>'+c.replace(/"/g,'')+'</td>'; }).join('')+'</tr>';
+  }).join('');
+  document.getElementById('imp-preview').style.display='block';
+  document.getElementById('imp-result').style.display='none';
+}
+
+function doImport() {
+  if (!state.csvContent) { toast('กรุณาเลือกไฟล์ก่อน','error'); return; }
+  var bank    = document.getElementById('imp-bank').value;
+  var account = document.getElementById('imp-account').value;
+  toast('⏳ กำลัง import...','info');
+  google.script.run
+    .withSuccessHandler(function(res){
+      var div = document.getElementById('imp-result');
+      div.style.display='block';
+      if (res.success) {
+        div.innerHTML='<div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:14px">'+
+          '<strong style="color:#2E7D32">✅ Import สำเร็จ!</strong><br>'+
+          'เพิ่ม: <strong>'+res.added+'</strong> รายการ | ข้าม: '+res.skipped+' รายการ | ทั้งหมด: '+res.total+' รายการ'+
+          '</div>';
+        toast('✅ Import '+res.added+' รายการ','success');
+        loadAll();
+      } else {
+        div.innerHTML='<div style="background:#FFEBEE;border:1px solid #EF9A9A;border-radius:8px;padding:14px">'+
+          '<strong style="color:#C62828">❌ Error:</strong> '+res.error+'</div>';
+        toast('❌ Import failed','error');
+      }
+    })
+    .withFailureHandler(function(e){ toast('❌ Error: '+e.message,'error'); })
+    .api_importCSV(state.csvContent, bank, account);
+}
+
+// ══════════════════════════════════════════════════════════════
+// Import tabs (CSV / PDF)
+// ══════════════════════════════════════════════════════════════
+function switchImportTab(tab) {
+  document.getElementById('imp-csv-tab').style.display = tab === 'csv' ? '' : 'none';
+  document.getElementById('imp-pdf-tab').style.display = tab === 'pdf' ? '' : 'none';
+  var csvBtn = document.getElementById('imp-tab-csv');
+  var pdfBtn = document.getElementById('imp-tab-pdf');
+  if (tab === 'csv') {
+    csvBtn.style.color = 'var(--navy)'; csvBtn.style.borderBottomColor = 'var(--navy)';
+    pdfBtn.style.color = 'var(--gray)'; pdfBtn.style.borderBottomColor = 'transparent';
+  } else {
+    pdfBtn.style.color = 'var(--navy)'; pdfBtn.style.borderBottomColor = 'var(--navy)';
+    csvBtn.style.color = 'var(--gray)'; csvBtn.style.borderBottomColor = 'transparent';
+  }
+}
+
+function doImportPDF() {
+  var url     = (document.getElementById('pdf-url').value || '').trim();
+  var bank    = document.getElementById('pdf-bank').value;
+  var account = document.getElementById('pdf-account').value;
+  if (!url) { toast('กรุณาวาง Google Drive link หรือ File ID','error'); return; }
+
+  var btn = document.getElementById('btn-import-pdf');
+  btn.disabled = true; btn.textContent = '⏳ กำลัง OCR...';
+  document.getElementById('pdf-result').style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(res){
+      btn.disabled = false; btn.innerHTML = '🚀 Import PDF';
+      var div = document.getElementById('pdf-result');
+      div.style.display = 'block';
+      if (res.success) {
+        div.innerHTML = '<div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:14px">'+
+          '<strong style="color:#2E7D32">✅ Import PDF สำเร็จ!</strong><br>'+
+          'เพิ่ม: <strong>'+res.added+'</strong> รายการ | ซ้ำ: '+res.duplicates+' | ข้าม: '+res.skipped+' | OCR บรรทัด: '+(res.rawLines||'-')+'</div>';
+        toast('✅ Import PDF '+res.added+' รายการ','success');
+        loadAll();
+      } else {
+        div.innerHTML = '<div style="background:#FFEBEE;border:1px solid #EF9A9A;border-radius:8px;padding:14px">'+
+          '<strong style="color:#C62828">❌ Error:</strong> '+res.error+'</div>';
+        toast('❌ PDF import ล้มเหลว','error');
+      }
+    })
+    .withFailureHandler(function(e){ btn.disabled=false; btn.innerHTML='🚀 Import PDF'; toast('❌ Error: '+e.message,'error'); })
+    .api_importPDF(url, bank, account, state.sheetId);
+}
+
+// ══════════════════════════════════════════════════════════════
+// Batch Entry
+// ══════════════════════════════════════════════════════════════
+var batchRows = [];
+
+function _makeBatchRowHtml(idx, defaults) {
+  var today  = new Date().toISOString().split('T')[0];
+  var accs   = (state.dropdowns.accounts || []).map(function(a){ return '<option value="'+a+'">'+a+'</option>'; }).join('');
+  var cats   = [];
+  var catMap = state.dropdowns.categories || {};
+  Object.keys(catMap).forEach(function(g){ (catMap[g]||[]).forEach(function(c){ cats.push(c); }); });
+  var catOpts = cats.map(function(c){ return '<option value="'+c+'">'+c+'</option>'; }).join('');
+  var defGroup = (defaults && defaults.group) || document.getElementById('bt-group').value || 'Expense';
+  var defAcc   = (defaults && defaults.account) || document.getElementById('bt-account').value || '';
+
+  return '<tr id="btr-'+idx+'" style="border-bottom:1px solid #EDF2F7">'+
+    '<td style="padding:4px 6px"><input type="date" value="'+today+'" style="width:130px;padding:5px;border:1px solid #CBD5E0;border-radius:4px;font-size:12px"></td>'+
+    '<td style="padding:4px 6px"><select onchange="updateBatchSummary()" style="padding:5px;border:1px solid #CBD5E0;border-radius:4px;font-size:12px;width:90px">'+
+      '<option value="Expense"'+(defGroup==='Expense'?' selected':'')+'>Expense</option>'+
+      '<option value="Income"'+(defGroup==='Income'?' selected':'')+'>Income</option>'+
+      '<option value="Transfer"'+(defGroup==='Transfer'?' selected':'')+'>Transfer</option>'+
+    '</select></td>'+
+    '<td style="padding:4px 6px"><select data-def-acc="'+defAcc+'" style="padding:5px;border:1px solid #CBD5E0;border-radius:4px;font-size:12px;width:130px">'+
+      '<option value="">-- เลือก --</option>'+accs+
+    '</select></td>'+
+    '<td style="padding:4px 6px"><select style="padding:5px;border:1px solid #CBD5E0;border-radius:4px;font-size:12px;width:120px">'+
+      '<option value="">-- เลือก --</option>'+catOpts+
+    '</select></td>'+
+    '<td style="padding:4px 6px"><input type="text" placeholder="รายละเอียด..." style="width:170px;padding:5px;border:1px solid #CBD5E0;border-radius:4px;font-size:12px"></td>'+
+    '<td style="padding:4px 6px"><input type="number" step="0.01" placeholder="0.00" oninput="updateBatchSummary()" style="width:100px;padding:5px;border:1px solid #CBD5E0;border-radius:4px;font-size:12px;text-align:right"></td>'+
+    '<td style="padding:4px 6px;text-align:center"><button onclick="removeBatchRow('+idx+')" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px">✕</button></td>'+
+  '</tr>';
+}
+
+var _btIdx = 0;
+function addBatchRow() {
+  var idx = _btIdx++;
+  batchRows.push(idx);
+  var tbody = document.getElementById('bt-body');
+  var tr = document.createElement('tr');
+  tr.outerHTML; // dummy
+  tbody.insertAdjacentHTML('beforeend', _makeBatchRowHtml(idx));
+  // Set default account after insertion (via data-def-acc attribute)
+  var accEl = document.querySelector('#btr-'+idx+' td:nth-child(3) select');
+  if (accEl) {
+    var defAcc = accEl.getAttribute('data-def-acc') || document.getElementById('bt-account').value;
+    if (defAcc) accEl.value = defAcc;
+  }
+  updateBatchSummary();
+}
+
+function removeBatchRow(idx) {
+  batchRows = batchRows.filter(function(i){ return i !== idx; });
+  var row = document.getElementById('btr-'+idx);
+  if (row) row.remove();
+  updateBatchSummary();
+}
+
+function clearBatch() {
+  batchRows = [];
+  document.getElementById('bt-body').innerHTML = '';
+  document.getElementById('bt-summary').style.display = 'none';
+  document.getElementById('bt-result').style.display = 'none';
+  document.getElementById('bt-count').textContent = '0 แถว';
+}
+
+function updateBatchSummary() {
+  var totalOut = 0, totalIn = 0, count = 0;
+  batchRows.forEach(function(idx) {
+    var row = document.getElementById('btr-'+idx);
+    if (!row) return;
+    var groupEl = row.querySelector('select');
+    var numEl   = row.querySelector('input[type=number]');
+    var group   = groupEl ? groupEl.value : '';
+    var amt     = numEl   ? (parseFloat(numEl.value) || 0) : 0;
+    if (amt > 0) {
+      count++;
+      if (group === 'Income') totalIn += amt;
+      else totalOut += amt;
+    }
+  });
+  document.getElementById('bt-count').textContent = batchRows.length + ' แถว';
+  var sumEl = document.getElementById('bt-summary');
+  if (count > 0) {
+    var fmt = function(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2}); };
+    sumEl.style.display = 'block';
+    sumEl.innerHTML = 'รายรับ: <span style="color:var(--green);font-weight:700">+'+fmt(totalIn)+'</span> | '+
+                      'รายจ่าย: <span style="color:var(--red);font-weight:700">('+fmt(totalOut)+')</span> | '+
+                      'สุทธิ: <span style="font-weight:700">'+(totalIn-totalOut>=0?'+':'')+(totalIn-totalOut).toLocaleString(undefined,{minimumFractionDigits:2})+'</span>';
+  } else {
+    sumEl.style.display = 'none';
+  }
+}
+
+function submitBatch() {
+  var defOwner = document.getElementById('bt-owner').value;
+  var rows = [];
+  var hasError = false;
+
+  batchRows.forEach(function(idx) {
+    var row = document.getElementById('btr-'+idx);
+    if (!row) return;
+    var selects = row.querySelectorAll('select');         // [group, account, category]
+    var dateEl  = row.querySelector('input[type=date]');
+    var textEl  = row.querySelector('input[type=text]');
+    var numEl   = row.querySelector('input[type=number]');
+    var date    = dateEl ? dateEl.value : '';
+    var group   = selects[0] ? selects[0].value : '';
+    var account = selects[1] ? selects[1].value : '';
+    var cat     = selects[2] ? selects[2].value : '';
+    var detail  = textEl ? textEl.value : '';
+    var gross   = numEl ? (parseFloat(numEl.value)||0) : 0;
+
+    if (!gross) return; // skip blank rows
+    if (!group) { toast('แถว '+(idx+1)+': กรุณาเลือกประเภทรายการ','error'); hasError=true; return; }
+
+    rows.push({
+      date       : date,
+      headOwner  : defOwner,
+      groupDetail: group,
+      category   : cat,
+      accountOut : group === 'Income' ? '' : account,
+      accountIn  : group === 'Income' ? account : '',
+      detail     : detail,
+      grossAmount: gross,
+      netAmount  : gross,
+      source     : 'batch',
+    });
+  });
+
+  if (hasError) return;
+  if (rows.length === 0) { toast('ไม่มีรายการที่มียอดเงิน','error'); return; }
+
+  var btn = document.getElementById('btn-bt-save');
+  btn.disabled = true; btn.textContent = '⏳ กำลังบันทึก '+rows.length+' รายการ...';
+  document.getElementById('bt-result').style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(res){
+      btn.disabled = false; btn.innerHTML = '✅ บันทึกทั้งหมด';
+      var div = document.getElementById('bt-result');
+      div.style.display = 'block';
+      if (res.failed === 0) {
+        div.innerHTML = '<div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:12px">'+
+          '<strong style="color:#2E7D32">✅ บันทึกสำเร็จ '+res.success+' รายการ!</strong></div>';
+        toast('✅ บันทึก '+res.success+' รายการ','success');
+        clearBatch();
+        loadAll();
+      } else {
+        div.innerHTML = '<div style="background:#FFEBEE;border:1px solid #EF9A9A;border-radius:8px;padding:12px">'+
+          '<strong style="color:#C62828">บันทึกสำเร็จ: '+res.success+' | ล้มเหลว: '+res.failed+'</strong><br>'+
+          res.errors.slice(0,3).join('<br>')+'</div>';
+        toast('⚠️ บันทึกได้ '+res.success+'/'+rows.length,'error');
+      }
+    })
+    .withFailureHandler(function(e){ btn.disabled=false; btn.innerHTML='✅ บันทึกทั้งหมด'; toast('❌ '+e.message,'error'); })
+    .api_addBatch(rows, state.sheetId);
+}
+
+// ══════════════════════════════════════════════════════════════
+// Stats refresh
+// ══════════════════════════════════════════════════════════════
+function refreshStats() {
+  google.script.run
+    .withSuccessHandler(renderStats)
+    .api_getStats(state.sheetId);
+}
+
+// ══════════════════════════════════════════════════════════════
+// Theme system
+// เพิ่มธีมใหม่: (1) เพิ่ม entry ใน THEMES (2) เพิ่ม [data-theme="x"] CSS (3) เพิ่ม .theme-dot ใน sidebar
+// ══════════════════════════════════════════════════════════════
+var THEMES = {
+  candy:  { label:'🍬 Candy Pop',  icon:'🍬', mark:'✦',  loginBg:'#26215C', loginBtn:'#534AB7' },
+  sakura: { label:'🌸 Sakura',     icon:'🌸', mark:'🌸', loginBg:'#72243E', loginBtn:'#D4537E' },
+  powder: { label:'❄ Powder Snow', icon:'❄',  mark:'❄',  loginBg:'#042C53', loginBtn:'#185FA5' },
+};
+var THEME_ORDER = ['candy','sakura','powder'];
+
+function switchTheme(name) {
+  if (!THEMES[name]) return;
+  document.documentElement.setAttribute('data-theme', name);
+  localStorage.setItem('ft_theme', name);
+  var t = THEMES[name];
+
+  // sidebar dots
+  document.querySelectorAll('.theme-dot').forEach(function(d){
+    d.classList.toggle('active', d.getAttribute('data-t') === name);
+  });
+  // mobile icon
+  var mIcon = document.getElementById('m-theme-icon');
+  if (mIcon) mIcon.textContent = t.icon;
+  // login overlay
+  var overlay = document.getElementById('pin-overlay');
+  if (overlay) overlay.style.background = t.loginBg;
+  var loginBtn = document.querySelector('#pin-overlay button');
+  if (loginBtn) loginBtn.style.background = t.loginBtn;
+
+  toast('ธีม ' + t.label, 'info');
+}
+
+function cycleTheme() {
+  var cur = document.documentElement.getAttribute('data-theme') || 'candy';
+  var idx = THEME_ORDER.indexOf(cur);
+  var next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
+  switchTheme(next);
+}
+
+function initTheme() {
+  var saved = localStorage.getItem('ft_theme') || 'candy';
+  if (!THEMES[saved]) saved = 'candy';
+  // apply without toast
+  document.documentElement.setAttribute('data-theme', saved);
+  document.querySelectorAll('.theme-dot').forEach(function(d){
+    d.classList.toggle('active', d.getAttribute('data-t') === saved);
+  });
+  var mIcon = document.getElementById('m-theme-icon');
+  if (mIcon) mIcon.textContent = THEMES[saved].icon;
+  var t = THEMES[saved];
+  var overlay = document.getElementById('pin-overlay');
+  if (overlay) overlay.style.background = t.loginBg;
+  var loginBtn = document.querySelector('#pin-overlay button');
+  if (loginBtn) loginBtn.style.background = t.loginBtn;
+}
+
+// ══════════════════════════════════════════════════════════════
+// Toast notifications
+// ══════════════════════════════════════════════════════════════
+function toast(msg, type) {
+  var c = document.getElementById('toast');
+  var d = document.createElement('div');
+  d.className='toast '+(type||'');
+  d.textContent=msg;
+  c.appendChild(d);
+  setTimeout(function(){ if(d.parentNode) d.parentNode.removeChild(d); }, 3500);
+}
+</script>
+</body>
+</html>

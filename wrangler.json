@@ -1,0 +1,12 @@
+{
+  "name": "record-revenue",
+  "main": "backend/src/index.js",
+  "compatibility_date": "2026-06-16",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "record-revenue-db",
+      "database_id": "3112e08d-db8b-428c-925d-91fb50f50de4"
+    }
+  ]
+}

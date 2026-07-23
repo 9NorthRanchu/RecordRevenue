@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Revenue - ระบบบันทึกรายได้ครอบครัว</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css?v=120">
+    <!-- pdf-lib -->
+    <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+    <!-- pdf.js (Mozilla) for AES-256 fallback -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+</head>
+<body>
+    <!-- App Container -->
+    <div id="app">
+        <!-- Login Page -->
+        <div id="login-page" class="page-view active">
+            <div class="login-card glass">
+                <div class="login-header">
+                    <i class="fa-solid fa-wallet login-icon"></i>
+                    <h2>บันทึกรายรับ-รายจ่ายครอบครัว</h2>
+                    <p>กรุณากรอกข้อมูลเพื่อเข้าสู่ระบบ</p>
+                </div>
+                <div class="login-form">
+                    <div class="input-group">
+                        <label for="login-username"><i class="fa-solid fa-envelope"></i> อีเมล หรือ ชื่อผู้ใช้</label>
+                        <input type="text" id="login-username" placeholder="กรอกอีเมล หรือ ชื่อผู้ใช้" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="login-password"><i class="fa-solid fa-lock"></i> รหัสผ่าน</label>
+                        <input type="password" id="login-password" placeholder="กรอกรหัสผ่าน" required>
+                    </div>
+                    <div id="login-error" class="validation-warning hidden" style="margin-bottom: 15px; text-align: center; color: var(--danger-color); font-weight: bold;"></div>
+                    <button id="btn-login" class="btn btn-primary btn-block">
+                        <i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ
+                    </button>
+                    
+                    <div style="margin: 25px 0; display: flex; align-items: center; justify-content: center; gap: 10px;">
+                        <hr style="flex: 1; border: 0; border-top: 1px solid #cbd5e1;">
+                        <span style="font-size: 0.85rem; color: #64748b;">สำหรับเพื่อนร่วมทริป</span>
+                        <hr style="flex: 1; border: 0; border-top: 1px solid #cbd5e1;">
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="login-trip-password"><i class="fa-solid fa-plane"></i> Trip Password (รหัสผ่านทริป)</label>
+                        <input type="password" id="login-trip-password" placeholder="กรอกรหัสทริปที่ได้รับ" required>
+                    </div>
+                    <button id="btn-guest-login" class="btn btn-block" style="background:#0ea5e9;color:white;border:none;padding:12px;border-radius:12px;font-weight:600;cursor:pointer;" onclick="submitGuestLogin()">
+                        <i class="fa-solid fa-users"></i> เข้าสู่หน้ากองกลาง
+                    </button>
+                    <div id="guest-login-error" class="validation-warning hidden" style="margin-top: 15px; text-align: center; color: var(--danger-color); font-weight: bold;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Workspace (Hidden on Login) -->
+        <div id="workspace" class="workspace hidden">
+            <!-- Sidebar for Desktop -->
+            <aside class="sidebar glass" id="main-sidebar">
+                <div class="sidebar-brand">
+                    <div class="brand-logo-text">
+                        <i class="fa-solid fa-circle-dollar-to-slot"></i>
+                        <span class="brand-text">Family Finance <small style="font-size: 8px; opacity: 0.6;">v169</small></span>
+                    </div>
+                    <button id="sidebar-toggle" class="btn btn-sm btn-icon toggle-btn">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                </div>
+                <div class="user-profile">
+                    <div class="user-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="user-info">
+                        <div class="user-name" id="current-user-name">นาย ก</div>
+                        <div class="user-role" id="display-user-role">ผู้ดูแลระบบ</div>
+                    </div>
+                </div>
+                
+                <nav class="sidebar-nav">
+                    <a href="#" class="nav-item active" data-target="dashboard"><i class="fa-solid fa-chart-line"></i> <span>ภาพรวมแผงควบคุม</span></a>
+                    <a href="#" class="nav-item" data-target="pending"><i class="fa-solid fa-clock-rotate-left"></i> <span>รอตรวจสอบ</span> <span id="badge-pending" class="badge">0</span></a>
+                    <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-file-invoice-dollar"></i> <span>ประวัติธุรกรรม</span></a>
+                    <!-- grid-input merged into pending -->
+                    <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i> <span>ทะเบียนลูกหนี้/เจ้าหนี้</span></a>
+                    <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i> <span>TRIPS</span></a>
+                    <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-pie"></i> <span>รายงานทางการเงิน</span></a>
+                    <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i> <span>ตั้งค่าระบบ</span></a>
+                </nav>
+                <!-- QR Code Box in Sidebar -->
+                <div class="sidebar-qr-box admin-only hidden" style="margin: 20px 15px; padding: 12px; background: rgba(255, 255, 255, 0.4); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.5); text-align: center; font-size: 0.85rem;">
+                    <p style="font-weight: bold; color: var(--primary-dark); margin-bottom: 8px; font-size: 0.85rem;"><i class="fa-solid fa-qrcode"></i> LINE BOT SLIP OCR</p>
+                    <div class="qr-code-placeholder" style="margin-bottom: 8px; display: flex; justify-content: center;">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://line.me/R/ti/p/@recordrevenue" alt="LINE Bot QR Code" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                    </div>
+                    <span style="color: var(--text-secondary); display: block; font-size: 0.75rem; line-height: 1.2;">สแกนแอดไลน์เพื่อส่งรูปสลิป</span>
+                </div>
+                <div class="sidebar-footer">
+                    <!-- Theme Switcher moved here -->
+                    <div class="sidebar-theme-switcher" style="padding: 0 0 10px 0; margin-bottom: 10px;">
+                        <select id="theme-selector" style="width: 100%; padding: 8px; border-radius: 8px; font-size: 0.85rem; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.8); cursor: pointer; font-family: var(--font-thai);">
+                            <option value="kawaii">🎀 Kawaii (teal · ม่วง · ชมพู)</option>
+                            <option value="sakura">🌸 Sakura (ชมพูซากุระ)</option>
+                            <option value="fuji">🗻 Fuji (ฟ้า · อรุณชมพู)</option>
+                            <option value="hokkaido">❄️ Hokkaido (หิมะฟ้า · ลาเวนเดอร์)</option>
+                            <option value="anime">🍃 Anime (เขียวมิ้นต์)</option>
+                            <option value="ghibli">🌿 Ghibli (ฟ้า · เขียว · ครีม)</option>
+                        </select>
+                    </div>
+                    <button id="btn-logout" class="btn btn-danger btn-block"><i class="fa-solid fa-power-off"></i> <span>ออกจากระบบ</span></button>
+                </div>
+            </aside>
+
+            <!-- Main Content Area -->
+            <main class="main-content">
+                <!-- Top Header -->
+                <header class="top-header glass" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px;">
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; min-width: 0; flex: 1 1 auto; overflow: visible;">
+                        <h1 id="page-title" style="margin: 0; white-space: nowrap; font-size: 1.5rem; flex-shrink: 0;">ภาพรวมระบบการเงิน</h1>
+                        
+                        <!-- Pending Actions Bar — 1 row -->
+                        <div id="pending-import-actions" style="display: none; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;">
+
+                            <!-- + เพิ่มรายการ -->
+                            <button id="btn-pending-add-row"
+                                style="height: 28px; padding: 0 12px; display: flex; align-items: center; gap: 5px; font-size: 0.75rem; font-weight: 700; background: #3B82F6; color: #fff; border: none; border-radius: 8px; cursor: pointer; white-space: nowrap; flex-shrink: 0;"
+                                title="เพิ่มรายการใหม่"
+                                onmouseover="this.style.background='#2563EB'" onmouseout="this.style.background='#3B82F6'">
+                                <i class="fa-solid fa-plus" style="font-size: 0.8rem;"></i> Add Item
+                            </button>
+
+                            <span style="width: 1px; height: 18px; background: rgba(0,0,0,0.13); flex-shrink: 0;"></span>
+
+                            <!-- PDF Statement group: [icon | select 280px | ↑] -->
+                            <div style="display: flex; align-items: stretch; background: rgba(139,92,246,0.07); border: 1px solid rgba(139,92,246,0.22); border-radius: 8px; overflow: visible; flex-shrink: 0;">
+                                <span style="padding: 0 8px; display: flex; align-items: center; font-size: 0.8rem; color: #7C3AED; border-right: 1px solid rgba(139,92,246,0.18);">
+                                    <i class="fa-solid fa-file-pdf"></i>
+                                </span>
+                                <select id="import-account-selector" class="form-select"
+                                    style="width: 280px; height: 28px; padding: 2px 8px; font-size: 14px; font-weight: 600; border: none; background: rgba(255,255,255,0.12); color: #6D28D9; outline: none; cursor: pointer; border-radius: 0;"
+                                    title="เลือกบัญชีธนาคาร">
+                                    <option value="">Statement</option>
+                                </select>
+                                <input type="file" id="statement-pdf-input" accept="application/pdf" style="display: none;">
+                                <button type="button" id="btn-trigger-statement-upload"
+                                    style="width: 32px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; background: #8B5CF6; color: #fff; border: none; border-left: 1px solid rgba(139,92,246,0.18); cursor: pointer; flex-shrink: 0;"
+                                    title="อัปโหลด PDF Statement"
+                                    onmouseover="this.style.background='#7C3AED'" onmouseout="this.style.background='#8B5CF6'">
+                                    <i class="fa-solid fa-cloud-arrow-up" style="font-size: 0.8rem;"></i>
+                                </button>
+                                <div id="statement-upload-status" style="font-size: 0.72rem; font-weight: bold; color: #8B5CF6; padding: 0 6px; white-space: nowrap; display: flex; align-items: center;" class="hidden"></div>
+                            </div>
+
+                            <!-- Import dropdown button -->
+                            <div style="position: relative; flex-shrink: 0;" id="import-dropdown-wrapper">
+                                <button id="btn-import-dropdown"
+                                    style="height: 28px; padding: 0 12px; display: flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 700; background: #6366F1; color: #fff; border: none; border-radius: 8px; cursor: pointer; white-space: nowrap;"
+                                    title="เมนูนำเข้าข้อมูล"
+                                    onclick="(function(e){e.stopPropagation();var m=document.getElementById('import-dropdown-menu');m.style.display=m.style.display==='block'?'none':'block';})(event)"
+                                    onmouseover="this.style.background='#4F46E5'" onmouseout="this.style.background='#6366F1'">
+                                    <i class="fa-solid fa-upload" style="font-size: 0.8rem;"></i>
+                                    Import
+                                    <i class="fa-solid fa-chevron-down" style="font-size: 0.65rem; opacity: 0.85;"></i>
+                                </button>
+
+                                <!-- Dropdown menu -->
+                                <div id="import-dropdown-menu"
+                                    style="display: none; position: absolute; top: calc(100% + 5px); left: 0; min-width: 210px; background: #fff; border: 1px solid #E5E7EB; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.13); z-index: 2000; overflow: hidden; padding: 4px 0;"
+                                    onclick="event.stopPropagation()">
+
+                                    <!-- Download Template -->
+                                    <div id="btn-pending-download-template"
+                                        style="padding: 7px 14px; display: flex; align-items: center; gap: 9px; font-size: 0.78rem; font-weight: 600; color: #059669; cursor: pointer; user-select: none;"
+                                        onmouseover="this.style.background='#F0FDF4'" onmouseout="this.style.background='transparent'"
+                                        onclick="document.getElementById('import-dropdown-menu').style.display='none'">
+                                        <i class="fa-solid fa-file-arrow-down" style="font-size: 0.8rem; width: 14px; text-align: center;"></i> Download Template
+                                    </div>
+
+                                    <div style="height: 1px; background: #F3F4F6; margin: 2px 8px;"></div>
+
+                                    <!-- Import Excel -->
+                                    <div style="padding: 7px 14px; display: flex; align-items: center; gap: 9px; font-size: 0.78rem; font-weight: 600; color: #D97706; cursor: pointer; user-select: none;"
+                                        onmouseover="this.style.background='#FFFBEB'" onmouseout="this.style.background='transparent'"
+                                        onclick="document.getElementById('import-dropdown-menu').style.display='none'; document.getElementById('btn-pending-upload-csv').click();">
+                                        <i class="fa-solid fa-file-arrow-up" style="font-size: 0.8rem; width: 14px; text-align: center;"></i> Import Excel
+                                    </div>
+                                    <input type="file" id="btn-pending-upload-csv" accept=".xlsx,.xls" style="display: none;">
+
+                                    <div style="height: 1px; background: #F3F4F6; margin: 2px 8px;"></div>
+
+                                    <!-- Bulk — รอตรวจสอบ -->
+                                    <div style="padding: 7px 14px; display: flex; align-items: center; gap: 9px; font-size: 0.78rem; font-weight: 600; color: #4338CA; cursor: pointer; user-select: none;"
+                                        onmouseover="this.style.background='#EEF2FF'" onmouseout="this.style.background='transparent'"
+                                        onclick="document.getElementById('bulk-import-status-select').value='PENDING_REVIEW'; document.getElementById('import-dropdown-menu').style.display='none'; document.getElementById('bulk-import-file-input').click();">
+                                        <i class="fa-solid fa-rocket" style="font-size: 0.8rem; width: 14px; text-align: center;"></i>
+                                        <span>Bulk <span style="font-weight: 400; color: #6366F1;">— รอตรวจสอบ</span></span>
+                                    </div>
+
+                                    <!-- Bulk — ยืนยันแล้ว -->
+                                    <div style="padding: 7px 14px; display: flex; align-items: center; gap: 9px; font-size: 0.78rem; font-weight: 600; color: #0369A1; cursor: pointer; user-select: none;"
+                                        onmouseover="this.style.background='#EFF6FF'" onmouseout="this.style.background='transparent'"
+                                        onclick="document.getElementById('bulk-import-status-select').value='CONFIRMED'; document.getElementById('import-dropdown-menu').style.display='none'; document.getElementById('bulk-import-file-input').click();">
+                                        <i class="fa-solid fa-circle-check" style="font-size: 0.8rem; width: 14px; text-align: center;"></i>
+                                        <span>Bulk <span style="font-weight: 400; color: #3B82F6;">— ยืนยันแล้ว</span></span>
+                                    </div>
+                                </div>
+
+                                <!-- Hidden inputs (IDs kept for JS compatibility) -->
+                                <select id="bulk-import-status-select" style="display: none;">
+                                    <option value="PENDING_REVIEW">รอตรวจสอบ</option>
+                                    <option value="CONFIRMED">ยืนยันแล้ว</option>
+                                </select>
+                                <input type="file" id="bulk-import-file-input" accept=".xlsx,.xls" style="display: none;">
+                            </div>
+
+                        </div>
+                        <!-- close import dropdown when clicking outside -->
+                        <script>document.addEventListener('click', function(){ var m=document.getElementById('import-dropdown-menu'); if(m) m.style.display='none'; });</script>
+
+                        <!-- Bulk Import Progress Overlay -->
+                        <div id="bulk-import-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 9999; align-items: center; justify-content: center;">
+                            <div style="background: #fff; border-radius: 16px; padding: 32px 40px; min-width: 420px; max-width: 560px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                                <div style="font-size: 2rem; margin-bottom: 12px;">🚀</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: #1E293B; margin-bottom: 6px;">Bulk Import กำลังทำงาน...</div>
+                                <div id="bulk-import-label" style="font-size: 0.82rem; color: #64748B; margin-bottom: 20px; min-height: 36px; line-height: 1.4;">กำลังเตรียมข้อมูล...</div>
+                                <div style="background: #F1F5F9; border-radius: 8px; height: 14px; overflow: hidden; margin-bottom: 10px;">
+                                    <div id="bulk-import-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #6366F1, #8B5CF6); border-radius: 8px; transition: width 0.3s ease;"></div>
+                                </div>
+                                <div style="font-size: 0.75rem; color: #94A3B8;">อย่าปิดหน้าเว็บระหว่างนำเข้า</div>
+                            </div>
+                        </div>
+
+                        <!-- Grid Input Actions (Hidden by default, shown in grid-input view) -->
+                        <div id="grid-input-actions" style="display: none; align-items: center; gap: 8px; background: rgba(59, 130, 246, 0.08); padding: 4px 12px; border-radius: 8px; border: 1px dashed rgba(59, 130, 246, 0.4);">
+                            <span style="font-size: 0.85rem; font-weight: bold; color: #3B82F6; white-space: nowrap;">จัดการข้อมูล</span>
+                            <button id="btn-grid-add-row" class="btn btn-primary btn-sm" style="white-space: nowrap; padding: 4px 10px; height: 28px; display: flex; align-items: center; justify-content: center; width: 36px; font-size: 0.9rem; background-color: #3B82F6; border-color: #3B82F6; border-radius: 6px;" title="เพิ่มแถว"><i class="fa-solid fa-plus"></i></button>
+                            <button id="btn-grid-download-template" class="btn btn-primary btn-sm" style="white-space: nowrap; padding: 4px 10px; height: 28px; display: flex; align-items: center; justify-content: center; width: 36px; font-size: 0.9rem; background-color: #10B981; border-color: #10B981; border-radius: 6px;" title="ดาวน์โหลดแพทเทิร์น"><i class="fa-solid fa-download"></i></button>
+                            <label for="btn-upload-statement" class="btn btn-primary btn-sm" style="margin: 0; cursor: pointer; white-space: nowrap; padding: 4px 10px; height: 28px; display: inline-flex; align-items: center; justify-content: center; width: 36px; font-size: 0.9rem; background-color: #8B5CF6; border-color: #8B5CF6; border-radius: 6px;" title="นำเข้าไฟล์ CSV">
+                                <i class="fa-solid fa-file-csv"></i>
+                            </label>
+                            <input type="file" id="btn-upload-statement" accept=".csv" style="display: none;">
+                            <!-- Draft indicator button: shown only when saved draft exists -->
+                            <button id="btn-clear-draft" onclick="clearGridDraft()" style="display: none; white-space: nowrap; padding: 4px 10px; height: 28px; align-items: center; justify-content: center; gap: 5px; font-size: 0.85rem; font-weight: 700; background-color: #F97316; border: none; border-radius: 6px; color: #fff; cursor: pointer;" title="พบข้อมูลค้างไว้ — คลิกเพื่อลบร่าง">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="header-actions" style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+
+                        <div id="pending-filter-container" style="display: none; align-items: center; gap: 6px;">
+                            <select id="pending-sort-filter" class="form-select" style="height: 28px; padding: 2px 8px; font-size: 14px; font-weight: 600; border-radius: 8px; border: 1px solid rgba(0,0,0,0.15); background: #fff; color: #374151; outline: none; cursor: pointer;" title="เรียงลำดับตามวันที่">
+                                <option value="desc">Z-A</option>
+                                <option value="asc">A-Z</option>
+                            </select>
+                            <select id="pending-account-filter" class="form-select" style="height: 28px; padding: 2px 8px; font-size: 14px; font-weight: 600; border-radius: 8px; border: 1px solid rgba(0,0,0,0.15); background: #fff; color: #374151; outline: none; cursor: pointer; max-width: 200px;" title="กรองตามบัญชี">
+                                <option value="ALL">All</option>
+                            </select>
+                        </div>
+                        <div id="grid-filter-container" style="display: none; align-items: center; gap: 8px;">
+                            <!-- Grid account filter populated by JS -->
+                            <select id="grid-sort-filter" class="form-select" style="width: 130px; padding: 4px 8px; font-size: 0.8rem; border-radius: 6px; border: 1px solid #cccccc; background-color: #ffffff; color: #333333; margin-right: 8px;">
+                                <option value="desc">ใหม่-เก่า (Z-A)</option>
+                                <option value="asc">เก่า-ใหม่ (A-Z)</option>
+                            </select>
+                        </div>
+                        <div id="history-filter-container" style="display: none; align-items: center; gap: 8px;">
+                            <select id="history-sort-filter" class="form-select" style="width: 130px; padding: 4px 8px; font-size: 0.8rem; border-radius: 6px; border: 1px solid #cccccc; background-color: #ffffff; color: #333333;">
+                                <option value="desc">ใหม่-เก่า (Z-A)</option>
+                                <option value="asc">เก่า-ใหม่ (A-Z)</option>
+                            </select>
+                            <span style="font-size: 0.85rem; font-weight: bold; color: var(--text-secondary);">บัญชี:</span>
+                            <select id="filter-statement" class="form-select" style="width: 160px; padding: 4px 8px; font-size: 0.8rem; border-radius: 6px; border: 1px solid #cccccc; background-color: #ffffff; color: #333333;">
+                                <option value="ALL">ทั้งหมด</option>
+                            </select>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- 1. Dashboard View (Kawaii Soft v2) -->
+                <section id="view-dashboard" class="content-view active">
+                    <div id="dv2-root">
+                        <div style="text-align:center;padding:40px;color:#3E4759;">กำลังโหลด...</div>
+                    </div>
+                </section>
+
+
+                <section id="view-pending" class="content-view hidden">
+                    <div id="pending-status-summary-container" style="margin-bottom: 12px;"></div>
+                    <div id="pending-cards-container" style="display: flex; flex-direction: column; gap: 8px;">
+                        <!-- Dynamic pending transaction cards -->
+                    </div>
+                </section>
+
+                <!-- 3. History View (Search & Collapsible Details) -->
+                <section id="view-history" class="content-view hidden" style="display: flex; flex-direction: column; height: calc(100vh - 85px);">
+                    <div class="card glass search-filters-card" style="margin-top: -5px; margin-bottom: 10px; padding: 0 !important;">
+                        <div class="card-body" style="padding: 0px 15px 15px 15px;">
+                            <style>
+                                #view-history .filters-grid .input-group,
+                                        #view-history .filters-grid .filter-actions-group {
+                                            margin-bottom: 0 !important;
+                                        }
+                                        #view-history .filters-grid label {
+                                            text-align: center !important;
+                                            text-transform: capitalize !important;
+                                            margin-bottom: 4px !important;
+                                        }
+                                        #view-history .filters-grid select {
+                                            text-overflow: ellipsis;
+                                            padding-right: 20px !important;
+                                        }
+                                        #view-history .filters-grid input, 
+                                        #view-history .filters-grid select,
+                                        #view-history .filters-grid button {
+                                            height: 32px !important;
+                                            box-sizing: border-box !important;
+                                            margin: 0 !important;
+                                            line-height: normal !important;
+                                        }
+                                        #view-history .filters-grid input,
+                                        #view-history .filters-grid select {
+                                            padding-top: 0 !important;
+                                            padding-bottom: 0 !important;
+                                        }
+                                    </style>
+                                    <div class="filters-grid" style="display: flex; gap: 4px; align-items: flex-end; flex-wrap: nowrap; width: 100%;">
+
+                                        <div class="input-group" style="flex: 0.7; min-width: 0;">
+                                            <label>Start</label>
+                                            <input type="text" id="filter-start-date" placeholder="DD/MM/YY" style="padding: 4px 6px; font-size: 0.8rem; width: 100%;" oninput="let v = this.value.replace(/\D/g, ''); if(v.length > 8) v = v.slice(0,8); if(v.length > 4) v = v.slice(0,2) + '/' + v.slice(2,4) + '/' + v.slice(4); else if(v.length > 2) v = v.slice(0,2) + '/' + v.slice(2); this.value = v;">
+                                        </div>
+                                        <div class="input-group" style="flex: 0.7; min-width: 0;">
+                                            <label>End</label>
+                                            <input type="text" id="filter-end-date" placeholder="DD/MM/YY" style="padding: 4px 6px; font-size: 0.8rem; width: 100%;" oninput="let v = this.value.replace(/\D/g, ''); if(v.length > 8) v = v.slice(0,8); if(v.length > 4) v = v.slice(0,2) + '/' + v.slice(2,4) + '/' + v.slice(4); else if(v.length > 2) v = v.slice(0,2) + '/' + v.slice(2); this.value = v;">
+                                        </div>
+                                        <div class="input-group" style="flex: 1.2; min-width: 0;">
+                                            <label>Company</label>
+                                            <select id="filter-company" style="padding: 4px 6px; font-size: 0.8rem; width: 100%;">
+                                                <option value="ALL">ทั้งหมด</option>
+                                            </select>
+                                        </div>
+                                        <div class="input-group" style="flex: 1.2; min-width: 0;">
+                                            <label>Customer</label>
+                                            <select id="filter-customer" style="padding: 4px 6px; font-size: 0.8rem; width: 100%;">
+                                                <option value="ALL">ทั้งหมด</option>
+                                            </select>
+                                        </div>
+                                        <div class="input-group" style="flex: 0.8; min-width: 0;">
+                                            <label>Caption</label>
+                                            <select id="filter-caption" style="padding: 4px 6px; font-size: 0.8rem; width: 100%;">
+                                                <option value="ALL">ทั้งหมด</option>
+                                            </select>
+                                        </div>
+                                        <div class="input-group" style="flex: 1.2; min-width: 0;">
+                                            <label>Categories</label>
+                                            <select id="filter-category" style="padding: 4px 6px; font-size: 0.8rem; width: 100%;">
+                                                <option value="ALL">ทั้งหมด</option>
+                                            </select>
+                                        </div>
+                                        <div class="input-group" style="flex: 1; min-width: 0;">
+                                            <label>Keyword</label>
+                                            <input type="text" id="filter-search" placeholder="พิมพ์คำค้นหา..." style="padding: 4px 6px; font-size: 0.8rem; width: 100%;">
+                                        </div>
+                                        <div class="filter-actions-group" style="display: flex; flex-direction: column; flex-shrink: 0;">
+                                            <label style="visibility: hidden;">Action</label>
+                                            <div style="display: flex; gap: 4px; flex-wrap: nowrap; align-items: center;">
+                                                <button id="btn-filter-search" type="button" class="btn btn-primary" title="ค้นหา" style="padding: 4px 12px; height: 32px; background: linear-gradient(135deg, #0ea5e9, #3b82f6); border: none; box-shadow: 0 2px 5px rgba(14,165,233,0.3); border-radius: 8px;"><i class="fa-solid fa-magnifying-glass"></i></button>
+                                                <button id="btn-filter-clear" type="button" class="btn btn-secondary" title="ล้างตัวกรอง" style="padding: 4px 12px; height: 32px; background: linear-gradient(135deg, #f43f5e, #e11d48); color: white; border: none; box-shadow: 0 2px 5px rgba(244,63,94,0.3); border-radius: 8px;"><i class="fa-solid fa-filter-circle-xmark"></i></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                    <div class="history-split-view" style="display: flex; gap: 15px; flex: 1; min-height: 0; margin-bottom: 0;">
+                        <!-- Master View (Left List) -->
+                        <div class="master-view card glass" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
+                            <div class="card-header" style="padding: 6px 15px; border-bottom: none; background: transparent; margin-bottom: 0;">
+                                <h4 style="margin: 0; font-size: 1.1rem; color: #0284c7; font-weight: 700;"><i class="fa-solid fa-rectangle-list" style="background: linear-gradient(135deg, #0ea5e9, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-right: 6px;"></i> รายการ Statement</h4>
+                            </div>
+                            <div class="master-list-body" id="history-master-list" style="flex: 1; overflow-y: auto; padding: 4px;">
+                                <!-- Dynamic Master Items -->
+                                <div style="text-align:center; padding: 20px; color:#aaa;">กำลังโหลด...</div>
+                            </div>
+                        </div>
+
+                        <!-- Detail View (Right Panel) -->
+                        <div class="detail-view card glass" style="flex: 0 0 450px; display: flex; flex-direction: column; overflow: hidden; position: relative; padding: 0;">
+                            <div id="history-detail-placeholder" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; text-align: center;">
+                                <i class="fa-solid fa-hand-pointer" style="font-size: 3rem; margin-bottom: 15px; opacity: 0.5;"></i>
+                                <p style="font-size: 1.1rem; margin: 0;">เลือกรายการ Statement ทางซ้ายเพื่อดูรายละเอียดและรายการย่อย</p>
+                            </div>
+                            <div id="history-detail-content" style="display: none; flex: 1; overflow-y: auto; padding: 15px;">
+                                <!-- Dynamic Detail Content -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. Grid Input View (Copy-Paste Google Sheets style) -->
+                <section id="view-grid-input" class="content-view hidden">
+                            <div id="grid-status-summary-container" style="margin-bottom: 12px;"></div>
+                            <div id="grid-input-cards-container" style="display: flex; flex-direction: column; gap: 15px;">
+                                <!-- Interactive grid cards -->
+                            </div>
+                </section>
+
+                <!-- 5. Debtor / Creditor View -->
+                <section id="view-debtor" class="content-view hidden" style="min-height: 80vh;">
+
+                    <div class="debts-neumorph-dashboard">
+                        <!-- Left Panel: Debt List -->
+                        <div class="debt-list-panel" style="padding: 15px; border-radius: 20px; background: #ffffff; border: 1px solid #e2e8f0;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h3 style="margin: 0; color: #2c3e50; font-weight: 700; font-size: 1.1rem; text-shadow: 1px 1px 2px rgba(255,255,255,0.8);"><i class="fa-solid fa-wallet" style="color: #74b9ff;"></i> ACCOUNTS</h3>
+                                <button class="btn" onclick="showDebtModal()" style="border-radius: 50%; width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; background: #e0fbfc; color: #3d5a80; border: none; box-shadow: 2px 2px 5px rgba(162, 210, 255, 0.5), -2px -2px 5px #fff;"><i class="fa-solid fa-plus"></i></button>
+                            </div>
+                            
+                            <div class="tabs" style="display: flex; gap: 10px; margin-bottom: 15px;">
+                                <button class="btn btn-outline active" id="tab-receivable" onclick="switchDebtTab('RECEIVABLE')" style="flex: 1; border-radius: 10px; background: linear-gradient(135deg, #10b981, #34d399); color: white; border: none; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); font-weight: bold; padding: 8px; cursor: pointer; transition: all 0.2s;">Receivable</button>
+                                <button class="btn btn-outline" id="tab-payable" onclick="switchDebtTab('PAYABLE')" style="flex: 1; border-radius: 10px; background: transparent; color: #64748b; border: 1px solid #cbd5e1; padding: 8px; cursor: pointer; transition: all 0.2s;">Payable</button>
+                            </div>
+
+                            <div id="debts-sidebar-list" style="display: flex; flex-direction: column; gap: 12px; max-height: 45vh; overflow-y: auto; padding-right: 5px; padding-bottom: 10px;">
+                                <!-- Debt items will be injected here -->
+                            </div>
+                            
+                            <!-- Summary Chart Placeholder -->
+                            <div id="debt-summary-chart" style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed rgba(162, 210, 255, 0.5);">
+                                <h4 style="margin: 0 0 10px 0; color: #3d5a80; font-size: 0.9rem;">Summary</h4>
+                                <div style="display: flex; align-items: center; gap: 15px;">
+                                    <div style="width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(#ffb5a7 0% 30%, #a2d2ff 30% 70%, #bde0fe 70% 100%); box-shadow: 3px 3px 8px rgba(0,0,0,0.1), -3px -3px 8px #fff;"></div>
+                                    <div style="font-size: 0.8rem; color: #666;">
+                                        <div><span style="display:inline-block; width:8px; height:8px; background:#a2d2ff; border-radius:50%; margin-right:5px;"></span> จ่ายแล้ว</div>
+                                        <div><span style="display:inline-block; width:8px; height:8px; background:#ffb5a7; border-radius:50%; margin-right:5px;"></span> คงเหลือ</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <!-- Right Panel: Debt Details & History -->
+                        <div id="debt-details-panel" style="display: none; padding: 20px; border-radius: 20px; background: #ffffff; border: 1px solid #e2e8f0;">
+                            <!-- Details injected here -->
+                        </div>
+                        
+                        <!-- Empty State -->
+                        <div id="debt-empty-state" style="display: flex; align-items: center; justify-content: center; height: 100%; min-height: 400px; border-radius: 20px; background: rgba(255,255,255,0.5); backdrop-filter: blur(10px); border: 2px dashed #a2d2ff;">
+                            <div style="text-align: center; color: #3d5a80;">
+                                <i class="fa-solid fa-hand-pointer" style="font-size: 3rem; color: #a2d2ff; margin-bottom: 15px; text-shadow: 2px 2px 4px rgba(162, 210, 255, 0.4);"></i>
+                                <h3 style="font-weight: bold; margin:0;">เลือกบัญชีหนี้สินเพื่อดูประวัติ</h3>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 5.5. Travel Trip View (Split View) -->
+                <section id="view-travel" class="content-view hidden travel-page" style="min-height: 80vh;">
+                    <div class="debts-neumorph-dashboard">
+                        <!-- Left Panel: Trip List -->
+                        <div class="debt-list-panel" style="padding: 15px; border-radius: 20px; background: #ffffff; border: 1px solid #e2e8f0; display: flex; flex-direction: column; max-height: calc(100vh - 100px);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h3 style="margin: 0; color: #2c3e50; font-weight: 700; font-size: 1.1rem; text-shadow: 1px 1px 2px rgba(255,255,255,0.8);"><i class="fa-solid fa-plane" style="color: #74b9ff;"></i> TRIPS</h3>
+                                <button class="btn" onclick="openNewTripModal()" style="border-radius: 50%; width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; background: #e0fbfc; color: #3d5a80; border: none; box-shadow: 2px 2px 5px rgba(162, 210, 255, 0.5), -2px -2px 5px #fff;"><i class="fa-solid fa-plus"></i></button>
+                            </div>
+                            
+                            <div class="tabs" style="display: flex; gap: 10px; margin-bottom: 15px;">
+                                <button class="btn btn-outline active" id="tab-trip-ongoing" onclick="switchTripTab('ONGOING')" style="flex: 1; border-radius: 10px; background: linear-gradient(135deg, #f472b6, #fb7185); color: white; border: none; box-shadow: 0 4px 6px rgba(244, 114, 182, 0.3); font-weight: bold; padding: 10px 5px; cursor: pointer; transition: all 0.2s; font-size: 0.95rem;">Ongoing</button>
+                                <button class="btn btn-outline" id="tab-trip-incoming" onclick="switchTripTab('INCOMING')" style="flex: 1; border-radius: 10px; background: #f8fafc; color: #64748b; border: 2px solid #e2e8f0; font-weight: bold; padding: 10px 5px; cursor: pointer; transition: all 0.2s; font-size: 0.95rem;">Incoming</button>
+                                <button class="btn btn-outline" id="tab-trip-memory" onclick="switchTripTab('MEMORY')" style="flex: 1; border-radius: 10px; background: #f8fafc; color: #64748b; border: 2px solid #e2e8f0; font-weight: bold; padding: 10px 5px; cursor: pointer; transition: all 0.2s; font-size: 0.95rem;">Memory</button>
+                            </div>
+
+                            <div id="travel-trips-list" style="display: flex; flex-direction: column; gap: 12px; overflow-y: auto; padding-right: 0px; padding-bottom: 10px; flex: 1;">
+                                <!-- Trip items will be injected here -->
+                            </div>
+                        </div>
+
+                        <!-- Right Panel: Trip Details -->
+                        <div id="travel-details-panel" class="travel-details-column theme-ghibli" style="display: none; padding: 0; border-radius: 20px; height: calc(100vh - 100px); overflow-y: auto; position: relative; border: none; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
+                            <div class="trip-detail-content" style="min-height: 100%;">
+                                <!-- Details injected here -->
+                            </div>
+                        </div>
+                        
+                        <!-- Empty State -->
+                        <div id="travel-empty-state" style="display: flex; align-items: center; justify-content: center; height: calc(100vh - 100px); border-radius: 20px; background: rgba(255,255,255,0.5); backdrop-filter: blur(10px); border: 2px dashed #a2d2ff;">
+                            <div style="text-align: center; color: #3d5a80;">
+                                <i class="fa-solid fa-plane-departure" style="font-size: 3rem; color: #a2d2ff; margin-bottom: 15px; text-shadow: 2px 2px 4px rgba(162, 210, 255, 0.4);"></i>
+                                <h3 style="font-weight: bold; margin:0;">เลือกทริปเพื่อดูรายละเอียด</h3>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== MODAL: New Trip ===== -->
+                <div id="new-trip-modal" class="travel-modal-overlay hidden">
+                    <div class="travel-modal-wrap travel-modal-sm">
+                        <div class="travel-modal-header" style="justify-content: space-between; padding-bottom: 5px; border-bottom: 1px solid #e2e8f0; margin-bottom: 5px;">
+                            <h2 style="margin: 0; display: flex; align-items: center; gap: 10px; color: #1e293b;"><span style="font-size: 20px;">✈️</span> New Trip</h2>
+                            <button class="travel-modal-close" onclick="closeNewTripModal()" style="font-size: 18px; color: #64748b; background: none; border: none; cursor: pointer;">✕</button>
+                        </div>
+                        <div class="travel-modal-body" id="new-trip-modal-body" style="padding-top: 0; padding-bottom: 0;">
+                            <!-- Injected by JS -->
+                        </div>
+                        <div class="travel-modal-footer" style="justify-content: center; gap: 20px; padding-top: 5px; border-top: 1px solid #e2e8f0; margin-top: 5px;">
+                            <button class="btn-travel-secondary" onclick="closeNewTripModal()" style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; background: #f8fafc; color: #ef4444; border: 1px solid #f1f5f9; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">✖</button>
+                            <button class="btn-travel-primary" onclick="saveNewTrip()" style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; background: #10b981; border: none; box-shadow: 0 4px 6px rgba(16,185,129,0.3);">✔️</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== MODAL: Add Expense ===== -->
+                <div id="add-expense-modal" class="travel-modal-overlay hidden">
+                    <div class="travel-modal-wrap travel-modal-sm">
+                        <div class="travel-modal-header">
+                            <h2>📸 บันทึกค่าใช้จ่าย</h2>
+                            <button class="travel-modal-close" onclick="closeAddExpenseModal()">✕</button>
+                        </div>
+                        <div class="travel-modal-body" id="add-expense-modal-body">
+                            <!-- Injected by JS -->
+                        </div>
+                        <div class="travel-modal-footer">
+                            <button class="btn-travel-secondary" onclick="closeAddExpenseModal()">ยกเลิก</button>
+                            <button class="btn-travel-primary" onclick="saveExpense()">✅ บันทึก</button>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- 6. Reports View -->
+                <section id="view-reports" class="content-view hidden">
+                    <div class="reports-tabs">
+                        <button class="report-tab active" data-report="wht">ภาษีหัก ณ ที่จ่าย (WHT)</button>
+                        <button class="report-tab" data-report="tb">งบทดลอง (Trial Balance)</button>
+                        <button class="report-tab" data-report="project">รายงานเฉพาะทริป / โปรเจกต์</button>
+                    </div>
+
+                    <!-- WHT Report -->
+                    <div id="report-wht-section" class="report-section active card glass">
+                        <div class="card-body">
+                            <div class="filter-row">
+                                <label>เลือกเดือน:</label>
+                                <input type="month" id="report-wht-month" value="2025-09">
+                                <label style="margin-left: 15px;">เลือก Company:</label>
+                                <select id="report-wht-entity" style="padding: 12px 15px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: #fff;">
+                                    <option value="">-- แสดงทั้งหมด (All Company) --</option>
+                                </select>
+                                <button id="btn-run-wht" class="btn btn-primary" style="margin-left: 15px;">ดูรายงาน WHT</button>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>วันที่</th>
+                                            <th>ลูกค้าผู้หักภาษี</th>
+                                            <th>เจ้าของรายได้</th>
+                                            <th>ยอดก่อนภาษี</th>
+                                            <th>ภาษีที่หัก (WHT)</th>
+                                            <th>เลขที่สลิป</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="wht-report-body">
+                                        <!-- Dynamic WHT rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trial Balance Report -->
+                    <div id="report-tb-section" class="report-section hidden card glass">
+                        <div class="card-body">
+                            <div class="filter-row">
+                                <label>เลือกบริษัท/Entity:</label>
+                                <select id="report-tb-entity">
+                                    <!-- Dynamic entities option -->
+                                </select>
+                                <button id="btn-run-tb" class="btn btn-primary">เรียกดูงบทดลอง</button>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>ชื่อหมวดบัญชี</th>
+                                            <th>ประเภทบัญชี</th>
+                                            <th>เดบิต (Debit ฿)</th>
+                                            <th>เครดิต (Credit ฿)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tb-report-body">
+                                        <!-- Dynamic Trial Balance rows -->
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="table-total">
+                                            <td colspan="2">ยอดรวมดุลบัญชี</td>
+                                            <td id="tb-total-debit">0.00</td>
+                                            <td id="tb-total-credit">0.00</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Project / Trip Report -->
+                    <div id="report-project-section" class="report-section hidden card glass">
+                        <div class="card-body">
+                            <div class="filter-row">
+                                <label>เลือกทริป / โปรเจกต์:</label>
+                                <select id="report-project-select">
+                                    <!-- Dynamic projects option -->
+                                </select>
+                                <button id="btn-run-project" class="btn btn-primary">ดูรายงานกำไร/ขาดทุนทริป</button>
+                            </div>
+                            <div class="project-summary-box">
+                                <div class="p-summary-item">
+                                    <span>รายรับรวม:</span>
+                                    <h4 id="project-total-income" class="text-success">0.00 ฿</h4>
+                                </div>
+                                <div class="p-summary-item">
+                                    <span>รายจ่ายรวม:</span>
+                                    <h4 id="project-total-expense" class="text-danger">0.00 ฿</h4>
+                                </div>
+                                <div class="p-summary-item">
+                                    <span>ดุลเงินคงเหลือ:</span>
+                                    <h4 id="project-net-balance">0.00 ฿</h4>
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>วันที่</th>
+                                            <th>หมวดรายการ</th>
+                                            <th>ผู้จ่าย (Entity)</th>
+                                            <th>รายละเอียด</th>
+                                            <th>ยอดเงิน</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="project-report-body">
+                                        <!-- Dynamic Project/Trip rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 7. Settings View -->
+                <section id="view-settings" class="content-view hidden">
+                    <div class="settings-container card glass">
+                        <div class="card-body">
+
+                            <!-- Admin View Toggle (admin only) -->
+                            <div id="settings-view-toggle" class="hidden" style="display:none; align-items:center; gap:10px; margin-bottom:14px; padding:10px 14px; background:var(--dv-amtbg,#f4f6fc); border-radius:12px; border:1px solid var(--dv-amtbd,#e2e6f0);">
+                                <span style="font-size:0.8rem; color:var(--text-secondary,#64748b); font-weight:600;">มุมมอง:</span>
+                                <div style="display:flex; border-radius:8px; overflow:hidden; border:1px solid var(--dv-amtbd,#dfe3ee);">
+                                    <button id="btn-view-admin" onclick="setSettingsViewMode('admin')" style="padding:5px 14px; font-size:0.8rem; font-weight:700; background:#6366f1; color:#fff; border:none; cursor:pointer; transition:all 0.2s;">👑 Admin (ทั้งหมด)</button>
+                                    <button id="btn-view-user" onclick="setSettingsViewMode('user')" style="padding:5px 14px; font-size:0.8rem; font-weight:600; background:#eef0f6; color:#64748b; border:none; cursor:pointer; transition:all 0.2s;">👤 User (เฉพาะฉัน)</button>
+                                </div>
+                                <span id="settings-view-label" style="font-size:0.75rem; color:var(--text-secondary,#94a3b8);">แสดงข้อมูลทั้งหมดในระบบ</span>
+                            </div>
+
+                            <div class="settings-tabs" style="display: flex; flex-wrap: nowrap; gap: 4px; padding-bottom: 8px;">
+                                <button class="settings-tab active" data-settings-tab="entities">👑 Company</button>
+                                <button class="settings-tab" data-settings-tab="contacts">👥 Customer</button>
+                                <button class="settings-tab" data-settings-tab="captions">🏷️ Caption</button>
+                                <button class="settings-tab" data-settings-tab="categories">🗂️ Categories</button>
+                                <button class="settings-tab" data-settings-tab="accounts">💳 Statement</button>
+                                <button class="settings-tab" data-settings-tab="projects">✈️ Trip</button>
+                                <button class="settings-tab admin-only hidden" data-settings-tab="users">👨‍👩‍👧‍👦 Member</button>
+                                <button class="settings-tab" data-settings-tab="debts">📝 ทะเบียนหนี้สิน</button>
+                                <button class="settings-tab" data-settings-tab="opening-balances">⚖️ ยอดยกมา</button>
+                                <button class="settings-tab" data-settings-tab="backup">💾 Backup/Restore</button>
+                            </div>
+
+                            
+                            <!-- Debts Tab -->
+                            <div id="settings-debts" class="settings-section-content hidden">
+                                <div class="settings-section-header" style="display: flex; justify-content: space-between; align-items: center;">
+                                    <h4>📝 ตั้งค่าโปรไฟล์หนี้สิน (Debt Profiles)</h4>
+                                    <button class="btn btn-primary" onclick="showDebtModal()"><i class="fa-solid fa-plus"></i> เพิ่มสัญญาหนี้</button>
+                                    
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>ชื่อรายการ</th>
+                                                <th>ประเภท</th>
+                                                <th>ยอดหนี้เริ่มต้น</th>
+                                                <th>ค่างวด</th>
+                                                <th>จัดการ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="settings-debts-body">
+                                            <!-- Dynamic Debt Rows -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+<!-- Opening Balances Tab -->
+                            <div id="settings-opening-balances" class="settings-section-content hidden">
+                                <div class="settings-section-header">
+                                    <h4>⚖️ ตั้งค่ายอดยกมา (Opening Balance Setup)</h4>
+                                </div>
+                                <div class="card glass" style="margin-bottom: 20px;">
+                                    <div class="card-body" style="padding: 12px 15px;">
+                                        <div class="row" style="display: flex; gap: 15px; margin-bottom: 15px; align-items: flex-end; flex-wrap: wrap;">
+                                            <div class="input-group" style="flex: 1; min-width: 200px;">
+                                                <label for="ob-user-select">👤 Member</label>
+                                                <select id="ob-user-select" class="form-control" style="height: 38px;">
+                                                    <option value="">-- เลือก Member --</option>
+                                                </select>
+                                            </div>
+                                            <div class="input-group" style="flex: 1; min-width: 200px;">
+                                                <label for="ob-date-select">📅 วันที่อ้างอิง</label>
+                                                <input type="date" id="ob-date-select" class="form-control" style="height: 38px;">
+                                            </div>
+                                            <div style="flex: 0 0 auto; display: flex; justify-content: flex-end; margin-bottom: 2px;">
+                                                <button class="btn btn-primary" id="btn-load-ob-categories" style="white-space: nowrap; height: 38px; display: flex; align-items: center; gap: 8px;"><i class="fa-solid fa-rotate"></i> โหลดบัญชี</button>
+                                            </div>
+                                        </div>
+
+                                        <div id="ob-accordion-container" style="display: none; flex-direction: column; gap: 12px;">
+                                            <!-- Assets Accordion -->
+                                            <details class="ob-accordion" open>
+                                                <summary class="ob-summary assets-summary">
+                                                    <h5 style="margin: 0;"><i class="fa-solid fa-circle-plus"></i> สินทรัพย์ (Assets)</h5>
+                                                    <span id="ob-assets-total" class="ob-total-badge text-success">0.00</span>
+                                                </summary>
+                                                <div class="ob-content" id="ob-assets-content" style="padding: 10px 15px; display: flex; flex-direction: column; gap: 8px;">
+                                                    <div id="ob-assets-rows" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                                                    <button class="btn btn-sm btn-outline-primary" id="btn-add-asset-row" style="align-self: flex-start; margin-top: 5px;"><i class="fa-solid fa-plus"></i> เพิ่มรายการสินทรัพย์</button>
+                                                </div>
+                                            </details>
+
+                                            <!-- Liabilities Accordion -->
+                                            <details class="ob-accordion" open>
+                                                <summary class="ob-summary liabilities-summary">
+                                                    <h5 style="margin: 0;"><i class="fa-solid fa-circle-minus"></i> หนี้สิน (Liabilities)</h5>
+                                                    <span id="ob-liabilities-total" class="ob-total-badge text-danger">0.00</span>
+                                                </summary>
+                                                <div class="ob-content" id="ob-liabilities-content" style="padding: 10px 15px; display: flex; flex-direction: column; gap: 8px;">
+                                                    <div id="ob-liabilities-rows" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                                                    <button class="btn btn-sm btn-outline-danger" id="btn-add-liability-row" style="align-self: flex-start; margin-top: 5px;"><i class="fa-solid fa-plus"></i> เพิ่มรายการหนี้สิน</button>
+                                                </div>
+                                            </details>
+
+                                            <!-- Live Validation Bar -->
+                                            <div class="ob-footer-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: rgba(0,0,0,0.4); border-radius: 12px; margin-top: 15px; flex-wrap: wrap; gap: 15px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                                                <div class="ob-footer-stats" style="display: flex; gap: 25px; flex-wrap: wrap; align-items: center; font-size: 0.95rem;">
+                                                    <div style="display: flex; flex-direction: column;">
+                                                        <span style="color: #aaa; font-size: 0.75rem; text-transform: uppercase;">รวมสินทรัพย์</span>
+                                                        <b id="ob-footer-assets" class="text-success" style="font-size: 1.1rem;">0.00</b>
+                                                    </div>
+                                                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.1);"></div>
+                                                    <div style="display: flex; flex-direction: column;">
+                                                        <span style="color: #aaa; font-size: 0.75rem; text-transform: uppercase;">รวมหนี้สิน</span>
+                                                        <b id="ob-footer-liabilities" class="text-danger" style="font-size: 1.1rem;">0.00</b>
+                                                    </div>
+                                                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.1);"></div>
+                                                    <div style="display: flex; flex-direction: column;">
+                                                        <span style="color: #aaa; font-size: 0.75rem; text-transform: uppercase;">ส่วนต่าง (ทุนยกมา)</span>
+                                                        <b id="ob-footer-diff" style="font-size: 1.1rem;">0.00</b>
+                                                    </div>
+                                                </div>
+                                                <button id="btn-save-opening-balance" class="btn btn-success" disabled style="padding: 8px 24px; border-radius: 20px; font-weight: 600;"><i class="fa-solid fa-save"></i> บันทึกยอดยกมา</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Backup / Restore Tab -->
+                            <div id="settings-backup" class="settings-section-content hidden">
+                                <div class="settings-section-header">
+                                    <h4>💾 สำรอง / กู้คืน / โครงสร้างฐานข้อมูล</h4>
+                                </div>
+
+                                <!-- FLAT EXPORT -->
+                                <div class="card" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);margin-bottom:16px;">
+                                    <div class="card-body">
+                                        <h5 style="color:#10b981;margin-bottom:6px;"><i class="fa-solid fa-table"></i> Export รายการแบบละเอียด (Flat View)</h5>
+                                        <p style="font-size:0.8rem;color:#aaa;margin-bottom:12px;">
+                                            1 แถว = 1 รายการย่อย — รวมข้อมูลทุกอย่างในแถวเดียว: บัญชี · บริษัท · หมวดหมู่ · คู่ค้า · ทริป · ยอด · หมายเหตุ<br>
+                                            เหมาะสำหรับวิเคราะห์ใน Excel / Google Sheets
+                                        </p>
+                                        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+                                            <div class="input-group" style="flex:2;min-width:200px;max-width:320px;">
+                                                <label style="font-size:0.78rem;">💳 Statement / บัญชี</label>
+                                                <select id="flat-account-id" class="form-control" style="font-size:0.85rem;">
+                                                    <option value="">— ทุก Statement —</option>
+                                                </select>
+                                            </div>
+                                            <div class="input-group" style="flex:1;min-width:130px;max-width:175px;">
+                                                <label style="font-size:0.78rem;">ตั้งแต่วันที่</label>
+                                                <input type="text" id="flat-start-date" class="form-control" placeholder="YYYY-MM-DD" style="font-size:0.85rem;">
+                                            </div>
+                                            <div class="input-group" style="flex:1;min-width:130px;max-width:175px;">
+                                                <label style="font-size:0.78rem;">ถึงวันที่</label>
+                                                <input type="text" id="flat-end-date" class="form-control" placeholder="YYYY-MM-DD" style="font-size:0.85rem;">
+                                            </div>
+                                            <div class="input-group" style="flex:1;min-width:130px;max-width:175px;">
+                                                <label style="font-size:0.78rem;">สถานะ</label>
+                                                <select id="flat-status" class="form-control" style="font-size:0.85rem;">
+                                                    <option value="">ทั้งหมด</option>
+                                                    <option value="CONFIRMED">CONFIRMED</option>
+                                                    <option value="PENDING">PENDING</option>
+                                                </select>
+                                            </div>
+                                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                                <button class="btn btn-success" id="btn-flat-excel" style="white-space:nowrap;">
+                                                    <i class="fa-solid fa-file-excel"></i> Excel (.xlsx)
+                                                </button>
+                                                <button class="btn btn-secondary" id="btn-flat-csv" style="white-space:nowrap;">
+                                                    <i class="fa-solid fa-file-csv"></i> CSV
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- EXPORT -->
+                                <div class="card" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);margin-bottom:16px;">
+                                    <div class="card-body">
+                                        <h5 style="color:var(--primary-color);margin-bottom:6px;"><i class="fa-solid fa-cloud-arrow-down"></i> Export — ส่งออกฐานข้อมูลทั้งหมด</h5>
+                                        <p style="font-size:0.8rem;color:#aaa;margin-bottom:12px;">ดาวน์โหลด Excel หลายชีต: Transactions · TransactionDetails · Settlements · Debts · Contacts · Projects · Entities · Accounts · Categories · Captions</p>
+                                        <div id="data-range-status" style="font-size:0.78rem;color:#60a5fa;margin-bottom:10px;min-height:1.2em;">📅 กำลังโหลดช่วงข้อมูล...</div>
+                                        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+                                            <div class="input-group" style="flex:1;min-width:140px;max-width:190px;">
+                                                <label style="font-size:0.78rem;">ตั้งแต่วันที่</label>
+                                                <input type="text" id="backup-start-date" class="form-control" placeholder="YYYY-MM-DD" style="font-size:0.85rem;">
+                                            </div>
+                                            <div class="input-group" style="flex:1;min-width:140px;max-width:190px;">
+                                                <label style="font-size:0.78rem;">ถึงวันที่</label>
+                                                <input type="text" id="backup-end-date" class="form-control" placeholder="YYYY-MM-DD" style="font-size:0.85rem;">
+                                            </div>
+                                            <button class="btn btn-secondary btn-sm" id="btn-backup-clear-dates" style="white-space:nowrap;padding:6px 12px;">
+                                                <i class="fa-solid fa-xmark"></i> ทั้งหมด
+                                            </button>
+                                            <button class="btn btn-primary" id="btn-backup-excel" style="white-space:nowrap;">
+                                                <i class="fa-solid fa-file-excel"></i> ดาวน์โหลด Full Backup (.xlsx)
+                                            </button>
+                                        </div>
+                                        <p style="font-size:0.75rem;color:#888;margin-top:8px;">* ไม่ระบุวันที่ = Export ทุกรายการ · ช่วงวันที่มีผลเฉพาะ Transactions/Details/Settlements</p>
+                                    </div>
+                                </div>
+
+                                <!-- SCHEDULED AUTO-BACKUP -->
+                                <div class="card" style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.3);margin-bottom:16px;">
+                                    <div class="card-body">
+                                        <h5 style="color:#60a5fa;margin-bottom:6px;"><i class="fa-solid fa-clock-rotate-left"></i> สำรองข้อมูลอัตโนมัติตามเวลา</h5>
+                                        <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:12px;">ตั้งให้ระบบดาวน์โหลด Full Backup ให้เอง เมื่อถึงกำหนดและคุณเปิดแอป<br><span style="color:#f59e0b;">* ทำงานเฉพาะตอนเปิดแอปในเบราว์เซอร์นี้ (ตั้งค่าแยกตามเครื่อง)</span></p>
+                                        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+                                            <div class="input-group" style="min-width:140px;">
+                                                <label style="font-size:0.78rem;">ความถี่</label>
+                                                <select id="sched-freq" class="form-control" style="font-size:0.85rem;" onchange="dv2SchedFreqChange()">
+                                                    <option value="off">ปิด</option>
+                                                    <option value="daily">ทุกวัน</option>
+                                                    <option value="weekly">ทุกสัปดาห์</option>
+                                                    <option value="monthly">ทุกเดือน</option>
+                                                </select>
+                                            </div>
+                                            <div class="input-group" id="sched-dow-wrap" style="min-width:130px;display:none;">
+                                                <label style="font-size:0.78rem;">วันในสัปดาห์</label>
+                                                <select id="sched-dow" class="form-control" style="font-size:0.85rem;">
+                                                    <option value="0">อาทิตย์</option><option value="1">จันทร์</option>
+                                                    <option value="2">อังคาร</option><option value="3">พุธ</option>
+                                                    <option value="4">พฤหัสบดี</option><option value="5">ศุกร์</option>
+                                                    <option value="6">เสาร์</option>
+                                                </select>
+                                            </div>
+                                            <div class="input-group" id="sched-dom-wrap" style="min-width:120px;display:none;">
+                                                <label style="font-size:0.78rem;">วันที่ (1-28)</label>
+                                                <input type="number" id="sched-dom" class="form-control" min="1" max="28" value="1" style="font-size:0.85rem;">
+                                            </div>
+                                            <div class="input-group" id="sched-time-wrap" style="min-width:120px;display:none;">
+                                                <label style="font-size:0.78rem;">เวลา</label>
+                                                <input type="time" id="sched-time" class="form-control" value="09:00" style="font-size:0.85rem;">
+                                            </div>
+                                            <button class="btn btn-primary" id="btn-sched-save" style="white-space:nowrap;" onclick="dv2SaveSchedule()">
+                                                <i class="fa-solid fa-floppy-disk"></i> บันทึกกำหนดเวลา
+                                            </button>
+                                        </div>
+                                        <div id="sched-status" style="font-size:0.78rem;color:#60a5fa;margin-top:10px;"></div>
+                                    </div>
+                                </div>
+
+                                <!-- IMPORT -->
+                                <div class="card" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);margin-bottom:16px;">
+                                    <div class="card-body">
+                                        <h5 style="color:#f59e0b;margin-bottom:6px;"><i class="fa-solid fa-cloud-arrow-up"></i> Import — นำเข้า / กู้คืนข้อมูล (Upsert)</h5>
+                                        <p style="font-size:0.8rem;color:#aaa;margin-bottom:12px;">อัปโหลดไฟล์ Excel ที่ Export จากระบบนี้ — ระบบจะ Upsert (อัปเดตถ้ามี / เพิ่มใหม่ถ้าไม่มี) ตาม ID ทุกชีต</p>
+                                        <div style="margin-bottom:12px;">
+                                            <p style="font-size:0.78rem;color:#94a3b8;margin-bottom:8px;">📥 ดาวน์โหลด Template สำหรับนำเข้าข้อมูลรายการใหม่:</p>
+                                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                                <button class="btn btn-sm" id="btn-template-2sheet" style="background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;white-space:nowrap;">
+                                                    <i class="fa-solid fa-table-columns"></i> Template แบบ 2 Sheet (Transaction + Details)
+                                                </button>
+                                                <button class="btn btn-sm" id="btn-template-flat" style="background:rgba(20,184,166,0.2);border:1px solid rgba(20,184,166,0.5);color:#5eead4;white-space:nowrap;">
+                                                    <i class="fa-solid fa-table-list"></i> Template แบบ Flat (1 Sheet)
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+                                            <input type="file" id="restore-excel-input" accept=".xlsx,.xls" class="form-control" style="max-width:380px;font-size:0.85rem;">
+                                            <button class="btn btn-warning" id="btn-restore-excel" style="white-space:nowrap;">
+                                                <i class="fa-solid fa-upload"></i> เริ่ม Restore
+                                            </button>
+                                        </div>
+                                        <label id="restore-replace-wrap" style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:0.82rem;color:#fca5a5;cursor:pointer;">
+                                            <input type="checkbox" id="restore-replace-mode" style="width:16px;height:16px;cursor:pointer;">
+                                            🔁 โหมดแทนที่ทั้งหมด — ล้างข้อมูลเดิมก่อนนำเข้า (กลับไปตรงกับไฟล์เป๊ะ · Admin เท่านั้น · ลบถาวร)
+                                        </label>
+                                        <div id="restore-progress" style="display:none;margin-top:12px;padding:10px;background:rgba(0,0,0,0.2);border-radius:8px;font-size:0.8rem;color:#94a3b8;"></div>
+                                    </div>
+                                </div>
+
+                                <!-- SCHEMA VIEWER -->
+                                <div class="card" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);">
+                                    <div class="card-body">
+                                        <h5 style="color:#a78bfa;margin-bottom:12px;cursor:pointer;" onclick="document.getElementById('schema-content').classList.toggle('hidden')">
+                                            <i class="fa-solid fa-diagram-project"></i> โครงสร้างฐานข้อมูล (DB Schema) <span style="font-size:0.75rem;color:#64748b;">คลิกเพื่อแสดง/ซ่อน</span>
+                                        </h5>
+                                        <div id="schema-content" class="hidden">
+                                            <div id="schema-tables" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- DANGER ZONE (Admin only) -->
+                                <div class="card" id="danger-zone-card" style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.35);margin-top:16px;">
+                                    <div class="card-body">
+                                        <h5 style="color:#f87171;margin-bottom:6px;"><i class="fa-solid fa-triangle-exclamation"></i> Danger Zone — ล้างข้อมูล (เฉพาะ Admin)</h5>
+                                        <p style="font-size:0.8rem;color:#fca5a5;margin-bottom:12px;">การล้างข้อมูลลบถาวร กู้คืนไม่ได้ — แนะนำให้ดาวน์โหลด Full Backup เก็บไว้ก่อนทุกครั้ง</p>
+                                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                                            <button class="btn" onclick="resetData('transactions')" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.5);white-space:nowrap;">
+                                                <i class="fa-solid fa-eraser"></i> ล้างเฉพาะธุรกรรม (เก็บข้อมูลหลัก)
+                                            </button>
+                                            <button class="btn" onclick="resetData('all')" style="background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.6);white-space:nowrap;">
+                                                <i class="fa-solid fa-bomb"></i> ล้างข้อมูลทั้งหมด เริ่มต้นใหม่
+                                            </button>
+                                        </div>
+                                        <p style="font-size:0.72rem;color:#888;margin-top:8px;">* เก็บเฉพาะ "สมาชิกในครอบครัว" ไว้เสมอ เพื่อให้ยังเข้าระบบได้</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Entities Tab -->
+                            <div id="settings-entities" class="settings-section-content active">
+                                <div class="settings-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                                    <h4>👑 Company</h4>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button class="btn btn-primary btn-sm btn-add-setting" data-type="entity"><i class="fa-solid fa-plus"></i> เพิ่ม Company ใหม่</button>
+                                        <input type="file" id="import-entities-excel" accept=".xlsx, .xls" style="display: none;" onchange="importSettingExcel(this, 'entity')">
+                                        <button class="btn btn-success btn-sm" onclick="document.getElementById('import-entities-excel').click()"><i class="fa-solid fa-file-excel"></i> นำเข้า Excel</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="exportSettingExcel('entity')"><i class="fa-solid fa-file-export"></i> ส่งออก Excel</button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                 <th>รหัส ID</th>
+                                                 <th>Company</th>
+                                                 <th>สมาชิกผู้ถือ (Members)</th>
+                                                 <th>ประเภท</th>
+                                                 <th>การจัดการ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="settings-entities-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Contacts Tab -->
+                            <div id="settings-contacts" class="settings-section-content hidden">
+                                <div class="settings-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                                    <h4>👥 Customer</h4>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button class="btn btn-primary btn-sm btn-add-setting" data-type="contact"><i class="fa-solid fa-plus"></i> เพิ่มคู่ค้าใหม่</button>
+                                        <input type="file" id="import-contacts-excel" accept=".xlsx, .xls" style="display: none;" onchange="importSettingExcel(this, 'contact')">
+                                        <button class="btn btn-success btn-sm" onclick="document.getElementById('import-contacts-excel').click()"><i class="fa-solid fa-file-excel"></i> นำเข้า Excel</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="exportSettingExcel('contact')"><i class="fa-solid fa-file-export"></i> ส่งออก Excel</button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>รหัส ID</th>
+                                                <th>ชื่อคู่ค้า</th>
+                                                <th>ประเภทคู่ค้า</th>
+                                                <th>การจัดการ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="settings-contacts-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Captions Tab -->
+                            <div id="settings-captions" class="settings-section-content hidden">
+                                <div class="settings-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                                    <h4>🏷️ Caption</h4>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button class="btn btn-primary btn-sm btn-add-setting" data-type="caption"><i class="fa-solid fa-plus"></i> เพิ่มประเภทหลักใหม่</button>
+                                        <input type="file" id="import-captions-excel" accept=".xlsx, .xls" style="display: none;" onchange="importSettingExcel(this, 'caption')">
+                                        <button class="btn btn-success btn-sm" onclick="document.getElementById('import-captions-excel').click()"><i class="fa-solid fa-file-excel"></i> นำเข้า Excel</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="exportSettingExcel('caption')"><i class="fa-solid fa-file-export"></i> ส่งออก Excel</button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>รหัส ID</th>
+                                                <th>ชื่อประเภทหลัก</th>
+                                                <th>พฤติกรรม (Behavior)</th>
+                                                <th>Default Company</th>
+                                                <th>Default Customer</th>
+                                                
+                                                <th>การจัดการ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="settings-captions-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Categories Tab (Subtypes) -->
+                            <div id="settings-categories" class="settings-section-content hidden">
+                                <div class="settings-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                                    <h4>🗂️ Categories</h4>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button class="btn btn-primary btn-sm btn-add-setting" data-type="category"><i class="fa-solid fa-plus"></i> เพิ่มประเภทย่อยใหม่</button>
+                                        <input type="file" id="import-categories-excel" accept=".xlsx, .xls" style="display: none;" onchange="importSettingExcel(this, 'category')">
+                                        <button class="btn btn-success btn-sm" onclick="document.getElementById('import-categories-excel').click()"><i class="fa-solid fa-file-excel"></i> นำเข้า Excel</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="exportSettingExcel('category')"><i class="fa-solid fa-file-export"></i> ส่งออก Excel</button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>รหัส ID</th>
+                                                <th>ชื่อประเภทย่อย</th>
+                                                <th>ผูกกับประเภทหลัก (Type)</th>
+                                                <th>Default Company</th>
+                                                <th>Default Customer</th>
+                                                
+                                                <th>การจัดการ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="settings-categories-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Accounts Tab -->
+                            <div id="settings-accounts" class="settings-section-content hidden">
+                                <div class="settings-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                                    <h4>💳 Statement</h4>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button class="btn btn-primary btn-sm btn-add-setting" data-type="account"><i class="fa-solid fa-plus"></i> เพิ่มบัญชีการเงินใหม่</button>
+                                        <input type="file" id="import-accounts-excel" accept=".xlsx, .xls" style="display: none;" onchange="importSettingExcel(this, 'account')">
+                                        <button class="btn btn-success btn-sm" onclick="document.getElementById('import-accounts-excel').click()"><i class="fa-solid fa-file-excel"></i> นำเข้า Excel</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="exportSettingExcel('account')"><i class="fa-solid fa-file-export"></i> ส่งออก Excel</button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>รหัส ID</th>
+                                                <th>เจ้าของ (Company)</th>
+                                                <th>ชื่อบัญชีการเงิน</th>
+                                                <th>ธนาคาร</th>
+                                                <th>เลขที่บัญชี</th>
+                                                <th>ยอดเงินปัจจุบัน</th>
+                                                <th>ผู้มีสิทธิ์ใช้งาน</th>
+                                                <th>การจัดการ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="settings-accounts-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                             <!-- Projects/Trips Tab -->
+                             <div id="settings-projects" class="settings-section-content hidden">
+                                 <div class="settings-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                                     <h4>✈️ Trip</h4>
+                                     <div style="display: flex; gap: 8px;">
+                                         <button class="btn btn-primary btn-sm btn-add-setting" data-type="project"><i class="fa-solid fa-plus"></i> เพิ่มทริปใหม่</button>
+                                         <input type="file" id="import-projects-excel" accept=".xlsx, .xls" style="display: none;" onchange="importSettingExcel(this, 'project')">
+                                         <button class="btn btn-success btn-sm" onclick="document.getElementById('import-projects-excel').click()"><i class="fa-solid fa-file-excel"></i> นำเข้า Excel</button>
+                                         <button class="btn btn-secondary btn-sm" onclick="exportSettingExcel('project')"><i class="fa-solid fa-file-export"></i> ส่งออก Excel</button>
+                                     </div>
+                                 </div>
+                                 <div class="table-responsive">
+                                     <table class="table">
+                                         <thead>
+                                             <tr>
+                                                 <th>รหัส ID</th>
+                                                 <th>ชื่อทริป/โปรเจกต์</th>
+                                                 <th>สถานะ</th>
+                                                 <th>สมาชิก</th>
+                                                 <th>การจัดการ</th>
+                                             </tr>
+                                         </thead>
+                                         <tbody id="settings-projects-body"></tbody>
+                                     </table>
+                                 </div>
+                             </div>
+
+                             <!-- Family Members Tab -->
+                            <div id="settings-users" class="settings-section-content hidden">
+                                <div class="settings-section-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                    <h4 style="margin:0;">👨‍👩‍👧‍👦 สมาชิกในครอบครัว</h4>
+                                    <button class="btn btn-primary btn-sm" id="btn-add-user"><i class="fa-solid fa-user-plus"></i> เพิ่มสมาชิกใหม่</button>
+                                </div>
+                                <!-- Member cards rendered by JS -->
+                                <div id="settings-users-cards" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:14px;"></div>
+                                <!-- hidden tbody for compatibility -->
+                                <tbody id="settings-users-body" style="display:none;"></tbody>
+                            </div>
+
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- Collapsible Bottom Navigation for Mobile -->
+        <nav class="bottom-nav glass hidden">
+            <a href="#" class="nav-item active" data-target="dashboard"><i class="fa-solid fa-chart-line"></i><span>หน้าแรก</span></a>
+            <a href="#" class="nav-item" data-target="pending" style="position: relative;"><i class="fa-solid fa-clock-rotate-left"></i><span>รอตรวจ</span><span id="badge-pending-mobile" class="badge" style="display:none; position: absolute; top: 4px; right: 4px; font-size: 0.6rem; padding: 1px 4px; border-radius: 10px; background: #EF4444; color: #fff; font-weight: 700;"></span></a>
+            <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-file-invoice-dollar"></i><span>ประวัติ</span></a>
+            <a href="#" class="nav-item" data-target="pending"><i class="fa-solid fa-plus"></i><span>เพิ่มรายการ</span></a>
+            <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i><span>ลูกหนี้</span></a>
+            <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i><span>ทริป</span></a>
+            <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-bar"></i><span>รายงาน</span></a>
+            <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i><span>ตั้งค่า</span></a>
+        </nav>
+
+        <!-- Transaction Modal (Add/Edit Dialog) -->
+        <div id="tx-modal" class="modal hidden">
+            <div class="modal-content glass">
+                <div class="modal-header">
+                    <h3 id="modal-title">บันทึกธุรกรรมใหม่</h3>
+                    <span class="close-modal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="tx-form">
+                        <input type="hidden" id="tx-id-input">
+                        <div class="grid-two-cols">
+                            <div class="input-group">
+                                <label for="tx-account">ช่องทางบัญชี (Statement)</label>
+                                <select id="tx-account" required></select>
+                            </div>
+                            <div class="input-group">
+                                <label for="tx-date">วันที่ทำรายการ</label>
+                                <input type="date" id="tx-date" required>
+                            </div>
+                        </div>
+                        <div class="grid-two-cols">
+                            <div class="input-group">
+                                <label for="tx-total-amount">จำนวนเงินรวมธุรกรรม (ตามสลิป)</label>
+                                <input type="number" id="tx-total-amount" step="0.01" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="tx-refcode">รหัสอ้างอิงสลิป (Ref Code)</label>
+                                <input type="text" id="tx-refcode">
+                            </div>
+                        </div>
+                        
+                        <div class="sub-tx-section">
+                            <div class="sub-tx-header">
+                                <h4>รายการย่อยบัญชี (Split)</h4>
+                                <button type="button" id="btn-add-split-line" class="btn btn-secondary btn-sm"><i class="fa-solid fa-plus"></i> เพิ่มรายการย่อย</button>
+                            </div>
+                            <div id="split-lines-container" style="display: flex; flex-direction: column; gap: 15px; margin-top: 15px;">
+                                <!-- Dynamic split cards -->
+                            </div>
+                            <!-- Validation warning -->
+                            <div id="split-validation-msg" class="validation-warning hidden" style="margin-top: 15px;">
+                                ⚠️ ผลรวมรายการย่อยไม่เท่ากับยอดเงินโอนหลัก! ผลต่าง: <span id="split-diff-amount">0.00</span> ฿
+                            </div>
+                        </div>
+                        
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary close-modal-btn">ยกเลิก</button>
+                            <button type="submit" class="btn btn-primary">บันทึกรายการลง D1</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settlement Modal (AR/AP Cut Off) -->
+        <div id="settlement-modal" class="modal hidden">
+            <div class="modal-content glass modal-sm">
+                <div class="modal-header">
+                    <h3>ตัดยอดรับชำระหนี้ (Settlement)</h3>
+                    <span class="close-settlement-modal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="settlement-form">
+                        <input type="hidden" id="settle-parent-id">
+                        <div class="input-group">
+                            <label>ยอดหนี้ค้างชำระ: <span id="settle-outstanding-display">0.00</span> ฿</label>
+                        </div>
+                        <div class="input-group">
+                            <label for="settle-account">โอนเงินเข้าบัญชี (เลือกสลิปคืนเงิน)</label>
+                            <select id="settle-transaction-select" required>
+                                <!-- Dynamic receipts option -->
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="settle-amount">ยอดเงินตัดชำระคืนหนี้</label>
+                            <input type="number" id="settle-amount" step="0.01" required>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary close-settlement-btn">ยกเลิก</button>
+                            <button type="submit" class="btn btn-primary">บันทึกการชำระคืน</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Master Setting Edit Modal -->
+        <div id="setting-modal" class="modal hidden">
+            <div class="modal-content glass modal-sm">
+                <div class="modal-header">
+                    <h3 id="setting-modal-title">ตั้งค่ารายการ</h3>
+                    <span class="close-setting-modal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="setting-form">
+                        <input type="hidden" id="setting-type">
+                        <input type="hidden" id="setting-old-id">
+                        
+                        <div class="input-group">
+                            <label for="setting-new-id">รหัส ID (โค้ดอ้างอิง)</label>
+                            <input type="text" id="setting-new-id" required placeholder="เช่น A01, Audit, Ent_Co_A">
+                            <small id="setting-id-help" style="color: var(--text-secondary); display:block; margin-top:4px;">* หากเปลี่ยนรหัส ID ระบบจะเปลี่ยนรหัสอ้างอิงในประวัติทั้งหมดให้ย้อนหลัง</small>
+                        </div>
+                        
+                        <div class="input-group">
+                            <label for="setting-name" id="setting-name-label">ชื่อรายการ (Name)</label>
+                            <input type="text" id="setting-name" required placeholder="กรอกชื่อรายการ">
+                        </div>
+
+                        <!-- Extra: Entity Select (Only for Account) -->
+                        <div class="input-group hidden" id="group-setting-entity">
+                            <label for="setting-entity-id">เจ้าของบัญชี (Company)</label>
+                            <select id="setting-entity-id"></select>
+                        </div>
+
+                        <!-- Extra: Bank Name (Only for Account) -->
+                        <div class="input-group hidden" id="group-setting-bank">
+                            <label for="setting-bank-name">ธนาคาร</label>
+                            <input type="text" id="setting-bank-name" placeholder="เช่น Kbank, SCB, Cash">
+                        </div>
+
+                        <!-- Extra: Account Number (Only for Account) -->
+                        <div class="input-group hidden" id="group-setting-accnum">
+                            <label for="setting-account-number">เลขที่บัญชี</label>
+                            <input type="text" id="setting-account-number" placeholder="เลขที่บัญชี (ถ้ามี)">
+                        </div>
+
+                        <!-- Extra: PDF Password (Only for Account) -->
+                        <div class="input-group hidden" id="group-setting-pdfpassword">
+                            <label for="setting-pdf-password">รหัสผ่าน PDF (ถ้ามี)</label>
+                            <input type="text" id="setting-pdf-password" placeholder="เช่น 1234, 123456 (สำหรับถอดรหัส Statement อัตโนมัติ)">
+                        </div>
+
+                        <!-- Extra: Account Type (Only for Account) -->
+                        <div class="input-group hidden" id="group-setting-accounttype">
+                            <label for="setting-account-type">ประเภทบัญชี</label>
+                            <select id="setting-account-type" onchange="dv2ToggleCreditFields()">
+                                <option value="BANK">เงินฝากธนาคาร (Bank)</option>
+                                <option value="CASH">เงินสด (Cash)</option>
+                                <option value="CREDIT">บัตรเครดิต (Credit Card)</option>
+                            </select>
+                        </div>
+
+                        <!-- Extra: Credit Card details (Only for Account type=CREDIT) -->
+                        <div class="input-group hidden" id="group-setting-credit">
+                            <label>ข้อมูลบัตรเครดิต</label>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <div style="flex:1; min-width:110px;">
+                                    <input type="number" step="0.01" id="setting-credit-limit" placeholder="วงเงิน" style="width:100%;">
+                                    <small style="color:var(--text-secondary);font-size:.7rem;">วงเงินรวม</small>
+                                </div>
+                                <div style="flex:1; min-width:90px;">
+                                    <input type="number" id="setting-statement-day" placeholder="1-31" min="1" max="31" style="width:100%;">
+                                    <small style="color:var(--text-secondary);font-size:.7rem;">วันตัดรอบบิล</small>
+                                </div>
+                                <div style="flex:1; min-width:90px;">
+                                    <input type="number" id="setting-due-day" placeholder="1-31" min="1" max="31" style="width:100%;">
+                                    <small style="color:var(--text-secondary);font-size:.7rem;">วันครบกำหนดชำระ</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Extra: Is Company (Only for Entity) -->
+                        <div class="input-group hidden" id="group-setting-iscompany">
+                            <label for="setting-is-company">ประเภท Company</label>
+                            <select id="setting-is-company">
+                                <option value="0">ส่วนบุคคล (Personal)</option>
+                                <option value="1">บริษัท / ห้างหุ้นส่วน (Company)</option>
+                            </select>
+                        </div>
+
+                        <!-- Extra: Contact Type (Only for Contact) -->
+                        <div class="input-group hidden" id="group-setting-contacttype">
+                            <label for="setting-contact-type">ประเภทคู่ค้า</label>
+                            <select id="setting-contact-type">
+                                <option value="CUSTOMER">ลูกค้า (Customer)</option>
+                                <option value="VENDOR">เจ้าหนี้/ผู้ค้า (Vendor)</option>
+                                <option value="OTHER">อื่นๆ (Other)</option>
+                            </select>
+                        </div>
+
+                        <!-- Extra: Behavior (Only for Caption) -->
+                        <div class="input-group hidden" id="group-setting-behavior">
+                            <label for="setting-behavior">พฤติกรรมทางการเงิน (Behavior)</label>
+                            <select id="setting-behavior">
+                                <option value="REVENUE">เงินเข้า (รายรับ / อื่นๆ)</option>
+                                <option value="EXPENSE">เงินออก (รายจ่าย / อื่นๆ)</option>
+                                <option value="ASSET">สินทรัพย์ / เงินทดรองจ่าย</option>
+                                <option value="INVESTMENT">เงินลงทุน</option>
+                                <option value="LIABILITY">หนี้สิน</option>
+                                <option value="TRANSFER">โอนเงินระหว่างบัญชี</option>
+                            </select>
+                        </div>
+
+                        <!-- Extra: Caption (Only for Category/Subtype) -->
+                        <div class="input-group hidden" id="group-setting-caption">
+                            <label for="setting-category-caption">ประเภทหลัก (Type)</label>
+                            <select id="setting-category-caption"></select>
+                        </div>
+
+                        <!-- Extra: Default Mappings (Only for Category and Caption) -->
+                        <div class="input-group hidden" id="group-setting-defaults">
+                            <div style="margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
+                                <h5 style="margin-top: 0; margin-bottom: 12px; color: var(--primary-color); font-size: 0.95rem; display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-gears"></i> กำหนดค่า Default อัตโนมัติ</h5>
+                                
+                                <div style="margin-bottom: 10px;">
+                                    <label for="setting-default-entity-id" style="font-size: 0.8rem; margin-bottom: 4px; display: block;">Default Company (Entity)</label>
+                                    <select id="setting-default-entity-id" style="width: 100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.3); color: white; border: 1px solid rgba(255,255,255,0.15); font-family: inherit;"></select>
+                                </div>
+                                
+                                <div style="margin-bottom: 10px;">
+                                    <label for="setting-default-contact-id" style="font-size: 0.8rem; margin-bottom: 4px; display: block;">Default Customer (Contact)</label>
+                                    <select id="setting-default-contact-id" style="width: 100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.3); color: white; border: 1px solid rgba(255,255,255,0.15); font-family: inherit;"></select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Extra: Project Status (Only for Project) -->
+                        <div class="input-group hidden" id="group-setting-projectstatus">
+                            <label for="setting-project-status">สถานะทริป/โปรเจกต์</label>
+                            <select id="setting-project-status">
+                                <option value="active">เปิดใช้งานอยู่ (Active)</option>
+                                <option value="closed">ปิดโครงการแล้ว (Closed)</option>
+                            </select>
+                        </div>
+
+                        <!-- Extra: Members (For Project/Trip and Contact) -->
+                        <div class="input-group hidden" id="group-setting-members">
+                            <label id="setting-members-label">สมาชิกที่เข้าถึงได้ (ไม่เลือก = ทุกคนเห็น)</label>
+                            <div id="setting-members-checkboxes" style="display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(0,0,0,0.15); border-radius: 8px; max-height: 160px; overflow-y: auto;"></div>
+                        </div>
+
+                        <!-- Extra: Category Type (Only for Category) -->
+                        <input type="hidden" id="setting-category-type">
+
+                        <div class="modal-footer" style="margin-top:20px;">
+                            <button type="button" class="btn btn-secondary close-setting-btn">ยกเลิก</button>
+                            <button type="submit" class="btn btn-primary">บันทึกตั้งค่า</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Registration Modal -->
+        <div id="user-modal" class="modal hidden">
+            <div class="modal-content glass modal-md">
+                <div class="modal-header">
+                    <h3 id="user-modal-title">ลงทะเบียนสมาชิกครอบครัว</h3>
+                    <span class="close-user-modal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <form id="user-form">
+                        <input type="hidden" id="user-old-id-input">
+                        <div class="grid-two-cols">
+                            <div class="input-group">
+                                <label for="user-id-input">Username / User ID</label>
+                                <input type="text" id="user-id-input" required placeholder="เช่น Usr_C">
+                            </div>
+                            <div class="input-group">
+                                <label for="user-name-input">ชื่อสมาชิก</label>
+                                <input type="text" id="user-name-input" required placeholder="เช่น นาย ค">
+                            </div>
+                        </div>
+                        <div class="grid-two-cols">
+                            <div class="input-group">
+                                <label for="user-email-input">อีเมล</label>
+                                <input type="email" id="user-email-input" required placeholder="member@example.com">
+                            </div>
+                            <div class="input-group">
+                                <label for="user-password-input">รหัสผ่าน</label>
+                                <input type="text" id="user-password-input" required placeholder="รหัสผ่านเข้าใช้">
+                            </div>
+                        </div>
+                        <div class="grid-two-cols">
+                            <div class="input-group">
+                                <label for="user-role-select">สิทธิ์การใช้งานระบบ</label>
+                                <select id="user-role-select">
+                                    <option value="member">สมาชิกครอบครัวทั่วไป (Member)</option>
+                                    <option value="admin">ผู้ดูแลระบบ (Admin)</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label for="user-line-id-input">LINE User ID (ถ้ามี)</label>
+                                <input type="text" id="user-line-id-input" placeholder="เช่น U1234567890abcdef...">
+                            </div>
+                        </div>
+                        
+                        <!-- Entity Access Checkboxes -->
+                        <div class="input-group">
+                            <label style="margin-bottom:10px; display:block;">กำหนดสิทธิ์การเข้าถึงบัญชีคุมหลัก (Company Permissions)</label>
+                            <div id="user-permissions-checkboxes" style="background: rgba(255,255,255,0.5); padding:15px; border-radius:10px; max-height:150px; overflow-y:auto; border:1px solid rgba(0,0,0,0.05);">
+                                <!-- checkboxes rendered dynamically -->
+                            </div>
+                        </div>
+
+                        <div class="modal-footer" style="margin-top:20px;">
+                            <button type="button" class="btn btn-secondary close-user-btn">ยกเลิก</button>
+                            <button type="submit" class="btn btn-primary">บันทึกข้อมูลสมาชิก</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS for Excel Backup/Restore -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <script src="travel.js?v=105"></script>
+    <script src="app.js?v=153"></script>
+
+    <!-- Debt Profile Modal -->
+    <div id="debt-modal" class="modal hidden" style="z-index: 1000;">
+        <div class="modal-content" style="width: 95%; max-width: 550px; background: rgba(248, 250, 252, 0.95); backdrop-filter: blur(12px); border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.4); max-height: 95vh; display: flex; flex-direction: column; overflow: hidden;">
+            <div class="modal-header" style="padding: 8px 16px; border-bottom: 1px solid rgba(226, 232, 240, 0.8); display: flex; justify-content: space-between; align-items: center; background: rgba(255, 255, 255, 0.5);">
+                <h3 id="debt-modal-title" style="margin: 0; font-size: 1.15rem; color: #0284c7; font-weight: 700;">Debt Profile</h3>
+                <span class="close-modal" onclick="closeDebtModal()" style="font-size: 1.5rem; cursor: pointer; color: #64748b; line-height: 1;">&times;</span>
+            </div>
+            <div class="modal-body" style="padding: 4px 16px 12px 16px; overflow-y: auto;">
+                <form id="debt-form" onsubmit="saveDebtProfile(event)">
+                    <input type="hidden" id="debt-id">
+                    <input type="hidden" id="debt-icon-type" value="zodiac_1.png">
+                    
+                    <!-- Icon Selector (Compact) -->
+                    <div style="background: rgba(255,255,255,0.8); border-radius: 12px; padding: 8px; border: 1px solid rgba(226, 232, 240, 0.8); margin-bottom: 6px;">
+                        <div class="icon-tabs" style="display: flex; gap: 4px; margin-bottom: 6px; overflow-x: auto; white-space: nowrap; scrollbar-width: none; -ms-overflow-style: none;">
+                            <button type="button" class="btn btn-sm btn-outline active" data-tab="zodiac" onclick="switchIconTab('zodiac')" style="flex-shrink: 0; border-radius: 12px; font-size: 0.7rem; padding: 3px 8px;">Zodiac</button>
+                            <button type="button" class="btn btn-sm btn-outline" data-tab="hokkaido" onclick="switchIconTab('hokkaido')" style="flex-shrink: 0; border-radius: 12px; font-size: 0.7rem; padding: 3px 8px;">Hokkaido</button>
+                            <button type="button" class="btn btn-sm btn-outline" data-tab="china" onclick="switchIconTab('china')" style="flex-shrink: 0; border-radius: 12px; font-size: 0.7rem; padding: 3px 8px;">China</button>
+                            <button type="button" class="btn btn-sm btn-outline" data-tab="japan" onclick="switchIconTab('japan')" style="flex-shrink: 0; border-radius: 12px; font-size: 0.7rem; padding: 3px 8px;">Japan</button>
+                            <button type="button" class="btn btn-sm btn-outline" data-tab="mascot" onclick="switchIconTab('mascot')" style="flex-shrink: 0; border-radius: 12px; font-size: 0.7rem; padding: 3px 8px;">Mascot</button>
+                            <button type="button" class="btn btn-sm btn-outline" data-tab="onepiece" onclick="switchIconTab('onepiece')" style="flex-shrink: 0; border-radius: 12px; font-size: 0.7rem; padding: 3px 8px;">One Piece</button>
+                        </div>
+                        <div id="icon-grid" tabindex="0" class="icon-grid">
+                            <!-- Rendered by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Form Fields -->
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div class="debt-form-grid-1-2">
+                            <div class="form-group" style="min-width: 0;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Type</label>
+                                <select id="debt-type" class="form-control" style="background-color: rgba(255,255,255,0.8);" required>
+                                    <option value="PAYABLE">Payable</option>
+                                    <option value="RECEIVABLE">Receivable</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="min-width: 0;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Name</label>
+                                <input type="text" id="debt-name" class="form-control" placeholder="e.g. Mortgage" style="background-color: rgba(255,255,255,0.8);" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="min-width: 0;">
+                            <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">👥 ใครเห็นหนี้นี้ (ไม่เลือก = ทุกคน)</label>
+                            <div id="debt-members-checkboxes" style="display:flex;flex-direction:column;gap:6px;padding:8px;background:rgba(0,0,0,0.05);border-radius:8px;max-height:120px;overflow-y:auto;border:1px solid rgba(148,163,184,0.3);"></div>
+                        </div>
+
+                        <div class="debt-form-grid-1-1">
+                            <div class="form-group" style="min-width: 0;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Contact</label>
+                                <select id="debt-contact" class="form-control" style="background-color: rgba(255,255,255,0.8);" required></select>
+                            </div>
+                            <div class="form-group" style="min-width: 0;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Start Date</label>
+                                <input type="date" id="debt-start-date" class="form-control" style="background-color: rgba(255,255,255,0.8);">
+                            </div>
+                        </div>
+                        
+                        <div class="debt-form-grid-1-1">
+                            <div class="form-group" style="min-width: 0;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Start Balance</label>
+                                <input type="text" inputmode="decimal" id="debt-start-balance" class="form-control" placeholder="0.00" style="background-color: rgba(255,255,255,0.8);" onfocus="this.value = parseFormattedNum(this.value) || ''" onblur="this.value = formatCurrency(parseFormattedNum(this.value))" required>
+                            </div>
+                            <div class="form-group" style="min-width: 0;">
+                                <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Installment / Month</label>
+                                <input type="text" inputmode="decimal" id="debt-installment" class="form-control" placeholder="0.00" style="background-color: rgba(255,255,255,0.8);" onfocus="this.value = parseFormattedNum(this.value) || ''" onblur="this.value = formatCurrency(parseFormattedNum(this.value))">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 style="margin: 0 0 6px 0; font-size: 0.8rem; font-weight: 600; color: #475569;"><i class="fa-solid fa-link"></i> Category Mapping</h4>
+                            <div class="debt-form-grid-1-1">
+                                <div class="form-group" style="margin-bottom: 0; min-width: 0;">
+                                    <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Principal</label>
+                                    <select id="debt-principal-category" class="form-control" style="background-color: rgba(255,255,255,0.8);" required></select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0; min-width: 0;">
+                                    <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Interest</label>
+                                    <select id="debt-interest-category" class="form-control" style="background-color: rgba(255,255,255,0.8);"></select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions" style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid rgba(226, 232, 240, 0.8); padding-top: 12px;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="closeDebtModal()" style="border-radius: 8px; font-weight: 600; padding: 6px 16px;">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm" style="border-radius: 8px; font-weight: 600; padding: 6px 20px; background: linear-gradient(135deg, #0ea5e9, #2563eb); border: none; box-shadow: 0 4px 10px rgba(37,99,235,0.2);">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- /Debt Profile Modal -->
+
+    <!-- ========================
+         Trip Create/Edit Modal
+         ======================== -->
+    <div id="trip-modal-overlay" class="travel-modal-overlay hidden" onclick="if(event.target===this)closeTripModal()">
+        <div class="travel-modal-box">
+            <div class="travel-modal-title">
+                <span id="trip-modal-icon">🛸</span>
+                <span id="trip-modal-heading">สร้างทริปใหม่</span>
+                <button onclick="closeTripModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:#888;">✕</button>
+            </div>
+            <form id="trip-form" onsubmit="submitTripForm(event)">
+                <input type="hidden" id="trip-edit-id" value="">
+                <div class="travel-form-grid">
+                    <div class="travel-form-group full-width">
+                        <label>🏷️ ชื่อทริป</label>
+                        <input type="text" id="trip-name" placeholder="เช่น ทริปฮอกไกโด 2026" required>
+                    </div>
+                    <div class="travel-form-group full-width">
+                        <label>📍 ปลายทาง / จังหวัด</label>
+                        <input type="text" id="trip-destination" placeholder="เช่น Hokkaido, Japan">
+                    </div>
+                    <!-- Highlights selection -->
+                    <div class="travel-form-group full-width">
+                        <label>🌟 ไฮไลท์ของทริป (เลือกได้หลายอัน)</label>
+                        <div id="trip-highlights-container" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; max-height: 150px; overflow-y: auto; padding: 4px;">
+                            <!-- Inserted by JS -->
+                        </div>
+                    </div>
+                    <div class="travel-form-group">
+                        <label>📅 วันเริ่มต้น</label>
+                        <input type="date" id="trip-start-date">
+                    </div>
+                    <div class="travel-form-group">
+                        <label>📅 วันสิ้นสุด</label>
+                        <input type="date" id="trip-end-date">
+                    </div>
+                    <div class="travel-form-group">
+                        <label>💰 งบประมาณ (฿)</label>
+                        <input type="number" id="trip-budget" placeholder="0.00" min="0" step="0.01">
+                    </div>
+                    <div class="travel-form-group">
+                        <label>🏷️ สกุลเงินต่างประเทศ</label>
+                        <select id="trip-currency">
+                            <option value="JPY">🇯🇵 JPY (เยน)</option>
+                            <option value="CNY">🇨🇳 CNY (หยวน)</option>
+                            <option value="USD">🇺🇸 USD (ดอลล่าร์)</option>
+                            <option value="EUR">🇪🇺 EUR (ยูโร)</option>
+                            <option value="KRW">🇰🇷 KRW (วอน)</option>
+                            <option value="HKD">🇭🇰 HKD</option>
+                            <option value="SGD">🇸🇬 SGD</option>
+                            <option value="THB" selected>🇹🇭 THB (บาท)</option>
+                        </select>
+                    </div>
+                    <div class="travel-form-group full-width">
+                        <label>👥 สมาชิก (พิมพ์ชื่อแล้วกด Enter)</label>
+                        <input type="text" id="trip-member-input" placeholder="ชื่อสมาชิก แล้วกด Enter" onkeydown="addTripMember(event)">
+                        <div id="trip-members-container" style="margin-top:6px;min-height:28px;"></div>
+                    </div>
+                    <div class="travel-form-group full-width">
+                        <label>📝 หมายเหตุ</label>
+                        <textarea id="trip-notes" rows="2" placeholder="รายละเอียดเพิ่มเติม..."></textarea>
+                    </div>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+                    <button type="button" class="btn btn-secondary" onclick="closeTripModal()">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary" id="trip-submit-btn"><i class="fa-solid fa-rocket"></i> บันทึกทริป</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========================
+         Expense Log Modal
+         ======================== -->
+    <div id="expense-modal-overlay" class="travel-modal-overlay hidden" onclick="if(event.target===this)closeExpenseModal()">
+        <div class="travel-modal-box">
+            <div class="travel-modal-title">
+                <span>💸</span>
+                <span>บันทึกค่าใช้จ่าย</span>
+                <button onclick="closeExpenseModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:#888;">✕</button>
+            </div>
+            <form id="expense-form" onsubmit="submitExpenseForm(event)">
+                <input type="hidden" id="expense-trip-id" value="">
+                <div class="travel-form-grid">
+                    <div class="travel-form-group full-width">
+                        <label>📝 รายการ</label>
+                        <input type="text" id="exp-description" placeholder="เช่น ข้าวอาหารเช้า, โรงแรม" required>
+                    </div>
+                    <div class="travel-form-group">
+                        <label>💴 จำนวน (สกุลเงินท้องถิ่น)</label>
+                        <input type="number" id="exp-amount-local" placeholder="0" min="0" step="0.01" oninput="autoConvertCurrency()">
+                    </div>
+                    <div class="travel-form-group">
+                        <label>💰 จำนวน (THB)</label>
+                        <input type="number" id="exp-amount-thb" placeholder="0.00" min="0" step="0.01" required>
+                    </div>
+                    <div class="travel-form-group">
+                        <label>📂 ประเภท</label>
+                        <select id="exp-category">
+                            <option value="food">🍜 อาหาร/เครื่องดื่ม</option>
+                            <option value="hotel">🏨 ที่พัก</option>
+                            <option value="transport">✈️ การเดินทาง</option>
+                            <option value="shop">🛍️ ช็อปปิ้ง</option>
+                            <option value="activity">🎡 กิจกรรม</option>
+                            <option value="other">📦 อื่นๆ</option>
+                        </select>
+                    </div>
+                    <div class="travel-form-group">
+                        <label>👤 บันทึกโดย (สมาชิก)</label>
+                        <select id="exp-member">
+                            <option value="">-- ไม่ระบุ --</option>
+                        </select>
+                    </div>
+                    <div class="travel-form-group">
+                        <label>📅 วันที่</label>
+                        <input type="date" id="exp-date" required>
+                    </div>
+                    <div class="travel-form-group full-width" style="flex-direction:row;align-items:center;gap:10px;">
+                        <button type="button" class="btn-gps" id="btn-get-location" onclick="captureGPS()">
+                            <i class="fa-solid fa-location-dot"></i> บันทึก GPS
+                        </button>
+                        <input type="hidden" id="exp-lat" value="">
+                        <input type="hidden" id="exp-lng" value="">
+                        <span id="gps-status-text" style="font-size:0.8rem;color:#888;"></span>
+                    </div>
+                    <div class="travel-form-group full-width">
+                        <label>📝 หมายเหตุ</label>
+                        <input type="text" id="exp-notes" placeholder="หมายเหตุเพิ่มเติม...">
+                    </div>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+                    <button type="button" class="btn btn-secondary" onclick="closeExpenseModal()">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> บันทึก</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========================
+         Trip Detail Modal
+         ======================== -->
+    <div id="trip-detail-modal-overlay" class="travel-modal-overlay hidden" onclick="if(event.target===this)closeTripDetailModal()" style="align-items:flex-start;padding-top:30px;">
+        <div class="travel-modal-box" style="max-width:800px;width:96%;">
+            <div id="trip-detail-modal-content"><!-- filled by JS --></div>
+        </div>
+    </div>
+
+    <!-- ========================
+         Dashboard v2: Planned Expense Modal (แผนรายจ่ายล่วงหน้า)
+         ======================== -->
+    <div id="plan-modal" class="modal hidden" style="z-index: 1000;">
+        <div class="modal-content modal-sm" style="background: rgba(248, 250, 252, 0.97); border-radius: 20px; padding: 0; overflow: hidden;">
+            <div class="modal-header" style="padding: 12px 18px; margin: 0; border-bottom: 1px solid rgba(226,232,240,0.8);">
+                <h3 id="plan-modal-title" style="margin:0; font-size:1.1rem; color:#1F3272; font-weight:700;">เพิ่มแผนรายจ่าย</h3>
+                <span class="close-modal" onclick="dv2ClosePlanModal()" style="font-size:1.5rem; cursor:pointer; color:#64748b;">&times;</span>
+            </div>
+            <div class="modal-body" style="padding: 14px 18px 18px;">
+                <form id="plan-form" onsubmit="dv2SavePlan(event)">
+                    <input type="hidden" id="plan-id">
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                        <div style="display:flex; gap:8px;">
+                            <div class="form-group" style="width:60px;">
+                                <label style="font-size:.78rem;font-weight:600;color:#475569;">ไอคอน</label>
+                                <input type="text" id="plan-icon" class="form-control" placeholder="💡" maxlength="4" value="💡">
+                            </div>
+                            <div class="form-group" style="flex:1;">
+                                <label style="font-size:.78rem;font-weight:600;color:#475569;">รายการ</label>
+                                <input type="text" id="plan-title" class="form-control" placeholder="เช่น ค่าเช่าบ้าน" required>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <div class="form-group" style="flex:1;">
+                                <label style="font-size:.78rem;font-weight:600;color:#475569;">จำนวนเงิน</label>
+                                <input type="number" step="0.01" id="plan-amount" class="form-control" required>
+                            </div>
+                            <div class="form-group" style="flex:1;">
+                                <label style="font-size:.78rem;font-weight:600;color:#475569;">วันครบกำหนด</label>
+                                <input type="date" id="plan-due-date" class="form-control" required>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <div class="form-group" style="flex:1;">
+                                <label style="font-size:.78rem;font-weight:600;color:#475569;">Company</label>
+                                <select id="plan-entity" class="form-control"><option value="">-- ทั้งครอบครัว --</option></select>
+                            </div>
+                            <div class="form-group" style="flex:1;">
+                                <label style="font-size:.78rem;font-weight:600;color:#475569;">ทำซ้ำ</label>
+                                <select id="plan-recurrence" class="form-control">
+                                    <option value="NONE">ครั้งเดียว</option>
+                                    <option value="MONTHLY">ทุกเดือน</option>
+                                    <option value="QUARTERLY">ทุกไตรมาส</option>
+                                    <option value="YEARLY">ทุกปี</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size:.78rem;font-weight:600;color:#475569;">หมวดหมู่</label>
+                            <select id="plan-category" class="form-control"><option value="">-- ไม่ระบุ --</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size:.78rem;font-weight:600;color:#475569;">หมายเหตุ</label>
+                            <input type="text" id="plan-note" class="form-control">
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:10px; margin-top:16px; justify-content:flex-end;">
+                        <button type="button" class="btn btn-secondary" onclick="dv2ClosePlanModal()">ยกเลิก</button>
+                        <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> บันทึก</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================
+         Dashboard v2: Budget Modal (เงินไปไหน — ตั้งงบต่อหมวด)
+         ======================== -->
+    <div id="budget-modal" class="modal hidden" style="z-index: 1000;">
+        <div class="modal-content modal-sm" style="background: rgba(248, 250, 252, 0.97); border-radius: 20px; padding: 0; overflow: hidden;">
+            <div class="modal-header" style="padding: 12px 18px; margin: 0; border-bottom: 1px solid rgba(226,232,240,0.8);">
+                <h3 style="margin:0; font-size:1.1rem; color:#1F3272; font-weight:700;">ตั้งงบประมาณรายเดือน</h3>
+                <span class="close-modal" onclick="dv2CloseBudgetModal()" style="font-size:1.5rem; cursor:pointer; color:#64748b;">&times;</span>
+            </div>
+            <div class="modal-body" style="padding: 14px 18px 18px;">
+                <form id="budget-form" onsubmit="dv2SaveBudget(event)">
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                        <div class="form-group">
+                            <label style="font-size:.78rem;font-weight:600;color:#475569;">หมวดหมู่</label>
+                            <select id="budget-category" class="form-control" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size:.78rem;font-weight:600;color:#475569;">งบประมาณต่อเดือน</label>
+                            <input type="number" step="0.01" id="budget-amount" class="form-control" required>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:10px; margin-top:16px; justify-content:flex-end;">
+                        <button type="button" class="btn btn-secondary" onclick="dv2CloseBudgetModal()">ยกเลิก</button>
+                        <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> บันทึก</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,2 @@
+ALTER TABLE Projects ADD COLUMN trip_password TEXT;
+ALTER TABLE TripExpenses ADD COLUMN type TEXT DEFAULT 'EXPENSE';

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Design — 5 แบบ</title>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Kanit',sans-serif; background:#F3F5F7; padding:24px; }
+.picker { position:sticky; top:0; z-index:99; background:rgba(255,255,255,.94); backdrop-filter:blur(14px);
+  padding:14px 18px; border-radius:16px; margin-bottom:22px; display:flex; gap:8px; flex-wrap:wrap;
+  align-items:center; box-shadow:0 3px 16px rgba(0,0,0,.07); }
+.picker b { margin-right:8px; font-weight:600; font-size:.95rem; }
+.picker button { padding:8px 16px; border:none; border-radius:10px; cursor:pointer; font-family:inherit;
+  font-size:.85rem; font-weight:500; background:#E8EBEF; color:#4A5568; transition:.18s; }
+.picker button:hover { transform:translateY(-1px); }
+.picker button.on { color:#fff; box-shadow:0 3px 10px rgba(0,0,0,.16); }
+.stage { border-radius:26px; padding:26px; transition:.3s; }
+.variant-note { font-size:.8rem; opacity:.72; margin-bottom:18px; line-height:1.6; }
+
+/* ─── THEME 1: Ghibli Sky ─── */
+.t1 { background:linear-gradient(165deg,#DCF0FB 0%,#F4FAFD 48%,#FDF6E8 100%); }
+.t1 .card { background:rgba(255,255,255,.9); border:2px solid #fff; border-radius:22px;
+  box-shadow:0 8px 22px rgba(96,150,186,.13); }
+.t1 .hero { background:linear-gradient(135deg,#7EC4E8 0%,#A5D8F0 100%); color:#fff; }
+.t1 .accent{color:#3D7EA6} .t1 .pos{color:#4A9E6F} .t1 .neg{color:#D97757}
+.t1 .chip { background:#EAF6FD; color:#3D7EA6; }
+.t1 .chip.on { background:#7EC4E8; color:#fff; }
+.t1 h3 { color:#2C5F80; }
+
+/* ─── THEME 2: Sakura Pastel ─── */
+.t2 { background:linear-gradient(165deg,#FDF0F4 0%,#FEF8FA 50%,#F5F0FB 100%); }
+.t2 .card { background:#fff; border:1.5px solid #FBE4EC; border-radius:20px;
+  box-shadow:0 6px 18px rgba(214,150,180,.11); }
+.t2 .hero { background:linear-gradient(135deg,#F4A0BE 0%,#F8BDD2 100%); color:#fff; }
+.t2 .accent{color:#C56490} .t2 .pos{color:#5FA88A} .t2 .neg{color:#E07A7A}
+.t2 .chip { background:#FDEDF3; color:#C56490; }
+.t2 .chip.on { background:#F4A0BE; color:#fff; }
+.t2 h3 { color:#A84E76; }
+
+/* ─── THEME 3: Totoro Forest ─── */
+.t3 { background:linear-gradient(165deg,#E8F2E4 0%,#F6FAF3 50%,#FBF6E9 100%); }
+.t3 .card { background:#FFFDF8; border:2px solid #EDF3E7; border-radius:18px;
+  box-shadow:0 6px 18px rgba(110,140,95,.13); }
+.t3 .hero { background:linear-gradient(135deg,#7BA96A 0%,#A3C48E 100%); color:#fff; }
+.t3 .accent{color:#5A8248} .t3 .pos{color:#5A8248} .t3 .neg{color:#C4703F}
+.t3 .chip { background:#EDF5E8; color:#5A8248; }
+.t3 .chip.on { background:#7BA96A; color:#fff; }
+.t3 h3 { color:#456B36; }
+
+/* ─── THEME 4: Anime Pop ─── */
+.t4 { background:linear-gradient(165deg,#FFF4E0 0%,#FFF9F0 45%,#E8F6FF 100%); }
+.t4 .card { background:#fff; border:3px solid #2D3E50; border-radius:16px;
+  box-shadow:5px 5px 0 rgba(45,62,80,.16); }
+.t4 .hero { background:linear-gradient(135deg,#FF9052 0%,#FFB775 100%); color:#fff;
+  border:3px solid #2D3E50; box-shadow:5px 5px 0 rgba(45,62,80,.2); }
+.t4 .accent{color:#E8722C} .t4 .pos{color:#2E9E5B} .t4 .neg{color:#E14B4B}
+.t4 .chip { background:#FFF0DE; color:#E8722C; border:2px solid #2D3E50; }
+.t4 .chip.on { background:#FF9052; color:#fff; }
+.t4 h3 { color:#2D3E50; font-weight:600; }
+
+/* ─── THEME 5: Kawaii Soft ─── */
+.t5 { background:linear-gradient(165deg,#EAF7F5 0%,#F7F3FD 50%,#FEF4EE 100%); }
+.t5 .card { background:rgba(255,255,255,.85); border:none; border-radius:26px;
+  box-shadow:0 10px 26px rgba(150,140,190,.14); }
+.t5 .hero { background:linear-gradient(135deg,#9BD8CE 0%,#BFC8EE 55%,#F5C3B0 100%); color:#fff; }
+.t5 .accent{color:#7B93C7} .t5 .pos{color:#54A896} .t5 .neg{color:#E39B87}
+.t5 .chip { background:#EFF4FC; color:#7B93C7; }
+.t5 .chip.on { background:#9BB3E0; color:#fff; }
+.t5 h3 { color:#6B7FB0; }
+
+/* ─── SHARED LAYOUT ─── */
+.card { padding:18px 20px; margin-bottom:14px; }
+.hero { padding:22px 26px; border-radius:24px; margin-bottom:14px; }
+h3 { font-size:.95rem; font-weight:600; margin-bottom:14px; display:flex;
+  align-items:center; gap:8px; justify-content:space-between; }
+h3 .ti { display:flex; align-items:center; gap:8px; }
+.ico { font-size:1.25rem; line-height:1; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.chip { padding:5px 13px; border-radius:20px; font-size:.75rem; font-weight:500;
+  cursor:pointer; display:inline-block; }
+.big { font-size:2rem; font-weight:600; line-height:1.15; }
+.mid { font-size:1.3rem; font-weight:600; }
+.sm { font-size:.78rem; opacity:.75; }
+.xs { font-size:.72rem; opacity:.62; }
+.row { display:flex; justify-content:space-between; align-items:center;
+  padding:9px 0; border-bottom:1px dashed rgba(0,0,0,.07); font-size:.83rem; }
+.row:last-child { border-bottom:none; }
+.rowL { display:flex; align-items:center; gap:9px; }
+
+/* budget gauge — bar can exceed the budget marker */
+.gauge { position:relative; height:11px; background:rgba(0,0,0,.06);
+  border-radius:6px; margin:7px 0 4px; }
+.gfill { position:absolute; left:0; top:0; height:100%; border-radius:6px; }
+.gmark { position:absolute; top:-4px; width:3px; height:19px;
+  background:#2D3E50; border-radius:2px; }
+.gmark::after { content:'งบ'; position:absolute; top:-15px; left:50%;
+  transform:translateX(-50%); font-size:.58rem; color:#2D3E50;
+  background:rgba(255,255,255,.9); padding:0 3px; border-radius:3px; white-space:nowrap; }
+.hero .sm, .hero .xs { opacity:.9; }
+.tabs { display:flex; gap:6px; }
+.split { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; }
+
+/* ─── TABLET ─── */
+@media (max-width: 900px) {
+  body { padding:14px; }
+  .stage { padding:16px; border-radius:20px; }
+  .grid3 { grid-template-columns:1fr 1fr; }
+  .grid3 > .card:last-child { grid-column:1 / -1; }
+}
+
+/* ─── MOBILE ─── */
+@media (max-width: 600px) {
+  body { padding:10px; }
+  .stage { padding:12px; border-radius:16px; }
+  .picker { padding:10px 12px; border-radius:12px; margin-bottom:14px; gap:6px;
+    overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch; }
+  .picker b { flex-shrink:0; font-size:.85rem; }
+  .picker button { flex-shrink:0; padding:7px 12px; font-size:.78rem; }
+  .grid2, .grid3 { grid-template-columns:1fr; gap:11px; }
+  .grid3 > .card:last-child { grid-column:auto; }
+  .card { padding:15px 16px; margin-bottom:11px; border-radius:16px !important; }
+  .hero { padding:18px 18px; border-radius:18px; }
+  .big { font-size:1.7rem; }
+  .mid { font-size:1.15rem; }
+  h3 { font-size:.88rem; margin-bottom:11px; }
+  .row { font-size:.8rem; padding:8px 0; }
+  .ico { font-size:1.1rem; }
+  /* แผนรายจ่าย: 5 เดือนเลื่อนแนวนอนแทนที่จะบีบ */
+  .card > div[style*="display:flex;gap:8px"] { overflow-x:auto; padding-bottom:4px;
+    -webkit-overflow-scrolling:touch; }
+  .card > div[style*="display:flex;gap:8px"] > div { min-width:74px; flex:0 0 auto !important; }
+  /* ปุ่ม PDF/XLS ในหัวการ์ด ไม่ให้ล้น */
+  h3 { flex-wrap:wrap; gap:7px; }
+  .chip { padding:4px 11px; font-size:.7rem; }
+  .gmark::after { font-size:.54rem; }
+}
+
+/* ─── MOBILE เล็กมาก ─── */
+@media (max-width: 380px) {
+  .big { font-size:1.5rem; }
+  .hero > div:first-child { flex-direction:column; }
+}
+</style>
+</head>
+<body>
+
+<div class="picker">
+  <b>เลือกดูแบบ</b>
+  <button class="on" style="background:#7EC4E8;color:#fff" onclick="pick(1,this)">1 · Ghibli Sky</button>
+  <button onclick="pick(2,this)">2 · Sakura Pastel</button>
+  <button onclick="pick(3,this)">3 · Totoro Forest</button>
+  <button onclick="pick(4,this)">4 · Anime Pop</button>
+  <button onclick="pick(5,this)">5 · Kawaii Soft</button>
+</div>
+
+<div class="stage t1" id="stage">
+  <div class="variant-note" id="note"></div>
+  <div id="body"></div>
+</div>
+
+<script>
+const NOTES = {
+1:"<b>Ghibli Sky</b> — ฟ้าอ่อน + ครีม ขอบขาวหนา เงานุ่ม ให้ความรู้สึกโปร่ง สบายตา เหมาะกับการดูนานๆ",
+2:"<b>Sakura Pastel</b> — ชมพูซากุระ + ม่วงอ่อน เบามาก การ์ดขอบบาง เหมาะกับคนชอบความละมุน",
+3:"<b>Totoro Forest</b> — เขียวป่า + ครีมกระดาษ อบอุ่น เป็นธรรมชาติ อ่านตัวเลขสบายที่สุด",
+4:"<b>Anime Pop</b> — ส้มสด ขอบดำหนา เงาทึบแบบการ์ตูน สดใสมีพลัง ตัวเลขเด่นชัด",
+5:"<b>Kawaii Soft</b> — มินต์ + ลาเวนเดอร์ + พีช ไล่สี ขอบมนมาก ไม่มีเส้นขอบ ดูนุ่มละมุน"
+};
+
+const HTML = `
+<div class="hero">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px">
+    <div>
+      <div class="sm">ยอดเงินคงเหลือรวม · ทุกบัญชี</div>
+      <div class="big">฿ 20,230.00</div>
+      <div class="xs" style="margin-top:7px">
+        กระแสเงินสด ก.ค. 2026 · <b>−11,100.00</b> · เทียบเดือนก่อน +8,400
+      </div>
+    </div>
+    <div class="tabs">
+      <span class="chip on">เดือนนี้</span>
+      <span class="chip">ทั้งหมด</span>
+    </div>
+  </div>
+  <div style="display:flex;height:8px;border-radius:5px;overflow:hidden;margin-top:16px;background:rgba(255,255,255,.28)">
+    <div style="width:2%;background:#fff"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:.72rem;margin-top:6px;opacity:.92">
+    <span>รับ 200.00</span><span>จ่าย 11,300.00</span>
+  </div>
+</div>
+
+<div class="grid3">
+  <div class="card">
+    <h3><span class="ti"><span class="ico">📥</span>รายรับ</span></h3>
+    <div class="mid pos">200.00</div>
+    <div class="xs" style="margin-bottom:9px">1 รายการ</div>
+    <div class="row"><span>เงินโอนเข้า</span><span class="pos">200.00</span></div>
+  </div>
+  <div class="card">
+    <h3><span class="ti"><span class="ico">📤</span>รายจ่าย</span></h3>
+    <div class="mid neg">11,300.00</div>
+    <div class="xs" style="margin-bottom:9px">14 รายการ</div>
+    <div class="row"><span>ค่าที่พัก</span><span class="neg">6,500</span></div>
+    <div class="row"><span>อาหาร</span><span class="neg">2,800</span></div>
+    <div class="row"><span>เดินทาง</span><span class="neg">1,200</span></div>
+  </div>
+  <div class="card">
+    <h3><span class="ti"><span class="ico">📊</span>เฉลี่ย</span></h3>
+    <div class="mid accent">538.10</div>
+    <div class="xs" style="margin-bottom:9px">ต่อวัน · 21 วันผ่านไป</div>
+    <div class="row"><span>สูงสุด/วัน</span><span>3,200</span></div>
+    <div class="row"><span>คาดทั้งเดือน</span><span>16,681</span></div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h3><span class="ti"><span class="ico">🏦</span>Statement แต่ละบัญชี</span></h3>
+    <div class="row"><span class="rowL"><span class="ico">🔵</span>[A15] Sorsim KTB</span><b>8,730.00</b></div>
+    <div class="row"><span class="rowL"><span class="ico">💵</span>[A01] Pocket</span><b>300.00</b></div>
+    <div class="row"><span class="rowL"><span class="ico">💳</span>[A04] PRACH KBANK</span><b>11,200.00</b></div>
+    <div class="row" style="border-top:2px solid rgba(0,0,0,.09);margin-top:5px;padding-top:11px">
+      <b>รวมทั้งหมด</b><b class="accent">20,230.00</b>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="ti"><span class="ico">🎯</span>เงินไปไหน · เทียบงบ</span></h3>
+    <div style="margin-bottom:15px">
+      <div class="split"><span style="font-size:.83rem">ค่าที่พัก</span>
+        <span class="neg" style="font-size:.78rem"><b>6,500</b> / 5,000</span></div>
+      <div class="gauge">
+        <div class="gfill" style="width:87%;background:#E14B4B"></div>
+        <div class="gmark" style="left:67%"></div>
+      </div>
+      <div class="xs neg">เกินงบ 1,500</div>
+    </div>
+    <div style="margin-bottom:15px">
+      <div class="split"><span style="font-size:.83rem">อาหาร</span>
+        <span style="font-size:.78rem;color:#D08A2C"><b>2,800</b> / 3,000</span></div>
+      <div class="gauge">
+        <div class="gfill" style="width:70%;background:#EFA33A"></div>
+        <div class="gmark" style="left:75%"></div>
+      </div>
+      <div class="xs">เหลือ 200</div>
+    </div>
+    <div>
+      <div class="split"><span style="font-size:.83rem">เดินทาง</span>
+        <span class="pos" style="font-size:.78rem"><b>1,200</b> / 4,000</span></div>
+      <div class="gauge">
+        <div class="gfill" style="width:25%;background:#5CA86F"></div>
+        <div class="gmark" style="left:83%"></div>
+      </div>
+      <div class="xs">เหลือ 2,800</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h3><span class="ti"><span class="ico">💰</span>ลูกหนี้ · รับเข้า</span>
+      <span style="display:flex;gap:5px"><span class="chip">PDF</span><span class="chip">XLS</span></span></h3>
+    <div class="mid pos" style="margin-bottom:11px">42,300.00</div>
+    <div class="row"><span class="rowL">บ. เอบีซี <span class="xs">AR · 3 รายการ</span></span><b class="pos">30,000</b></div>
+    <div class="row"><span class="rowL">คุณสมชาย <span class="xs">ทะเบียน</span></span><b class="pos">12,300</b></div>
+  </div>
+  <div class="card">
+    <h3><span class="ti"><span class="ico">🧾</span>เจ้าหนี้ · ต้องจ่าย</span>
+      <span style="display:flex;gap:5px"><span class="chip">PDF</span><span class="chip">XLS</span></span></h3>
+    <div class="mid neg" style="margin-bottom:11px">28,750.00</div>
+    <div class="row"><span class="rowL">บัตรเครดิต <span class="xs">ผ่อน 2,500/ด.</span></span><b class="neg">18,750</b></div>
+    <div class="row"><span class="rowL">บ. XYZ <span class="xs">AP · 2 รายการ</span></span><b class="neg">10,000</b></div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h3><span class="ti"><span class="ico">📋</span>ถูกหัก ณ ที่จ่าย</span>
+      <span style="display:flex;gap:5px"><span class="chip">PDF</span><span class="chip">XLS</span></span></h3>
+    <div class="xs" style="margin-bottom:7px">เครดิตภาษีขอคืนได้</div>
+    <div class="row"><span>ก.ค. 2026</span><b>1,500.00</b></div>
+    <div class="row"><span>มิ.ย. 2026</span><b>2,100.00</b></div>
+    <div class="row"><span>พ.ค. 2026</span><b>900.00</b></div>
+    <div class="row" style="border-top:2px solid rgba(0,0,0,.09);margin-top:5px;padding-top:11px">
+      <b>รวมทั้งปี</b><b class="accent">4,500.00</b></div>
+  </div>
+  <div class="card">
+    <h3><span class="ti"><span class="ico">🏛️</span>หัก ณ ที่จ่ายไว้</span>
+      <span style="display:flex;gap:5px"><span class="chip">PDF</span><span class="chip">XLS</span></span></h3>
+    <div class="xs" style="margin-bottom:7px">ต้องนำส่งสรรพากร</div>
+    <div class="row"><span>ก.ค. 2026</span><b>339.00</b></div>
+    <div class="row"><span>มิ.ย. 2026</span><b>0.00</b></div>
+    <div class="row"><span>พ.ค. 2026</span><b>150.00</b></div>
+    <div class="row" style="border-top:2px solid rgba(0,0,0,.09);margin-top:5px;padding-top:11px">
+      <b>รวมทั้งปี</b><b class="accent">489.00</b></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3><span class="ti"><span class="ico">📅</span>แผนรายจ่ายล่วงหน้า</span>
+    <span class="chip on">+ เพิ่ม</span></h3>
+  <div style="display:flex;gap:8px;margin-bottom:13px">
+    <div style="flex:1;text-align:center;padding:9px;border-radius:12px;background:rgba(0,0,0,.04)">
+      <div class="xs">ส.ค.</div><b>8,500</b></div>
+    <div style="flex:1;text-align:center;padding:9px;border-radius:12px;background:rgba(0,0,0,.04)">
+      <div class="xs">ก.ย.</div><b>3,500</b></div>
+    <div style="flex:1;text-align:center;padding:9px;border-radius:12px;background:rgba(0,0,0,.04)">
+      <div class="xs">ต.ค.</div><b>3,500</b></div>
+    <div style="flex:1;text-align:center;padding:9px;border-radius:12px;background:rgba(0,0,0,.04)">
+      <div class="xs">พ.ย.</div><b>3,500</b></div>
+    <div style="flex:1;text-align:center;padding:9px;border-radius:12px;background:rgba(0,0,0,.04)">
+      <div class="xs">ธ.ค.</div><b>3,500</b></div>
+  </div>
+  <div class="row">
+    <span class="rowL"><span class="ico">🚗</span>ต่อประกันรถ <span class="xs">15 ส.ค. · ครั้งเดียว</span></span>
+    <span style="display:flex;align-items:center;gap:11px"><b>5,000</b>
+      <span class="xs" style="letter-spacing:3px">✏️✅🗑️</span></span>
+  </div>
+  <div class="row">
+    <span class="rowL"><span class="ico">🎒</span>ค่าเทอมลูก
+      <span class="chip" style="font-size:.65rem;padding:2px 8px">ทุกเดือน</span></span>
+    <span style="display:flex;align-items:center;gap:11px"><b>3,500</b>
+      <span class="xs" style="letter-spacing:3px">✏️✅🗑️</span></span>
+  </div>
+</div>
+`;
+
+const BTN = {1:'#7EC4E8',2:'#F4A0BE',3:'#7BA96A',4:'#FF9052',5:'#9BB3E0'};
+function pick(n, el){
+  document.getElementById('stage').className = 'stage t'+n;
+  document.getElementById('note').innerHTML = NOTES[n];
+  document.querySelectorAll('.picker button').forEach(b=>{
+    b.classList.remove('on'); b.style.background='#E8EBEF'; b.style.color='#4A5568';
+  });
+  el.classList.add('on'); el.style.background = BTN[n]; el.style.color = '#fff';
+}
+document.getElementById('body').innerHTML = HTML;
+document.getElementById('note').innerHTML = NOTES[1];
+</script>
+</body>
+</html>
