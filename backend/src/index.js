@@ -1,5 +1,77 @@
 // backend/src/index.js
 
+// คำนวณยอดกระเป๋าทริป: funded = ตั้งต้น + ทุกล็อตเติม, spent = Σบิล,
+// เรทเฉลี่ยถ่วงน้ำหนัก = Σบาท ÷ Σเงินตปท. (ไม่ขึ้นกับลำดับ/วันที่บันทึก)
+async function computeTripWallets(env, projectId) {
+  const wallets = await env.DB.prepare(`
+    SELECT w.*,
+      (w.initial_balance_foreign + COALESCE((SELECT SUM(foreign_amount) FROM TripWalletFundings f WHERE f.wallet_id=w.wallet_id),0)) AS funded_foreign,
+      (w.initial_balance_thb     + COALESCE((SELECT SUM(thb_amount)     FROM TripWalletFundings f WHERE f.wallet_id=w.wallet_id),0)) AS funded_thb,
+      COALESCE((SELECT SUM(COALESCE(amount_foreign, amount_thb, 0)) FROM TripExpenses e WHERE e.wallet_id=w.wallet_id AND IFNULL(e.approved,1)!=0),0) AS spent_foreign
+    FROM TripWallets w WHERE w.project_id = ? ORDER BY w.created_at ASC
+  `).bind(projectId).all().catch(() => ({ results: [] }));
+  return (wallets.results || []).map(w => {
+    const ff = Number(w.funded_foreign) || 0;
+    const ft = Number(w.funded_thb) || 0;
+    const sf = Number(w.spent_foreign) || 0;
+    const avg_rate = ff > 0 ? ft / ff : 0;            // บาทต่อ 1 หน่วยเงินตปท.
+    const leftover_foreign = ff - sf;
+    return { ...w, avg_rate, leftover_foreign, leftover_thb: leftover_foreign * avg_rate };
+  });
+}
+
+// สรุปยอดปิดทริป: ล็อกค่าบาทของแต่ละบิลด้วยเรทเฉลี่ยของกระเป๋า → รวมต่อ member/caption
+async function computeTripCloseSummary(env, projectId) {
+  const wallets = await computeTripWallets(env, projectId);
+  const wmap = {}; wallets.forEach(w => { wmap[w.wallet_id] = w; });
+  const exp = await env.DB.prepare(`
+    SELECT e.*, c.name AS cat_name, cp.type_id AS caption_id, cp.name AS caption_name,
+           u.name AS member_name
+    FROM TripExpenses e
+    LEFT JOIN Categories c ON e.category_id = c.category_id
+    LEFT JOIN Captions   cp ON c.caption_id = cp.type_id
+    LEFT JOIN Users      u ON e.member_id = u.user_id
+    WHERE e.project_id = ? AND IFNULL(e.type,'EXPENSE') != 'TOPUP' AND IFNULL(e.approved,1) != 0
+  `).bind(projectId).all().catch(() => ({ results: [] }));
+
+  const bills = (exp.results || []).map(e => {
+    const w = wmap[e.wallet_id];
+    const avg = w && Number(w.avg_rate) > 0 ? Number(w.avg_rate) : 0;
+    const hasForeign = e.amount_foreign != null && Number(e.amount_foreign) > 0;
+    const final_thb = (hasForeign && avg > 0) ? Number(e.amount_foreign) * avg : Number(e.amount_thb || 0);
+    return { ...e, final_thb: Math.round(final_thb * 100) / 100, used_rate: avg };
+  });
+
+  // รวมต่อ member (คนจ่าย) + แยก caption
+  const members = {};
+  bills.forEach(b => {
+    const mid = b.member_id || 'unknown';
+    if (!members[mid]) members[mid] = { member_id: mid, member_name: b.member_name || 'ไม่ระบุ', total_thb: 0, byCaption: {} };
+    members[mid].total_thb += b.final_thb;
+    const cap = b.caption_name || b.cat_name || 'ไม่ระบุหมวด';
+    members[mid].byCaption[cap] = (members[mid].byCaption[cap] || 0) + b.final_thb;
+  });
+
+  const funded_thb  = wallets.reduce((s, w) => s + Number(w.funded_thb || 0), 0);
+  const spent_thb   = bills.reduce((s, b) => s + b.final_thb, 0);
+  const leftover_thb = wallets.reduce((s, w) => s + (Number(w.exclude_on_close) === 1 ? 0 : Number(w.leftover_thb || 0)), 0);
+  const kept_thb    = wallets.reduce((s, w) => s + (Number(w.exclude_on_close) === 1 ? Number(w.leftover_thb || 0) : 0), 0);
+  const diff = funded_thb - (spent_thb + leftover_thb + kept_thb);
+
+  return {
+    wallets, bills,
+    members: Object.values(members),
+    totals: {
+      funded_thb: Math.round(funded_thb * 100) / 100,
+      spent_thb: Math.round(spent_thb * 100) / 100,
+      leftover_thb: Math.round(leftover_thb * 100) / 100,
+      kept_thb: Math.round(kept_thb * 100) / 100,
+      diff: Math.round(diff * 100) / 100
+    },
+    balanced: Math.abs(diff) < 1
+  };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -1606,10 +1678,10 @@ export default {
         `).bind(projectId).all();
         
         const stops = await env.DB.prepare(`SELECT * FROM TripStops WHERE project_id = ? ORDER BY stop_date ASC, time ASC, created_at ASC`).bind(projectId).all();
-        const wallets = await env.DB.prepare(`SELECT * FROM TripWallets WHERE project_id = ? ORDER BY created_at ASC`).bind(projectId).all();
+        const wallets = await computeTripWallets(env, projectId);
         const documents = await env.DB.prepare(`SELECT * FROM TripDocuments WHERE project_id = ? ORDER BY created_at ASC`).bind(projectId).all();
 
-        return new Response(JSON.stringify({ success: true, trip, expenses: expenses.results, stops: stops.results, wallets: wallets.results, documents: documents.results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ success: true, trip, expenses: expenses.results, stops: stops.results, wallets, documents: documents.results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       if (url.pathname === '/api/trips/guest' && request.method === 'POST') {
         const { project_id, trip_password } = await request.json();
@@ -1625,10 +1697,10 @@ export default {
         `).bind(project_id).all();
 
         const stops = await env.DB.prepare(`SELECT * FROM TripStops WHERE project_id = ? ORDER BY stop_date ASC, time ASC, created_at ASC`).bind(project_id).all();
-        const wallets = await env.DB.prepare(`SELECT * FROM TripWallets WHERE project_id = ? ORDER BY created_at ASC`).bind(project_id).all();
+        const wallets = await computeTripWallets(env, project_id);
         const documents = await env.DB.prepare(`SELECT * FROM TripDocuments WHERE project_id = ? ORDER BY created_at ASC`).bind(project_id).all();
 
-        return new Response(JSON.stringify({ success: true, trip, expenses: expenses.results, stops: stops.results, wallets: wallets.results, documents: documents.results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ success: true, trip, expenses: expenses.results, stops: stops.results, wallets, documents: documents.results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       if (url.pathname === '/api/trip-expenses' && request.method === 'GET') {
@@ -1697,8 +1769,8 @@ export default {
       if (url.pathname === '/api/wallets' && request.method === 'GET') {
         const projectId = url.searchParams.get('projectId');
         if (!projectId) return new Response('Missing projectId', { status: 400, headers: corsHeaders });
-        const wallets = await env.DB.prepare(`SELECT * FROM TripWallets WHERE project_id = ? ORDER BY created_at ASC`).bind(projectId).all();
-        return new Response(JSON.stringify(wallets.results), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const out = await computeTripWallets(env, projectId);
+        return new Response(JSON.stringify(out), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       if (url.pathname === '/api/wallets' && request.method === 'POST') {
@@ -1731,8 +1803,83 @@ export default {
       if (url.pathname === '/api/wallets/delete' && request.method === 'POST') {
         const { wallet_id } = await request.json();
         await env.DB.prepare(`DELETE FROM TripWallets WHERE wallet_id=?`).bind(wallet_id).run();
-        // Also clear wallet references in expenses
+        // Also clear wallet references in expenses + fundings
         await env.DB.prepare(`UPDATE TripExpenses SET wallet_id=NULL WHERE wallet_id=?`).bind(wallet_id).run();
+        await env.DB.prepare(`DELETE FROM TripWalletFundings WHERE wallet_id=?`).bind(wallet_id).run().catch(()=>{});
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // ── Trip Finance P1: เติมเงินเข้ากระเป๋าทริป (หลายรอบ + เรท) ──
+      // สร้าง Transaction จริง (ลดบัญชีต้นทาง) + บันทึกล็อตการเติม + อัปเดตเรทเฉลี่ยอัตโนมัติ
+      if (url.pathname === '/api/trips/fund' && request.method === 'POST') {
+        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const me = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
+        if (!me) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const fid = me.family_id;
+
+        const b = await request.json();
+        const { project_id, wallet_id, source_account_id, thb_amount, foreign_amount, currency, funding_date, note } = b;
+        if (!project_id || !wallet_id || !thb_amount) {
+          return new Response(JSON.stringify({ error: 'ต้องระบุ project_id, wallet_id, thb_amount' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        const thb = Math.abs(Number(thb_amount)) || 0;
+        const foreign = Math.abs(Number(foreign_amount)) || thb;   // THB wallet: foreign = thb
+        const rate = foreign > 0 ? thb / foreign : 1;              // บาทต่อ 1 หน่วยเงินตปท.
+        const fdate = funding_date || new Date().toISOString().substring(0, 10);
+        const fundingId = 'TWF-' + Date.now();
+
+        // 1) สร้าง Transaction จริงลดบัญชีต้นทาง (ถ้าระบุบัญชี) — total_amount ติดลบ = เงินออก
+        let linkedTxId = null;
+        if (source_account_id) {
+          try {
+            // หาหมวดประเภทโอน (behavior=TRANSFER) ของครอบครัว ไม่งั้น fallback
+            const tc = await env.DB.prepare(
+              `SELECT c.category_id FROM Categories c JOIN Captions cp ON c.caption_id=cp.type_id
+                WHERE c.family_id=? AND cp.behavior='TRANSFER' LIMIT 1`
+            ).bind(fid).first();
+            const fundCat = tc ? tc.category_id : 'Cat_Uncategorized';
+            linkedTxId = 'TXF-' + Date.now();
+            const detailId = 'DTF-' + Date.now();
+            await env.DB.batch([
+              env.DB.prepare(`INSERT INTO Transactions (transaction_id, account_id, date, total_amount, statement_desc, status, source, created_by_user_id)
+                              VALUES (?, ?, ?, ?, ?, 'CONFIRMED', 'WEB_GRID', ?)`)
+                .bind(linkedTxId, source_account_id, fdate, -thb, `เติมเงินทริป${currency ? ' (' + currency + ')' : ''}`, userId),
+              env.DB.prepare(`INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, project_id, note, type)
+                              VALUES (?, ?, ?, ?, ?, ?, 'TRANSFER')`)
+                .bind(detailId, linkedTxId, -thb, fundCat, project_id, note || `เติมเงินทริป @${rate.toFixed(4)}`)
+            ]);
+          } catch (e) { linkedTxId = null; /* ยังบันทึกล็อตต่อได้ */ }
+        }
+
+        // 2) บันทึกล็อตการเติม
+        await env.DB.prepare(`INSERT INTO TripWalletFundings
+            (funding_id, wallet_id, project_id, funding_date, thb_amount, foreign_amount, rate, source_account_id, linked_transaction_id, note)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(fundingId, wallet_id, project_id, fdate, thb, foreign, rate, source_account_id || null, linkedTxId, note || null).run();
+
+        return new Response(JSON.stringify({ success: true, funding_id: fundingId, rate, linked_transaction_id: linkedTxId }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // รายการล็อตการเติมของกระเป๋า (สำหรับแสดง/ลบ)
+      if (url.pathname === '/api/trips/fundings' && request.method === 'GET') {
+        const walletId = url.searchParams.get('walletId');
+        const projectId = url.searchParams.get('projectId');
+        let rows;
+        if (walletId) rows = await env.DB.prepare(`SELECT * FROM TripWalletFundings WHERE wallet_id=? ORDER BY funding_date ASC, created_at ASC`).bind(walletId).all();
+        else if (projectId) rows = await env.DB.prepare(`SELECT * FROM TripWalletFundings WHERE project_id=? ORDER BY funding_date ASC, created_at ASC`).bind(projectId).all();
+        else return new Response('Missing walletId or projectId', { status: 400, headers: corsHeaders });
+        return new Response(JSON.stringify(rows.results || []), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // ลบล็อตการเติม (คืนรายการบัญชีที่ผูกไว้ด้วย)
+      if (url.pathname === '/api/trips/fundings/delete' && request.method === 'POST') {
+        const { funding_id } = await request.json();
+        const f = await env.DB.prepare(`SELECT linked_transaction_id FROM TripWalletFundings WHERE funding_id=?`).bind(funding_id).first();
+        if (f && f.linked_transaction_id) {
+          await env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id=?`).bind(f.linked_transaction_id).run().catch(()=>{});
+          await env.DB.prepare(`DELETE FROM Transactions WHERE transaction_id=?`).bind(f.linked_transaction_id).run().catch(()=>{});
+        }
+        await env.DB.prepare(`DELETE FROM TripWalletFundings WHERE funding_id=?`).bind(funding_id).run();
         return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
@@ -1823,17 +1970,84 @@ export default {
         return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // 8.5 Trip Settlement API
-      if (url.pathname === '/api/trips/settle' && request.method === 'POST') {
+      // 8.5 Trip Settlement — สรุปก่อนปิด (พรีวิว ไม่แก้ข้อมูล)
+      if (url.pathname === '/api/trips/close-preview' && request.method === 'GET') {
+        const projectId = url.searchParams.get('projectId');
+        if (!projectId) return new Response('Missing projectId', { status: 400, headers: corsHeaders });
+        const summary = await computeTripCloseSummary(env, projectId);
+        return new Response(JSON.stringify(summary), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // 8.5 Trip Settlement — ปิดทริปจริง (ต้องยืนยัน confirm='CLOSE')
+      if ((url.pathname === '/api/trips/close' || url.pathname === '/api/trips/settle') && request.method === 'POST') {
         const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
-        const { project_id, split_logic } = await request.json(); // split_logic could define how it's distributed
-        // Basic placeholder logic for settlement
-        // Update project status to closed
-        await env.DB.prepare(`UPDATE Projects SET status='closed' WHERE project_id=?`).bind(project_id).run();
-        
-        // Example: Here we would calculate totals, topups, and insert into Transactions & TransactionDetails
-        // We will just return success for now
-        return new Response(JSON.stringify({ success: true, message: 'Trip closed and settled.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const me = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
+        if (!me) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const body = await request.json();
+        const { project_id, confirm } = body;
+        if (confirm !== 'CLOSE') return new Response(JSON.stringify({ error: "ต้องยืนยันด้วย confirm='CLOSE'" }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+        const summary = await computeTripCloseSummary(env, project_id);
+        const wmap = {}; summary.wallets.forEach(w => wmap[w.wallet_id] = w);
+        const now = Date.now();
+        const today = new Date().toISOString().substring(0, 10);
+        const ops = [];
+        const report = { posted_bills: 0, reversed_fundings: 0, refunded_thb: 0, kept_wallets: [] };
+
+        // หาบัญชีต้นทางของแต่ละกระเป๋า (ล็อตเติมแรกที่มีบัญชี) เผื่อบิลไม่ได้ระบุบัญชีจ่าย
+        const fundings = await env.DB.prepare(`SELECT * FROM TripWalletFundings WHERE project_id=? ORDER BY created_at ASC`).bind(project_id).all().catch(() => ({ results: [] }));
+        const walletSrc = {};
+        (fundings.results || []).forEach(f => { if (!walletSrc[f.wallet_id] && f.source_account_id) walletSrc[f.wallet_id] = f.source_account_id; });
+        const firstAcct = await env.DB.prepare(`SELECT a.account_id FROM Accounts a JOIN Entities e ON a.entity_id=e.entity_id WHERE e.family_id=? LIMIT 1`).bind(me.family_id).first();
+        const fallbackAcct = firstAcct ? firstAcct.account_id : null;
+
+        // หมวดโอน (TRANSFER) สำหรับรายการคืนเงินพักทริป
+        const tc = await env.DB.prepare(`SELECT c.category_id FROM Categories c JOIN Captions cp ON c.caption_id=cp.type_id WHERE c.family_id=? AND cp.behavior='TRANSFER' LIMIT 1`).bind(me.family_id).first();
+        const transferCat = tc ? tc.category_id : 'Cat_Uncategorized';
+
+        let i = 0;
+        // 1) คืนเงินพักทริปเข้าบัญชี (กลับรายการเติม) — เฉพาะกระเป๋าที่ไม่เก็บไว้ทริปหน้า
+        for (const f of (fundings.results || [])) {
+          const w = wmap[f.wallet_id];
+          if (w && Number(w.exclude_on_close) === 1) continue;  // เก็บไว้ทริปหน้า → ไม่คืน
+          if (!f.source_account_id) continue;
+          const txId = `TXR-${now}-${i}`, dId = `DTR-${now}-${i}`; i++;
+          ops.push(env.DB.prepare(`INSERT INTO Transactions (transaction_id, account_id, date, total_amount, statement_desc, status, source, created_by_user_id) VALUES (?, ?, ?, ?, ?, 'CONFIRMED', 'WEB_GRID', ?)`)
+            .bind(txId, f.source_account_id, today, Number(f.thb_amount) || 0, 'ปิดทริป: คืนเงินพักทริป', userId));
+          ops.push(env.DB.prepare(`INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, project_id, note, type) VALUES (?, ?, ?, ?, ?, ?, 'TRANSFER')`)
+            .bind(dId, txId, Number(f.thb_amount) || 0, transferCat, project_id, 'ปิดทริป: กลับรายการเติมเงิน'));
+          report.reversed_fundings++;
+          report.refunded_thb += Number(f.thb_amount) || 0;
+        }
+
+        // 2) ลงบิลแต่ละใบเป็นรายจ่ายบัญชีหลักของ member (คนจ่าย) + ล็อกค่าบาทสุดท้าย
+        for (const b of summary.bills) {
+          const w = wmap[b.wallet_id];
+          const acct = b.paid_from_account_id || (w && walletSrc[w.wallet_id]) || fallbackAcct;
+          // ล็อกค่าบาทสุดท้ายลงบิล
+          ops.push(env.DB.prepare(`UPDATE TripExpenses SET amount_thb=? WHERE trip_expense_id=?`).bind(b.final_thb, b.trip_expense_id));
+          if (!acct) continue;
+          const txId = `TXE-${now}-${i}`, dId = `DTE-${now}-${i}`; i++;
+          const desc = (b.note || b.cat_name || 'ค่าใช้จ่ายทริป');
+          ops.push(env.DB.prepare(`INSERT INTO Transactions (transaction_id, account_id, date, total_amount, statement_desc, status, source, created_by_user_id) VALUES (?, ?, ?, ?, ?, 'CONFIRMED', 'WEB_GRID', ?)`)
+            .bind(txId, acct, b.expense_date || today, -Math.abs(b.final_thb), `ทริป: ${desc}`, b.member_id || userId));
+          ops.push(env.DB.prepare(`INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, project_id, note, type) VALUES (?, ?, ?, ?, ?, ?, 'EXPENSE')`)
+            .bind(dId, txId, -Math.abs(b.final_thb), b.category_id || 'Cat_Uncategorized', project_id, b.note || null));
+          report.posted_bills++;
+        }
+
+        // กระเป๋าที่เก็บไว้ทริปหน้า
+        summary.wallets.filter(w => Number(w.exclude_on_close) === 1).forEach(w => report.kept_wallets.push({ name: w.name, currency: w.currency, leftover_foreign: w.leftover_foreign, leftover_thb: w.leftover_thb }));
+
+        // 3) ปิดทริป
+        ops.push(env.DB.prepare(`UPDATE Projects SET status='closed' WHERE project_id=?`).bind(project_id));
+
+        // รันเป็นชุด (batch) ถ้าล้มเหลวลองทีละคำสั่ง
+        try { await env.DB.batch(ops); }
+        catch (e) { for (const op of ops) { try { await op.run(); } catch (_) {} } }
+
+        report.refunded_thb = Math.round(report.refunded_thb * 100) / 100;
+        return new Response(JSON.stringify({ success: true, summary, report }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       // 20. Stats: date range of available transaction data

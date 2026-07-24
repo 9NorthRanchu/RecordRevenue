@@ -9058,23 +9058,43 @@ function renderTripsView() {
         const endDateStr = typeof formatTripDate === 'function' ? formatTripDate(trip.end_date) : new Date(trip.end_date).toLocaleDateString();
         const dest = trip.destination || 'Not set';
 
+        const days = getTripDays(trip.start_date, trip.end_date);
+        const highlightsHtml = renderTripHighlights(trip);
+        const statusBadge = trip.status === 'closed'
+            ? '<span style="background:rgba(167,139,250,0.9); color:#fff; font-size:10px; font-weight:800; padding:3px 9px; border-radius:20px;">💜 Memory</span>'
+            : trip.status === 'planned'
+            ? '<span style="background:rgba(56,189,248,0.9); color:#fff; font-size:10px; font-weight:800; padding:3px 9px; border-radius:20px;">💧 Incoming</span>'
+            : '<span style="background:rgba(244,114,182,0.95); color:#fff; font-size:10px; font-weight:800; padding:3px 9px; border-radius:20px;">🌸 Ongoing</span>';
+
         return `
-            <div class="debt-list-item" onclick="openTripDetail('${trip.project_id}')" style="box-sizing: border-box; flex-shrink: 0; background:white; border:2px solid ${borderColor}; border-radius:16px; cursor:pointer; display:flex; flex-direction:column; position:relative; overflow:hidden; box-shadow:0 4px 6px rgba(0,0,0,0.05); margin-bottom: 12px;">
-                <!-- Full width banner with gradient fade -->
-                <div style="position:absolute; top:0; left:0; right:0; height: 180px; background-image:url('${bannerImg}'); background-size:cover; background-position:center; opacity: 0.9; z-index: 0;"></div>
-                <div style="position:absolute; top:0; left:0; right:0; height: 180px; background: linear-gradient(to bottom, transparent 0%, rgba(255,255,255,0.7) 60%, rgba(255,255,255,1) 100%); z-index: 1;"></div>
-                
-                <!-- Content Area: Add top padding -->
-                <div style="position: relative; z-index: 2; padding: 10px; padding-top: 50px; display:flex; flex-direction:column; gap:6px;">
-                    <!-- Trip Name: Above the Thumb -->
-                    <div style="display: flex; margin-bottom: 2px;">
-                        <span style="background: white; border: 2px solid ${borderColor}; padding: 3px 8px; border-radius: 12px; font-size: 1rem; font-weight: 800; color: ${boldColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; box-sizing: border-box;">
-                            ${trip.name}
-                        </span>
+            <div class="debt-list-item" onclick="openTripDetail('${trip.project_id}')" style="box-sizing:border-box; flex-shrink:0; background:#fff; border:2.5px solid ${borderColor}; border-radius:22px; cursor:pointer; display:flex; flex-direction:column; position:relative; overflow:hidden; box-shadow:0 6px 18px rgba(0,0,0,0.07); margin-bottom:14px; transition:transform .15s, box-shadow .15s;" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 12px 26px rgba(0,0,0,0.12)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 6px 18px rgba(0,0,0,0.07)';">
+                <!-- Banner -->
+                <div style="position:relative; height:130px; overflow:hidden;">
+                    <div style="position:absolute; inset:0; background-image:url('${bannerImg}'); background-size:cover; background-position:center;"></div>
+                    <div style="position:absolute; inset:0; background:linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 40%, rgba(255,255,255,0.92) 100%);"></div>
+                    <div style="position:absolute; top:10px; right:10px;">${statusBadge}</div>
+                    ${highlightsHtml ? `<div style="position:absolute; bottom:8px; right:10px; display:flex; gap:4px;">${highlightsHtml}</div>` : ''}
+                    <!-- Name pill overlapping bottom -->
+                    <div style="position:absolute; bottom:8px; left:12px; right:12px;">
+                        <span style="background:#fff; border:2.5px solid ${borderColor}; padding:4px 12px; border-radius:16px; font-size:1.05rem; font-weight:800; color:${boldColor}; box-shadow:0 3px 8px rgba(0,0,0,0.1); display:inline-block; max-width:calc(100% - 4px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box;">${trip.name}</span>
                     </div>
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-size:12px; color:#475569;">${dest}</span>
-                        <span style="font-size:12px; color:#64748b;">${startDateStr} - ${endDateStr}</span>
+                </div>
+                <!-- Body -->
+                <div style="padding:12px 14px 14px; display:flex; flex-direction:column; gap:9px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <span style="font-size:12px; color:#475569; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📍 ${dest}</span>
+                        <span style="font-size:11px; color:#94a3b8; white-space:nowrap;">🗓️ ${days} วัน</span>
+                    </div>
+                    <div style="font-size:11px; color:#64748b;">${startDateStr} – ${endDateStr}</div>
+                    <!-- Budget gauge -->
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
+                            <span style="font-size:11px; color:#64748b; font-weight:600;">💰 งบประมาณ</span>
+                            <span style="font-size:11px; font-weight:800; color:${numColor};">฿${tripFmtNum(spent)} <span style="color:#cbd5e1; font-weight:500;">/ ฿${tripFmtNum(budget)}</span></span>
+                        </div>
+                        <div style="height:9px; background:#f1f5f9; border-radius:20px; overflow:hidden;">
+                            <div style="height:100%; width:${budgetPct}%; background:${budgetColor}; border-radius:20px; transition:width .4s;"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -9091,24 +9111,29 @@ window.openTripDetail = async function(projectId) {
         TravelState.currentTrip = data.trip;
         TravelState.expenses = data.expenses || [];
         TravelState.stops = data.stops || [];
+        TravelState.wallets = data.wallets || [];
         TravelState.weatherData = data.weatherData || null;
         TravelState.documents = data.documents || [];
         TravelState.currentTripTab = 'itinerary'; // Default to route mode
-        
-        // Hide other views, show view-trip-detail
-        document.querySelectorAll('.content-view').forEach(v => v.classList.add('hidden'));
-        document.getElementById('view-trip-detail').classList.remove('hidden');
-        
+
+        // แสดงแผงรายละเอียดด้านขวา (ซ่อน empty state)
+        const emptyState = document.getElementById('travel-empty-state');
+        const detailPanel = document.getElementById('travel-details-panel');
+        if (emptyState) emptyState.style.display = 'none';
+        if (detailPanel) detailPanel.style.display = 'block';
+
         renderTripDetailModal();
     } catch (e) {
         console.error('openTripDetail error', e);
-        showToast('โหลดข้อมูลทริปล้มเหลว', 'error');
+        showToast('โหลดข้อมูลทริปล้มเหลว: ' + (e && e.message ? e.message : e), 'error');
     }
 }
 
 window.closeTripDetail = function() {
-    document.querySelectorAll('.content-view').forEach(v => v.classList.add('hidden'));
-    document.getElementById('view-travel').classList.remove('hidden');
+    const emptyState = document.getElementById('travel-empty-state');
+    const detailPanel = document.getElementById('travel-details-panel');
+    if (detailPanel) detailPanel.style.display = 'none';
+    if (emptyState) emptyState.style.display = 'flex';
     TravelState.currentTrip = null;
 };
 
@@ -9127,7 +9152,7 @@ window.renderTripDetailModal = function() {
     try { if(trip.members) members = JSON.parse(trip.members); } 
     catch(e) { members = (trip.members || '').split(',').map(m => m.trim()); }
 
-    const container = document.querySelector('#view-trip-detail .trip-detail-content');
+    const container = document.querySelector('#travel-details-panel .trip-detail-content') || document.querySelector('.trip-detail-content');
     if (!container) return;
     
     // Header
@@ -9457,21 +9482,32 @@ window.renderTripDetailModal = function() {
         contentHtml = `
             <!-- Multi-currency Wallets Dashboard -->
             <div class="trip-detail-section" style="padding:0 15px;">
-                <h3 class="trip-section-title">👛 กระเป๋าเงินทริป</h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <h3 class="trip-section-title" style="margin:0;">👛 กระเป๋าเงินทริป</h3>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn-trip-add-sm" style="background:#10b981;" onclick="openFundWalletModal('${trip.project_id}')">💰 เติมเงิน</button>
+                        <button class="btn-trip-add-sm" style="background:#6366f1;" onclick="openTripCalcModal('${trip.project_id}')">🧮 คิดเงิน</button>
+                        ${trip.status !== 'closed' && !TravelState.isGuest ? `<button class="btn-trip-add-sm" style="background:#ef4444;" onclick="openCloseTripModal('${trip.project_id}')">🔒 ปิดทริป</button>` : ''}
+                    </div>
+                </div>
                 <div class="trip-wallets-grid">
                     ${activeWallets.map(w => {
-                        // Calculate spent from this wallet
-                        const wSpent = expenses
-                            .filter(e => e.wallet_id === w.wallet_id && e.approved !== 0)
-                            .reduce((s, e) => s + parseFloat(e.amount_foreign || e.amount_thb || 0), 0);
-                        const remForeign = parseFloat(w.initial_balance_foreign) - wSpent;
-                        const remThb = remForeign * (parseFloat(w.initial_balance_thb) / (parseFloat(w.initial_balance_foreign) || 1));
-                        
+                        // ใช้ค่าคำนวณจาก backend (funded = ตั้งต้น + ทุกล็อตเติม), spent = Σบิล
+                        const funded = (w.funded_foreign != null) ? parseFloat(w.funded_foreign) : parseFloat(w.initial_balance_foreign || 0);
+                        const spent = (w.spent_foreign != null) ? parseFloat(w.spent_foreign)
+                            : expenses.filter(e => e.wallet_id === w.wallet_id && e.approved !== 0).reduce((s, e) => s + parseFloat(e.amount_foreign || e.amount_thb || 0), 0);
+                        const remForeign = (w.leftover_foreign != null) ? parseFloat(w.leftover_foreign) : (funded - spent);
+                        const avgRate = (w.avg_rate != null && parseFloat(w.avg_rate) > 0) ? parseFloat(w.avg_rate)
+                            : (parseFloat(w.initial_balance_thb || 0) / (parseFloat(w.initial_balance_foreign) || 1));
+                        const remThb = (w.leftover_thb != null) ? parseFloat(w.leftover_thb) : (remForeign * avgRate);
+                        const isThb = (w.currency || '').toUpperCase() === 'THB';
                         return `
                             <div class="trip-wallet-card">
                                 <div class="trip-wallet-title">💳 ${w.name}</div>
                                 <div class="trip-wallet-balance-foreign">${w.currency} ${tripFmtNum(remForeign)}</div>
                                 <div class="trip-wallet-balance-thb">≈ ฿${tripFmtNum(remThb)}</div>
+                                ${!isThb && avgRate > 0 ? `<div class="trip-wallet-rate-chip" style="font-size:10px; margin-top:4px; background:rgba(99,102,241,0.12); color:#4338ca; padding:1px 6px; border-radius:8px; display:inline-block;">เรทเฉลี่ย ${avgRate.toFixed(3)} ฿/${w.currency}</div>` : ''}
+                                <div style="font-size:10px; color:#94a3b8; margin-top:3px;">เติม ${tripFmtNum(funded)} · ใช้ ${tripFmtNum(spent)}</div>
                             </div>
                         `;
                     }).join('')}
@@ -11574,6 +11610,222 @@ window.deleteWallet = async function(walletId) {
         }
     } catch(e) {
         showToast('ลบกระเป๋าเงินล้มเหลว', 'error');
+    }
+};
+
+// ══════════ Trip Finance P1 — เติมเงินเข้ากระเป๋าทริป ══════════
+window.openFundWalletModal = function(projectId) {
+    const trip = TravelState.currentTrip;
+    const wallets = TravelState.wallets || [];
+    if (wallets.length === 0) { showToast('ยังไม่มีกระเป๋าเงิน กรุณาเพิ่มกระเป๋าก่อน', 'warning'); return; }
+    const accts = (AppState.accounts || []);
+    const modal = document.createElement('div');
+    modal.id = 'fund-wallet-modal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; z-index:9999;';
+    modal.innerHTML = `
+        <div style="background:var(--card-bg,#fff); border-radius:18px; padding:22px; width:92%; max-width:420px; box-shadow:0 12px 40px rgba(0,0,0,0.2);">
+            <h3 style="margin:0 0 14px 0; font-size:17px;">💰 เติมเงินเข้ากระเป๋าทริป</h3>
+            <label style="font-size:12px; font-weight:bold; color:#64748b;">กระเป๋าปลายทาง</label>
+            <select id="fund-wallet-select" onchange="fundWalletOnChange()" style="width:100%; padding:9px; margin:4px 0 12px; border:1px solid #e2e8f0; border-radius:10px;">
+                ${wallets.map(w => `<option value="${w.wallet_id}" data-currency="${w.currency}">${w.name} (${w.currency})</option>`).join('')}
+            </select>
+            <label style="font-size:12px; font-weight:bold; color:#64748b;">บัญชีต้นทาง (หักเงินบาท)</label>
+            <select id="fund-source-account" style="width:100%; padding:9px; margin:4px 0 12px; border:1px solid #e2e8f0; border-radius:10px;">
+                <option value="">-- ไม่หักบัญชี (บันทึกเฉพาะกระเป๋า) --</option>
+                ${accts.map(a => `<option value="${a.account_id}">${a.name}</option>`).join('')}
+            </select>
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:bold; color:#64748b;">จำนวนเงินบาท (฿)</label>
+                    <input id="fund-thb" type="number" step="0.01" oninput="fundWalletCalcRate()" placeholder="0.00" style="width:100%; padding:9px; margin:4px 0 12px; border:1px solid #e2e8f0; border-radius:10px;">
+                </div>
+                <div style="flex:1;" id="fund-foreign-wrap">
+                    <label style="font-size:12px; font-weight:bold; color:#64748b;">ได้เงิน <span id="fund-cur-label">ตปท.</span></label>
+                    <input id="fund-foreign" type="number" step="0.01" oninput="fundWalletCalcRate()" placeholder="0.00" style="width:100%; padding:9px; margin:4px 0 12px; border:1px solid #e2e8f0; border-radius:10px;">
+                </div>
+            </div>
+            <div id="fund-rate-preview" style="font-size:12px; color:#4338ca; background:rgba(99,102,241,0.1); padding:6px 10px; border-radius:8px; margin-bottom:12px; display:none;"></div>
+            <label style="font-size:12px; font-weight:bold; color:#64748b;">วันที่</label>
+            <input id="fund-date" type="date" value="${new Date().toISOString().substring(0,10)}" style="width:100%; padding:9px; margin:4px 0 12px; border:1px solid #e2e8f0; border-radius:10px;">
+            <label style="font-size:12px; font-weight:bold; color:#64748b;">หมายเหตุ (ถ้ามี)</label>
+            <input id="fund-note" type="text" placeholder="เช่น แลกเงินที่สนามบิน" style="width:100%; padding:9px; margin:4px 0 16px; border:1px solid #e2e8f0; border-radius:10px;">
+            <div style="display:flex; gap:10px;">
+                <button onclick="closeFundWalletModal()" style="flex:1; padding:11px; border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; cursor:pointer; font-weight:bold;">ยกเลิก</button>
+                <button onclick="submitFundWallet('${projectId}')" style="flex:1; padding:11px; border:none; background:#10b981; color:#fff; border-radius:10px; cursor:pointer; font-weight:bold;">✓ เติมเงิน</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    fundWalletOnChange();
+};
+window.fundWalletOnChange = function() {
+    const sel = document.getElementById('fund-wallet-select');
+    if (!sel) return;
+    const cur = sel.selectedOptions[0].dataset.currency || '';
+    const isThb = cur.toUpperCase() === 'THB';
+    const fw = document.getElementById('fund-foreign-wrap');
+    const label = document.getElementById('fund-cur-label');
+    if (label) label.textContent = cur || 'ตปท.';
+    if (fw) fw.style.display = isThb ? 'none' : 'block';   // THB wallet: no exchange
+    fundWalletCalcRate();
+};
+window.fundWalletCalcRate = function() {
+    const sel = document.getElementById('fund-wallet-select');
+    const cur = sel ? (sel.selectedOptions[0].dataset.currency || '') : '';
+    const isThb = cur.toUpperCase() === 'THB';
+    const thb = parseFloat((document.getElementById('fund-thb')||{}).value) || 0;
+    const foreign = parseFloat((document.getElementById('fund-foreign')||{}).value) || 0;
+    const box = document.getElementById('fund-rate-preview');
+    if (!box) return;
+    if (!isThb && thb > 0 && foreign > 0) {
+        box.style.display = 'block';
+        box.textContent = `เรทที่ได้ ≈ ${(thb/foreign).toFixed(4)} ฿ ต่อ 1 ${cur}`;
+    } else { box.style.display = 'none'; }
+};
+window.closeFundWalletModal = function() { const m = document.getElementById('fund-wallet-modal'); if (m) m.remove(); };
+window.submitFundWallet = async function(projectId) {
+    const walletSel = document.getElementById('fund-wallet-select');
+    const wallet_id = walletSel.value;
+    const currency = walletSel.selectedOptions[0].dataset.currency || '';
+    const isThb = currency.toUpperCase() === 'THB';
+    const source_account_id = document.getElementById('fund-source-account').value || null;
+    const thb_amount = parseFloat(document.getElementById('fund-thb').value) || 0;
+    const foreign_amount = isThb ? thb_amount : (parseFloat(document.getElementById('fund-foreign').value) || 0);
+    const funding_date = document.getElementById('fund-date').value;
+    const note = document.getElementById('fund-note').value;
+    if (thb_amount <= 0) { showToast('กรุณากรอกจำนวนเงินบาท', 'warning'); return; }
+    if (!isThb && foreign_amount <= 0) { showToast('กรุณากรอกจำนวนเงินตปท.ที่ได้', 'warning'); return; }
+    try {
+        const res = await fetch(`${API_BASE}/api/trips/fund`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
+            body: JSON.stringify({ project_id: projectId, wallet_id, source_account_id, thb_amount, foreign_amount, currency, funding_date, note })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(`เติมเงินสำเร็จ (เรท ${Number(data.rate).toFixed(3)})`, 'success');
+            closeFundWalletModal();
+            openTripDetail(projectId);
+        } else { showToast(data.error || 'เติมเงินล้มเหลว', 'error'); }
+    } catch(e) { showToast('เติมเงินล้มเหลว', 'error'); }
+};
+
+// ══════════ Trip Finance — เครื่องคิดเลขแปลงเงินเฉพาะทริป (เรทเฉลี่ย) ══════════
+window.openTripCalcModal = function(projectId) {
+    const wallets = (TravelState.wallets || []).filter(w => (w.currency||'').toUpperCase() !== 'THB');
+    const modal = document.createElement('div');
+    modal.id = 'trip-calc-modal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; z-index:9999;';
+    const rateOf = w => {
+        const r = (w.avg_rate != null && parseFloat(w.avg_rate) > 0) ? parseFloat(w.avg_rate) : (parseFloat(w.initial_balance_thb||0) / (parseFloat(w.initial_balance_foreign)||1));
+        return r;
+    };
+    modal.innerHTML = `
+        <div style="background:var(--card-bg,#fff); border-radius:18px; padding:22px; width:92%; max-width:380px; box-shadow:0 12px 40px rgba(0,0,0,0.2);">
+            <h3 style="margin:0 0 6px 0; font-size:17px;">🧮 คิดเงินทริปนี้</h3>
+            <p style="font-size:11px; color:#94a3b8; margin:0 0 14px;">ใช้เรทเฉลี่ยของกระเป๋าในทริปนี้ (ค่าประมาณ)</p>
+            ${wallets.length === 0 ? '<p style="font-size:13px; color:#64748b;">ยังไม่มีกระเป๋าเงินตปท.ในทริปนี้</p>' : `
+            <label style="font-size:12px; font-weight:bold; color:#64748b;">สกุลเงิน</label>
+            <select id="calc-wallet" onchange="tripCalcCompute()" style="width:100%; padding:9px; margin:4px 0 12px; border:1px solid #e2e8f0; border-radius:10px;">
+                ${wallets.map(w => `<option value="${rateOf(w)}" data-cur="${w.currency}">${w.name} (${w.currency}) · เรท ${rateOf(w).toFixed(3)}</option>`).join('')}
+            </select>
+            <div style="display:flex; gap:10px; align-items:end;">
+                <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:bold; color:#64748b;">ยอด <span id="calc-cur">ตปท.</span></label>
+                    <input id="calc-foreign" type="number" step="0.01" oninput="tripCalcCompute('f')" placeholder="0.00" style="width:100%; padding:9px; margin:4px 0; border:1px solid #e2e8f0; border-radius:10px;">
+                </div>
+                <div style="padding-bottom:14px; color:#94a3b8;">⇄</div>
+                <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:bold; color:#64748b;">บาท (฿)</label>
+                    <input id="calc-thb" type="number" step="0.01" oninput="tripCalcCompute('t')" placeholder="0.00" style="width:100%; padding:9px; margin:4px 0; border:1px solid #e2e8f0; border-radius:10px;">
+                </div>
+            </div>`}
+            <button onclick="closeTripCalcModal()" style="width:100%; margin-top:14px; padding:11px; border:none; background:#6366f1; color:#fff; border-radius:10px; cursor:pointer; font-weight:bold;">ปิด</button>
+        </div>`;
+    document.body.appendChild(modal);
+    if (wallets.length) tripCalcCompute();
+};
+window.tripCalcCompute = function(src) {
+    const sel = document.getElementById('calc-wallet');
+    if (!sel) return;
+    const rate = parseFloat(sel.value) || 0;
+    const cur = sel.selectedOptions[0].dataset.cur || 'ตปท.';
+    const lbl = document.getElementById('calc-cur'); if (lbl) lbl.textContent = cur;
+    const fEl = document.getElementById('calc-foreign'), tEl = document.getElementById('calc-thb');
+    if (src === 't') { const thb = parseFloat(tEl.value)||0; fEl.value = rate>0 ? (thb/rate).toFixed(2) : ''; }
+    else { const f = parseFloat(fEl.value)||0; tEl.value = (f*rate).toFixed(2); }
+};
+window.closeTripCalcModal = function() { const m = document.getElementById('trip-calc-modal'); if (m) m.remove(); };
+
+// ══════════ Trip Finance P3 — ปิดทริป (สรุป → ยืนยัน) ══════════
+window.openCloseTripModal = async function(projectId) {
+    let s;
+    try {
+        const res = await fetch(`${API_BASE}/api/trips/close-preview?projectId=${projectId}`, { headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) } });
+        s = await res.json();
+    } catch(e) { showToast('โหลดสรุปปิดทริปล้มเหลว', 'error'); return; }
+    const t = s.totals || {};
+    const modal = document.createElement('div');
+    modal.id = 'close-trip-modal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+    const memberRows = (s.members || []).map(m => {
+        const caps = Object.entries(m.byCaption || {}).map(([c,v]) => `<div style="display:flex; justify-content:space-between; font-size:11px; color:#64748b; padding:1px 0 1px 12px;"><span>· ${c}</span><span>฿${tripFmtNum(v)}</span></div>`).join('');
+        return `<div style="border-bottom:1px solid #f1f5f9; padding:8px 0;">
+            <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:13px;"><span>👤 ${m.member_name}</span><span>฿${tripFmtNum(m.total_thb)}</span></div>
+            ${caps}
+        </div>`;
+    }).join('') || '<p style="font-size:12px; color:#94a3b8;">ไม่มีบิลค่าใช้จ่าย</p>';
+    const keptRows = (s.wallets || []).filter(w => Number(w.exclude_on_close) === 1).map(w =>
+        `<div style="font-size:11px; color:#0369a1;">📌 เก็บ ${w.name}: ${w.currency} ${tripFmtNum(w.leftover_foreign)} (≈฿${tripFmtNum(w.leftover_thb)}) ไว้ทริปหน้า</div>`).join('');
+    modal.innerHTML = `
+        <div style="background:var(--card-bg,#fff); border-radius:18px; padding:22px; width:100%; max-width:460px; max-height:88vh; overflow-y:auto; box-shadow:0 12px 40px rgba(0,0,0,0.25);">
+            <h3 style="margin:0 0 4px 0; font-size:18px;">🔒 ปิดทริป & สรุปยอด</h3>
+            <p style="font-size:11px; color:#94a3b8; margin:0 0 14px;">ค่าบาทของทุกบิลจะล็อกด้วยเรทเฉลี่ย · ลงบัญชีหลักถาวร · เปลี่ยนทริปเป็น Memory</p>
+            <div style="background:#f8fafc; border-radius:12px; padding:12px; margin-bottom:14px; font-size:13px;">
+                <div style="display:flex; justify-content:space-between; padding:2px 0;"><span>💰 เติมเข้าทริปรวม</span><span>฿${tripFmtNum(t.funded_thb)}</span></div>
+                <div style="display:flex; justify-content:space-between; padding:2px 0; color:#ef4444;"><span>🧾 ใช้จริงรวม</span><span>฿${tripFmtNum(t.spent_thb)}</span></div>
+                <div style="display:flex; justify-content:space-between; padding:2px 0; color:#059669;"><span>↩️ คืนเข้าบัญชี</span><span>฿${tripFmtNum(t.leftover_thb)}</span></div>
+                ${t.kept_thb > 0 ? `<div style="display:flex; justify-content:space-between; padding:2px 0; color:#0369a1;"><span>📌 เก็บไว้ทริปหน้า</span><span>฿${tripFmtNum(t.kept_thb)}</span></div>` : ''}
+                <div style="border-top:1px dashed #cbd5e1; margin-top:6px; padding-top:6px; display:flex; justify-content:space-between; font-size:12px; color:${s.balanced ? '#059669' : '#ef4444'};">
+                    <span>${s.balanced ? '✅ สมดุล' : '⚠️ ไม่สมดุล'}</span><span>ต่าง ฿${tripFmtNum(Math.abs(t.diff || 0))}</span>
+                </div>
+            </div>
+            <div style="font-size:13px; font-weight:bold; margin-bottom:4px;">สรุปรายจ่ายต่อคน</div>
+            <div style="margin-bottom:12px;">${memberRows}</div>
+            ${keptRows ? `<div style="background:#eff6ff; border-radius:10px; padding:8px 10px; margin-bottom:12px;">${keptRows}</div>` : ''}
+            <div style="display:flex; gap:10px;">
+                <button onclick="closeCloseTripModal()" style="flex:1; padding:11px; border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; cursor:pointer; font-weight:bold;">ยกเลิก</button>
+                <button id="btn-confirm-close-trip" onclick="submitCloseTrip('${projectId}')" style="flex:1.4; padding:11px; border:none; background:#ef4444; color:#fff; border-radius:10px; cursor:pointer; font-weight:bold;">🔒 ยืนยันปิดทริป</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+};
+window.closeCloseTripModal = function() { const m = document.getElementById('close-trip-modal'); if (m) m.remove(); };
+window.submitCloseTrip = async function(projectId) {
+    const btn = document.getElementById('btn-confirm-close-trip');
+    if (btn) { btn.disabled = true; btn.textContent = 'กำลังปิดทริป...'; }
+    try {
+        const res = await fetch(`${API_BASE}/api/trips/close`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
+            body: JSON.stringify({ project_id: projectId, confirm: 'CLOSE' })
+        });
+        const data = await res.json();
+        if (data.success) {
+            const r = data.report || {};
+            showToast(`ปิดทริปแล้ว · ลงบิล ${r.posted_bills} รายการ · คืนเงิน ฿${tripFmtNum(r.refunded_thb || 0)}`, 'success');
+            closeCloseTripModal();
+            if (typeof loadTrips === 'function') loadTrips();
+            closeTripDetail();
+        } else {
+            showToast(data.error || 'ปิดทริปล้มเหลว', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = '🔒 ยืนยันปิดทริป'; }
+        }
+    } catch(e) {
+        showToast('ปิดทริปล้มเหลว', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = '🔒 ยืนยันปิดทริป'; }
     }
 };
 
