@@ -14,6 +14,7 @@
 import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /* รับได้ทั้ง playwright เต็มตัวและ playwright-core เพื่อให้รันได้ทั้งบนเครื่อง
    ที่ลงปกติและใน CI ที่ลงแบบบาง */
@@ -21,10 +22,20 @@ let chromium;
 try { ({ chromium } = await import('playwright')); }
 catch { ({ chromium } = await import('playwright-core')); }
 
-// path ต้องอิงจากตำแหน่งไฟล์นี้ ไม่ใช่ค่าคงที่ ไม่งั้นย้ายเครื่องแล้วรันไม่ได้
-const ROOT = path.dirname(new URL(import.meta.url).pathname);
+/* path ต้องอิงจากตำแหน่งไฟล์นี้ ไม่ใช่ค่าคงที่ ไม่งั้นย้ายเครื่องแล้วรันไม่ได้
+   ⚠️ ต้องใช้ fileURLToPath ไม่ใช่ new URL(...).pathname เพราะ pathname เก็บเป็น
+      URL-encoded — โฟลเดอร์ที่มีช่องว่างจะกลายเป็น %20 แล้วหาไฟล์ไม่เจอ
+      (เจอจริงกับ path "My Drive/Anti Gravity/…" หน้าขึ้นมาว่างเปล่าทั้งหน้า) */
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8099);
 const BASE = `http://localhost:${PORT}`;
+
+/* ล้มตั้งแต่ต้นถ้าหาไฟล์ไม่เจอ ดีกว่าปล่อยให้รัน 40 เคสกับหน้าเปล่า ๆ
+   แล้วได้ error กำกวมว่า "หาปุ่มไม่เจอ" ซึ่งชี้ผิดที่ */
+if (!existsSync(path.join(ROOT, 'index.html'))) {
+  console.error(`หา index.html ไม่เจอที่ ${ROOT} — เทสนี้ต้องอยู่ในโฟลเดอร์เดียวกับ prototype`);
+  process.exit(1);
+}
 
 // API ปลอมที่คืนรูปเดียวกับของจริง เพื่อทดสอบหน้าจอโดยไม่แตะฐานจริง
 const PAYLOAD = {
