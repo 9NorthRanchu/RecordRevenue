@@ -7,15 +7,24 @@
    เสิร์ฟไฟล์ prototype เอง + API ปลอมที่คืน "รูปเดียวกับของจริง"
    **ไม่ยิงฐานจริงเลย** จึงรันซ้ำได้ตลอดโดยไม่แตะข้อมูลใคร
 
-   ถ้าเครื่องมี playwright เต็มตัวแล้ว เปลี่ยน import เป็น 'playwright'
-   และลบ executablePath ทิ้งได้ (ที่ใส่ไว้เพราะ sandbox ไม่มี browser ในตัว)
+   ตั้งค่าเพิ่มได้ด้วย env ถ้าจำเป็น:
+     CHROME_PATH=/path/to/chrome   ระบุ browser เอง (ปกติไม่ต้อง)
+     PORT=8099                     เปลี่ยนพอร์ตถ้าชนกับอย่างอื่น
    ═══════════════════════════════════════════════════════════════════════ */
-import { chromium } from 'playwright-core';
 import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
-const ROOT = '/sessions/cool-exciting-hamilton/mnt/RecordRevenue/frontend/trip-unified-prototype';
+/* รับได้ทั้ง playwright เต็มตัวและ playwright-core เพื่อให้รันได้ทั้งบนเครื่อง
+   ที่ลงปกติและใน CI ที่ลงแบบบาง */
+let chromium;
+try { ({ chromium } = await import('playwright')); }
+catch { ({ chromium } = await import('playwright-core')); }
+
+// path ต้องอิงจากตำแหน่งไฟล์นี้ ไม่ใช่ค่าคงที่ ไม่งั้นย้ายเครื่องแล้วรันไม่ได้
+const ROOT = path.dirname(new URL(import.meta.url).pathname);
+const PORT = Number(process.env.PORT || 8099);
+const BASE = `http://localhost:${PORT}`;
 
 // API ปลอมที่คืนรูปเดียวกับของจริง เพื่อทดสอบหน้าจอโดยไม่แตะฐานจริง
 const PAYLOAD = {
@@ -102,9 +111,12 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': MIME[path.extname(target)] || 'application/octet-stream' });
   res.end(readFileSync(target));
 });
-await new Promise(r => server.listen(8099, r));
+await new Promise(r => server.listen(PORT, r));
 
-const browser = await chromium.launch({ executablePath: process.env.HOME + '/.cache/ms-playwright/chromium_headless_shell-1228/chrome-linux/headless_shell' });
+/* ปกติไม่ต้องระบุ browser — playwright หาเองได้ · CHROME_PATH มีไว้เผื่อ
+   สภาพแวดล้อมที่ลง browser ไว้คนละที่เท่านั้น */
+const browser = await chromium.launch(
+  process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
 const page = await browser.newPage({ viewport: { width: 420, height: 900 } });
 const errors = [];
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -117,7 +129,7 @@ const check = (name, cond, detail='') => {
 };
 
 console.log('\n── โหมดปกติ (ไม่ใส่ ?live) ─────────────────────');
-await page.goto('http://localhost:8099/index.html', { waitUntil:'domcontentloaded' });
+await page.goto(`${BASE}/index.html`, { waitUntil:'domcontentloaded' });
 await page.waitForTimeout(600);
 check('ไม่มีแถบข้อมูลจริง', await page.locator('#liveBar').count() === 0);
 check('ยังเห็นบิลตัวอย่าง', (await page.locator('.bill-card, .expense-card, [data-bill-id]').count()) > 0
@@ -125,7 +137,7 @@ check('ยังเห็นบิลตัวอย่าง', (await page.loca
 check('ปุ่มเพิ่มค่าใช้จ่ายยังกดได้', !(await page.locator('.add-expense').first().isDisabled()));
 
 console.log('\n── โหมดข้อมูลจริง ──────────────────────────────');
-await page.goto('http://localhost:8099/index.html?live=1&projectId=TRP-9&userId=9North&api=http://localhost:8099',
+await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
 await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
 const bar = await page.textContent('#liveBar');
@@ -229,7 +241,7 @@ failNextWrite = null;
 await page.keyboard.press('Escape');
 
 console.log('\n── API ล้มเหลว ─────────────────────────────────');
-await page.goto('http://localhost:8099/index.html?live=1&projectId=TRP-9&userId=x&api=http://localhost:8099/api/fail',
+await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=x&api=${BASE}/api/fail`,
   { waitUntil:'domcontentloaded' });
 await page.waitForTimeout(900);
 const errBar = await page.textContent('#liveBar').catch(() => '');
