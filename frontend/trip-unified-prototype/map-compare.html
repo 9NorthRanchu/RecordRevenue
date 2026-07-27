@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Unified Trip — เทียบแผนที่มือถือ A/B/C</title>
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
+  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="map-variants.css?v=1">
+</head>
+<body>
+  <div class="prototype-note">เทียบแผนที่มือถือ 3 แบบ · ย่อหน้าต่างให้แคบกว่า 640px เพื่อดูผล</div>
+  <div class="app-shell">
+    <aside class="side-rail">
+      <div class="brand"><span>旅</span><div><b>Hokkaido Family</b><small>Winter road trip · 12 วัน</small></div></div>
+      <nav class="main-nav">
+        <button class="active" data-screen="today"><i>⌂</i><span>วันนี้</span></button>
+        <button data-screen="plan"><i>⌁</i><span>แผนเที่ยว</span></button>
+        <button data-screen="bills"><i>¥</i><span>บิล</span></button>
+        <button data-screen="wallets"><i>◫</i><span>กระเป๋า</span></button>
+        <button data-screen="more"><i>•••</i><span>เพิ่มเติม</span></button>
+      </nav>
+      <div class="rail-foot"><span class="avatar">N</span><div><b>North</b><small>ผู้ดูแลทริป</small></div></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <button class="back">‹</button>
+        <div><b>Hokkaido Family Trip</b><small>8–19 ก.พ. 2027 · กำลังเดินทาง</small></div>
+        <div class="top-actions"><button class="icon-btn" id="shareLocation">⌖</button><button class="avatar">N</button></div>
+      </header>
+
+      <section class="screen active" id="screen-today">
+        <div class="map-hero">
+          <img src="art/hokkaido-illustrated-clean.png?v=1" alt="แผนที่ภาพวาดฮอกไกโดพร้อมสถานที่สำคัญ">
+          <svg class="current-day-route" viewBox="0 0 1931 814" aria-label="เส้นทางท่องเที่ยวฮอกไกโดทั้งหมด">
+            <path class="future-route" d="M1660 610 C1510 570 1390 535 1290 478 C1325 444 1350 412 1382 388 C1230 265 1050 170 870 150 C930 300 1050 430 1130 540 C1060 500 985 455 930 420 C845 462 760 505 690 540 C565 565 440 580 330 570 C330 485 332 385 340 300 C405 335 465 370 520 400 C565 505 625 600 690 665"/>
+            <path class="completed-route" id="completedRoute" d="M1660 610 L1290 478"/>
+            <path class="active-route" id="activeRoute" d="M1290 478 L1382 388"/>
+
+            <g class="journey-pin completed" data-index="0" data-x="1660" data-y="610" transform="translate(1660 610)"><circle r="18"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-22" y="46">Kushiro</text></g>
+            <g class="journey-pin current" data-index="1" data-x="1290" data-y="478" transform="translate(1290 478)"><circle r="19"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-12" y="48">Lake Akan</text></g>
+            <g class="journey-pin next" data-index="2" data-x="1382" data-y="388" transform="translate(1382 388)"><circle r="21"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="10" y="-31">Lake Kussharo</text></g>
+
+            <g class="journey-pin future" data-index="3" data-x="870" data-y="150" transform="translate(870 150)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-4" y="-28">Sounkyo</text></g>
+            <g class="journey-pin future" data-index="4" data-x="1130" data-y="540" transform="translate(1130 540)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-8" y="42">Obihiro</text></g>
+            <g class="journey-pin future" data-index="5" data-x="930" data-y="420" transform="translate(930 420)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-6" y="-28">Furano</text></g>
+            <g class="journey-pin future" data-index="6" data-x="690" data-y="540" transform="translate(690 540)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-5" y="42">Jozankei</text></g>
+            <g class="journey-pin future" data-index="7" data-x="330" data-y="570" transform="translate(330 570)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-5" y="42">Niseko</text></g>
+            <g class="journey-pin future" data-index="8" data-x="340" data-y="300" transform="translate(340 300)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-5" y="-27">Otaru</text></g>
+            <g class="journey-pin future" data-index="9" data-x="520" data-y="400" transform="translate(520 400)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-5" y="43">Sapporo</text></g>
+            <g class="journey-pin future" data-index="10" data-x="690" data-y="665" transform="translate(690 665)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-6" y="43">Chitose Airport</text></g>
+          </svg>
+        </div>
+        <div class="day-summary">
+          <div class="day-number"><span>DAY</span><strong id="journeyDay">03</strong></div>
+          <div><span id="journeyRegion">EAST HOKKAIDO</span><h1 id="journeyTitle">Lake Akan → Lake Kussharo</h1><p id="journeyDescription">หิมะนุ่ม ออนเซ็นอุ่น และท้องฟ้าสีฟ้าหมอก</p></div>
+          <div class="day-summary-actions"><button class="ghost-btn" id="returnToday" hidden>กลับมาวันนี้</button><button class="soft-btn" id="openSelectedPlan">ดูแผนวันนี้ ›</button></div>
+        </div>
+
+        <div class="today-grid">
+          <section class="next-card paper-card">
+            <div class="section-kicker"><span class="pulse"></span>กิจกรรมถัดไป</div>
+            <div class="next-time"><strong>14:30</strong><span>ออกในอีก 35 นาที</span></div>
+            <div class="next-main">
+              <img src="../puppup-prototype/art/act_ainukotan.png" alt="">
+              <div><h2>Akanko Ainu Kotan</h2><p>หมู่บ้านวัฒนธรรมไอนุ · เดินจากที่พัก 8 นาที</p></div>
+            </div>
+            <div class="member-presence">
+              <span><i class="face pink">N</i>North · ถึงแล้ว</span>
+              <span><i class="face blue">M</i>Nimz · 12 นาที</span>
+              <span><i class="face cream">A</i>Ann · ยังไม่แชร์</span>
+            </div>
+            <div class="card-actions"><button class="soft-btn" id="checkIn">✓ เช็กอิน</button><button class="primary-btn">เปิดเส้นทาง</button></div>
+          </section>
+
+          <section class="weather-card paper-card">
+            <div class="section-title"><div><span>สภาพอากาศตามสถานที่</span><h3>Lake Akan</h3></div><small>อัปเดต 5 นาทีที่แล้ว</small></div>
+            <div class="weather-now"><span>🌨️</span><strong>−6°</strong><div>รู้สึกเหมือน −11°<br>หิมะ 70% · ลม 18 km/h</div></div>
+            <div class="weather-periods"><div><span>เช้า</span><b>−9°</b><small>☁️ 30%</small></div><div class="selected"><span>บ่าย</span><b>−6°</b><small>🌨️ 70%</small></div><div><span>ค่ำ</span><b>−11°</b><small>💨 ลมแรง</small></div></div>
+            <p class="weather-tip">🧣 ถนนอาจลื่นและลมแรงช่วงเย็น ควรออกก่อนพระอาทิตย์ตก</p>
+          </section>
+
+          <section class="money-strip paper-card">
+            <div><span>ใช้วันนี้</span><strong>¥ 18,420</strong><small>≈ ฿4,275</small></div>
+            <div><span>เหลืองบ</span><strong>฿ 82,600</strong><small>68% ของงบทั้งหมด</small></div>
+            <button class="primary-btn add-expense">＋ จดค่าใช้จ่าย</button>
+          </section>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-plan">
+        <div class="page-head"><div><span>ยืดหยุ่นตามอากาศ</span><h1>แผนเที่ยว</h1><p>ลากสถานที่เพื่อสลับลำดับ หรือย้ายข้ามวันได้</p></div><button class="primary-btn" id="addPlace">＋ เพิ่มสถานที่</button></div>
+        <div class="plan-layout">
+          <div class="day-tabs" id="planDayTabs"></div>
+          <div class="plan-day-overview" id="planDayOverview"></div>
+          <div class="plan-list" id="planList"></div>
+          <div class="cross-day-move">
+            <span>ย้ายกิจกรรมที่เลือกไป</span>
+            <div id="moveDayTargets"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-bills">
+        <div class="page-head"><div><span>ค่าใช้จ่ายทั้งหมด</span><h1>บิล</h1><p>เห็นเฉพาะรายการที่คุณมีสิทธิ์ และรายการที่แชร์กับทริป</p></div><button class="primary-btn add-expense">＋ จดค่าใช้จ่าย</button></div>
+        <div class="bill-summary">
+          <div class="paper-card"><span>รวมทั้งทริป</span><strong id="billTotal">฿ 0</strong><small>ส่วนตัว + ค่าใช้จ่ายร่วม</small></div>
+          <div class="paper-card"><span>คุณจ่ายจริง</span><strong id="billMine">฿ 0</strong><small>จาก YouTrip ของ North</small></div>
+          <div class="paper-card"><span>เฉพาะทริป</span><strong id="billTripOnly">฿ 0</strong><small>ไม่ลงบัญชีหลัก</small></div>
+        </div>
+        <div class="filters" id="billFilters"><button class="active" data-bill-filter="all">ทั้งหมด</button><button data-bill-filter="shared">ค่าใช้จ่ายร่วม</button><button data-bill-filter="mine">ของฉัน</button><button data-bill-filter="trip-only">เฉพาะทริป</button></div>
+        <div class="bill-table paper-card" id="billTable"></div>
+      </section>
+
+      <section class="screen" id="screen-wallets">
+        <div class="page-head"><div><span>ข้อมูลส่วนตัวของแต่ละสมาชิก</span><h1>กระเป๋าของฉัน</h1><p>สมาชิกอื่นเห็นเฉพาะบิลที่คุณแชร์ ไม่เห็นยอดหรือประวัติเติมเงิน</p></div><button class="primary-btn">＋ เพิ่มกระเป๋า</button></div>
+        <div class="privacy-note">🔒 กระเป๋าและประวัติการเติมเงินนี้เห็นเฉพาะ North และผู้ดูแลที่ได้รับสิทธิ์</div>
+        <div class="wallet-grid">
+          <article class="wallet-card jpy"><div class="wallet-top"><span>🇯🇵 YouTrip · JPY</span><i>•••</i></div><strong>¥ 184,620</strong><small>≈ ฿42,832 · เรทเฉลี่ย ฿0.2320/¥</small><div class="wallet-stats"><span>เติมแล้ว<b>¥250,000</b></span><span>ใช้ไป<b>¥65,380</b></span></div><button class="soft-btn">＋ เติมเงิน</button></article>
+          <article class="wallet-card thb"><div class="wallet-top"><span>🇹🇭 YouTrip · THB</span><i>•••</i></div><strong>฿ 8,450</strong><small>ใช้สำหรับรายการที่ตัดเป็นเงินบาท</small><div class="wallet-stats"><span>เติมแล้ว<b>฿12,000</b></span><span>ใช้ไป<b>฿3,550</b></span></div><button class="soft-btn">＋ เติมเงิน</button></article>
+        </div>
+        <section class="paper-card wallet-activity"><h3>รายการล่าสุด</h3><div><span>มื้อเย็นร้านปู<small>ค่าใช้จ่ายร่วม · ทุกคนเห็น</small></span><b>−¥24,000</b></div><div><span>ของฝากส่วนตัว<small>ส่วนตัว</small></span><b>−¥8,500</b></div><div><span>เติมเงินจากบัญชีหลัก<small>เห็นเฉพาะคุณ</small></span><b class="plus">+¥100,000</b></div></section>
+      </section>
+
+      <section class="screen" id="screen-more">
+        <div class="page-head"><div><span>สิทธิ์และการเงิน</span><h1>จัดการทริป</h1><p>ตรวจสมาชิก การมองเห็น และผลลัพธ์ก่อนปิดทริป</p></div><button class="soft-btn">แก้ไขทริป</button></div>
+        <div class="manage-grid">
+          <section class="paper-card"><h3>สมาชิกและสิทธิ์</h3>
+            <div class="member-row"><i class="face pink">N</i><span><b>North</b><small>ผู้ดูแล · ลงบัญชีหลัก</small></span><em>ออนไลน์</em></div>
+            <div class="member-row"><i class="face blue">M</i><span><b>Nimz</b><small>สมาชิก · ลงบัญชีหลัก</small></span><em>แชร์ตำแหน่ง</em></div>
+            <div class="member-row"><i class="face cream">A</i><span><b>Ann</b><small>ผู้ร่วมทริป · TRIP ONLY</small></span><em>จดบิลได้</em></div>
+          </section>
+          <section class="paper-card"><h3>ปิดทริป</h3><p>ตรวจยอดที่ลงบัญชีหลักและยอดที่เก็บเฉพาะประวัติทริปก่อนยืนยัน</p><div class="close-lines"><span>ค่าใช้จ่ายรวม<b>฿33,720</b></span><span>ลงบัญชีหลัก<b>฿22,270</b></span><span>เฉพาะทริป<b>฿11,450</b></span></div><button class="primary-btn" id="closePreview">ดูพรีวิวปิดทริป</button></section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <button class="mobile-fab add-expense">＋ จดค่าใช้จ่าย</button>
+  <nav class="mobile-nav">
+    <button class="active" data-screen="today"><i>⌂</i><span>วันนี้</span></button>
+    <button data-screen="plan"><i>⌁</i><span>แผน</span></button>
+    <button data-screen="bills"><i>¥</i><span>บิล</span></button>
+    <button data-screen="wallets"><i>◫</i><span>กระเป๋า</span></button>
+    <button data-screen="more"><i>•••</i><span>เพิ่มเติม</span></button>
+  </nav>
+
+  <div class="sheet-mask" id="sheetMask"></div>
+  <section class="bottom-sheet" id="expenseSheet" aria-hidden="true">
+    <div class="sheet-handle"></div><button class="sheet-close">×</button>
+    <div class="sheet-step active" data-step="1">
+      <span class="eyebrow">QUICK ADD · 1/3</span><h2>จดค่าใช้จ่าย</h2>
+      <div class="segmented"><button class="active">จ่าย</button><button>ได้เงินคืน</button></div>
+      <label>กระเป๋าที่ใช้<select id="walletSelect"><option>YouTrip JPY · North</option><option>YouTrip THB · North</option><option>กระเป๋า Ann · TRIP ONLY</option></select></label>
+      <label>จำนวนเงิน<div class="amount-input"><span>¥</span><input id="expenseAmount" value="24,000" inputmode="decimal"></div></label>
+      <p class="conversion">≈ ฿5,568 · เรทเฉลี่ย ฿0.2320/¥</p>
+      <label>รายละเอียด<input id="expenseDescription" value="มื้อเย็นร้านปู"></label>
+      <button class="primary-btn next-step">ต่อไป</button>
+    </div>
+    <div class="sheet-step" data-step="2">
+      <span class="eyebrow">QUICK ADD · 2/3</span><h2>แบ่งหมวด</h2>
+      <div class="split-row"><select class="category-name"><option>อาหาร</option><option>ที่พัก</option><option>ช้อปปิ้ง</option></select><input class="category-amount" value="20,000"><span>¥</span></div>
+      <div class="split-row"><select class="category-name"><option>เครื่องดื่ม</option><option>อาหาร</option></select><input class="category-amount" value="4,000"><span>¥</span></div>
+      <button class="add-line">＋ เพิ่มหมวด</button><div class="allocated"><span>จัดสรรแล้ว</span><b>¥24,000 / ¥24,000 ✓</b></div>
+      <div class="sheet-actions"><button class="soft-btn prev-step">ย้อนกลับ</button><button class="primary-btn next-step">ต่อไป</button></div>
+    </div>
+    <div class="sheet-step" data-step="3">
+      <span class="eyebrow">QUICK ADD · 3/3</span><h2>การแชร์และผู้เกี่ยวข้อง</h2>
+      <label>เจ้าของเงิน<select id="expenseOwner"><option>North</option><option>Nimz</option><option>Ann · TRIP ONLY</option></select></label>
+      <label>การมองเห็น<select id="visibility"><option value="trip">ทุกคนในทริป</option><option value="selected">เฉพาะผู้เกี่ยวข้อง</option><option value="private">ส่วนตัว</option></select></label>
+      <div class="toggle-row"><span><b>ค่าใช้จ่ายร่วม</b><small>แบ่งความรับผิดชอบ แต่หักเงินจาก North เท่านั้น</small></span><button class="toggle on" id="sharedToggle"></button></div>
+      <div class="people-checks"><label><input type="checkbox" checked> North</label><label><input type="checkbox" checked> Nimz</label><label><input type="checkbox" checked> Ann</label><label><input type="checkbox" checked> Mew</label></div>
+      <div class="share-result">แบ่งเท่ากันคนละ <b>¥6,000</b></div>
+      <label>ผูกกับกิจกรรม<select><option>Akanko Ainu Kotan · วันนี้ 14:30</option><option>ไม่ระบุ</option></select></label>
+      <div class="sheet-actions"><button class="soft-btn prev-step">ย้อนกลับ</button><button class="primary-btn" id="saveExpense">บันทึกบิล</button></div>
+    </div>
+  </section>
+
+  <section class="dialog plan-editor" id="planEditor" aria-hidden="true" role="dialog" aria-labelledby="planEditorTitle">
+    <button class="dialog-close" id="closePlanEditor" aria-label="ปิด">×</button>
+    <span class="eyebrow">FLEXIBLE ITINERARY</span>
+    <h2 id="planEditorTitle">เพิ่มสถานที่ในแผน</h2>
+    <form id="planEditorForm">
+      <div class="editor-grid">
+        <label class="field-wide">ชื่อสถานที่หรือกิจกรรม
+          <input id="activityName" required placeholder="เช่น ตลาดปลาคุชิโระ">
+        </label>
+        <label>วันที่
+          <select id="activityDay"></select>
+        </label>
+        <label>เวลา
+          <input id="activityTime" type="time" required>
+        </label>
+        <label>ประเภท
+          <select id="activityTag">
+            <option>สถานที่หลัก</option>
+            <option>กิจกรรมย่อย</option>
+            <option>การเดินทาง</option>
+            <option>อาหาร</option>
+            <option>ที่พัก</option>
+          </select>
+        </label>
+        <label>งบประมาณ (JPY)
+          <input id="activityCost" inputmode="numeric" placeholder="เช่น 2800">
+        </label>
+        <label class="field-wide">รายละเอียด
+          <textarea id="activityDetail" rows="3" placeholder="การเดินทาง สิ่งที่ควรเตรียม หรือแผนสำรอง"></textarea>
+        </label>
+      </div>
+      <div class="editor-note">สภาพอากาศจะแสดงตามสถานที่หลักของวันที่เลือก และอัปเดตบนแผนโดยอัตโนมัติ</div>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn" id="cancelPlanEditor">ยกเลิก</button>
+        <button type="submit" class="primary-btn">บันทึกในแผน</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="dialog" id="closeDialog" aria-hidden="true">
+    <button class="dialog-close">×</button><span class="eyebrow">CLOSE TRIP PREVIEW</span><h2>ตรวจสอบก่อนปิดทริป</h2>
+    <div class="close-block"><h3>ลงบัญชีหลัก</h3><span>North<b>฿12,450</b></span><span>Nimz<b>฿9,820</b></span><strong>รวม ฿22,270</strong></div>
+    <div class="close-block trip-only"><h3>เก็บเฉพาะประวัติทริป</h3><span>Ann<b>฿7,300</b></span><span>Mew<b>฿4,150</b></span><strong>รวม ฿11,450</strong></div>
+    <p>ยอดทั้งหมดสมดุลแล้ว · เงินเหลือจะคืนเข้าบัญชีต้นทาง</p><button class="primary-btn">ยืนยันปิดทริป</button>
+  </section>
+  <div class="toast" id="toast"></div>
+  <script src="app.js?v=10"></script>
+  <script src="map-variants.js?v=1"></script>
+</body>
+</html>

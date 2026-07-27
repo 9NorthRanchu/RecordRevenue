@@ -1,0 +1,12 @@
+{
+  "name": "hunsa-trip-api",
+  "main": "backend/index.js",
+  "compatibility_date": "2026-06-16",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hunsa-trip-db",
+      "database_id": "REPLACE_WITH_NEW_HUNSA_D1_DATABASE_ID"
+    }
+  ]
+}

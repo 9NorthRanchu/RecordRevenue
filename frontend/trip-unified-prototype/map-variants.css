@@ -1,0 +1,53 @@
+/* Mobile map treatments A/B/C — comparison layer only.
+   Loaded by map-compare.html, never by index.html.
+   Every variant keeps image and SVG on one shared .map-canvas so pin
+   alignment stays exact no matter how the canvas is scaled or panned. */
+
+.map-canvas{position:relative;width:100%;height:100%}
+.map-canvas>img{width:100%;height:100%;object-fit:contain;display:block}
+.map-canvas>svg{position:absolute;inset:0;width:100%;height:100%}
+
+.map-hint{display:none;margin:7px 2px 0;color:var(--muted);font:600 12px Poppins,Anuphan,sans-serif}
+.map-hint b{color:var(--blue)}
+
+/* ── variant switcher (comparison chrome, not part of the design) ── */
+.variant-bar{position:fixed;left:0;right:0;bottom:0;z-index:70;display:flex;gap:6px;align-items:center;
+  background:#1f2937;color:#fff;padding:7px 10px;overflow:auto;
+  font:600 11px Poppins,Anuphan,sans-serif}
+.variant-bar>span{opacity:.65;white-space:nowrap;letter-spacing:.04em}
+.variant-bar button{border:0;border-radius:8px;padding:7px 11px;background:#374151;color:#fff;
+  white-space:nowrap;font:700 11px Poppins,Anuphan,sans-serif;cursor:pointer}
+.variant-bar button.active{background:#3f72c9}
+.mobile-nav{bottom:42px!important}
+.mobile-fab{bottom:120px!important}
+
+@media(max-width:640px){
+  /* A — full route stays readable, phone pans along it horizontally. */
+  body[data-variant="a"] .map-hero{height:280px;aspect-ratio:auto;overflow-x:auto;overflow-y:hidden;
+    scroll-behavior:smooth;-webkit-overflow-scrolling:touch}
+  body[data-variant="a"] .map-canvas{width:664px;height:280px}
+  body[data-variant="a"] .map-hint{display:block}
+
+  /* B — no scrolling; canvas is blown up and re-centred on the active pin. */
+  body[data-variant="b"] .map-hero{height:230px;aspect-ratio:auto;overflow:hidden}
+  body[data-variant="b"] .map-canvas{position:absolute;top:0;left:0;width:1100px;height:464px;
+    transition:transform .45s cubic-bezier(.4,0,.2,1)}
+
+  /* C — keeps the honest full-width strip, opens a large view on tap. */
+  body[data-variant="c"] .map-hero{aspect-ratio:1931/814;height:auto;cursor:zoom-in}
+  body[data-variant="c"] .map-hint{display:block}
+}
+
+/* C's expanded view */
+.map-expand{position:fixed;inset:0;z-index:80;background:rgba(16,24,40,.93);
+  display:grid;place-items:center;padding:14px}
+.map-expand[hidden]{display:none}
+.map-expand-scroll{width:100%;max-height:64vh;overflow-x:auto;overflow-y:hidden;border-radius:18px;
+  background:#cfe1e5;scroll-behavior:smooth;-webkit-overflow-scrolling:touch}
+/* Size from viewport height, then derive width from the map's own 2.372:1 —
+   a fixed pixel canvas either overflowed the screen or over-zoomed. */
+.map-expand .map-canvas{height:min(64vh,460px);width:calc(min(64vh,460px) * 2.372)}
+.map-expand-close{position:absolute;top:16px;right:16px;width:42px;height:42px;border:0;
+  border-radius:50%;background:#fff;color:#1f2937;font-size:24px;cursor:pointer}
+.map-expand-tip{position:absolute;bottom:22px;left:0;right:0;text-align:center;color:#fff;
+  font:600 12px Poppins,Anuphan,sans-serif;opacity:.8}

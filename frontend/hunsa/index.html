@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <title>Hunsa Trip — เที่ยวด้วยกัน</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="overrides.css" />
+</head>
+<body>
+  <div id="hunsa-app" class="hunsa-app" aria-live="polite"></div>
+  <dialog id="trip-dialog" class="trip-dialog">
+    <form method="dialog" id="new-trip-form">
+      <button class="dialog-close" value="cancel" aria-label="ปิด">×</button>
+      <p class="eyebrow">HUNSA TRIP</p>
+      <h2>สร้างทริปใหม่</h2>
+      <label>ชื่อทริป<input name="name" required placeholder="เช่น Japan Family Trip"></label>
+      <div class="form-grid"><label>เริ่ม<input name="start_date" type="date" required></label><label>สิ้นสุด<input name="end_date" type="date" required></label></div>
+      <label>จุดหมาย<input name="destination" placeholder="เช่น Tokyo, Japan"></label>
+      <label>จำนวนสมาชิก<input name="members" type="number" min="1" value="1"></label>
+      <button class="primary-button" value="create">เริ่มวางแผนทริป</button>
+    </form>
+  </dialog>
+  <dialog id="stop-dialog" class="trip-dialog stop-dialog">
+    <form method="dialog" id="stop-form">
+      <button class="dialog-close" value="cancel" aria-label="ปิด">×</button>
+      <p class="eyebrow">HUNSA ITINERARY</p>
+      <h2 id="stop-form-title">เพิ่มสถานที่</h2>
+      <input type="hidden" name="stop_id">
+      <label>สถานที่หลัก<select name="parent_stop_id" id="stop-parent"><option value="">สถานที่หลักใหม่</option></select></label>
+      <label>ชื่อสถานที่<input name="accommodation" required placeholder="เช่น Senso-ji Temple"></label>
+      <label>รายละเอียด<input name="notes" placeholder="เช่น วัดเก่าแก่คู่บ้านคู่เมือง"></label>
+      <div class="form-grid"><label>วันที่<input name="stop_date" type="date" required></label><label>ไอคอน<input name="icon" value="📍" maxlength="3"></label></div>
+      <div class="form-grid"><label>เริ่มเวลา<input name="time" type="time" required></label><label>สิ้นสุด<input name="end_time" type="time" required></label></div>
+      <section class="icon-picker"><p>เลือกภาพประกอบ</p><div id="stop-icon-assets"></div><input type="hidden" name="icon_asset"></section>
+      <p class="form-message" id="stop-message"></p>
+      <button class="primary-button" value="save">บันทึกสถานที่</button>
+    </form>
+  </dialog>
+  <script src="app.js"></script>
+</body>
+</html>

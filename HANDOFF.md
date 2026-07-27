@@ -1,16 +1,729 @@
 # RecordRevenue — Handoff (ส่งต่อ AI ตัวใหม่)
 
-อัปเดตล่าสุด: 2026-07-22 · โปรเจกต์ = แอปการเงินครอบครัว + ท่องเที่ยว (ไทย)
+อัปเดตล่าสุด: 2026-07-27 · โปรเจกต์ = แอปการเงินครอบครัว + ท่องเที่ยว (ไทย)
 Stack: Cloudflare Pages (frontend) + Cloudflare Worker (backend) + D1 (`record-revenue-db`, id `3112e08d-db8b-428c-925d-91fb50f50de4`)
 
 - Frontend: `frontend/index.html`, `frontend/app.js`, `frontend/style.css`
 - Backend: `backend/src/index.js` (deploy ที่ root — `main` อยู่ใน `wrangler.json`)
 - URL: https://record-revenue-web.pages.dev · API: https://record-revenue.9nimz.workers.dev
-- เวอร์ชันไฟล์ล่าสุดใน index.html: `style.css?v=120`, `app.js?v=157`
+- เวอร์ชัน cache-bust ใน `frontend/index.html` ล่าสุด: `style.css?v=127`, `app.js?v=171` (ตรวจอีกครั้งก่อน bump)
 
 ---
 
-## 🚀 ต้อง DEPLOY + รัน SQL (ค้างอยู่ — ยังไม่ได้ทำ)
+## ⭐ จุดส่งต่องานล่าสุดที่สุด — Unified Trip Static Prototype (2026-07-27)
+
+> อ่านส่วนนี้ก่อนส่วน Prototype/Hunsa/PupPup เดิมด้านล่าง เพราะนี่คือทิศทางล่าสุดที่ผู้ใช้ยืนยัน  
+> สถานะยังเป็น **static prototype เท่านั้น** ยังไม่เชื่อม API/D1 และยังไม่ควรย้ายเข้าหน้า production จนกว่าผู้ใช้จะอนุมัติ UX/UI
+
+### เป้าหมาย
+
+ในระบบมีหน้าทริป 3 แบบเดิมคือ `Trip`, `PupPup Trip`, `Prototype Trip` ซึ่งมี requirement ใกล้กันแต่ layout ยังไม่ตอบโจทย์ ผู้ใช้ต้องการออกแบบหน้าเดียวใหม่ให้:
+
+- สวย เรียบง่าย เป็นระเบียบ ใช้งานง่าย
+- รองรับแผนเดินทาง + ค่าใช้จ่าย + กระเป๋าเงิน + สมาชิก + สภาพอากาศ
+- ใช้โทนสีจาก mockup 4 ภาพเดิม แต่ **ไม่คัดลอก layout หรือข้อมูลจากภาพ**
+- ใช้ฟอนต์ไทยแบบมีหัว
+- แผนที่เป็นภาพวาดพาสเทล texture ละมุน มีภูมิศาสตร์จริง และวางหมุด/ชื่อ/เส้นทางด้วยโค้ดเพื่อเปลี่ยนตามแผนได้
+
+### Source of truth ของ prototype ล่าสุด
+
+- โฟลเดอร์: `frontend/trip-unified-prototype/`
+- ไฟล์หลัก:
+  - `frontend/trip-unified-prototype/index.html`
+  - `frontend/trip-unified-prototype/style.css`
+  - `frontend/trip-unified-prototype/app.js`
+- Assets:
+  - `art/hokkaido-illustrated-clean.png` — ภาพแผนที่ปัจจุบันจากไฟล์ผู้ใช้ `Generated image 1 (13).png`
+  - `art/hokkaido-illustrated-landmarks.png` — ภาพเวอร์ชันเก่า มีชื่อสถานที่ฝังในภาพ
+  - `art/hokkaido-texture-map.png` — ภาพที่สร้างด้วย ImageGen
+  - ใช้ไอคอนเสริมจาก `frontend/puppup-prototype/art/`
+- Local URL: `http://localhost:4173/trip-unified-prototype/`
+- รัน local:
+  ```bash
+  cd "<โฟลเดอร์ RecordRevenue>"
+  python3 -m http.server 4173 --directory frontend
+  ```
+- cache bust ของ prototype ล่าสุด: `style.css?v=31`, `app.js?v=33`
+
+### 💱 นโยบายอัตราแลกเปลี่ยน (ตอบคำถามผู้ใช้ 2026-07-27 — ยืนยันแล้ว)
+
+**สูตร: เฉลี่ยถ่วงน้ำหนักทั้งทริป ต่อกระเป๋า** — `walletRate(walletId)` = Σ THB ÷ Σ foreign ของทุก funding lot ในกระเป๋านั้น · **ไม่สนใจวันที่และลำดับการบันทึกโดยเจตนา**
+
+เคสที่ผู้ใช้ถาม: แลกเงินจริง 1/7 แต่บันทึกย้อนหลังวันที่ 6 หลังจากจดค่าใช้จ่ายวัน 1–5 ไปแล้ว
+→ **บันทึกเมื่อไหร่ก็ให้ผลเหมือนกัน** เพราะเรทคำนวณใหม่ทั้งก้อนทุกครั้ง ไม่ใช่สะสมทีละรายการ (idempotent)
+→ ผลข้างเคียงที่ยอมรับ: ค่าใช้จ่ายเก่าถูก**ตีมูลค่าบาทใหม่ย้อนหลัง** ตัวเลขจะขยับจนกว่าจะปิดทริป ซึ่งตรงกับ production ที่ล็อกค่าบาทบิลด้วย avg_rate ตอน close เท่านั้น
+→ พิจารณา FIFO ตามวันที่แลกจริงแล้ว **ไม่เลือก** (ให้ผลต่างราว 1–2% และ backend production ต้องแก้ตามด้วย)
+
+**เรทประมาณการรายสกุล + ป้ายบอกที่มา (เพิ่ม 2026-07-27 ค่ำ)**
+
+`tripCurrencies[]` เก็บสกุลเงินของทริปพร้อม `planRate` (บาทต่อ 1 หน่วย) แก้ไข/เพิ่ม/ลบได้จากหน้า "เพิ่มเติม" → การ์ด "สกุลเงินในทริป" · ลบไม่ได้ถ้ายังมีกระเป๋าใช้สกุลนั้น · THB เป็น `base:true` แก้ไม่ได้
+
+`rateInfo(currencyCode, walletId)` คืน **ทั้งค่าและที่มา** เพราะเลขเปล่า ๆ แยกไม่ออกว่าเป็นเรทจริงหรือเรทเดา:
+
+| source | เมื่อไหร่ | ป้ายที่แสดง |
+|---|---|---|
+| `base` | สกุลหลักของทริป (THB) | ไม่มี |
+| `actual` | มี funding lot จริง | **เรทยังไม่นิ่ง · จะล็อกตอนปิดทริป** |
+| `planned` | ยังไม่เติมเงิน แต่มี `planRate` | **เรทประมาณการ · ยังไม่มีการเติมเงินจริง** |
+| `locked` | `tripClosed = true` | ล็อกแล้วเมื่อปิดทริป |
+| `none` | ไม่มีทั้งสองอย่าง | ยังคำนวณมูลค่าเป็นบาทไม่ได้ (ไม่นับในยอดรวม) |
+
+ตอบคำถาม "ควรเติมเงินก่อนไหมเพื่อไม่ให้ใช้ default": **ไม่ต้องแล้ว** — ตั้ง `planRate` ของสกุลนั้นไว้ตอนวางแผน ระบบจะใช้เรทประมาณการพร้อมป้ายกำกับ แล้วสลับไปใช้เรทเฉลี่ยจริงเองทันทีที่มี funding lot แรก · `tripClosed` ยังเป็น flag เปล่า ยังไม่มี flow ปิดทริปจริงมาเซ็ต
+
+**สองเคสที่ต้องเตือน (ทำแล้ว)**
+
+1. `leftover < 0` (ใช้เกินยอดเติมที่บันทึกไว้) → `.wallet-warn` บอกว่า "น่าจะยังบันทึกการเติมเงินไม่ครบ" **ไม่ใช่** "ใช้เงินเกินตัว" พร้อมบอกว่าบันทึกย้อนหลังได้
+2. ไม่มี funding lot เลย → `walletRate()` คืน **null** และ UI บอกว่า "ยังคำนวณมูลค่าเป็นบาทไม่ได้"
+   ⚠️ **ห้ามใส่ fallback ไปค่าคงที่ `exchangeRate` (0.232) เด็ดขาด** — โค้ดเดิมเคยทำ ทำให้ผู้ใช้เห็นตัวเลขบาทที่ดูน่าเชื่อถือแต่ระบบเดาเอง · หน้าบิลมี `#billNotice` เตือนจำนวนบิลที่ยังตีมูลค่าไม่ได้ด้วย
+
+**ผลข้างเคียงที่ตามมา**: `billBaht()` ใช้เรทของกระเป๋าที่บิลนั้นตัดเงิน ไม่ใช่ค่าคงที่ทั้งทริปอีกต่อไป ยอดรวม seed จึงเปลี่ยนจาก ฿26,100 → **฿26,126** (กระเป๋า North เรท 0.2328, กระเป๋า Ann เรท 0.2320) · บรรทัดแปลงค่าเงินใน Quick Add ก็ใช้เรทของกระเป๋าที่เลือกแล้วเช่นกัน
+- ทั้งโฟลเดอร์ `frontend/trip-unified-prototype/` และ assets ใต้ `frontend/puppup-prototype/art/` ยังเป็น **untracked** ตาม `git status`; ห้ามเผลอลบทิ้ง
+
+### Requirement ที่ตกลงกับผู้ใช้แล้ว
+
+#### การเงินและสิทธิ์
+
+1. สมาชิกแต่ละคนมีกระเป๋า YouTrip/Travel Card ของตัวเอง แยกยอดและประวัติ
+2. ต้องบันทึกทั้ง:
+   - คนจ่าย
+   - เจ้าของเงินที่ถูกใช้
+   - กระเป๋าที่ตัดเงินจริง
+3. ต้องสรุปได้ว่าแต่ละคนจ่ายบิลใด
+4. บิลหนึ่งแบ่งหลายหมวดได้
+5. ค่าอาหาร/ที่พัก/รายการร่วม เปิดให้สมาชิกเห็นได้
+6. visibility มีแนวคิด:
+   - `PRIVATE` — เจ้าของเห็น
+   - `TRIP` — ทุกคนในทริปเห็น
+   - `SELECTED` — เฉพาะผู้เกี่ยวข้องเห็น
+7. ค่าใช้จ่ายร่วมแยกจาก visibility:
+   - เปิดให้เห็นอย่างเดียวได้ โดยไม่จำเป็นต้องหาร
+   - หากหาร รองรับ equal/manual/percent ใน design data model ภายหลัง
+8. สมาชิกบางคนไม่ใช้ระบบบัญชีประจำวัน:
+   - เป็น `TRIP ONLY`
+   - สร้างกระเป๋าเอง จดบิล และเห็นทริปได้
+   - บิลแชร์ยังเปิดให้คนอื่นเห็นได้
+   - เมื่อปิดทริป ค่าใช้จ่ายของคนนี้เก็บในประวัติทริป แต่ **ไม่ post ลงบัญชีหลัก**
+9. ก่อนปิดทริปต้องมี close preview แยก:
+   - ลงบัญชีหลัก
+   - เก็บเฉพาะประวัติทริป
+
+#### แผนเดินทาง อากาศ และ location
+
+1. แสดงกิจกรรมถัดไปเด่นชัด
+2. สภาพอากาศตามวันและสถานที่หลัก แบ่งเช้า/บ่าย/ค่ำ
+3. แชร์ตำแหน่งแบบ `เช็กอินและแชร์ขณะเปิดแอป` เท่านั้น ไม่ใช่ background tracking
+4. สมาชิก A/B เห็นความคืบหน้าการเดินทางของกันและกันเมื่อเจ้าตัวเปิดแชร์
+5. สถานที่หลักและกิจกรรมย่อยสลับลำดับหรือย้ายข้ามวันได้ รองรับเปลี่ยนแผนหน้างาน
+6. สถานที่อนาคตทั้งหมดแสดงจาง ๆ บนแผนเพื่อให้เห็นเส้นทางและสร้างความตื่นเต้น
+
+#### เส้นทาง Hokkaido
+
+ลำดับหลัก:
+
+`Kushiro → Lake Akan → Lake Kussharo → Sounkyo → Obihiro → Furano → Jozankei → Niseko → Otaru → Sapporo → Chitose Airport`
+
+แลนด์มาร์ก/กิจกรรมที่ผู้ใช้ระบุ:
+
+- Kushiro ตลาดปลา
+- Kitakitsune Farm
+- Lake Akan
+- Akanko Ainu Kotan
+- Asahidake Ropeway
+- Shirahige Waterfall
+- Nusamai Bridge
+- Moor Onsen
+
+### Visual direction ที่ผู้ใช้ยืนยัน
+
+- พาสเทลอ่อน: ฟ้า ชมพู เขียวอ่อน ครีม ลาเวนเดอร์
+- card สีขาว ขอบบาง เงานุ่ม
+- ไอคอน 2D sticker ญี่ปุ่นคาวาอี้ มีเส้นขอบขาว
+- banner เป็นแผนที่ท่องเที่ยว texture watercolor/illustrated ไม่แบนแข็ง
+- ต้องเห็นแนวชายฝั่ง ภูเขา ทะเลสาบ และรูปทรงเกาะจริงชัดเจน
+- ตัวอักษรไทยแบบมีหัว:
+  - หัวข้อ: Noto Sans Thai Looped
+  - body: Anuphan
+  - อังกฤษ/ตัวเลข: Poppins
+- ภาพ banner ปัจจุบันเป็นอัตราส่วนประมาณ `2.37:1`; container ถูกปรับให้เต็มความกว้างและวางกรอบ Day ใต้ภาพ
+- หมุด ชื่อสถานที่ และเส้นทางต้องเป็น HTML/SVG/code overlay ไม่ฝังในภาพ เพื่อแก้ตามแผนได้
+
+### โครงหน้าปัจจุบัน
+
+Navigation เดสก์ท็อปเป็น side rail และ mobile เป็น bottom navigation:
+
+1. `วันนี้`
+   - banner แผนที่เต็มความกว้าง
+   - หมุด 11 จุด + เส้นทาง SVG
+   - past/current/next/future มี visual state ต่างกัน
+   - คลิกหมุดอนาคตเพื่อ preview Day/เส้นทางได้
+   - กรอบ Day อยู่ใต้ภาพ
+   - กิจกรรมถัดไป
+   - presence/location ของสมาชิก
+   - weather เช้า/บ่าย/ค่ำ
+   - ใช้วันนี้ + งบคงเหลือ
+2. `แผนเที่ยว`
+   - Day 3–6 มีข้อมูล mock
+   - สลับวัน
+   - ลากเรียง หรือใช้ปุ่มขึ้น/ลง
+   - เลือกกิจกรรมแล้วย้ายข้ามวัน
+   - weather overview ต่อวัน
+   - เพิ่มสถานที่ผ่าน dialog
+   - แก้ไขกิจกรรมเดิม
+   - ฟอร์มมีชื่อ วัน เวลา ประเภท งบ JPY รายละเอียด
+   - เมื่อ save จะย้ายไปวันที่เลือก เรียงตามเวลา และอัปเดตจำนวนจุด
+3. `บิล`
+   - summary รวมทั้งทริป / North จ่ายจริง / TRIP ONLY
+   - filter ทั้งหมด / ค่าใช้จ่ายร่วม / ของฉัน / เฉพาะทริป
+   - รายการแสดง payer, owner, visibility, shared และผล posting
+4. `กระเป๋า`
+   - กระเป๋า YouTrip JPY/THB ส่วนตัวของ North
+   - ยอดเติม ใช้ เหลือ และรายการล่าสุด
+5. `เพิ่มเติม`
+   - สมาชิกและสิทธิ์
+   - แสดง North/Nimz เป็นบัญชีหลัก
+   - Ann เป็น TRIP ONLY
+   - close-trip preview
+
+### Interaction ที่ทำและทดสอบผ่านแล้ว
+
+- responsive desktop/mobile เบื้องต้น
+- เปิดทุก screen ผ่าน navigation
+- หมุดและชื่อสถานที่วางด้วย SVG/code
+- กดหมุด/ใช้ Enter เพื่อ preview สถานที่อนาคต
+- ย้าย `Akanko Ainu Kotan` จาก Day 3 ไป Day 4
+- จำนวนจุดต่อวันอัปเดตถูกต้อง
+- เลื่อนกิจกรรมขึ้น/ลง
+- เพิ่ม `Nusamai Bridge Sunset` ผ่านฟอร์มไป Day 4 พร้อมเวลา รายละเอียด และ ¥1,200
+- ระบบเรียงตามเวลาและแก้ชื่อรายการเดิมได้
+- `node --check frontend/trip-unified-prototype/app.js` ผ่านก่อนเริ่มแก้ bills รอบล่าสุด
+- การทดสอบ browser ใช้ local static server เท่านั้น ไม่ยิง production API
+
+### ✅ รอบ 2026-07-27 (บ่าย) — ทดสอบผ่านครบแล้ว ไม่ต้องทำซ้ำ
+
+รอบก่อนหน้าค้างไว้ที่ "รอทดสอบ bills" — **ทดสอบครบแล้วด้วย Chromium (Playwright) 25 assertion ผ่านทั้งหมด ไม่มี console error** จึงข้ามลำดับทดสอบ 1–6 ด้านล่างไปได้เลย
+
+**บั๊กสายตาที่แก้แล้ว**
+
+- `.map-hero` เคยเป็น `aspect-ratio:1.9/1` แต่ภาพ + viewBox เป็น `1931/814` (2.372) → ภาพถูก `object-fit:cover` ครอปข้าง ส่วน SVG letterbox แนวตั้ง **หมุดจึงไม่ทับแลนด์มาร์กมาตลอด** แก้เป็น `aspect-ratio:1931/814` + `object-fit:contain` ครบทั้ง base และ breakpoint 900/640 (สองอันหลังเคยล็อก `height:390px`/`350px` ทับ aspect-ratio ไว้) — พิกัด `data-x/data-y` เดิมถูกต้องอยู่แล้วทุกจุด ไม่ต้องแก้
+- **ฟอนต์ Anuphan ไม่เคยถูกโหลด** ทั้งที่เป็น body font ตามสเปก เพิ่ม `@font-face` 400–700 (ไฟล์อยู่ที่ `../puppup-prototype/fonts/anuphan-thai-*.woff2`) แล้วตั้ง body = `Poppins, Anuphan` (Poppins ก่อนเพื่อให้ตัวเลข/อังกฤษคงทรง ส่วนไทยตกไป Anuphan รายตัวอักษร)
+- ⚠️ **กับดักที่ต้องระวัง**: rule ที่ใช้ `font:` shorthand จะล้าง font-family ที่ตั้งไว้ทิ้ง — `.prototype-note` และกลุ่ม `.eyebrow` โดนเข้าเต็ม ๆ ข้อความไทยหล่นไปฟอนต์ระบบ ถ้าเพิ่ม rule ใหม่ที่ใช้ shorthand ต้องใส่ Anuphan ใน stack ด้วยเสมอ
+- พาสเทลพาส: แยก `--pink` (ใช้เป็นสีพื้นเท่านั้น) ออกจาก `--pink-ink` ใหม่สำหรับตัวหนังสือ เพราะ `#ff668d` บนขาว = 2.79:1 ตก AA · ตอนนี้ทุกจุดที่เคยตกผ่านหมด (eyebrow 4.95, ชื่อสถานที่อนาคต 5.11, ข้อความรอง 4.90)
+- `.day-summary` ที่ ≤640px เหลือ 2 คอลัมน์แต่มีลูก 3 ตัว → ปุ่ม "ดูแผนวันนี้" ถูกบีบเป็นคำละบรรทัด (rule เก่า `.day-summary>button` ไม่ match แล้วเพราะปุ่มย้ายเข้า `.day-summary-actions`) แก้ให้ actions span เต็มแถว
+
+**Quick Add + data model (ตอบ requirement การเงินข้อ 2–4, 8)**
+
+- เพิ่ม `members[]` (มี `ledgerMode: MAIN | TRIP_ONLY`) และ `wallets[]` (มี `ownerId`, `currency`) ใน `app.js`
+- bill shape ใหม่: `{payerId, ownerId, walletId, categories:[{name,amount}], visibility, shared, participantIds[], currency, activityId}` — **`tripOnly` ไม่เก็บเป็นฟิลด์แล้ว** คำนวณจาก `ledgerMode` ของ `ownerId` แทนการอ่านสตริง `"· TRIP ONLY"` ในชื่อ
+- ฟอร์มแยก 3 มิติจริง: เลือกกระเป๋าแล้วเดา payer/owner ให้ แต่หยุดเดาทันทีที่ผู้ใช้แก้ฟิลด์นั้นเอง (`payerTouched`/`ownerTouched`)
+- ปุ่ม `＋ เพิ่มหมวด` มี handler แล้ว (เดิมตาย) เพิ่ม/ลบแถวได้ เติมยอดคงเหลืออัตโนมัติ และ **บล็อกการบันทึกเมื่อผลรวมหมวด ≠ ยอดบิล**
+- บรรทัดแปลงค่าเงิน / ยอดหารต่อคน / รายชื่อผู้เกี่ยวข้อง คำนวณสดทั้งหมด (เดิม hardcode) และล้างฟอร์มทุกครั้งที่เปิด
+- `canSee()` กรองตาม visibility ก่อน render — บิล PRIVATE ของคนอื่นไม่เข้า DOM เลย
+- `billBaht()` แยกกระเป๋า THB ออกจาก JPY ไม่ให้คูณเรทซ้ำ
+
+**อื่น ๆ**
+
+- ลากเรียงกิจกรรม: ย้าย reorder จาก `dragover` (ซึ่งเรียก `renderPlanWorkspace()` แล้วทำลายโหนดที่กำลังลาก → drag พังทันที) ไปทำที่ `drop` แทน · `dragover` เหลือแค่วาดเส้น `.drop-before/.drop-after` · ลบ handler ซ้ำที่ผูกกับโหนดตายแล้วออก
+- localStorage คีย์ `unified-trip-prototype` มี `STORAGE_VERSION` (ตอนนี้ = 2) ถ้าเปลี่ยน bill shape อีก **ต้อง bump** ไม่งั้นข้อมูลเก่าจะ render เพี้ยน · ปุ่มคืนค่าตัวอย่างอยู่ที่หน้า "เพิ่มเติม"
+- ไฟล์ `map-compare.html` + `map-variants.css/js` = ตัวเทียบแผนที่มือถือ 3 แบบ **ผู้ใช้เลือก "คงแบบเดิม"** แล้ว ไฟล์เหล่านี้ไม่ถูกโหลดจาก `index.html` ลบทิ้งได้
+
+### ✅ รอบ 2026-07-27 (เย็น) — แผน 12 วัน · รูปแบบตัวเลข · คลังรูปภาพ
+
+**หมุด ↔ วัน และแผนเต็ม 12 วัน**
+
+- `journeyStops[]` มีฟิลด์ `dayId` ชี้ไปที่ `planDays` โดยตรง — เลิก join ด้วยเลขวัน เพราะเส้นทางมี 11 หมุดบน 12 วัน และ Kushiro กินสองวัน (Day 01–02) ทำให้เลขวันไม่ match
+- `planDays` เต็ม Day 1–12 พร้อมกิจกรรม 2–3 รายการทุกวัน และ object `weather` ที่มี `feels`/`periods[]`/`tip` ครบทุกวัน
+- `#openSelectedPlan` สลับ `activePlanDayId` จริงแล้ว (เดิมแค่เปลี่ยนหน้าจอ)
+- การ์ดอากาศหน้า "วันนี้" render จาก `planDays[].weather` และเปลี่ยนตามหมุดที่เลือก พร้อมป้าย "พยากรณ์ล่วงหน้า" เมื่อไม่ใช่วันปัจจุบัน
+- ⚠️ `scrollIntoView` ไม่ทำงานกับ element ที่ `display:none` — แท็บวันต้องเลื่อนเข้าจอใน `showScreen()` หลังหน้าจอแสดงแล้ว ไม่ใช่ใน `renderPlanWorkspace()`
+
+**รูปแบบตัวเลข (กติกาจากผู้ใช้)**
+
+- `fmtAmount(value, symbol)` — หลักพันมีคอมมา และ **จำนวนติดลบอยู่ในวงเล็บ** ไม่ใช้เครื่องหมายลบ เช่น `(¥24,000)`
+- ใช้ทั่วทั้ง bills/summary/quick add/plan cost/wallet activity
+- **ยกเว้นอุณหภูมิ** ยังใช้ `−6°` ตามเดิม เพราะ `(6)°` จะอ่านเป็นตัวเลขบัญชี ไม่ใช่สภาพอากาศ — ถ้าผู้ใช้ต้องการให้เปลี่ยนด้วยค่อยแก้
+
+**คลังรูปภาพ 3 ชนิด (`openAssetPicker`)**
+
+- dialog เดียวใช้ร่วมกัน มี `assetSpecs` กำหนดขนาดของแต่ละชนิดและ**แสดงขนาดให้ผู้ใช้เห็นในหน้าเลือก**:
+  - `banner` 1920 × 810 px (2.37 : 1) — เปลี่ยนได้ทั้งทริปเดิม (ปุ่มบนแผนที่ + หน้าเพิ่มเติม) และทริปใหม่ (`#newTripDialog`)
+  - `place` 256 × 256 px — สี่เหลี่ยมมุมโค้ง ใช้ในฟอร์มแผนเที่ยว
+  - `expense` 192 × 192 px — วงกลม ใช้ใน Quick Add ขั้น 2
+- **เพิ่ม 2 ชนิดเมื่อ 2026-07-27 ค่ำ**:
+  - `wallet` 256 × 256 px สี่เหลี่ยมมุมโค้ง — ปุ่ม 🎨 บนการ์ดกระเป๋า · เก็บที่ `wallets[].icon`
+  - `currency` 192 × 192 px วงกลม — ในฟอร์มสกุลเงิน · เก็บที่ `tripCurrencies[].icon`
+  - ไอคอนชุดแรกเป็น **SVG ที่ generate ขึ้นเอง** ใน `art/icons/` (กระเป๋า 8 แบบ `wallet_*.svg` · เหรียญ 12 สกุล `coin_*.svg`) เพิ่มไฟล์ใหม่แล้วเติมรายการใน `assetLibrary` ได้เลย
+  - พิมพ์รหัสสกุลที่รู้จัก (JPY/THB/USD/EUR/KRW/GBP/CNY/SGD/AUD/TWD/VND/MYR) ในฟอร์มสกุลเงิน ระบบจะเลือกเหรียญให้อัตโนมัติผ่าน `CURRENCY_ICON_BY_CODE`
+  - ⚠️ `DEFAULT_ICONS` / `CURRENCY_ICON_BY_CODE` ต้องประกาศ **บนสุดของไฟล์** เพราะ `let currencyIcon = DEFAULT_ICONS.currency` เป็น statement ระดับ top-level — วางไว้ท้ายไฟล์แล้วเจอ TDZ `Cannot access 'DEFAULT_ICONS' before initialization` หน้ากระเป๋าว่างทั้งหน้า
+- อัปโหลดเองได้ · `normaliseUpload()` วาดลง canvas ครอบกึ่งกลางเป็นขนาดตามสเปกแล้วแปลงเป็น webp — บังคับขนาดจริงและทำให้ dataURL เล็กพอเก็บลง localStorage (ทดสอบ: ภาพ 1000×1000 → 192×192 ขนาด 1 KB)
+- `bill.image` เป็น override ถ้าไม่เลือกจะ fallback ไปไอคอนตามหมวดเหมือนเดิม
+- ⚠️ กับดักที่เจอและแก้แล้ว 3 จุด:
+  1. `#assetConfirm` ต้อง `closeLayers()` **ก่อน** เรียก callback ไม่งั้น callback เปิดฟอร์มเดิมแล้วโดนปิดซ้ำทันที
+  2. `openAssetPicker()` ต้อง `closeLayers()` ตอนเริ่ม เพราะถูกเรียกจาก dialog อื่นที่ z-index เท่ากัน (`#newTripDialog` อยู่หลังใน DOM เลยบัง) · `.asset-picker` จึงตั้ง `z-index:54`
+  3. ปุ่ม "ยกเลิก" ห้ามใช้ class `dialog-close` เพราะ class นั้นเป็น `position:absolute` ของปุ่ม × — ใช้ `.close-layer` แทน
+
+**แก้ฟอนต์แบบถาวร**
+
+แทนที่จะไล่แก้ทีละ rule ที่ใช้ `font:` shorthand ตอนนี้ลงทะเบียน Anuphan **ภายใต้ชื่อ family `Poppins`** พร้อม `unicode-range:U+0E01-0E5B` — ทุก rule ที่ใช้ Poppins จึงได้อักษรไทยอัตโนมัติ รวมถึง rule ที่จะเขียนเพิ่มในอนาคต (แก้เคส `.plan-cost small` ที่ขึ้นเป็นกล่องสี่เหลี่ยม)
+
+**สถานะทดสอบ**: Playwright/Chromium ผ่านครบ 60 assertion · ไม่มี console error · ครอบคลุม bills flow, drag & drop, หมุด↔วัน, 12 วัน, รูปแบบตัวเลข, ทั้ง 3 picker, อัปโหลด, สร้างทริปใหม่ และ persistence
+
+### ✅ รอบ 2026-07-27 (ค่ำ) — กระเป๋าเงินจริง · สลับมุมมองสมาชิก · split 3 แบบ
+
+**สลับมุมมองผู้ใช้ (`viewerId`)**
+
+- `CURRENT_MEMBER_ID` (const) กลายเป็น `viewerId` (let) สลับได้จากหน้า "เพิ่มเติม" → กดชื่อสมาชิก
+- ใช้ตรวจกติกาการมองเห็นได้จริง แทนที่จะเชื่อว่าถูก — ทดสอบยืนยันแล้วว่าสลับเป็น Ann จะ **ไม่เห็นบิล PRIVATE ของ North** แต่ยังเห็นบิลที่แชร์กับทริป และเห็นกระเป๋าตัวเองใบเดียว
+
+**หน้ากระเป๋าคำนวณจากข้อมูลจริง**
+
+- เพิ่ม `fundings[]` (funding lot ต่อกระเป๋า) + `walletSummary()` คืน funded/spent/leftover/avg rate
+- **เรทเฉลี่ยเป็นแบบถ่วงน้ำหนัก Σ THB ÷ Σ foreign ทุกล็อต** ตรงกับวิธีของ `computeTripWallets()` ฝั่ง production (ทดสอบ: 58,200 ÷ 250,000 = ฿0.2328/¥)
+- แสดงเฉพาะกระเป๋าที่ `viewerId` เป็นเจ้าของ · ประวัติรวมทั้งบิลที่ตัดจากกระเป๋าและรายการเติมเงิน
+- ⚠️ ตอนย้าย row เข้า wrapper `#walletActivity` ทำให้ rule เดิม `.wallet-activity>div` ไปจับ wrapper แทน row → ทุกแถวเรียงเป็นแนวนอน แก้ด้วย `.wallet-activity #walletActivity>div` แล้ว
+
+**money-strip ผูกกับบิลจริง**
+
+"ใช้วันนี้" = ผลรวมบิลที่ `activityId` อยู่ในกิจกรรมของวันปัจจุบัน (seed bills ผูก activityId ไว้แล้ว) · "เหลืองบ" = `TRIP_BUDGET_THB` − ยอดรวมที่มองเห็นได้ และเปลี่ยนเป็นสีแดงเมื่อติดลบ
+
+**split mode ครบ 3 แบบ (requirement 7)**
+
+- `equal` / `manual` / `percent` เลือกจาก segmented ใน Quick Add ขั้น 3
+- `manual` กรอกเป็นสกุลของบิล ต้องรวมเท่ายอดบิล · `percent` ต้องรวม 100% · ไม่ครบ = บล็อกการบันทึกพร้อมบอกว่าขาด/เกินเท่าไร
+- สลับโหมดแล้ว seed ค่าจาก equal ให้ก่อน ผู้ใช้จะได้แก้จากสถานะที่ถูกต้อง
+- ทุกโหมดลงเอยเป็น `participants:[{memberId, amount}]` รูปแบบเดียว ส่วนอื่นของแอปไม่ต้องรู้ว่าใช้โหมดไหน
+- **bill shape เปลี่ยน**: `participantIds[]` → `participants[{memberId,amount}]` + `splitMode` · `STORAGE_VERSION` = **4**
+
+**สถานะทดสอบ**: 71 assertion ผ่าน ไม่มี console error
+
+### ✅ รอบ 2026-07-27 (ดึก) — เติมเงิน · เพิ่มกระเป๋า · ปิดทริปจริง
+
+**เติมเงิน (`#fundDialog`)** — ปุ่ม "＋ เติมเงิน" บนการ์ดกระเป๋าใช้งานได้แล้ว กรอกยอดบาท + ยอดสกุลนั้น + วันที่ · พรีวิวบอก **เรทของล็อตนี้** และ **เรทเฉลี่ยหลังเติม** เทียบกับเรทเดิม (ทดสอบ: เติม ฿25,000 = ¥100,000 ทำให้เฉลี่ยขยับ 0.2328 → 0.2377)
+
+**เพิ่มกระเป๋า (`#walletDialog`)** — ชื่อ + สกุลเงิน + ไอคอน · เจ้าของคือ `viewerId` ปัจจุบัน · dropdown เรียงสกุลต่างประเทศไว้ก่อน THB เพราะกระเป๋าทริปมักเป็นสกุลต่างประเทศ ถ้าปล่อย THB อยู่บนสุดจะกลายเป็นค่า default เงียบ ๆ
+
+**ปิดทริป (`computeCloseSummary()`)** — เลิกใช้ตัวเลขตายใน HTML แล้ว
+
+- ยอดของแต่ละคนมาจาก `participants[]` **ไม่ใช่จากคนจ่าย** (คนจ่ายแค่ออกเงินให้ก่อน)
+- แยกตาม `ledgerMode`: MAIN → ลงบัญชีหลัก · TRIP_ONLY → เก็บเฉพาะประวัติทริป
+- แสดงเงินเหลือรายกระเป๋าที่จะคืนเข้าบัญชีต้นทาง
+- **บล็อกการปิด** พร้อมบอกเหตุผลราย ๆ เมื่อ: ยอดที่แบ่งไม่ตรงยอดบิล · บิลตีมูลค่าไม่ได้ · กระเป๋าใช้เกินยอดเติม
+- ยืนยันแล้ว → เขียน `wallets[].lockedRate` แช่เรทไว้ · `tripClosed = true` · ป้ายทุกที่เปลี่ยนเป็น **"ล็อกแล้วเมื่อปิดทริป"** · ปุ่มเติมเงินและปิดทริปถูกปิดใช้งาน · สถานะอยู่ข้าม reload
+
+`STORAGE_VERSION` = **7** (เพิ่ม `wallets`, `tripClosed`, `tripCurrencies`)
+
+**สถานะทดสอบ**: 17 assertion ของรอบนี้ผ่านหมด · regression ของ bills flow และ rate policy ผ่าน · ไม่มี console error
+
+**การล็อกหลังปิดทริป (`applyTripLock` / `blockedByClose`)**
+
+รอบแรกล็อกแค่ปุ่มเติมเงินกับปุ่มปิดทริป — **ยังเพิ่มบิลใหม่ได้ และยอดรวมขยับจริง** ทั้งที่หน้าจอบอกว่าล็อกแล้ว (`lockedRate` ล็อกแค่เรท ไม่ได้ล็อกตัวรายการ) แก้แล้วโดยแยกให้ชัดว่าอะไรคือ "ตัวเลขการเงิน" และอะไรคือ "เนื้อหา"
+
+| ล็อก 🔒 | ยังแก้ได้ |
+|---|---|
+| จดค่าใช้จ่าย (ทุกปุ่ม + FAB) | แผนเที่ยว เพิ่ม/ลบ/ลากเรียง |
+| เติมเงิน · เพิ่มกระเป๋า | เปลี่ยนแบนเนอร์ |
+| เพิ่ม/แก้/ลบสกุลเงิน | เปลี่ยนไอคอนกระเป๋า |
+| ปิดทริปซ้ำ | สลับมุมมองสมาชิก |
+
+- ป้องกันสองชั้น: ปุ่ม `disabled` + `title` บอกเหตุผล **และ** handler เรียก `blockedByClose()` ซ้ำ — ทดสอบด้วยการ `b.disabled=false` ผ่าน JS แล้วกด ยังเปิดฟอร์มไม่ได้และ `bills.length` ไม่เปลี่ยน
+- แถบ `.trip-locked-note` ขึ้นบนหน้าบิล/กระเป๋า/เพิ่มเติม · `#billNotice` เปลี่ยนข้อความเป็น "เรทถูกล็อกไว้ที่ค่าตอนปิดทริป" (เดิมยังขึ้น "เรทยังไม่นิ่ง" ทั้งที่ปิดไปแล้ว)
+
+**วันลงบัญชี (`postingDate`) — แยกจากวันจบทริป**
+
+วันที่จบทริปกับวันที่ลงบัญชีเป็นคนละเรื่อง เช่นจบทริป 27/12 แต่สรุปยอดจริง 10/1 ซึ่ง**ตกคนละปีบัญชี** ฟอร์มปิดทริปจึงมีช่องเลือกวันลงบัญชี default = `TRIP_END_DATE` และเตือนอัตโนมัติ 3 กรณี:
+
+- ข้ามเดือน → "คนละเดือนบัญชี · จะไปอยู่ในงวด <เดือน>"
+- ข้ามปี → "คนละปีบัญชี"
+- ย้อนก่อนวันจบทริป → เตือนให้ตรวจซ้ำ
+
+`postingDate` ถูกเก็บใน `tripLog` ของการปิดครั้งนั้น ไม่ใช่แค่ตัวแปรลอย
+
+**Reopen เฉพาะ admin (`isAdmin`)**
+
+- `members[].admin` เป็น flag ใหม่ (ตอนนี้มีแค่ North) · ปุ่ม "เปิดทริปกลับ" โผล่เมื่อ `tripClosed` และ disabled พร้อม tooltip เมื่อผู้ดูที่ไม่ใช่ admin — handler เช็กซ้ำอีกชั้น ทดสอบด้วยการปลด `disabled` ผ่าน JS แล้วยังเปิดไม่ได้
+- **บังคับระบุเหตุผล ≥ 5 ตัวอักษร** เก็บลง `tripLog`
+- เปิดกลับแล้ว: ลบ `wallets[].lockedRate` (เรทกลับมาขยับ) · `tripClosed = false` · `postingDate` ล้าง · ปุ่มการเงินกลับมาใช้ได้
+- `tripLog[]` เป็น append-only แสดงในหน้า "เพิ่มเติม" เรียงล่าสุดบนสุด บันทึกทั้งการปิดและการเปิดกลับพร้อมชื่อผู้ทำ — **การปิดครั้งเก่าไม่ถูกลบ** เพื่อให้ตามรอยได้
+
+`STORAGE_VERSION` = **8** (เพิ่ม `postingDate`, `tripLog`)
+
+**⭐ ปิด → เปิดกลับ → ปิดใหม่ ต้องใช้ reversal (สำคัญมาก ห้ามทำพลาด)**
+
+รอบแรกที่ทำ reopen บันทึกแค่เหตุผล **ไม่มีตัวเลข** และการปิดแต่ละครั้งบันทึก **ยอดเต็ม** ทั้งคู่ → ถ้า backend โพสต์ตาม log ตรง ๆ จะได้ ฿14,052 + ฿16,380 = **฿30,433 ทั้งที่ยอดจริงคือ ฿16,380** (ลงบัญชีซ้ำเท่ากับยอดปิดครั้งแรกพอดี)
+
+แก้แล้วด้วยวิธี **กลับรายการ แล้วลงใหม่เต็ม** ตรงกับสเปก P6 เดิมที่เขียนว่า "สร้าง reversal ของ settlement เดิม (ไม่ลบ ledger)"
+
+- ทุก entry ใน `tripLog` มี `ledgerTotal` / `tripOnlyTotal` **แบบมีเครื่องหมาย** — `close` เป็นบวก · `reopen` เป็นลบเท่ายอดของการปิดครั้งที่กำลังกลับ
+- **`reopen.postingDate` = `postingDate` ของการปิดครั้งนั้น** (ไม่ใช่วันที่กดเปิดกลับ) เพื่อให้งวดที่รายงานไปแล้วถูกล้างในงวดเดิม — ตามที่ผู้ใช้เลือก
+- ยอดที่เข้าบัญชีจริง = **ผลรวมทุก entry** ไม่ใช่ยอดของครั้งล่าสุด · UI แสดงเป็นบรรทัด "ยอดสุทธิที่อยู่ในบัญชีจริง"
+- dialog เปิดกลับบอกล่วงหน้าว่าจะกลับรายการเท่าไร ลงวันไหน ก่อนกดยืนยัน
+- ทดสอบ 2 รอบเต็ม (ปิด→เปิด→ปิด→เปิด→ปิด): ผลสุทธิ = ยอดปิดล่าสุดทุกครั้ง ไม่มีการลบ entry เก่า
+
+⚠️ **เมื่อเชื่อม backend จริง**: อย่าให้ `/api/trips/close` โพสต์ยอดเต็มโดยไม่เช็กว่าเคยปิดมาก่อน — ต้องอ่าน `tripLog` แล้วโพสต์ reversal ก่อนเสมอ
+
+**ขั้นยืนยันก่อนปิดทริป** — เพิ่ม checkbox `#closeAck` ที่ **ย้ำยอดจริง**ในข้อความ ("จะลงบัญชีหลัก ฿14,052 และเก็บเฉพาะประวัติทริป ฿12,074") ปุ่มยืนยันเริ่มต้นเป็น disabled เสมอ ติ๊กแล้วจึงกดได้ · ถอนติ๊กก็กลับไป disabled
+
+**Presence / ตำแหน่งสมาชิก (requirement เดิมข้อ 3–4 ที่ค้างมาตลอด)**
+
+`presence[memberId] = { sharing, at, place, status }` — **เก็บ timestamp ไม่ใช่พิกัดสด** โดยเจตนา เพราะ requirement คือ "เช็กอินและแชร์ขณะเปิดแอป" ไม่ใช่ background tracking · ถ้าไม่มีอะไรมารีเฟรช ข้อมูลจะค่อย ๆ เสื่อมเป็น "ข้อมูลเก่า N นาที · แอปอาจปิดอยู่" แทนที่จะทำเหมือนยังตามตัวอยู่
+
+- 4 สถานะ: `live` (≤ `PRESENCE_FRESH_MINUTES` = 15) · `stale` (เกิน 15 นาที) · `idle` (เปิดแชร์แต่ยังไม่เช็กอิน) · `off` (ไม่แชร์)
+- ปิดแชร์ → ล้าง `at`/`place` ทันที ตำแหน่งเดิมหายจากมุมมองคนอื่น และเช็กอินไม่ได้จนกว่าจะเปิดใหม่
+- ข้อความ consent บอกตรง ๆ ว่า "เฉพาะขณะเปิดแอปเท่านั้น ไม่มีการติดตามเบื้องหลัง"
+- สลับ `viewerId` แล้วเห็นมุมของคนนั้น — ทดสอบยืนยันว่า Ann ที่ปิดแชร์ยังเห็นความคืบหน้าของ North ที่เปิดแชร์ไว้ (requirement ข้อ 4)
+
+`STORAGE_VERSION` = **9** (เพิ่ม `presence`)
+
+**สถานะทดสอบรวมทั้งโปรเจกต์**: ~130 assertion ผ่าน ครอบคลุม bills flow · drag & drop · หมุด↔วัน · รูปแบบตัวเลข · picker ทั้ง 5 ชนิด · นโยบายเรท 4 สถานะ · กระเป๋า/เติมเงิน/ปิดทริป · reversal 2 รอบ · การล็อกหลังปิด · presence · ไม่มี console error
+
+### ✅ `add_unified_trip_schema.sql` — รันบน **remote สำเร็จแล้ว** 2026-07-27
+
+รัน `--remote` แล้ว: 34 queries · 44 rows written · ไม่มี error · ตรวจซ้ำด้วย `pragma_table_info` ได้ครบ **7 ตาราง · 8 · 3 · 2 · 3 คอลัมน์ ตรงทุกแถว** · ทุกคำสั่งเป็น `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX` / `ADD COLUMN` เท่านั้น (6+1 CREATE TABLE · 6 INDEX · 10 ADD COLUMN) — ไม่มี DROP/RENAME/DELETE/UPDATE สักคำสั่ง (`ON DELETE CASCADE` ใน FK ไม่นับ)
+
+**ทดสอบแล้วบน SQLite ในหน่วยความจำ** โดยจำลองสคีมาเดิมจาก `backup-before-trip-finance.sql` แล้วรันไฟล์ทับ: ผ่านทั้งไฟล์ · ตารางใหม่ 7 ตาราง · คอลัมน์ครบทุกตัว · แล้ว insert ข้อมูลจริงตามที่ prototype ใช้เพื่อยืนยันว่า
+- ปิด→เปิด→ปิด ได้ยอดสุทธิ ฿16,380 = ยอดปิดล่าสุด (ไม่ลงซ้ำ)
+- `SUM(TripExpenseParticipants.amount_foreign)` = `TripExpenses.amount_foreign`
+
+**ของเดิมที่ใช้ได้เลย ไม่ต้องสร้างใหม่** (ตรวจจาก backup แล้ว): `TripWallets.exclude_on_close` · `TripWallets.initial_balance_foreign/thb` · `TripWalletFundings` ครบทุกคอลัมน์ · `TripTransfers.transfer_kind` **มี `CARRY_FORWARD` รออยู่แล้ว** · `Projects.route_data` · `Projects.theme_banner`
+
+**ช่องว่างจริง 3 ข้อที่ migration นี้ปิด**
+
+1. `TripExpenses.member_id` มีแค่ "คนจ่าย" — ไม่มีเจ้าของเงิน visibility หรือการหาร → เพิ่ม 8 คอลัมน์ + `TripExpenseParticipants` + `TripExpenseCategories`
+2. สมาชิกทริปเป็น JSON ใน `Projects.members` ใส่ `ledger_mode`/`is_admin` ไม่ได้ → `TripMembers`
+3. ไม่มีที่เก็บผลการปิดทริป ตามรอย reversal ไม่ได้ → `TripClosures` (append-only, `reverses_id` ชี้กลับ) + `TripClosureLines` (การจัดการเงินเหลือ + `fx_amount`)
+
+**⚠️ อย่าตั้งชื่อว่า `TripSettlements`** — ฐานนี้มี `Settlements` อยู่แล้ว ซึ่งคือ **การหักล้างหนี้ AR** (`parent_detail_id` ↔ `child_detail_id`, ใช้ใน backend 12 จุด) คนละเรื่องกับการปิดทริปโดยสิ้นเชิง จึงใช้ `TripClosures` / `TripClosureLines` แทนเพื่อไม่ให้สับสนภายหลัง
+
+**สคีมา remote ยืนยันแล้ว 2026-07-27** (`SELECT name FROM sqlite_master`): มี 25 ตาราง · `TripWallets` `TripWalletFundings` `TripTransfers` `TripHoldingAccounts` `TripIconAssets` ครบตามบันทึก · **ไม่มีตารางใดใน 7 ตารางใหม่ชนกับของเดิม**
+
+**⚠️ ฐาน local ตามหลัง remote อยู่หลาย migration** (พบ 2026-07-27)
+
+รัน `--local` แล้วได้ `no such table: TripWallets` เพราะ **`create_wallets_and_permissions.sql` เคยรันแต่ `--remote` ไม่เคยรัน `--local`** ฐาน local จึงไม่มี `TripWallets`/`TripWalletFundings` → ใช้ซ้อมไม่ได้จนกว่าจะไล่ migration ย้อนหลังให้ครบ
+
+ผลคือ `add_unified_trip_schema.sql` **รันบน local ไปแล้วบางส่วน** (หัวข้อ 1–3 สำเร็จ: `TripMembers` · `TripCurrencies` · `TripExpenseCategories` · `TripExpenseParticipants` + 8 คอลัมน์บน `TripExpenses`) แล้วหยุดที่หัวข้อ 4
+
+→ จึงแยก **`add_unified_trip_schema_part2.sql`** = หัวข้อ 4–7 ที่เหลือ ทดสอบแล้วว่ารันต่อจากสถานะนั้นได้พอดี
+→ บน **remote ที่ยังไม่เคยรันอะไรเลย** ให้ใช้ไฟล์เต็ม `add_unified_trip_schema.sql` ไฟล์เดียวจบ
+
+⚠️ `ALTER TABLE ... ADD COLUMN` ไม่มี `IF NOT EXISTS` ใน SQLite — รันไฟล์เดิมซ้ำจะได้ `duplicate column name` แล้วคำสั่งที่เหลือไม่ถูกรันต่อ (ข้อมูลไม่เสีย) ถ้าเจอให้ตัดเฉพาะส่วนที่ยังไม่ได้รัน
+
+⚠️ **wrangler `--file` ไม่พิมพ์ผล SELECT** (เป็น bulk import) — อย่าใส่ SELECT ตรวจผลไว้ในไฟล์แล้วหวังจะเห็นผล ใช้ `--command` แยกต่างหากสำหรับทุกอย่างที่ต้องดูผลลัพธ์ · เสียเวลาไป 2 รอบเพราะเรื่องนี้
+
+**ยังไม่ได้ทำ (ต่อจากนี้)**
+
+### ✅ `backend/src/unified-trip.js` — API adapter เฟส 1 (อ่านอย่างเดียว · **deploy แล้ว** 2026-07-27)
+
+`GET /api/unified-trip?projectId=` + header `x-user-id` → คืนทริป · สมาชิก · สกุลเงิน · กระเป๋า(พร้อมเรทและยอด) · บิล(พร้อม categories/participants) · stops · presence · closures · ยอดสุทธิ
+
+**แตะ `index.js` แค่ 5 บรรทัด** — import 1 + dispatch 4 บรรทัดบนสุดของ `try` ตรรกะทั้งหมดอยู่ในโมดูลแยก เพราะ `index.js` ยาว 3,568 บรรทัดและเสิร์ฟทั้งระบบ · `handleUnifiedTrip()` คืน `null` เมื่อไม่ใช่ path ตัวเอง route เดิมจึงทำงานต่อตามปกติ (ทดสอบแล้ว)
+
+⚠️ **กรอง visibility ที่เซิร์ฟเวอร์ ไม่ใช่ที่ client** — prototype กรองฝั่ง client ซึ่งพอสำหรับข้อมูลจำลอง แต่กับข้อมูลจริงถ้าส่งบิลทุกใบไปแล้วค่อยซ่อน ใครเปิด network tab ก็อ่านได้หมด · กระเป๋าก็กรองด้วย `owner_member_id` เช่นกัน
+
+**ทดสอบแล้ว 20 assertion** ด้วย D1 ปลอมใน Node (`node test.mjs`) ครอบคลุม: North ไม่เห็นบิล PRIVATE ของ Ann · ไม่เห็นกระเป๋าของ Ann · เรท actual 0.2328 vs planned 0.2320 · ยอดสุทธิ closures = ฿16,380 ไม่ใช่ผลบวกของ CLOSE ทั้งสอง · 401 เมื่อไม่มี x-user-id · 404 คนนอกครอบครัว · 405 เมื่อ POST · null เมื่อเป็น path อื่น
+
+**deploy แล้ว** worker version `e3a5ca26-c812-4a07-8824-c993020703d0` · ยิงจริงผ่าน:
+
+```
+curl -H "x-user-id: 9North" ".../api/unified-trip?projectId=TRP-1783943254256"
+```
+
+คืน `viewer` = North (`TM-TRP-1783943254256-0`, is_admin 1 — ผูก `user_id='9North'` เรียบร้อยแล้ว) · members 3 คน · `currencies/wallets/expenses` เป็น array ว่างซึ่งถูกต้อง เพราะทริปนี้ยังไม่มีข้อมูลในตารางใหม่ · `stops` คืนจุดแวะเดิม 2 จุด
+
+⚠️ **หมายเหตุ**: ทริป Hokkaido จริงมีวันที่ **2026-12-17 ถึง 2026-12-27** ไม่ใช่ ก.พ. 2027 ตามที่ prototype จำลองไว้ · `TRIP_END_DATE` ใน prototype เป็นข้อมูลสมมติ ตอนสลับมาใช้ API จริงต้องอ่านจาก `Projects.end_date`
+
+**ยังไม่ทำ**: ยังไม่มี endpoint เขียน · prototype ยังใช้ localStorage อยู่ ยังไม่สลับมาเรียก API นี้
+
+🔒 **git ใน Google Drive ล็อกไฟล์**: `git commit` ล้มด้วย `cannot lock ref 'HEAD': .git/HEAD.lock: File exists` เพราะ Drive sync จับไฟล์ค้าง · แก้ด้วยการลบ lock ที่ค้าง (ดูว่าไม่มี git process รันอยู่ก่อน) · เป็นความเสี่ยงระยะยาวของการวาง `.git` ไว้ในโฟลเดอร์ที่ sync
+
+⚠️ `backend/src/index.js` มีงาน security ของ 2026-07-25 **ค้างอยู่ 244 บรรทัดที่ยังไม่ commit** (`getAccessibleTrip` ฯลฯ) — commit ล่าสุดคือ `d2b8712` ถ้า deploy จะติดไปด้วย ควรตรวจก่อน
+
+- ขั้นถัดไป: deploy แล้วยิงทดสอบด้วยข้อมูลจริง ก่อนเขียน endpoint ฝั่ง write
+### ✅ `migrate_trip_members.sql` — รันบน **remote สำเร็จแล้ว** 2026-07-27
+
+ผลจริง: **8 แถว** จาก 6 ทริป · ทุกทริปมี admin คนเดียวถ้วน · ตรงกับ preview ทุกแถว
+
+| ทริป | สมาชิก |
+|---|---|
+| ็Hokkaido 2026 | North (ผู้ดูแล) · Puii · XinXin |
+| อีก 5 ทริป | ทริปทดสอบชื่อมั่ว (`asdfsadf`, `ฟหกดฟหก`) ทริปละ 1 คน |
+
+⚠️ **ยังไม่มีใครผูก `user_id`** — ทุกแถวเป็น NULL ต้องรัน UPDATE เองเพื่อผูก `9North` เข้ากับสมาชิกที่ใช่ ไม่งั้นล็อกอินแล้วระบบไม่รู้ว่าเป็นสมาชิกคนไหน
+
+คู่กับ `migrate_trip_members_preview.sql` (อ่านอย่างเดียว ดูก่อนว่าจะสร้างแถวอะไร)
+
+- `Projects.members` (JSON array ของชื่อ) → แถวใน `TripMembers` · **ไม่แตะ `Projects.members` เดิม** โค้ดที่ยังอ่านฟิลด์นั้นอยู่จึงไม่พัง
+- `member_id` = `TM-{project_id}-{index}` คงที่ · `INSERT OR IGNORE` → รันซ้ำได้ไม่สร้างซ้ำ · ถอนได้ด้วย `DELETE FROM TripMembers WHERE member_id LIKE 'TM-%'`
+- ข้าม JSON ที่พัง/ว่าง/NULL และชื่อที่เป็นช่องว่าง (ข้อมูลจริงมีขยะทดสอบอยู่)
+- 🐛 **บั๊กที่เจอตอนทดสอบ**: เดิมให้ `is_admin` กับ `j.key = 0` — ถ้าช่องแรกเป็นชื่อว่าง (เช่น `["  ","Mew"]`) ทริปนั้นจะ**ไม่มี admin เลย = ไม่มีใครเปิดทริปกลับได้** แก้เป็น `ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY key)` ซึ่งนับเฉพาะแถวที่ผ่าน WHERE แล้ว → admin ตกที่คนแรกที่ใช้ได้จริง
+
+**สิ่งที่ไฟล์นี้ไม่ทำโดยตั้งใจ** (ต้องตั้งเองทีหลัง มีคำสั่งตัวอย่างท้ายไฟล์)
+
+- `user_id` เว้น NULL ทั้งหมด — ฐานนี้มี `Users` แค่ `9North` (name = `9North`) ซึ่ง**ไม่ตรงกับชื่อใน `members` เลย** ถ้าเดาจับคู่แล้วผิด = ให้สิทธิ์คนหนึ่งเห็นบิลส่วนตัวของอีกคน
+- `ledger_mode` ตั้ง `MAIN` ให้ทุกคน — ข้อมูลเดิมไม่มีอะไรบอกได้ว่าใครเป็น TRIP_ONLY
+- `is_admin` ให้คนแรก เป็นการเดาที่แก้ง่ายด้วย UPDATE เดียว
+- reversal ยังเป็นตัวเลขใน `tripLog` เท่านั้น ยังไม่ได้สร้าง Transaction/TransactionDetails คู่จริงแบบ double-entry
+- **`exclude_on_close` ทำแล้วฝั่ง prototype** (`wallets[].excludeOnClose`) — production ยังบล็อกการปิดเมื่อกระเป๋าแบบนี้มีเงินเหลือ (P3b) แต่ prototype แสดงพฤติกรรมที่ควรเป็นแล้ว:
+  - toggle บนการ์ดกระเป๋า เฉพาะสกุลต่างประเทศ (บาทไม่ต้องยก) · ล็อกเมื่อปิดทริป
+  - close preview แยกเป็น 2 ก้อน: **คืนเข้าบัญชีต้นทาง** กับ **ยกยอดไปทริปหน้า** — กระเป๋าที่ยกยอดจะไม่ถูกนับซ้ำในก้อนคืน
+  - `tripLog` เก็บ `carried[{walletId, foreign, thbCost, rate}]` — **เก็บทั้งจำนวนเงินตราและต้นทุนบาท** เพราะทริปหน้าต้องรับเงินก้อนนี้ด้วยต้นทุนเดิม ไม่ใช่ตีมูลค่าใหม่ตามเรทวันปิด ไม่งั้นจะเกิดกำไร/ขาดทุนอัตราแลกเปลี่ยนที่ไม่มีอยู่จริง
+  - ⚠️ ตอนต่อ backend: carry-forward ต้องสร้าง funding lot ของทริปถัดไปด้วย `thb = thbCost` เดิม **ห้ามคำนวณใหม่จาก foreign × เรทปัจจุบัน**
+
+**💱 กำไร/ขาดทุนอัตราแลกเปลี่ยนที่เกิดขึ้นจริง (`settlementPlan` / `settlementResults`)**
+
+เดิมพรีวิวปิดทริปแสดง "¥10,000 ≈ ฿2,320" เสมือนแลกคืนได้เท่าต้นทุนพอดี **ซึ่งไม่เคยเกิดขึ้นจริง** ตอนนี้แต่ละกระเป๋ามีแถวจัดการเงินเหลือใน dialog ปิดทริป เลือกได้ 2 ทาง
+
+| ทาง | กรอกอะไร | ผลทางบัญชี |
+|---|---|---|
+| **แลกคืนเข้าบัญชี** | ยอดบาทที่ **ได้รับกลับมาจริง** | `fx = received − thbCost` → **กำไร/ขาดทุนที่เกิดขึ้นจริงของทริปนั้น** |
+| **ยกไปทริปหน้า · คงสกุลเดิม** | — | fx = 0 · ต้นทุนยกไปทั้งก้อน |
+| **ยกไปทริปหน้า · แลกข้ามสกุล** | จำนวนที่ได้ในสกุลใหม่ | fx = 0 · **ไม่ผ่านเงินบาทจึงยังไม่ realise** ต้นทุนเดิมโอนไปกับเงินก้อนใหม่ |
+
+- ค่าตั้งต้นของแต่ละแถวมาจาก `wallets[].excludeOnClose` (วางแผนไว้ล่วงหน้าที่การ์ดกระเป๋า แล้วมาสรุปจริงตอนปิด)
+- `tripLog` ของการปิดเก็บ `fxResult` รวม และ `returned[{receivedThb, thbCost, fx}]` รายกระเป๋า
+- ⚠️ ตอนต่อ backend: `fxResult` ต้องลงเป็นรายการ **กำไร/ขาดทุนอัตราแลกเปลี่ยน** แยกจากค่าใช้จ่ายทริป ไม่ใช่ยัดรวมเป็นค่าใช้จ่าย ไม่งั้นยอดใช้จ่ายของทริปจะเพี้ยน
+- 🐛 แก้ระหว่างทาง: `.dialog` เดิมมี `max-height` เฉพาะที่ ≤640px พอ dialog ปิดทริปยาวขึ้น checkbox ยืนยันหลุดออกนอกจอบนเดสก์ท็อปและกดไม่ได้ · ตอนนี้ `.dialog{max-height:calc(100vh - 40px);overflow:auto}` ทุกขนาดจอ
+- "สร้างทริปใหม่" ยังเป็นระดับเปลี่ยนหัวเรื่อง+แบนเนอร์ ยังไม่มีระบบหลายทริปจริง
+- **หมุดสมาชิกบนแผนที่ทำแล้ว** (`renderPresenceMap` · `<g id="presenceLayer">` ใน SVG) — `presence[].stopIndex` ผูกกับ index ของ `.journey-pin` เลยใช้พิกัดชุดเดียวกับหมุดสถานที่ ไม่ต้องมี calibration แยก
+  - ขึ้นเฉพาะคนที่ `sharing` และเช็กอินแล้ว · หมุดที่ข้อมูลเก่าจะ**จางและขอบประ** ไม่ใช่หายไป เพราะการหายไปสื่อว่า "ออกจากพื้นที่แล้ว" ซึ่งข้อมูลบอกไม่ได้
+  - หลายคนที่จุดเดียวกันกระจายเป็นวงรอบหมุด (`seat` × 46°) ไม่ทับกัน
+  - เช็กอินขณะดูวันไหน หมุดจะไปอยู่ที่ stop ของวันนั้น
+  - `.ping` มี `prefers-reduced-motion` guard
+- presence ยังไม่มีพิกัด GPS จริง (ผูกกับ stop ของแผน ไม่ใช่ lat/lng)
+- ปิดทริปยังไม่สร้าง ledger entry อะไรจริง เป็นเพียงการสรุป + ล็อกเรท
+- ยังไม่รองรับ `exclude_on_close` (เก็บเงินเหลือไว้ทริปหน้า) ที่ production มี
+- "สร้างทริปใหม่" ยังเป็นระดับเปลี่ยนหัวเรื่อง+แบนเนอร์ ยังไม่มีระบบหลายทริปจริง
+- presence/location ของสมาชิกยังเป็น mock
+- ยังไม่เชื่อม API/D1 ตาม guardrail
+
+### งานล่าสุดที่เพิ่งเขียน แต่ถูกหยุดก่อนทดสอบครบ (⚠️ ล้าสมัยแล้ว — ดูส่วนด้านบน)
+
+ผู้ใช้สั่งให้ทำ handoff ระหว่างกำลังเชื่อม Quick Add → หน้า Bills:
+
+- `index.html` bump เป็น `v=10`
+- เพิ่ม id ให้ช่อง amount/description/owner/category
+- เปลี่ยน bill cards และ bill table เป็นพื้นที่ render แบบ dynamic
+- เพิ่ม `bills[]`, `renderBills()`, filter และ summary calculation ใน `app.js`
+- Save Quick Add ตอนนี้ตั้งใจให้:
+  - อ่าน amount/title/categories/owner/visibility/shared/จำนวนคน
+  - สร้างบิลใหม่ใน memory
+  - ระบุ `tripOnly` จาก owner ที่มีคำว่า `TRIP ONLY`
+  - ไปหน้า Bills
+  - recalculation ยอดรวมทันที
+- seed bills:
+  - Hotel Sounkyo — Ann — TRIP ONLY — shared
+  - มื้อเย็นร้านปู — North — main ledger — shared
+  - ของฝากส่วนตัว — North — main ledger — private
+- exchange rate mock = `0.232 THB/JPY`
+- แก้ asset เครื่องดื่มให้ fallback ไป `st_camera2.png` แล้ว เพราะไม่มี `ic_coffee.png`
+
+**สำคัญ:** รอบทดสอบ bills ถูก interrupt หลังเปิดหน้าเว็บสำเร็จ แต่ก่อนกด Quick Add ครบ 3 ขั้น ดังนั้น AI ถัดไปต้องทำตามลำดับ:
+
+1. รัน:
+   ```bash
+   node --check frontend/trip-unified-prototype/app.js
+   ```
+2. เปิด local URL และ hard reload
+3. ทดสอบ Quick Add ของ North:
+   - save ¥24,000
+   - ต้องไปหน้า Bills
+   - บิลใหม่ต้องอยู่บนสุด
+   - ต้องเป็น `ลงบัญชีหลัก`
+   - summary รวมและ North จ่ายจริงต้องเพิ่ม
+4. ทดสอบ Quick Add ของ `Ann · TRIP ONLY`:
+   - บิลต้องมองเห็นตาม visibility
+   - ต้องขึ้น `เฉพาะทริป`
+   - ต้องเพิ่มเฉพาะยอดรวม + TRIP ONLY
+   - ต้องไม่เพิ่มยอด North จ่ายจริง
+5. ทดสอบ filter ทั้ง 4
+6. ตรวจ console error และ responsive
+7. หากทุกอย่างผ่าน ค่อยทำต่อเรื่อง multi-category allocation validation และ persistence
+
+### ข้อจำกัดของ prototype ปัจจุบัน
+
+- state อยู่ใน JavaScript memory; reload แล้วรายการ/แผนที่เพิ่มจะกลับค่า mock
+- ยังไม่มี localStorage
+- ยังไม่เชื่อม `/api/travel`, D1, weather provider หรือ realtime location
+- weather และ member location เป็น mock
+- Quick Add ยังไม่มี validation ว่า sum ของหลายหมวดเท่ากับยอดบิล
+- UI มี equal split mock; manual/percent ยังเป็น requirement/data design แต่ยังไม่มี form
+- day plan มีข้อมูลละเอียดเพียง Day 3–6 แม้แผนที่มี 11 จุด
+- ยังไม่มี conflict handling หากสมาชิกหลายคนแก้แผนพร้อมกัน
+- ยังไม่ deploy production
+
+### Data model ที่แนะนำเมื่อผู้ใช้อนุมัติ prototype
+
+อย่ายัดทุกอย่างลง `TripExpenses` แถวเดียว ควรแยกอย่างน้อย:
+
+- `TripMembers`
+  - `member_id`, `project_id`, `user_id`, `role`, `ledger_mode`
+  - `ledger_mode = MAIN | TRIP_ONLY`
+  - location permission + last check-in
+- `TripWallets`
+  - owner member, currency, card/provider, visibility
+- `TripExpenses`
+  - payer member, money owner member, wallet, currency, total, visibility, shared flag, stop/activity
+- `TripExpenseCategories`
+  - expense id, category id, amount/percent
+- `TripExpenseParticipants`
+  - expense id, member id, split mode, owed amount, visibility participant
+- `TripStops`
+  - day/date, parent stop, order, time range, coordinates, main/sub type, flexible status
+- `TripWeatherSnapshots`
+  - stop/date/period/provider/condition/temp/precipitation/wind/fetched_at
+- `TripPresence`
+  - member, lat/lng, status, check-in, expires_at
+
+หลัก permission:
+
+- wallet balance/history: owner + authorized admin only
+- shared bill: members allowed by visibility
+- TRIP ONLY expense: visible/settled inside trip but excluded from main-ledger posting
+- location: opt-in, visible only while app is open, expire stale data
+
+### ลำดับงานแนะนำหลัง bills ผ่าน
+
+1. ทำ multi-category validation + เพิ่ม/ลบ category row
+2. ทำ split mode equal/manual/percent และตรวจยอดครบ
+3. ทำ bill detail/edit พร้อม audit-friendly status
+4. ทำ localStorage เฉพาะ prototype เพื่อให้ review ข้าม reload ได้
+5. เติม Day 1–12 และผูก map pin → day tab จริง
+6. ทำ weather state/loading/error/last updated
+7. ทำ location consent + stale/offline states
+8. review UX กับผู้ใช้
+9. หลังผู้ใช้อนุมัติเท่านั้น จึงออก migration/API adapter และค่อยเชื่อมระบบจริงทีละหน้า
+
+### Guardrails สำหรับ AI ตัวถัดไป
+
+- อย่าแก้หรือ replace หน้า `Trip`, `PupPup Trip`, `Prototype Trip` production เดิมในตอนนี้
+- อย่ายิง endpoint การเงิน production จาก unified prototype
+- อย่ารัน migration หรือ deploy โดยไม่ได้รับคำสั่ง
+- รักษาโทนภาพ/ฟอนต์/แผนที่ที่ผู้ใช้เลือก
+- อย่าฝังชื่อ/หมุดใหม่ลง banner; ให้ overlay ด้วย code
+- อย่าอ้างว่า weather/location เป็นข้อมูลจริง
+- ก่อนแก้ production backend ให้อ่าน `TRIP_FINANCE_DESIGN.md` และส่วน security ใน handoff เดิม
+
+---
+
+## 🆕 "Prototype Trip" — เมนูใหม่ เชื่อม PupPup Trip กับข้อมูลจริงแล้ว (2026-07-26, เฟส 1)
+
+- เมนูใหม่ในแถบหลัก `data-target="puppup"` → section `#view-puppup` → render โดย `frontend/puppup-trip.js` ลง `#ppRoot`
+- ไฟล์ใหม่: `frontend/puppup-trip.css`, `frontend/puppup-trip.js` (โหลดหลัง `app.js` ใน `index.html`, ใช้ global `getTravelApiBase()`/`getUserIdHeader()`/`formatTripDate` ร่วมกับแอปเดิม)
+- **เป็นหน้าแยกต่างหาก ไม่ได้แทนที่ `tripUiItineraryScreen`/`renderTripDetailModal` เดิมใน `app.js`** ตามที่ผู้ใช้ต้องการ (หน้า Trip เดิมยังอยู่เหมือนเดิมทุกประการ)
+- ดึงข้อมูลจริงผ่าน `GET /api/trips` (เลือกทริป) แล้ว `GET /api/travel?projectId=` (ทริป+stops+expenses) — **ไม่ได้เพิ่ม endpoint หรือ column ใหม่**, ใช้ของเดิมที่มีอยู่ทั้งหมด
+- แผนที่ + ปักหมุด: ใช้ภาพ `puppup-prototype/art/hero_plan_hokkaido5.png` + ตาราง calibration คงที่ 3 จุด (Sounkyo/Lake Akan/Kushiro) จับคู่ด้วยการจับ keyword ในชื่อ `TripStops.city/accommodation/notes` — **ใช้ได้แม่นยำเฉพาะทริปที่ชื่อ/ปลายทางเข้าเงื่อนไข hokkaido เท่านั้น** ทริปอื่นจะยังไม่มีหมุด (มีข้อความแจ้งในหน้าเว็บอยู่แล้ว)
+- ผู้ใช้ลากหมุดแก้ตำแหน่งได้ (ปุ่ม "แก้หมุด") → บันทึกจริงผ่าน `POST /api/trips/routes` ลงคอลัมน์ `Projects.route_data` (คอลัมน์/endpoint นี้มีอยู่แล้วในระบบ ไม่ใช่ของใหม่)
+- ยอดใช้จ่ายต่อวัน/ต่อกิจกรรม: sum `TripExpenses` ที่ `stop_id` ตรงกับ `TripStops.stop_id` ของกิจกรรม/สถานที่นั้น (type EXPENSE บวก, REFUND ลบ, TOPUP ไม่นับ)
+- **เฟส 2 (ทำแล้วในรอบเดียวกัน)**: เพิ่ม tab สลับ 4 หน้าในหน้าเดียวกัน (ทริป/วอลเล็ต/บิล/ตั้งค่า) ต่อข้อมูลจริงจาก `data.wallets`/`data.expenses`/`data.documents` ที่ `/api/travel` คืนมาอยู่แล้ว — **แต่ Bills/Wallet/Settings ทำแบบ "โทนเดียวกับดีไซน์" ไม่ได้ pixel-perfect ตาม mockup เท่า Plan tab** (ใช้ class ชื่อใหม่ เช่น `.walletcard`,`.bicon`,`.setrow` ไม่ได้ก็อปจาก prototype.css ทั้งหมด) และเป็น read-only ล้วน — แก้ไขสมาชิก/งบ/ปิดทริป/เพิ่มบิล/เติมเงิน ยังต้องใช้หน้า TRIPS เดิม
+- **เฟส 3 (ทำแล้ว)**: ฟอร์มเพิ่ม/แก้ไข/ลบจุดแวะ (สถานที่หลัก + กิจกรรมย่อย) เขียนจริงผ่าน `POST/DELETE /api/trip-stops` (endpoint hyphenated ตาม HANDOFF เดิม ไม่ใช่ `/api/trips/stops`) — กดที่ place-head/act-row เพื่อแก้ไข, ปุ่ม "+" เพื่อเพิ่มสถานที่ใหม่ (สร้างวันใหม่อัตโนมัติถ้าเลือกวันที่ยังไม่มี) หรือเพิ่มกิจกรรมในสถานที่นั้น
+  - **สำคัญ**: endpoint นี้เป็น full UPDATE (เขียนทับทุกคอลัมน์ ไม่ใช่ partial patch) โค้ดฝั่ง frontend จึงต้อง merge ค่าฟิลด์เดิมของ stop ก่อนส่ง ไม่งั้นฟิลด์ที่ฟอร์มนี้ไม่ได้แก้ (icon_asset, header_color ฯลฯ) จะถูกล้างเป็น null — แก้ไว้แล้วใน `ppOpenStopForm()`
+  - ทดสอบ flow เพิ่ม/แก้/ลบ ครบด้วย jsdom + mock fetch (ไม่ใช่ browser จริง) ยืนยัน payload ถูกต้องทุกกรณีรวมถึงกรณี edit ต้องคง marker_color เดิม — แต่ยังไม่เคยเห็น UI นี้ในเบราว์เซอร์จริงเช่นเดิม
+- **เฟส 4 (ทำแล้ว)**: ฟอร์ม "เพิ่มบิล" (`POST /api/trip-expenses` — เขียนแค่ตาราง TripExpenses อย่างเดียว ปลอดภัย ไม่กระทบบัญชีอื่น) ใช้ `AppState.categories`/`AppState.wallets` จริงของครอบครัว ไม่ใช้ hardcoded category list; และฟอร์ม "เติมเงินกระเป๋า" (`POST /api/trips/fund`)
+  - **⚠️ /api/trips/fund เขียนบัญชีจริงของครอบครัวแบบ double-entry** (Transactions/TransactionDetails คู่กัน + TripWalletFundings) ไม่ใช่แค่ตัวเลขในทริป — ฟอร์มบังคับเลือก "บัญชีต้นทาง" จาก `AppState.accounts` จริง (กรอง `account_type=TRIP_HOLDING` ออกตามที่ backend เช็คเหมือนกัน) และ validate ฝั่ง frontend ก่อนว่ากระเป๋าเงินต่างประเทศต้องกรอกจำนวนเงินสกุลนั้นจริง (ไม่ให้ backend reject เฉยๆ)
+  - ทดสอบด้วย jsdom + mock ทั้งสองฟอร์มแล้ว (payload ถูก, ตัวกรองบัญชีถูก, validation ทำงาน) แต่ **ยังไม่เคยยิงเข้า production จริง** — ก่อนใช้งานจริงควรลองเติมเงินทดสอบยอดเล็กๆ ก่อน แล้วเช็คว่ายอดบัญชีจริง/TripWalletFundings ตรงกับที่คาด
+- **ยังไม่ทำ**: ข้อมูลอากาศ (`/api/travel` ยังไม่คืน weatherData จริง), การปิดทริป (settlement) จากหน้านี้โดยตรง (ยังใช้หน้า TRIPS เดิม — ตั้งใจไม่แตะเพราะเป็นเรื่องการเงินอ่อนไหว)
+- **ทดสอบ**: สภาพแวดล้อมที่แก้โค้ดนี้รัน `wrangler dev`/`wrangler deploy` ไม่ได้ (esbuild binary ไม่ตรง sandbox) — ยังไม่เคยเห็นหน้านี้ render จริงบนเบราว์เซอร์ ต้อง `wrangler pages deploy frontend` (หรือรัน dev server เอง) แล้วเข้าเมนู "Prototype Trip" เพื่อตรวจก่อนใช้งานจริง
+- **สถานะทดสอบล่าสุด (2026-07-26)**: ผู้ใช้เริ่มทดสอบ local — รัน `npx wrangler dev` แล้ว (backend ready ที่ `http://localhost:8787`) แต่ยังไม่เห็นเมนู "Prototype Trip" เพราะ **`wrangler dev` เสิร์ฟแค่ backend API เท่านั้น ไม่เสิร์ฟไฟล์ frontend** ต้องรันคนละ terminal แยกต่างหากเพื่อเสิร์ฟ `frontend/` ด้วย:
+  ```bash
+  # terminal 1 (ปล่อยรันค้างไว้)
+  cd "<โฟลเดอร์ RecordRevenue>" && npx wrangler dev
+
+  # terminal 2 (แยกหน้าต่างใหม่ ปล่อยรันค้างไว้เช่นกัน)
+  cd "<โฟลเดอร์ RecordRevenue>/frontend" && npx serve .
+  ```
+  แล้วเปิด URL ที่ `npx serve` แสดง (เช่น `http://localhost:3000`) ไม่ใช่ `:8787` — โค้ด `getTravelApiBase()` เช็ค `window.location.hostname === 'localhost'` แล้วชี้ไป `:8787` ให้อัตโนมัติอยู่แล้ว ไม่ต้องแก้อะไรเพิ่ม
+  - **ยังรอผลทดสอบจริงจากผู้ใช้อยู่** (ยังไม่ยืนยันว่าเมนูขึ้น/แผนที่-ฟอร์มทำงานถูกต้องในเบราว์เซอร์จริง) — เซสชันถัดไปควรถามผู้ใช้ก่อนว่าทดสอบผ่านหรือเจอปัญหาอะไรเพิ่ม ก่อนเขียนโค้ดต่อ
+
+---
+
+## 🟢 จุดส่งต่องานล่าสุด — PupPup Trip (แทนที่ Hunsa Trip)
+
+- Prototype: `frontend/puppup-prototype/` · เปิดที่ `https://record-revenue-web.pages.dev/puppup-prototype/`
+- **สร้างจาก mockup 4 ภาพที่ผู้ใช้ให้ (Generated image 1–4.png) แบบ 1:1** — canvas 869px เท่าไฟล์ต้นฉบับ มีปุ่มซูมบน toolbar
+- ไอคอน/ภาพประกอบ **ตัดจาก mockup โดยตรง** 46 ไฟล์ใน `puppup-prototype/art/` (hero ลบตัวอักษรที่ฝังในภาพออกด้วย inpainting แล้ววาง text จริงทับด้วย HTML)
+- ฟอนต์ (เทียบ letterform จาก mockup แล้ว, self-host ใน `puppup-prototype/fonts/`):
+  - หัวข้อไทย = **Noto Sans Thai Looped 800**
+  - ไทยทั่วไป = **Anuphan 400–700**
+  - อังกฤษ + ตัวเลข = **Poppins 400–700**
+  - ขนาดอักษรทุกจุดวัดจาก mockup แล้ว fit หาค่าจริง (ไม่ได้เดา)
+- เทียบภาพ mockup ↔ prototype: `frontend/puppup-prototype/COMPARE_mockup_vs_prototype.png`
+- เอกสารประกอบ: `PUPPUP_TRIP_PLAN.md` (data mapping + endpoint ที่ต้องเพิ่ม) · `PUPPUP_ICON_PROMPTS.md` (prompt สร้างไอคอนเพิ่ม) · `add_puppup_trip_fields.sql` (**ยังไม่ได้รัน**)
+- **ยังไม่ต่อ API โดยเจตนา** — รอผู้ใช้ review ทีละหน้าก่อน ตามกติกาด้านล่าง
+
+---
+
+## 🔴 กติกาเดิม + Hunsa Trip (พักไว้ — ใช้ PupPup แทนแล้ว)
+
+ผู้ใช้สั่งให้ **หยุดดัดแปลง UI Trip เดิม** เพราะหลายรอบที่ผ่านมาหน้าจอ Hunsa/Trip กลายเป็น web dashboard และไม่ตรงภาพ mockup mobile ที่ผู้ใช้ให้มา
+
+### กติกาการทำงานที่ผู้ใช้ยืนยัน
+
+1. สร้างและอนุมัติ **static visual prototype** ให้ตรง mockup ก่อนเสมอ
+2. Prototype **ห้ามต่อ API / database / modal เดิม** จนกว่าผู้ใช้จะอนุมัติหน้าตา
+3. เมื่อหน้าตาผ่านแล้วจึงย้ายเฉพาะ component ที่ผ่าน ไปเชื่อม backend ทีละหน้า
+4. ห้าม reuse layout, CSS หรือ renderer หน้า `TRIPS` เดิมเพื่อสร้าง Hunsa
+5. ระหว่าง review ให้ปรับทีละหน้าและ deploy เพื่อให้ผู้ใช้เทียบภาพได้
+
+### Prototype ที่เป็น source of truth ของ UI ตอนนี้
+
+- Path: `frontend/hunsa-prototype/`
+- URL canonical: `https://record-revenue-web.pages.dev/hunsa-prototype/`
+- Preview ล่าสุด: `https://e9b50abe.record-revenue-web.pages.dev/hunsa-prototype/`
+- ไฟล์: `index.html`, `prototype.css`, `prototype.js`
+- เป็น UI แบบ static 4 หน้าที่สลับด้วย bottom navigation: `bills`, `plan`, `wallet`, `settings`
+- **ยังไม่มี API หรือข้อมูลจริงโดยเจตนา**; ข้อมูล Japan Family Trip เป็น mock data สำหรับตรวจ visual เท่านั้น
+- ผู้ใช้ต้องการ mobile canvas กว้างประมาณ 430px เป็นหลัก; บนเว็บให้แสดง canvas นี้กึ่งกลาง ไม่ใช่ dashboard สองคอลัมน์
+- ฟอนต์ที่ผู้ใช้ให้และต้องใช้กับ prototype:
+  - `frontend/hunsa-prototype/fonts/WanathitDemo.ttf` — หัวข้อ/ชื่อเด่น
+  - `frontend/hunsa-prototype/fonts/SalapaoDemo.ttf` — body, การ์ด, ข้อความไทย
+  - `prototype.css` มี `@font-face` แล้ว
+- Reference images ที่ผู้ใช้ให้ (ต้นฉบับอยู่ `/Users/DNorth/Downloads/`):
+  - `Generated image 3.png` = Bills
+  - `Generated image 2.png` = Itinerary
+  - `Generated image 1.png` = Wallet
+  - `Generated image 4.png` = Settings
+
+### สิ่งที่ต้องทำต่อสำหรับ Hunsa (ลำดับที่ถูกต้อง)
+
+1. ให้ผู้ใช้ review `hunsa-prototype` ก่อน และเก็บ feedback แบบ page-by-page
+2. ปรับ static prototype จนผู้ใช้บอกว่าผ่าน — ห้ามเริ่มต่อ API ก่อน
+3. หลังผ่าน: สร้าง component/data adapter ใหม่ใต้ `frontend/hunsa/` แล้ว map API เพียงหน้าเดียวต่อรอบ
+4. อย่าแก้ `frontend/app.js` trip renderer เพื่อหวังให้เหมือน Hunsa
+5. ก่อน migrate ต้องทำ visual comparison กับ mockup (structure, font, spacing, hero/map, card, navigation) ไม่ใช่ตรวจแค่ functional
+
+### Hunsa implementation ที่มีอยู่ (ไม่ใช่ source of truth และพักไว้ก่อน)
+
+- Path: `frontend/hunsa/`; เข้าได้ผ่านเมนู `Hunsa Trip` ใต้ `TRIPS` ใน `frontend/index.html`
+- ใช้ session Family Finance เดิมผ่าน query `?user=...` และเรียก API เดิม
+- UI นี้ถูก deploy ไว้ แต่ **ผู้ใช้ไม่ยอมรับความเหมือนของดีไซน์**; อย่าขยายหรือ refactor ต่อจนกว่า prototype จะผ่าน
+- `HunsaTrip/` เป็นพื้นที่คัดลอก backend/schema ช่วงแรก ไม่ได้เป็น runtime ที่ deploy และมี asset ซ้ำ; อย่าใช้เป็น frontend source ใหม่
+
+### ข้อมูลจริง / backend ที่พร้อมแล้วสำหรับ integration ภายหลัง
+
+- Migration `add_hunsa_trip_stop_fields.sql` **รัน remote สำเร็จแล้ว** เมื่อ 2026-07-25:
+  - `TripStops.end_time TEXT`
+  - `TripStops.icon_asset TEXT`
+  - `TripIconAssets` metadata table (เก็บ URL ของไอคอนต่อ family)
+- Worker deploy แล้ว: `https://record-revenue.9nimz.workers.dev`, version `364f74d4-0746-4480-9807-6e4b3a9329c3`
+- Endpoint ที่ใช้สำหรับ integration itinerary: `GET|POST|DELETE /api/trip-stops`
+  - รองรับ `parent_stop_id` (สถานที่หลัก → กิจกรรมย่อย), `time`, `end_time`, `icon`, `icon_asset`, `notes`
+  - DELETE ลบ descendants ได้
+- **R2 icon upload ยังไม่ทำ**: อย่าอ้างว่าผู้ใช้นำเข้าไฟล์ภาพเข้าคลังได้แล้ว ต้อง provision/bind R2 + ทำ upload endpoint + UI ก่อน
+- Production TripStops มีข้อมูลทดสอบชื่อเพี้ยน เช่น `dดกดกด`, `กดกหดฟหก`; UI แสดงตามข้อมูลจริง จึงไม่ควร hardcode Asakusa/Tokyo ใน runtime
+
+### Deploy ล่าสุด
+
+```bash
+cd "/Users/DNorth/Library/CloudStorage/GoogleDrive-nimz.4.april@gmail.com/My Drive/Anti Gravity/RecordRevenue"
+npx wrangler deploy
+npx wrangler pages deploy frontend --project-name record-revenue-web
+```
+
+- Pages preview ล่าสุด: `https://e9b50abe.record-revenue-web.pages.dev`
+- ทุกครั้งที่ deploy frontend ไฟล์ `hunsa-prototype/` จะถูกส่งไปพร้อม `frontend/`
+- `wrangler pages deploy` เตือนว่า root `wrangler.json` ไม่มี `pages_build_output_dir` แต่ CLI ignore config และ deploy ได้; ไม่ใช่ blocker
+
+---
+
+## 🚀 Deploy / SQL ล่าสุด (ทำแล้ว 2026-07-25)
 ```
 cd "<โฟลเดอร์ RecordRevenue>"
 npx wrangler d1 execute record-revenue-db --remote --file=add_trip_wallet_fundings.sql   # ตาราง TripWalletFundings (ใหม่)
@@ -18,7 +731,15 @@ npx wrangler d1 execute record-revenue-db --remote --file=add_dashboard_tables_v
 npx wrangler deploy                 # backend
 npx wrangler pages deploy frontend  # frontend
 ```
-เสร็จแล้ว hard refresh (Cmd+Shift+R)
+ตารางจาก `add_trip_wallet_fundings.sql` และ `add_trip_holding_accounts.sql` มีอยู่ใน D1 แล้ว และ deploy Worker + Pages แล้ว (frontend `app.js?v=169`) · เมื่อแก้ frontend รอบถัดไปให้ deploy ใหม่และ hard refresh (Cmd+Shift+R)
+
+## 🔒 ความปลอดภัย/ความถูกต้องที่เพิ่มเมื่อ 2026-07-25
+
+- `POST /api/trips/fund` ตรวจว่า user เข้าถึงทริปได้จริง, กระเป๋าอยู่ในทริปเดียวกัน และบัญชีต้นทางเป็นของครอบครัวเดียวกันก่อนสร้างรายการ
+- รายการเติมเงินและ Transaction ที่ผูกกันถูกเขียนด้วย D1 batch เดียว และจะไม่กลืน error แล้วบันทึกเพียงบางส่วน
+- `POST /api/trips/close` ปิดได้เฉพาะทริป `active` ของครอบครัวเดียวกัน, จองสถานะเป็น `closing` เพื่อกันการกดยืนยันซ้ำ และจะไม่ fallback เขียนทีละคำสั่งเมื่อ batch ล้มเหลว
+- ระบบปฏิเสธการปิดหากยอดไม่สมดุล, กระเป๋าใช้เกินยอดเติม หรือมีบิลที่ไม่มีบัญชีสำหรับลงรายการ
+- **P3b ยังไม่รองรับ:** หาก wallet ที่ตั้ง `exclude_on_close=1` ยังมีเงินเหลือ ระบบจะไม่อนุญาตให้ปิดทริป เพื่อป้องกันการลงบัญชีซ้ำ/ยอดทรัพย์สินผิด ต้องปิดตัวเลือกนี้หรือใช้ยอดให้หมดก่อน
 
 ---
 
@@ -61,7 +782,8 @@ npx wrangler pages deploy frontend  # frontend
 
 ## ⏭️ ยังเหลือ (Phase ต่อไป)
 - **P4 — ทดสอบด้วยตัวเลขจริง**: หลัง deploy ลองเติมเงินหลายสกุล/หลายรอบ + บันทึกบิล + ปิดทริป แล้วเช็คว่า balanced ✅ และยอดบัญชีถูก
-- **P3b (ยังไม่ทำ)**: การ "ยกกระเป๋าไปทริปหน้า" (exclude_on_close) ตอนนี้แค่ไม่คืนเงิน + note ในรายงาน ยังไม่ได้ย้ายเป็นกระเป๋าตั้งต้นทริปถัดไปอัตโนมัติ
+- **P5 — บัญชีพักทริป + ย้ายเงินเหลือ**: deploy แล้ว: funding เป็น transfer สองฝั่ง, ตัดรายจ่ายจากบัญชีพัก, ปิดทริปเลือกคืนเงินหรือย้ายยอดคงเหลือไป wallet สกุลเดียวกันของ active/planned trip ได้ พร้อมสร้าง carry-forward funding lot ที่คงต้นทุนเดิม
+- **P6 — เปิด Memory กลับ (Reopen)**: admin ระบุเหตุผล, สร้าง reversal ของ settlement เดิม (ไม่ลบ ledger), แล้วเปลี่ยนทริปกลับเป็น active เพื่อแก้ไขก่อนปิดใหม่
 - **จุดแวะ (TripStops) บนการ์ด/ไทม์ไลน์**: ยังไม่ได้เพิ่มบนการ์ดหน้า list
 
 ---
@@ -88,7 +810,8 @@ npx wrangler pages deploy frontend  # frontend
 - ถ้า "User not found / โหลดไม่ขึ้น" = session ถือ user_id เก่า → **ออกแล้วล็อกอินใหม่ด้วย 9North** (ข้อมูลจริงยังอยู่ครบ)
 
 ## ไฟล์ SQL / เอกสาร
-- `add_trip_wallet_fundings.sql` — ตาราง TripWalletFundings (ยังไม่รัน)
+- `add_trip_wallet_fundings.sql` — ตาราง TripWalletFundings (รันใน D1 แล้วตามบันทึก deploy ก่อนหน้า)
+- `add_hunsa_trip_stop_fields.sql` — Hunsa: `end_time`, `icon_asset`, `TripIconAssets` (รัน remote แล้ว 2026-07-25)
 - `add_dashboard_tables_v2.sql` — CategoryBudgets + PlannedExpenses
 - `clear_transactions.sql` — ล้างเฉพาะธุรกรรม เก็บ master data
 - `check_status.sql` / `check_users.sql` — ตรวจสถานะ/user

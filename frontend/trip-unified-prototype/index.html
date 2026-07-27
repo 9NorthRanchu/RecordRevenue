@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Unified Trip — Hokkaido Prototype</title>
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
+  <link rel="stylesheet" href="style.css?v=31">
+</head>
+<body>
+  <div class="prototype-note">UNIFIED TRIP · STATIC PROTOTYPE · ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง</div>
+  <div class="app-shell">
+    <aside class="side-rail">
+      <div class="brand"><span>旅</span><div><b>Hokkaido Family</b><small>Winter road trip · 12 วัน</small></div></div>
+      <nav class="main-nav">
+        <button class="active" data-screen="today"><i>⌂</i><span>วันนี้</span></button>
+        <button data-screen="plan"><i>⌁</i><span>แผนเที่ยว</span></button>
+        <button data-screen="bills"><i>¥</i><span>บิล</span></button>
+        <button data-screen="wallets"><i>◫</i><span>กระเป๋า</span></button>
+        <button data-screen="more"><i>•••</i><span>เพิ่มเติม</span></button>
+      </nav>
+      <div class="rail-foot"><span class="avatar">N</span><div><b>North</b><small>ผู้ดูแลทริป</small></div></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <button class="back">‹</button>
+        <div><b>Hokkaido Family Trip</b><small>8–19 ก.พ. 2027 · กำลังเดินทาง</small></div>
+        <div class="top-actions"><button class="icon-btn" id="shareLocation">⌖</button><button class="avatar">N</button></div>
+      </header>
+
+      <section class="screen active" id="screen-today">
+        <div class="map-hero">
+          <img src="art/hokkaido-illustrated-clean.png?v=1" alt="แผนที่ภาพวาดฮอกไกโดพร้อมสถานที่สำคัญ">
+          <svg class="current-day-route" viewBox="0 0 1931 814" aria-label="เส้นทางท่องเที่ยวฮอกไกโดทั้งหมด">
+            <path class="future-route" d="M1660 610 C1510 570 1390 535 1290 478 C1325 444 1350 412 1382 388 C1230 265 1050 170 870 150 C930 300 1050 430 1130 540 C1060 500 985 455 930 420 C845 462 760 505 690 540 C565 565 440 580 330 570 C330 485 332 385 340 300 C405 335 465 370 520 400 C565 505 625 600 690 665"/>
+            <path class="completed-route" id="completedRoute" d="M1660 610 L1290 478"/>
+            <path class="active-route" id="activeRoute" d="M1290 478 L1382 388"/>
+
+            <g class="journey-pin completed" data-index="0" data-x="1660" data-y="610" transform="translate(1660 610)"><circle r="18"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-22" y="46">Kushiro</text></g>
+            <g class="journey-pin current" data-index="1" data-x="1290" data-y="478" transform="translate(1290 478)"><circle r="19"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-12" y="48">Lake Akan</text></g>
+            <g class="journey-pin next" data-index="2" data-x="1382" data-y="388" transform="translate(1382 388)"><circle r="21"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="10" y="-31">Lake Kussharo</text></g>
+
+            <g class="journey-pin future" data-index="3" data-x="870" data-y="150" transform="translate(870 150)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-4" y="-28">Sounkyo</text></g>
+            <g class="journey-pin future" data-index="4" data-x="1130" data-y="540" transform="translate(1130 540)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-8" y="42">Obihiro</text></g>
+            <g class="journey-pin future" data-index="5" data-x="930" data-y="420" transform="translate(930 420)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-6" y="-28">Furano</text></g>
+            <g class="journey-pin future" data-index="6" data-x="690" data-y="540" transform="translate(690 540)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-5" y="42">Jozankei</text></g>
+            <g class="journey-pin future" data-index="7" data-x="330" data-y="570" transform="translate(330 570)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-5" y="42">Niseko</text></g>
+            <g class="journey-pin future" data-index="8" data-x="340" data-y="300" transform="translate(340 300)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-5" y="-27">Otaru</text></g>
+            <g class="journey-pin future" data-index="9" data-x="520" data-y="400" transform="translate(520 400)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-5" y="43">Sapporo</text></g>
+            <g class="journey-pin future" data-index="10" data-x="690" data-y="665" transform="translate(690 665)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-6" y="43">Chitose Airport</text></g>
+            <g class="presence-layer" id="presenceLayer"></g>
+          </svg>
+          <button class="banner-edit" id="changeBanner">🖼️ เปลี่ยนแบนเนอร์</button>
+        </div>
+        <div class="day-summary">
+          <div class="day-number"><span>DAY</span><strong id="journeyDay">03</strong></div>
+          <div><span id="journeyRegion">EAST HOKKAIDO</span><h1 id="journeyTitle">Lake Akan → Lake Kussharo</h1><p id="journeyDescription">หิมะนุ่ม ออนเซ็นอุ่น และท้องฟ้าสีฟ้าหมอก</p></div>
+          <div class="day-summary-actions"><button class="ghost-btn" id="returnToday" hidden>กลับมาวันนี้</button><button class="soft-btn" id="openSelectedPlan">ดูแผนวันนี้ ›</button></div>
+        </div>
+
+        <div class="today-grid">
+          <section class="next-card paper-card">
+            <div class="section-kicker"><span class="pulse"></span>กิจกรรมถัดไป</div>
+            <div class="next-time"><strong>14:30</strong><span>ออกในอีก 35 นาที</span></div>
+            <div class="next-main">
+              <img src="../puppup-prototype/art/act_ainukotan.png" alt="">
+              <div><h2>Akanko Ainu Kotan</h2><p>หมู่บ้านวัฒนธรรมไอนุ · เดินจากที่พัก 8 นาที</p></div>
+            </div>
+            <div class="member-presence" id="memberPresence"></div>
+            <p class="presence-consent" id="presenceConsent"></p>
+            <div class="card-actions"><button class="soft-btn" id="checkIn">✓ เช็กอิน</button><button class="primary-btn">เปิดเส้นทาง</button></div>
+          </section>
+
+          <section class="weather-card paper-card">
+            <div class="section-title"><div><span>สภาพอากาศตามสถานที่</span><h3 id="weatherPlace">Lake Akan</h3></div><small id="weatherStamp">อัปเดต 5 นาทีที่แล้ว</small></div>
+            <div class="weather-now" id="weatherNow"></div>
+            <div class="weather-periods" id="weatherPeriods"></div>
+            <p class="weather-tip" id="weatherTip"></p>
+          </section>
+
+          <section class="money-strip paper-card">
+            <div><span id="spentLabel">ใช้วันนี้</span><strong id="spentToday">—</strong><small id="spentTodayNote"></small></div>
+            <div><span>เหลืองบ</span><strong id="budgetLeft">—</strong><small id="budgetNote"></small></div>
+            <button class="primary-btn add-expense">＋ จดค่าใช้จ่าย</button>
+          </section>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-plan">
+        <div class="page-head"><div><span>ยืดหยุ่นตามอากาศ</span><h1>แผนเที่ยว</h1><p>ลากสถานที่เพื่อสลับลำดับ หรือย้ายข้ามวันได้</p></div><button class="primary-btn" id="addPlace">＋ เพิ่มสถานที่</button></div>
+        <div class="plan-layout">
+          <div class="day-tabs" id="planDayTabs"></div>
+          <div class="plan-day-overview" id="planDayOverview"></div>
+          <div class="plan-list" id="planList"></div>
+          <div class="cross-day-move">
+            <span>ย้ายกิจกรรมที่เลือกไป</span>
+            <div id="moveDayTargets"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-bills">
+        <div class="page-head"><div><span>ค่าใช้จ่ายทั้งหมด</span><h1>บิล</h1><p>เห็นเฉพาะรายการที่คุณมีสิทธิ์ และรายการที่แชร์กับทริป</p></div><button class="primary-btn add-expense">＋ จดค่าใช้จ่าย</button></div>
+        <div class="trip-locked-note" hidden>🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้</div>
+        <div class="bill-summary">
+          <div class="paper-card"><span>รวมทั้งทริป</span><strong id="billTotal">฿ 0</strong><small>ส่วนตัว + ค่าใช้จ่ายร่วม</small></div>
+          <div class="paper-card"><span>คุณจ่ายจริง</span><strong id="billMine">฿ 0</strong><small>จาก YouTrip ของ North</small></div>
+          <div class="paper-card"><span>เฉพาะทริป</span><strong id="billTripOnly">฿ 0</strong><small>ไม่ลงบัญชีหลัก</small></div>
+        </div>
+        <p class="field-note bill-notice" id="billNotice"></p>
+        <div class="filters" id="billFilters"><button class="active" data-bill-filter="all">ทั้งหมด</button><button data-bill-filter="shared">ค่าใช้จ่ายร่วม</button><button data-bill-filter="mine">ของฉัน</button><button data-bill-filter="trip-only">เฉพาะทริป</button></div>
+        <div class="bill-table paper-card" id="billTable"></div>
+      </section>
+
+      <section class="screen" id="screen-wallets">
+        <div class="page-head"><div><span>ข้อมูลส่วนตัวของแต่ละสมาชิก</span><h1 id="walletHeading">กระเป๋าของฉัน</h1><p>สมาชิกอื่นเห็นเฉพาะบิลที่คุณแชร์ ไม่เห็นยอดหรือประวัติเติมเงิน</p></div><button class="primary-btn" id="addWallet">＋ เพิ่มกระเป๋า</button></div>
+        <div class="trip-locked-note" hidden>🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้</div>
+        <div class="privacy-note" id="walletPrivacy"></div>
+        <div class="wallet-grid" id="walletGrid"></div>
+        <section class="paper-card wallet-activity"><h3>รายการล่าสุด</h3><div id="walletActivity"></div></section>
+      </section>
+
+      <section class="screen" id="screen-more">
+        <div class="page-head"><div><span>สิทธิ์และการเงิน</span><h1>จัดการทริป</h1><p>ตรวจสมาชิก การมองเห็น และผลลัพธ์ก่อนปิดทริป</p></div><div class="head-actions"><button class="soft-btn" id="openNewTrip">＋ ทริปใหม่</button><button class="soft-btn" id="editTripBanner">🖼️ เปลี่ยนแบนเนอร์</button></div></div>
+        <div class="trip-locked-note" hidden>🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้</div>
+        <div class="manage-grid">
+          <section class="paper-card"><h3>สมาชิกและสิทธิ์</h3>
+            <p class="field-note">กดชื่อเพื่อดูแอปในมุมมองของคนนั้น — ใช้ตรวจว่ากติกาการมองเห็นทำงานถูกต้อง</p>
+            <div id="memberRows"></div>
+          </section>
+          <section class="paper-card"><h3>สกุลเงินในทริป</h3>
+            <p class="field-note">ตั้งเรทประมาณการไว้ล่วงหน้าได้ ระบบจะใช้จนกว่ากระเป๋านั้นมีการเติมเงินจริง แล้วสลับไปใช้เรทเฉลี่ยจริงเอง</p>
+            <div id="currencyRows"></div>
+            <button class="soft-btn" id="addCurrency">＋ เพิ่มสกุลเงิน</button>
+          </section>
+          <section class="paper-card"><h3>ข้อมูล prototype</h3><p>รายการและแผนที่คุณแก้จะถูกเก็บไว้ในเบราว์เซอร์นี้ ไม่ส่งขึ้นเซิร์ฟเวอร์และไม่แตะบัญชีจริง</p><div class="close-lines"><span>บิลที่บันทึกไว้<b id="storageCount">—</b></span></div><button class="soft-btn" id="resetDemo">คืนค่าข้อมูลตัวอย่าง</button></section>
+          <section class="paper-card"><h3>ปิดทริป</h3><p>ตรวจยอดที่ลงบัญชีหลักและยอดที่เก็บเฉพาะประวัติทริปก่อนยืนยัน</p><div class="close-lines" id="closeLines"></div><div class="close-actions"><button class="primary-btn" id="closePreview">ดูพรีวิวปิดทริป</button><button class="soft-btn" id="reopenTrip" hidden>เปิดทริปกลับ</button></div><div id="tripLog"></div></section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <button class="mobile-fab add-expense">＋ จดค่าใช้จ่าย</button>
+  <nav class="mobile-nav">
+    <button class="active" data-screen="today"><i>⌂</i><span>วันนี้</span></button>
+    <button data-screen="plan"><i>⌁</i><span>แผน</span></button>
+    <button data-screen="bills"><i>¥</i><span>บิล</span></button>
+    <button data-screen="wallets"><i>◫</i><span>กระเป๋า</span></button>
+    <button data-screen="more"><i>•••</i><span>เพิ่มเติม</span></button>
+  </nav>
+
+  <div class="sheet-mask" id="sheetMask"></div>
+  <section class="bottom-sheet" id="expenseSheet" aria-hidden="true">
+    <div class="sheet-handle"></div><button class="sheet-close">×</button>
+    <div class="sheet-step active" data-step="1">
+      <span class="eyebrow">QUICK ADD · 1/3</span><h2>จดค่าใช้จ่าย</h2>
+      <div class="segmented"><button class="active">จ่าย</button><button>ได้เงินคืน</button></div>
+      <label>กระเป๋าที่ตัดเงินจริง<select id="walletSelect"></select></label>
+      <label>จำนวนเงิน<div class="amount-input"><span id="amountSymbol">¥</span><input id="expenseAmount" inputmode="decimal" placeholder="0"></div></label>
+      <p class="conversion" id="conversionLine"></p>
+      <label>รายละเอียด<input id="expenseDescription" placeholder="เช่น มื้อเย็นร้านปู"></label>
+      <button class="primary-btn next-step">ต่อไป</button>
+    </div>
+    <div class="sheet-step" data-step="2">
+      <span class="eyebrow">QUICK ADD · 2/3</span><h2>แบ่งหมวด</h2>
+      <div id="splitRows"></div>
+      <button class="add-line" type="button" id="addSplitRow">＋ เพิ่มหมวด</button>
+      <div class="icon-field">
+        <span>ไอคอนค่าใช้จ่าย</span>
+        <img id="expenseIconPreview" class="icon-preview circle" alt="ไอคอนที่เลือก">
+        <button type="button" class="soft-btn" id="pickExpenseIcon">เลือกไอคอน</button>
+      </div>
+      <div class="allocated" id="allocatedLine"><span>จัดสรรแล้ว</span><b>—</b></div>
+      <div class="sheet-actions"><button class="soft-btn prev-step">ย้อนกลับ</button><button class="primary-btn next-step">ต่อไป</button></div>
+    </div>
+    <div class="sheet-step" data-step="3">
+      <span class="eyebrow">QUICK ADD · 3/3</span><h2>การแชร์และผู้เกี่ยวข้อง</h2>
+      <label>คนจ่าย<select id="expensePayer"></select></label>
+      <label>เจ้าของเงินที่ถูกใช้<select id="expenseOwner"></select></label>
+      <p class="field-note" id="ownerNote"></p>
+      <label>การมองเห็น<select id="visibility"><option value="trip">ทุกคนในทริป</option><option value="selected">เฉพาะผู้เกี่ยวข้อง</option><option value="private">ส่วนตัว</option></select></label>
+      <div class="toggle-row"><span><b>ค่าใช้จ่ายร่วม</b><small>แบ่งความรับผิดชอบให้เห็นร่วมกัน โดยเงินยังหักจากกระเป๋าเดียว</small></span><button class="toggle on" id="sharedToggle"></button></div>
+      <div class="segmented split-mode" id="splitMode">
+        <button type="button" class="active" data-split="equal">เท่ากัน</button>
+        <button type="button" data-split="manual">กำหนดเอง</button>
+        <button type="button" data-split="percent">เปอร์เซ็นต์</button>
+      </div>
+      <div class="people-rows" id="peopleChecks"></div>
+      <div class="share-result" id="shareResult"></div>
+      <label>ผูกกับกิจกรรม<select id="expenseActivity"></select></label>
+      <p class="field-note" id="saveWarning"></p>
+      <div class="sheet-actions"><button class="soft-btn prev-step">ย้อนกลับ</button><button class="primary-btn" id="saveExpense">บันทึกบิล</button></div>
+    </div>
+  </section>
+
+  <section class="dialog plan-editor" id="planEditor" aria-hidden="true" role="dialog" aria-labelledby="planEditorTitle">
+    <button class="dialog-close" id="closePlanEditor" aria-label="ปิด">×</button>
+    <span class="eyebrow">FLEXIBLE ITINERARY</span>
+    <h2 id="planEditorTitle">เพิ่มสถานที่ในแผน</h2>
+    <form id="planEditorForm">
+      <div class="editor-grid">
+        <label class="field-wide">ชื่อสถานที่หรือกิจกรรม
+          <input id="activityName" required placeholder="เช่น ตลาดปลาคุชิโระ">
+        </label>
+        <label>วันที่
+          <select id="activityDay"></select>
+        </label>
+        <label>เวลา
+          <input id="activityTime" type="time" required>
+        </label>
+        <label>ประเภท
+          <select id="activityTag">
+            <option>สถานที่หลัก</option>
+            <option>กิจกรรมย่อย</option>
+            <option>การเดินทาง</option>
+            <option>อาหาร</option>
+            <option>ที่พัก</option>
+          </select>
+        </label>
+        <label>งบประมาณ (JPY)
+          <input id="activityCost" inputmode="numeric" placeholder="เช่น 2800">
+        </label>
+        <label class="field-wide">รายละเอียด
+          <textarea id="activityDetail" rows="3" placeholder="การเดินทาง สิ่งที่ควรเตรียม หรือแผนสำรอง"></textarea>
+        </label>
+        <div class="icon-field field-wide">
+          <span>ไอคอนสถานที่</span>
+          <img id="activityIconPreview" class="icon-preview rounded" alt="ไอคอนที่เลือก">
+          <button type="button" class="soft-btn" id="pickActivityIcon">เลือกไอคอน</button>
+        </div>
+      </div>
+      <div class="editor-note">สภาพอากาศจะแสดงตามสถานที่หลักของวันที่เลือก และอัปเดตบนแผนโดยอัตโนมัติ</div>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn" id="cancelPlanEditor">ยกเลิก</button>
+        <button type="submit" class="primary-btn">บันทึกในแผน</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="dialog asset-picker" id="assetPicker" aria-hidden="true" role="dialog" aria-labelledby="assetPickerTitle">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">เลือกรูปภาพ</span>
+    <h2 id="assetPickerTitle">เลือกรูป</h2>
+    <div class="asset-spec" id="assetSpec"></div>
+    <div class="asset-grid" id="assetGrid"></div>
+    <label class="asset-upload">
+      <input type="file" id="assetUpload" accept="image/png,image/jpeg,image/webp">
+      <span><b>＋ อัปโหลดรูปของคุณ</b><small id="assetUploadHint"></small></span>
+    </label>
+    <p class="field-note" id="assetError"></p>
+    <div class="sheet-actions">
+      <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+      <button type="button" class="primary-btn" id="assetConfirm">ใช้รูปนี้</button>
+    </div>
+  </section>
+
+  <section class="dialog" id="reopenDialog" aria-hidden="true" role="dialog" aria-labelledby="reopenTitle">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">REOPEN TRIP</span>
+    <h2 id="reopenTitle">เปิดทริปกลับมาแก้ไข</h2>
+    <p class="reopen-warn" id="reopenImpact"></p>
+    <form id="reopenForm">
+      <label class="reopen-reason">เหตุผลที่ต้องเปิดกลับ
+        <textarea id="reopenReason" rows="3" required placeholder="เช่น ยังไม่ได้บันทึกค่าที่พักคืนสุดท้าย"></textarea>
+      </label>
+      <p class="field-note" id="reopenError"></p>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+        <button type="submit" class="primary-btn danger-btn">ยืนยันเปิดทริปกลับ</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="dialog" id="fundDialog" aria-hidden="true" role="dialog" aria-labelledby="fundTitle">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">FUND WALLET</span>
+    <h2 id="fundTitle">เติมเงินเข้ากระเป๋า</h2>
+    <form id="fundForm">
+      <div class="fund-wallet" id="fundWalletInfo"></div>
+      <div class="editor-grid">
+        <label>จ่ายเป็นเงินบาท<input id="fundThb" required inputmode="decimal" placeholder="เช่น 34800"></label>
+        <label>ได้เงินสกุลนี้<input id="fundForeign" required inputmode="decimal" placeholder="เช่น 150000"></label>
+        <label>วันที่แลก<input id="fundDate" type="date" required></label>
+        <label>บันทึกช่วยจำ<input id="fundNote" placeholder="เช่น แลกที่สนามบิน"></label>
+      </div>
+      <div class="fund-preview" id="fundPreview"></div>
+      <p class="field-note" id="fundError"></p>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+        <button type="submit" class="primary-btn">บันทึกการเติมเงิน</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="dialog" id="walletDialog" aria-hidden="true" role="dialog" aria-labelledby="walletDialogTitle">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">NEW WALLET</span>
+    <h2 id="walletDialogTitle">เพิ่มกระเป๋าเงิน</h2>
+    <form id="walletForm">
+      <div class="editor-grid">
+        <label class="field-wide">ชื่อกระเป๋า<input id="walletLabel" required placeholder="เช่น YouTrip JPY"></label>
+        <label class="field-wide">สกุลเงิน<select id="walletCurrency"></select></label>
+        <div class="icon-field field-wide">
+          <span>ไอคอนกระเป๋า</span>
+          <img id="walletIconPreview" class="icon-preview rounded" alt="ไอคอนที่เลือก">
+          <button type="button" class="soft-btn" id="pickWalletIcon">เลือกไอคอน</button>
+        </div>
+      </div>
+      <p class="field-note" id="walletError"></p>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+        <button type="submit" class="primary-btn">สร้างกระเป๋า</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="dialog" id="currencyDialog" aria-hidden="true" role="dialog" aria-labelledby="currencyTitle">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">TRIP CURRENCY</span>
+    <h2 id="currencyTitle">เพิ่มสกุลเงิน</h2>
+    <form id="currencyForm">
+      <div class="editor-grid">
+        <label>รหัสสกุล<input id="currencyCode" required maxlength="3" placeholder="เช่น JPY"></label>
+        <label>สัญลักษณ์<input id="currencySymbol" required maxlength="3" placeholder="เช่น ¥"></label>
+        <label class="field-wide">ชื่อเรียก<input id="currencyLabel" required placeholder="เช่น เยนญี่ปุ่น"></label>
+        <label class="field-wide">เรทประมาณการ (บาทต่อ 1 หน่วย)
+          <input id="currencyRate" required inputmode="decimal" placeholder="เช่น 0.2320">
+        </label>
+        <div class="icon-field field-wide">
+          <span>ไอคอนสกุลเงิน</span>
+          <img id="currencyIconPreview" class="icon-preview circle" alt="ไอคอนที่เลือก">
+          <button type="button" class="soft-btn" id="pickCurrencyIcon">เลือกไอคอน</button>
+        </div>
+      </div>
+      <p class="field-note" id="currencyPreview"></p>
+      <p class="field-note" id="currencyError"></p>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+        <button type="submit" class="primary-btn">บันทึก</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="dialog" id="newTripDialog" aria-hidden="true" role="dialog" aria-labelledby="newTripTitle">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">NEW TRIP</span>
+    <h2 id="newTripTitle">สร้างทริปใหม่</h2>
+    <form id="newTripForm">
+      <div class="editor-grid">
+        <label class="field-wide">ชื่อทริป<input id="newTripName" required placeholder="เช่น Hokkaido Family Trip"></label>
+        <label>เริ่ม<input id="newTripStart" type="date" required></label>
+        <label>สิ้นสุด<input id="newTripEnd" type="date" required></label>
+      </div>
+      <div class="banner-field">
+        <span>ภาพแบนเนอร์</span>
+        <img id="newTripBannerPreview" alt="ตัวอย่างแบนเนอร์">
+        <button type="button" class="soft-btn" id="pickNewTripBanner">เลือกภาพแบนเนอร์</button>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+        <button type="submit" class="primary-btn">สร้างทริป</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="dialog" id="closeDialog" aria-hidden="true">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">CLOSE TRIP PREVIEW</span><h2>ตรวจสอบก่อนปิดทริป</h2>
+    <div id="closeBody"></div>
+    <div class="settlement" id="settlementBlock">
+      <h3>จัดการเงินเหลือแต่ละกระเป๋า</h3>
+      <p class="settlement-hint">ระบุยอดที่ได้รับกลับมาจริง ส่วนต่างจากต้นทุนจะถูกบันทึกเป็นกำไร/ขาดทุนอัตราแลกเปลี่ยนของทริปนี้</p>
+      <div id="settlementRows"></div>
+      <div class="fx-summary" id="fxSummary"></div>
+    </div>
+    <div class="posting-field">
+      <label>ลงบัญชีเป็นวันที่
+        <input id="postingDate" type="date">
+      </label>
+      <p class="field-note" id="postingNote"></p>
+    </div>
+    <label class="close-ack" id="closeAckRow">
+      <input type="checkbox" id="closeAck">
+      <span id="closeAckText"></span>
+    </label>
+    <div class="sheet-actions">
+      <button type="button" class="soft-btn close-layer">ยังไม่ปิด</button>
+      <button type="button" class="primary-btn" id="confirmClose">ยืนยันปิดทริป</button>
+    </div>
+  </section>
+  <div class="toast" id="toast"></div>
+  <script src="app.js?v=33"></script>
+</body>
+</html>

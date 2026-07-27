@@ -1,0 +1,236 @@
+/* ===========================================================
+   PupPup Trip — หน้า "Prototype Trip" (เชื่อมข้อมูลจริงแล้ว)
+   เฟส 1: เฉพาะแผนที่/itinerary — พอร์ตจาก puppup-prototype/prototype.css
+   ทุก selector อยู่ใต้ .pp-trip เพื่อไม่ชนกับ style.css เดิมของแอป
+   =========================================================== */
+
+@font-face{font-family:'PP Loop';src:url('puppup-prototype/fonts/noto-sans-thai-looped-thai-800-normal.woff2') format('woff2');font-weight:800;font-display:swap;unicode-range:U+0E01-0E5B,U+200C-200D,U+25CC}
+@font-face{font-family:'PP Loop';src:url('puppup-prototype/fonts/noto-sans-thai-looped-thai-700-normal.woff2') format('woff2');font-weight:700;font-display:swap;unicode-range:U+0E01-0E5B,U+200C-200D,U+25CC}
+@font-face{font-family:'Poppins';src:url('puppup-prototype/fonts/poppins-latin-400-normal.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Poppins';src:url('puppup-prototype/fonts/poppins-latin-500-normal.woff2') format('woff2');font-weight:500;font-display:swap}
+@font-face{font-family:'Poppins';src:url('puppup-prototype/fonts/poppins-latin-600-normal.woff2') format('woff2');font-weight:600;font-display:swap}
+@font-face{font-family:'Poppins';src:url('puppup-prototype/fonts/poppins-latin-700-normal.woff2') format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Anuphan';src:url('puppup-prototype/fonts/anuphan-thai-400-normal.woff2') format('woff2');font-weight:400;font-display:swap;unicode-range:U+0E01-0E5B,U+200C-200D,U+25CC}
+@font-face{font-family:'Anuphan';src:url('puppup-prototype/fonts/anuphan-thai-500-normal.woff2') format('woff2');font-weight:500;font-display:swap;unicode-range:U+0E01-0E5B,U+200C-200D,U+25CC}
+@font-face{font-family:'Anuphan';src:url('puppup-prototype/fonts/anuphan-thai-600-normal.woff2') format('woff2');font-weight:600;font-display:swap;unicode-range:U+0E01-0E5B,U+200C-200D,U+25CC}
+@font-face{font-family:'Anuphan';src:url('puppup-prototype/fonts/anuphan-thai-700-normal.woff2') format('woff2');font-weight:700;font-display:swap;unicode-range:U+0E01-0E5B,U+200C-200D,U+25CC}
+
+.pp-trip{
+  --navy:#16294D;--navy-2:#22335A;--pink:#EC5F86;--pink-strong:#E33C6B;--pink-soft:#FCEBF0;
+  --blue:#2662E8;--blue-soft:#4C85F4;--muted:#8B95A8;--muted-2:#A6AEBD;--page:#FCFAF7;
+  --card:#FFFFFF;--line:#EFEBE6;--green:#12A15F;
+  --shadow:0 10px 30px rgba(60,50,80,.07);
+  --f-loop:'PP Loop','Anuphan',sans-serif;--f-body:'Poppins','Anuphan',sans-serif;
+  font-family:var(--f-body);color:var(--navy);
+  background:#EEEAE4;padding:22px 0 60px;display:flex;flex-direction:column;align-items:center;min-height:100%;
+}
+.pp-trip *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+
+/* ---- แถบเลือกทริป (เมื่อครอบครัวมีหลายทริป) ---- */
+.pp-topbar{width:869px;max-width:94vw;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.pp-topbar select{font:600 16px var(--f-body);color:var(--navy);border:1px solid #E4DFE8;border-radius:14px;padding:10px 14px;background:#fff}
+.pp-topbar .pp-hint{font:400 13px var(--f-body);color:var(--muted)}
+
+/* ---- wrapper สำหรับ scale-to-fit บนจอเว็บ/มือถือ (คงสัดส่วน mockup 869px ทุกจุด) ---- */
+.pp-scaleOuter{width:100%;display:flex;justify-content:center;overflow:hidden}
+.pp-canvas{width:869px;flex:none;transform-origin:top center;background:var(--page);
+  border-radius:40px;overflow:hidden;box-shadow:0 24px 60px rgba(40,30,60,.18);position:relative}
+
+/* ---- HERO / แผนที่ ---- */
+.pp-trip .maphero{position:relative;width:869px;height:470px;overflow:hidden;background:#cfe7f2}
+.pp-trip .maphero>img.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  transform-origin:var(--ox,50%) var(--oy,50%);transition:transform .35s cubic-bezier(.2,.8,.2,1);cursor:zoom-in}
+.pp-trip .maphero.zoomed>img.bg{transform:scale(2.1);cursor:zoom-out}
+.pp-trip .maphero.zoomed #ppPins,.pp-trip .maphero.zoomed #ppRoute{transform:scale(2.1);transform-origin:var(--ox,50%) var(--oy,50%);
+  transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+.pp-trip .zoomhint{position:absolute;left:22px;bottom:20px;background:rgba(22,41,77,.55);color:#fff;
+  font:600 15px var(--f-body);padding:9px 16px;border-radius:22px;display:flex;align-items:center;gap:8px;
+  backdrop-filter:blur(4px);pointer-events:none;z-index:6}
+.pp-trip .pin-edit{position:absolute;right:22px;top:24px;z-index:6;display:flex;align-items:center;gap:8px;
+  height:44px;padding:0 18px;border:0;border-radius:22px;background:#fff;color:var(--navy);cursor:pointer;
+  font:600 15px var(--f-body);box-shadow:0 6px 16px rgba(60,50,80,.16)}
+.pp-trip .pin-edit.on{background:var(--blue);color:#fff}
+.pp-trip .maphero.editing .pin{cursor:grab}
+.pp-trip .maphero.editing .pin svg{animation:pp-wob 1.6s ease-in-out infinite}
+.pp-trip .maphero.editing .pin.grabbing svg{animation:none}
+@keyframes pp-wob{0%,100%{transform:rotate(-2.5deg)}50%{transform:rotate(2.5deg)}}
+.pp-trip .pin.unmatched{opacity:.5;filter:grayscale(.6)}
+
+.pp-trip .pin{position:absolute;transform:translate(-50%,0);text-align:center;width:200px}
+.pp-trip .pin svg{display:block;margin:0 auto;filter:drop-shadow(0 6px 10px rgba(40,30,60,.22))}
+.pp-trip .pin b{display:block;font:700 20px var(--f-body);color:var(--navy);margin-top:4px;
+  text-shadow:0 0 6px #fff,0 0 6px #fff}
+.pp-trip .pin small{display:block;font:500 15px var(--f-body);color:var(--navy-2);margin-top:2px;
+  text-shadow:0 0 6px #fff,0 0 6px #fff}
+.pp-trip .route{position:absolute;inset:0;width:869px;height:470px;pointer-events:none}
+
+.pp-trip .triprow{display:flex;align-items:center;justify-content:space-between;padding:22px 32px 4px}
+.pp-trip .triprow .l b{font:700 30px var(--f-body);color:var(--navy);display:flex;align-items:center;gap:10px}
+.pp-trip .triprow .l small{display:block;margin-top:6px;font:600 17px var(--f-body);color:var(--pink-strong)}
+.pp-trip .triprow .r span{background:#F3F1EC;border-radius:22px;padding:10px 18px;font:600 16px var(--f-body);
+  color:var(--navy);display:flex;align-items:center;gap:8px}
+.pp-trip .triprow .r b{color:var(--pink-strong)}
+
+/* ---- แถบเลือกวัน ---- */
+.pp-trip .days{display:flex;gap:12px;overflow-x:auto;padding:20px 30px 18px;
+  border-bottom:1px solid #F3F0F5;scrollbar-width:none}
+.pp-trip .days::-webkit-scrollbar{display:none}
+.pp-trip .day-pill{--c:#4CB682;flex:none;min-width:118px;border-radius:20px;border:1px solid #EEE9F2;background:#fff;
+  padding:11px 16px;display:flex;flex-direction:column;align-items:flex-start;gap:3px;cursor:pointer;
+  font-family:var(--f-body);text-align:left}
+.pp-trip .day-pill span{font:500 14px var(--f-body);color:var(--muted)}
+.pp-trip .day-pill b{font:700 21px var(--f-body);color:var(--navy);white-space:nowrap}
+.pp-trip .day-pill i{font:500 13px var(--f-body);color:var(--muted);font-style:normal;
+  display:flex;align-items:center;gap:6px;white-space:nowrap}
+.pp-trip .day-pill i::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
+.pp-trip .day-pill.on{background:color-mix(in srgb,var(--c) 12%,#fff);border:2px solid var(--c);padding:10px 15px}
+.pp-trip .day-pill .cost{font:600 12px var(--f-body);color:var(--pink-strong);margin-top:1px}
+
+.pp-trip .day-panel{margin:14px 24px 40px;padding:0 0 20px;position:relative}
+.pp-trip .dayhead{display:flex;align-items:flex-start;gap:20px;padding:20px 30px 0}
+.pp-trip .daynum{width:60px;height:60px;border-radius:50%;background:#FCE7EE;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;flex:none;margin-top:4px}
+.pp-trip .daynum span{font:500 15px/1 var(--f-body);color:var(--pink-strong)}
+.pp-trip .daynum b{font:700 30px/1 var(--f-body);color:var(--navy);margin-top:0}
+.pp-trip .dayhead h2{font:700 28px var(--f-body);color:var(--navy)}
+.pp-trip .dayhead p{font:400 16px var(--f-body);color:var(--muted);margin-top:6px}
+.pp-trip .daytotal{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font:600 16px var(--f-body);
+  color:var(--pink-strong);background:var(--pink-soft);border-radius:14px;padding:5px 12px}
+
+.pp-trip .place-sec{--pin:#EC5F86;margin:20px 30px 0;border-radius:26px;padding:0}
+.pp-trip .place-head{display:flex;align-items:flex-start;gap:20px;padding:14px 10px 0 22px}
+.pp-trip .place-head .pinico{width:48px;height:48px;border-radius:50%;flex:none;margin-top:2px;
+  display:flex;align-items:center;justify-content:center;color:var(--pin);font-size:22px;
+  background:color-mix(in srgb, var(--pin) 15%, #fff)}
+.pp-trip .place-head h2{font:700 22px var(--f-body);color:var(--navy)}
+.pp-trip .place-head p{font:400 15px var(--f-body);color:var(--muted);margin-top:6px}
+.pp-trip .place-head .ptime{margin-left:auto;font:600 15px var(--f-body);color:var(--pin);
+  background:color-mix(in srgb,var(--pin) 10%,#fff);border-radius:14px;padding:6px 13px;white-space:nowrap;margin-top:6px}
+
+.pp-trip .timeline{position:relative;margin:18px 0 0 20px;padding-left:64px}
+.pp-trip .place-sec:not(:last-of-type) .timeline{padding-bottom:10px}
+.pp-trip .timeline::before{content:'';position:absolute;left:26px;top:-32px;bottom:20px;width:3px;
+  background:repeating-linear-gradient(to bottom,color-mix(in srgb,var(--pin) 55%,#fff) 0 8px,transparent 8px 16px)}
+.pp-trip .act{position:relative;background:#fff;border-radius:20px;margin-bottom:6px;box-shadow:0 4px 14px rgba(60,50,80,.06)}
+.pp-trip .act-row{display:flex;align-items:center;gap:16px;min-height:88px;padding:12px 16px}
+.pp-trip .act::before{content:'';position:absolute;left:-46px;top:44px;width:16px;height:16px;border-radius:50%;
+  background:#fff;border:3px solid color-mix(in srgb,var(--pin) 68%,#fff);transform:translateY(-50%);z-index:2}
+.pp-trip .act::after{content:'';position:absolute;left:-28px;top:44px;width:16px;height:3px;transform:translateY(-50%);
+  background:repeating-linear-gradient(to right,color-mix(in srgb,var(--pin) 55%,#fff) 0 7px,transparent 7px 13px)}
+.pp-trip .act .m{flex:1;min-width:0}
+.pp-trip .act .m b{display:block;font:600 17px var(--f-body);color:var(--navy)}
+.pp-trip .act .m small{display:block;font:400 14px var(--f-body);color:var(--muted);margin-top:6px;
+  white-space:normal;overflow-wrap:anywhere}
+.pp-trip .act .tm{flex:none;text-align:right}
+.pp-trip .act .tm div{display:flex;align-items:center;justify-content:flex-end;gap:8px;font:500 15px var(--f-body);color:var(--navy-2)}
+.pp-trip .act .cost{display:block;margin-top:6px;font:700 16px var(--f-body);color:var(--pink-strong);white-space:nowrap}
+.pp-trip .ic-pin{color:var(--pin)}
+
+.pp-trip .empty-box{margin:22px 30px 0;border:2px dashed #E7E1EE;border-radius:24px;background:#FBF9FD;
+  padding:36px 26px 32px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.pp-trip .empty-box b{font:600 22px var(--f-body);color:var(--navy)}
+.pp-trip .empty-box small{font:400 16px var(--f-body);color:var(--muted);margin-top:6px}
+
+.pp-trip .pp-note{margin:14px 30px 0;font:400 13px var(--f-body);color:var(--muted-2)}
+
+@media (max-width:900px){
+  .pp-topbar{width:96vw}
+}
+
+/* ===========================================================
+   เฟส 2 — Bills / Wallet / Settings (ปรับตามข้อมูลจริง สไตล์เดียวกับ Plan
+   แต่ไม่ได้ pixel-perfect ตาม mockup เท่า Plan tab)
+   =========================================================== */
+.pp-trip .pp-tabs{width:869px;max-width:94vw;display:flex;gap:8px;margin:0 0 14px;background:#fff;
+  border-radius:20px;padding:6px;box-shadow:var(--shadow)}
+.pp-trip .pp-tab{flex:1;border:0;background:none;padding:12px 8px;border-radius:16px;cursor:pointer;
+  font:600 15px var(--f-body);color:var(--muted)}
+.pp-trip .pp-tab.on{background:var(--pink-soft);color:var(--pink-strong)}
+.pp-trip .pp-screen{width:100%;display:flex;justify-content:center}
+.pp-trip .pp-screen[hidden]{display:none}
+
+.pp-trip .pp-section-head{display:flex;align-items:baseline;justify-content:space-between;padding:28px 32px 6px}
+.pp-trip .pp-section-head h2{font:700 24px var(--f-body);color:var(--navy)}
+.pp-trip .total-thb-big{font:700 30px var(--f-body);color:var(--pink-strong)}
+
+/* ---- Bills ---- */
+.pp-trip .donut-wrap{position:relative;width:150px;height:150px;margin:14px auto 0}
+.pp-trip .donut-wrap .c{position:absolute;inset:0;border-radius:50%}
+.pp-trip .donut-wrap .hole{position:absolute;inset:34px;background:#fff;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font:600 13px var(--f-body);color:var(--navy);
+  text-align:center;padding:4px}
+.pp-trip .legend{list-style:none;max-width:400px;margin:18px auto 0;padding:0 20px}
+.pp-trip .legend li{display:flex;align-items:center;height:38px;gap:10px}
+.pp-trip .legend .dot{width:16px;height:16px;border-radius:50%;flex:none}
+.pp-trip .legend .n{flex:1;font:500 15px var(--f-body);color:var(--navy-2)}
+.pp-trip .legend .p{font:600 15px var(--f-body);color:var(--navy)}
+.pp-trip .listcard{margin:22px 26px 30px}
+.pp-trip .listcard h2{font:600 20px var(--f-body);color:var(--navy);margin-bottom:6px}
+.pp-trip .bill{display:flex;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid #F3F0F5}
+.pp-trip .bill:last-child{border-bottom:0}
+.pp-trip .bicon{width:52px;height:52px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px}
+.pp-trip .bill .m{flex:1;min-width:0}
+.pp-trip .bill .m b{display:block;font:600 16px var(--f-body);color:var(--navy)}
+.pp-trip .bill .place{display:inline-flex;height:24px;padding:0 10px;border-radius:12px;font:500 12px var(--f-body);margin-top:5px}
+.pp-trip .bill .who{font:400 13px var(--f-body);color:var(--muted);margin-top:5px}
+.pp-trip .bill .amt{text-align:right;flex:none}
+.pp-trip .bill .amt b{display:block;font:700 17px var(--f-body);color:var(--navy)}
+.pp-trip .bill .amt small{display:block;font:500 12px var(--f-body);color:var(--muted-2);margin-top:3px}
+
+/* ---- Wallet ---- */
+.pp-trip .wallet-grid{display:flex;flex-wrap:wrap;gap:16px;padding:16px 26px 30px}
+.pp-trip .walletcard{flex:1;min-width:250px;background:#fff;border-radius:24px;box-shadow:var(--shadow);padding:22px}
+.pp-trip .wch{display:flex;align-items:center;justify-content:space-between}
+.pp-trip .wch b{font:600 18px var(--f-body);color:var(--navy)}
+.pp-trip .tag{display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:13px;
+  background:#EDF9F2;border:1px solid #BEE5CE;color:#12A15F;font:600 13px var(--f-body)}
+.pp-trip .wamt{font:700 24px var(--f-body);color:var(--navy);margin-top:12px}
+.pp-trip .walletcard>small{display:block;color:var(--muted);font:400 13px var(--f-body);margin-top:6px}
+.pp-trip .stats{display:flex;margin-top:14px;background:#F8F9FB;border-radius:16px;padding:12px 0}
+.pp-trip .stats div{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+.pp-trip .stats span{font:400 12px var(--f-body);color:var(--muted)}
+.pp-trip .stats b{font:600 14px var(--f-body);color:var(--navy)}
+
+/* ---- Settings ---- */
+.pp-trip .setrow{display:flex;align-items:center;gap:18px;margin:0 26px 12px;padding:18px 20px;
+  border-radius:22px;background:#fff;box-shadow:var(--shadow)}
+.pp-trip .setrow .ic{font-size:26px;flex:none}
+.pp-trip .setrow .m b{display:block;font:600 17px var(--f-body);color:var(--navy)}
+.pp-trip .setrow .m small{display:block;font:400 14px var(--f-body);color:var(--muted);margin-top:4px}
+
+/* ===========================================================
+   เฟส 3 — ฟอร์มเพิ่ม/แก้ไขจุดแวะ (place = TripStops root, activity = child)
+   =========================================================== */
+.pp-trip .addact{display:flex;align-items:center;justify-content:center;gap:10px;margin:12px 0 0 20px;
+  width:calc(100% - 46px);height:50px;border:2px dashed color-mix(in srgb,var(--pin,#EC5F86) 45%,#fff);
+  border-radius:18px;background:color-mix(in srgb,var(--pin,#EC5F86) 7%,#fff);
+  font:600 15px var(--f-body);color:var(--pin,#EC5F86);cursor:pointer}
+.pp-trip .addplace-btn{display:flex;align-items:center;gap:8px;margin:14px 30px 0;height:50px;padding:0 20px;
+  border:2px dashed #C9D8F5;border-radius:18px;background:#F2F6FE;color:var(--blue);
+  font:600 15px var(--f-body);cursor:pointer}
+.pp-trip .day-add{--c:#B9C2D0;flex:none;min-width:90px;border-radius:20px;border:2px dashed #D8DEE8;background:#fff;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;
+  font:600 14px var(--f-body);color:var(--muted)}
+.pp-trip .place-head{cursor:pointer}
+.pp-trip .act-row{cursor:pointer}
+.pp-trip .place-head .edit-x,.pp-trip .act .edit-x{margin-left:auto;color:#C7CEDA;flex:none;padding:6px}
+
+.pp-mask{position:fixed;inset:0;background:rgba(20,16,30,.42);z-index:200}
+.pp-sheet{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:201;background:#fff;
+  border-radius:26px;padding:26px 26px 22px;box-shadow:0 24px 60px rgba(40,30,60,.3);
+  width:420px;max-width:92vw;max-height:86vh;overflow-y:auto;font-family:var(--f-body,'Poppins','Anuphan',sans-serif)}
+.pp-sheet h3{font:700 20px var(--f-body);color:var(--navy);margin-bottom:16px}
+.pp-field{display:block;margin-bottom:14px}
+.pp-field span{display:block;font:500 13px var(--f-body);color:var(--muted);margin-bottom:6px}
+.pp-field input,.pp-field textarea{width:100%;padding:10px 14px;border-radius:14px;border:1px solid #E5E1EA;
+  background:#FAFAFC;font:500 15px var(--f-body);color:var(--navy);outline:0;font-family:inherit}
+.pp-field textarea{resize:vertical;min-height:60px}
+.pp-field input:focus,.pp-field textarea:focus{border-color:var(--blue);background:#fff}
+.pp-swatches{display:flex;gap:10px;margin-top:4px}
+.pp-swatch{width:30px;height:30px;border-radius:50%;cursor:pointer;border:2px solid transparent}
+.pp-swatch.sel{border-color:var(--navy)}
+.pp-sheet-actions{display:flex;gap:10px;margin-top:18px}
+.pp-btn{flex:1;height:48px;border:0;border-radius:16px;background:var(--blue);color:#fff;cursor:pointer;
+  font:600 15px var(--f-body)}
+.pp-btn.secondary{background:#F1F2F5;color:var(--navy-2)}
+.pp-btn.danger{background:#FEEEEF;color:var(--pink-strong);flex:none;width:48px}

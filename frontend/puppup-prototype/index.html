@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PupPup Trip — Visual Prototype</title>
+<link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+
+<div class="toolbar">
+  <b>PupPup Trip</b> · visual prototype (static — ยังไม่ต่อ API)
+  <span class="sp"></span>
+  <span>Zoom</span>
+  <button data-z="0.5">50%</button>
+  <button data-z="0.62" class="on">62%</button>
+  <button data-z="0.8">80%</button>
+  <button data-z="1">100%</button>
+</div>
+
+<svg style="display:none">
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1.6 12S5.5 5 12 5s10.4 7 10.4 7-3.9 7-10.4 7S1.6 12 1.6 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.4" fill="currentColor"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M5 15l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6" fill="none" stroke="#16294D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5.2l3.2 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="12" cy="4.6" r="2.3" fill="currentColor"/><circle cx="12" cy="12" r="2.3" fill="currentColor"/><circle cx="12" cy="19.4" r="2.3" fill="currentColor"/></symbol>
+  <symbol id="i-plusc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M12 7.6v8.8M7.6 12h8.8" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.2" fill="currentColor"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3s6 7 6 11a6 6 0 1 1-12 0c0-4 6-11 6-11z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><circle cx="4.6" cy="6" r="1.8" fill="currentColor"/><circle cx="4.6" cy="12" r="1.8" fill="currentColor"/><circle cx="4.6" cy="18" r="1.8" fill="currentColor"/><path d="M9.6 6h10M9.6 12h10M9.6 18h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="i-pin-solid" viewBox="0 0 24 24"><path d="M12 1.8a7.5 7.5 0 0 0-7.5 7.5c0 5.7 7.5 13 7.5 13s7.5-7.3 7.5-13A7.5 7.5 0 0 0 12 1.8z" fill="currentColor"/><circle cx="12" cy="9.3" r="3.05" fill="#fff"/></symbol>
+  <symbol id="i-grab" viewBox="0 0 24 24"><circle cx="9" cy="5" r="1.9" fill="currentColor"/><circle cx="15" cy="5" r="1.9" fill="currentColor"/><circle cx="9" cy="12" r="1.9" fill="currentColor"/><circle cx="15" cy="12" r="1.9" fill="currentColor"/><circle cx="9" cy="19" r="1.9" fill="currentColor"/><circle cx="15" cy="19" r="1.9" fill="currentColor"/></symbol>
+  <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6h16M9 6V4h6v2M6 6l1 14h10l1-14M10 10v7M14 10v7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 21s-8-4.9-8-10.4A4.7 4.7 0 0 1 12 7.2 4.7 4.7 0 0 1 20 10.6C20 16.1 12 21 12 21z" fill="#F58BAD"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <!-- bottom nav -->
+  <symbol id="n-pin" viewBox="0 0 24 24"><path d="M12 22s7-7.2 7-12A7 7 0 1 0 5 10c0 4.8 7 12 7 12z" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.9"/></symbol>
+  <symbol id="n-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="3.4" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M16 12.5h3.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="15.2" cy="12.5" r="1.5" fill="currentColor"/></symbol>
+  <symbol id="n-bill" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M9.5 8h5M9.5 12h5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+  <symbol id="n-plan" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3.4" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="8.5" cy="14" r="1.1" fill="currentColor"/><circle cx="12" cy="14" r="1.1" fill="currentColor"/><circle cx="15.5" cy="14" r="1.1" fill="currentColor"/><circle cx="8.5" cy="17.4" r="1.1" fill="currentColor"/><circle cx="12" cy="17.4" r="1.1" fill="currentColor"/></symbol>
+  <symbol id="i-status" viewBox="0 0 90 24">
+    <g fill="#0E1B33"><rect x="0" y="13" width="4" height="8" rx="1.2"/><rect x="6" y="9" width="4" height="12" rx="1.2"/><rect x="12" y="5" width="4" height="16" rx="1.2"/><rect x="18" y="1" width="4" height="20" rx="1.2"/></g>
+    <path d="M28 8.5a13 13 0 0 1 16 0M31 13a8.6 8.6 0 0 1 10 0" fill="none" stroke="#0E1B33" stroke-width="2.4" stroke-linecap="round"/><circle cx="36" cy="18" r="2.2" fill="#0E1B33"/>
+    <rect x="52" y="5" width="32" height="15" rx="4.5" fill="none" stroke="#0E1B33" stroke-width="2"/><rect x="54.5" y="7.5" width="27" height="10" rx="2.5" fill="#0E1B33"/><rect x="85.5" y="10" width="3" height="5" rx="1.5" fill="#0E1B33"/>
+  </symbol>
+</svg>
+
+<div class="stage">
+<div class="phone" id="phone">
+
+<!-- =====================================================  BILLS  ===================================================== -->
+<section class="screen active" id="s-bills">
+  <div class="hero" style="height:470px">
+    <img class="bg" src="art/hero_plan_hokkaido5.png" alt="">
+    <div class="statusbar"><div class="t">9:41</div><div class="r"><svg width="90" height="24"><use href="#i-status"/></svg></div></div>
+  </div>
+
+  <div class="card summary">
+    <div class="left">
+      <div class="lbl-row">ค่าใช้จ่ายรวม <svg width="30" height="30" style="color:#16294D"><use href="#i-eye"/></svg></div>
+      <div class="total-yen">¥ 85,230.00</div>
+      <div class="total-thb">≈ ฿ 18,760.00</div>
+      <button class="addbill">
+        <img src="art/st_addbill.png" alt="">
+        <span class="tx"><b>เพิ่มบิลใหม่</b><small>บันทึกค่าใช้จ่ายระหว่างทริป</small></span>
+        <svg width="26" height="26" style="color:#9AA3B4;margin-left:auto"><use href="#i-chev"/></svg>
+      </button>
+    </div>
+    <div class="right">
+      <h3>สรุปตามหมวดหมู่</h3>
+      <div class="donut-wrap">
+        <div class="c" id="donut"></div>
+        <div class="hole">¥ 85,230.00</div>
+      </div>
+      <ul class="legend">
+        <li><i class="dot" style="background:#F382A1"></i><img src="art/cat_food.png"><span class="n">อาหาร</span><span class="p">35%</span></li>
+        <li><i class="dot" style="background:#79ACF5"></i><img src="art/cat_transport.png"><span class="n">เดินทาง</span><span class="p">30%</span></li>
+        <li><i class="dot" style="background:#9D82EE"></i><img src="art/cat_hotel.png"><span class="n">ที่พัก</span><span class="p">20%</span></li>
+        <li><i class="dot" style="background:#A3D2AB"></i><img src="art/cat_shop.png"><span class="n">ช้อปปิ้ง</span><span class="p">10%</span></li>
+        <li><i class="dot" style="background:#F8BC71"></i><img src="art/cat_activity.png"><span class="n">กิจกรรม</span><span class="p">5%</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="chips">
+    <button class="chip on"><svg width="34" height="34"><use href="#i-list"/></svg>ทั้งหมด</button>
+    <button class="chip"><img src="art/cat_food.png">อาหาร</button>
+    <button class="chip"><img src="art/cat_transport.png">เดินทาง</button>
+    <button class="chip"><img src="art/cat_hotel.png">ที่พัก</button>
+    <button class="chip"><img src="art/cat_shop.png">ช้อปปิ้ง</button>
+  </div>
+
+  <div class="card listcard">
+    <header><h2>รายการบิลล่าสุด</h2><a class="seeall">ดูทั้งหมด <svg width="22" height="22"><use href="#i-chev"/></svg></a></header>
+
+    <div class="bill"><img src="art/ic_ramen.png">
+      <div class="m"><b>ราเมงมื้อเย็น</b>
+        <span class="place" style="background:#FCEBF0;color:#E33C6B">Asakusa, Tokyo</span>
+        <span class="who"><svg width="18" height="18"><use href="#i-user"/></svg>พ่อ</span></div>
+      <div class="amt"><b>¥ 2,480.00</b><small>≈ ฿ 545.60</small></div>
+      <svg class="chev" width="26" height="26" style="color:#C3CAD6"><use href="#i-chev"/></svg></div>
+
+    <div class="bill"><img src="art/ic_train.png">
+      <div class="m"><b>Japan Rail Pass 7 วัน</b>
+        <span class="place" style="background:#EAF2FE;color:#2F6BFF">Tokyo</span>
+        <span class="who"><svg width="18" height="18"><use href="#i-user"/></svg>แม่</span></div>
+      <div class="amt"><b>¥ 24,000.00</b><small>≈ ฿ 5,280.00</small></div>
+      <svg class="chev" width="26" height="26" style="color:#C3CAD6"><use href="#i-chev"/></svg></div>
+
+    <div class="bill"><img src="art/ic_hotel.png">
+      <div class="m"><b>โรงแรม 2 คืน</b>
+        <span class="place" style="background:#F1EDFD;color:#7B5FD8">Hakone</span>
+        <span class="who"><svg width="18" height="18"><use href="#i-user"/></svg>พ่อ</span></div>
+      <div class="amt"><b>¥ 18,600.00</b><small>≈ ฿ 4,092.00</small></div>
+      <svg class="chev" width="26" height="26" style="color:#C3CAD6"><use href="#i-chev"/></svg></div>
+
+    <div class="bill"><img src="art/ic_gift.png">
+      <div class="m"><b>ของฝาก &amp; ขนม</b>
+        <span class="place" style="background:#EAF7EE;color:#3E9E63">Kyoto</span>
+        <span class="who"><svg width="18" height="18"><use href="#i-user"/></svg>ลูกสาว</span></div>
+      <div class="amt"><b>¥ 4,350.00</b><small>≈ ฿ 957.00</small></div>
+      <svg class="chev" width="26" height="26" style="color:#C3CAD6"><use href="#i-chev"/></svg></div>
+
+    <button class="fab"><span class="pl">+</span><small>เพิ่มบิล</small></button>
+  </div>
+
+  <nav class="bottom" data-nav></nav>
+</section>
+
+<!-- =====================================================  PLAN  ===================================================== -->
+<section class="screen" id="s-plan">
+  <div class="maphero" id="planHero">
+    <img class="bg" id="bg" src="art/hero_plan_hokkaido5.png" alt="">
+    <div class="statusbar"><div class="t">9:41</div><div class="r"><svg width="90" height="24"><use href="#i-status"/></svg></div></div>
+    <svg class="route" id="route" viewBox="0 0 869 470"></svg>
+    <div id="pins"></div>
+    <button class="pin-edit" id="pinEdit"><svg width="26" height="26"><use href="#i-move"/></svg>แก้หมุด</button>
+    <div class="pin-tray" id="pinTray" hidden><span class="tt">ลากเมืองไปวางบนแผนที่</span><div class="tray-items" id="trayItems"></div></div>
+    <div class="zoomhint" id="zoomHint">👆 แตะเพื่อซูม</div>
+  </div>
+
+  <div class="triprow">
+    <div class="l"><b>Hokkaido Winter Trip <svg width="34" height="34"><use href="#i-heart"/></svg></b>
+      <small>22–27 มกราคม 2026</small></div>
+    <div class="r"><span><svg width="26" height="26"><use href="#i-user"/></svg>4</span></div>
+  </div>
+
+  <div class="card daycard">
+    <div class="days" id="days">
+      <button class="day-pill on" style="--c:#7C63E0" data-day="1" data-date="22 มกราคม 2026" data-city="Sounkyo" data-art="act_ginga.png" data-temp="-8,-2,-10" data-rain="10,20,10"><span>วัน 1</span><b>22 ม.ค.</b><i>Sounkyo</i></button>
+      <button class="day-pill" style="--c:#7C63E0" data-day="2" data-date="23 มกราคม 2026" data-city="Sounkyo" data-art="act_ginga.png" data-temp="-9,-3,-11" data-rain="0,10,0"><span>วัน 2</span><b>23 ม.ค.</b><i>Sounkyo</i></button>
+      <button class="day-pill" style="--c:#EF5A85" data-day="3" data-date="24 มกราคม 2026" data-city="Lake Akan" data-art="act_marimo.png" data-temp="-7,-1,-9" data-rain="30,40,20"><span>วัน 3</span><b>24 ม.ค.</b><i>Lake Akan</i></button>
+      <button class="day-pill" style="--c:#EF5A85" data-day="4" data-date="25 มกราคม 2026" data-city="Lake Akan" data-art="act_marimo.png" data-temp="-6,0,-8" data-rain="20,20,10"><span>วัน 4</span><b>25 ม.ค.</b><i>Lake Akan</i></button>
+      <button class="day-pill" style="--c:#4CB682" data-day="5" data-date="26 มกราคม 2026" data-city="Kushiro" data-art="act_crane.png" data-temp="-5,1,-7" data-rain="10,10,0"><span>วัน 5</span><b>26 ม.ค.</b><i>Kushiro</i></button>
+      <button class="day-pill" style="--c:#4CB682" data-day="6" data-date="27 มกราคม 2026" data-city="Kushiro" data-art="act_crane.png" data-temp="-4,2,-6" data-rain="0,0,10"><span>วัน 6</span><b>27 ม.ค.</b><i>Kushiro</i></button>
+    </div>
+
+    <div class="dayhead">
+      <div class="daynum"><span>วัน</span><b>1</b></div>
+      <div><h2>Sounkyo</h2><p>22 มกราคม 2026</p></div>
+      <img class="city" src="art/act_ginga.png" alt="">
+    </div>
+
+    <div class="weather">
+      <div><img src="art/wx_morning.png"><div class="tx"><b>เช้า</b><strong>20°</strong>
+        <small><svg width="20" height="20" style="color:#7FA8D8"><use href="#i-drop"/></svg>10%</small></div></div>
+      <div><img src="art/wx_afternoon.png"><div class="tx"><b>บ่าย</b><strong>24°</strong>
+        <small><svg width="20" height="20" style="color:#7FA8D8"><use href="#i-drop"/></svg>20%</small></div></div>
+      <div><img src="art/wx_night.png"><div class="tx"><b>ค่ำ</b><strong>18°</strong>
+        <small><svg width="20" height="20" style="color:#7FA8D8"><use href="#i-drop"/></svg>10%</small></div></div>
+    </div>
+
+    <div class="day-panel" data-panel="1">
+    <!-- วัน 1: Sounkyo — ธรรมชาติ+กระเช้า -->
+    <section class="place-sec" style="--pin:#7C63E0">
+      <div class="place-head">
+        <span class="pinico"><svg width="36" height="36"><use href="#i-pin-solid"/></svg></span>
+        <div><h2>Sounkyo Onsen</h2><p>หุบเขาน้ำตกและกระเช้าลอยฟ้าใจกลางไดเซ็ตสึซัง</p></div>
+        <span class="ptime">09:00–16:00</span>
+        <svg class="gdots" width="30" height="30"><use href="#i-dots"/></svg>
+          <svg class="caret" width="34" height="34"><use href="#i-up"/></svg>
+      </div>
+
+      <div class="timeline">
+        <article class="act">
+          <div class="act-row"><img src="art/act_kurodake.png">
+            <div class="m"><b>Kurodake Ropeway <span class="th">(กระเช้าคุโรดาเกะ)</span></b><small>ขึ้นกระเช้าชมวิวหิมะแบบพาโนรามา</small></div>
+            <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>09:00</div>
+              <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1.5 ชม.</div></div>
+            <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div>
+          <ul class="sub"><li><b>ขึ้นกระเช้าสถานีล่าง</b><span>09:00</span></li><li><b>ชมวิวหิมะจุดสูงสุด</b><span>09:30</span></li><li><b>เดินหิมะช่วงสั้น</b><span>10:00</span></li></ul></article>
+        <article class="act">
+          <div class="act-row"><img src="art/act_ginga.png">
+            <div class="m"><b>Ginga &amp; Ryusei Falls <span class="th">(น้ำตกกินงะ-เรียวเซ)</span></b><small>น้ำตกคู่แฝดกลางหุบเขาน้ำแข็ง</small></div>
+            <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>11:30</div>
+              <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1 ชม.</div></div>
+            <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+        <article class="act">
+          <div class="act-row"><img src="art/act_kurodake.png">
+            <div class="m"><b>แช่ออนเซ็นผ่อนคลาย <span class="th">(Sounkyo Onsen)</span></b><small>แช่น้ำร้อนหลังเดินเล่นทั้งวัน</small></div>
+            <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>14:00</div>
+              <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>2 ชม.</div></div>
+            <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+      </div>
+
+      <button class="addact"><svg width="30" height="30" class="ic-pin"><use href="#i-plusc"/></svg>เพิ่มสถานที่ใน Sounkyo Onsen</button>
+    </section>
+    </div>
+
+    <!-- วัน 2: Sounkyo — เทศกาลน้ำแข็ง -->
+    <div class="day-panel" data-panel="2" hidden>
+      <section class="place-sec" style="--pin:#7C63E0">
+        <div class="place-head">
+          <span class="pinico"><svg width="36" height="36"><use href="#i-pin-solid"/></svg></span>
+          <div><h2>Sounkyo Onsen</h2><p>เทศกาลน้ำแข็งประจำปีกลางหุบเขา</p></div>
+          <span class="ptime">15:00–20:00</span>
+          <svg class="gdots" width="30" height="30"><use href="#i-dots"/></svg>
+          <svg class="caret" width="34" height="34"><use href="#i-up"/></svg>
+        </div>
+        <div class="timeline">
+          <article class="act">
+            <div class="act-row"><img src="art/act_ginga.png">
+              <div class="m"><b>เดินเล่นตลาดของที่ระลึก</b><small>เลือกซื้อของฝากก่อนค่ำ</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>15:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1.5 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+          <article class="act">
+            <div class="act-row"><img src="art/act_kurodake.png">
+              <div class="m"><b>Sounkyo Hyoubaku Matsuri <span class="th">(เทศกาลน้ำแข็งซุงเคียว)</span></b><small>ประติมากรรมน้ำแข็งและแสงไฟยามค่ำ</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>18:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>2 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div>
+            <ul class="sub"><li><b>ชมประติมากรรมน้ำแข็ง</b><span>18:00</span></li><li><b>ถ่ายรูปแสงไฟกลางคืน</b><span>18:40</span></li></ul></article>
+        </div>
+        <button class="addact"><svg width="30" height="30" class="ic-pin"><use href="#i-plusc"/></svg>เพิ่มสถานที่ใน Sounkyo Onsen</button>
+      </section>
+    </div>
+
+    <!-- วัน 3: Lake Akan — วัฒนธรรมไอนุ -->
+    <div class="day-panel" data-panel="3" hidden>
+      <section class="place-sec" style="--pin:#EF5A85">
+        <div class="place-head">
+          <span class="pinico"><svg width="36" height="36"><use href="#i-pin-solid"/></svg></span>
+          <div><h2>Akan Ainu Kotan</h2><p>หมู่บ้านวัฒนธรรมไอนุริมทะเลสาบอากัง</p></div>
+          <span class="ptime">10:00–16:00</span>
+          <svg class="gdots" width="30" height="30"><use href="#i-dots"/></svg>
+          <svg class="caret" width="34" height="34"><use href="#i-up"/></svg>
+        </div>
+        <div class="timeline">
+          <article class="act">
+            <div class="act-row"><img src="art/act_ainukotan.png">
+              <div class="m"><b>Akan Ainu Kotan <span class="th">(หมู่บ้านชาวไอนุ)</span></b><small>ชมการแสดงพื้นเมืองและร้านฝีมือแกะสลัก</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>10:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>2 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div>
+            <ul class="sub"><li><b>ชมการแสดงพื้นเมือง</b><span>10:30</span></li><li><b>เดินชมร้านฝีมือ</b><span>11:30</span></li></ul></article>
+          <article class="act">
+            <div class="act-row"><img src="art/act_marimo.png">
+              <div class="m"><b>ศูนย์จัดแสดงมาริโมะ <span class="th">(Marimo Exhibition Center)</span></b><small>ชมตะไคร่น้ำทรงกลมหายากของทะเลสาบอากัง</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>13:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+          <article class="act">
+            <div class="act-row"><img src="art/act_marimo.png">
+              <div class="m"><b>เดินเล่นรอบทะเลสาบอากัง</b><small>ชมวิวภูเขาไฟรอบทะเลสาบยามบ่าย</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>14:30</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1.5 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+        </div>
+        <button class="addact"><svg width="30" height="30" class="ic-pin"><use href="#i-plusc"/></svg>เพิ่มสถานที่ใน Akan Ainu Kotan</button>
+      </section>
+    </div>
+
+    <!-- วัน 4: Lake Akan — กิจกรรมกลางแจ้ง -->
+    <div class="day-panel" data-panel="4" hidden>
+      <section class="place-sec" style="--pin:#EF5A85">
+        <div class="place-head">
+          <span class="pinico"><svg width="36" height="36"><use href="#i-pin-solid"/></svg></span>
+          <div><h2>Lake Akan</h2><p>กิจกรรมฤดูหนาวบนทะเลสาบที่กลายเป็นน้ำแข็ง</p></div>
+          <span class="ptime">09:00–15:00</span>
+          <svg class="gdots" width="30" height="30"><use href="#i-dots"/></svg>
+          <svg class="caret" width="34" height="34"><use href="#i-up"/></svg>
+        </div>
+        <div class="timeline">
+          <article class="act">
+            <div class="act-row"><img src="art/act_marimo.png">
+              <div class="m"><b>ตกปลาน้ำแข็ง Wakasagi <span class="th">(Ice Fishing)</span></b><small>ตกปลาวากาซากิกลางทะเลสาบน้ำแข็ง</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>09:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>2.5 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+          <article class="act">
+            <div class="act-row"><img src="art/act_ainukotan.png">
+              <div class="m"><b>Akan Adventure Park</b><small>เดินหิมะและสโนว์ชูรอบป่าสน</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>13:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>2 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+        </div>
+        <button class="addact"><svg width="30" height="30" class="ic-pin"><use href="#i-plusc"/></svg>เพิ่มสถานที่ใน Lake Akan</button>
+      </section>
+    </div>
+
+    <!-- วัน 5: Kushiro — นกกระเรียนมงคล -->
+    <div class="day-panel" data-panel="5" hidden>
+      <section class="place-sec" style="--pin:#4CB682">
+        <div class="place-head">
+          <span class="pinico"><svg width="36" height="36"><use href="#i-pin-solid"/></svg></span>
+          <div><h2>Kushiro</h2><p>ชมนกกระเรียนมงคลและตลาดริมท่าเรือ</p></div>
+          <span class="ptime">08:00–15:00</span>
+          <svg class="gdots" width="30" height="30"><use href="#i-dots"/></svg>
+          <svg class="caret" width="34" height="34"><use href="#i-up"/></svg>
+        </div>
+        <div class="timeline">
+          <article class="act">
+            <div class="act-row"><img src="art/act_crane.png">
+              <div class="m"><b>Tsurumidai <span class="th">(จุดชมนกกระเรียนมงคล)</span></b><small>ชมฝูงนกกระเรียนแดงกลางหิมะยามเช้าตรู่</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>08:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1.5 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+          <article class="act">
+            <div class="act-row"><img src="art/act_nusamai.png">
+              <div class="m"><b>Kushiro Fisherman's Wharf MOO</b><small>มื้อกลางวันอาหารทะเลสดริมแม่น้ำ</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>12:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1.5 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+          <article class="act">
+            <div class="act-row"><img src="art/act_nusamai.png">
+              <div class="m"><b>Nusamai Bridge <span class="th">(สะพานนุซามัย)</span></b><small>เดินชมวิวแม่น้ำคุชิโระยามบ่าย</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>14:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+        </div>
+        <button class="addact"><svg width="30" height="30" class="ic-pin"><use href="#i-plusc"/></svg>เพิ่มสถานที่ใน Kushiro</button>
+      </section>
+    </div>
+
+    <!-- วัน 6: Kushiro — หมอกยามเช้าและกลับ -->
+    <div class="day-panel" data-panel="6" hidden>
+      <section class="place-sec" style="--pin:#4CB682">
+        <div class="place-head">
+          <span class="pinico"><svg width="36" height="36"><use href="#i-pin-solid"/></svg></span>
+          <div><h2>Kushiro</h2><p>หมอกยามเช้าริมแม่น้ำก่อนเดินทางกลับ</p></div>
+          <span class="ptime">07:00–12:00</span>
+          <svg class="gdots" width="30" height="30"><use href="#i-dots"/></svg>
+          <svg class="caret" width="34" height="34"><use href="#i-up"/></svg>
+        </div>
+        <div class="timeline">
+          <article class="act">
+            <div class="act-row"><img src="art/act_crane.png">
+              <div class="m"><b>Kushiro River Morning Mist</b><small>ล่องเรือชมหมอกน้ำแข็งยามเช้า</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>07:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1.5 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+          <article class="act">
+            <div class="act-row"><img src="art/act_nusamai.png">
+              <div class="m"><b>ช้อปปิ้งของฝากก่อนกลับ</b><small>เลือกซื้อของฝากที่ตลาดวาโช</small></div>
+              <div class="tm"><div><svg width="24" height="24" class="ic-pin"><use href="#i-clock"/></svg>10:00</div>
+                <div><svg width="22" height="22" style="color:#A6AEBD"><use href="#i-clock"/></svg>1.5 ชม.</div></div>
+              <svg class="dots" width="30" height="30"><use href="#i-dots"/></svg></div></article>
+        </div>
+        <button class="addact"><svg width="30" height="30" class="ic-pin"><use href="#i-plusc"/></svg>เพิ่มสถานที่ใน Kushiro</button>
+      </section>
+    </div>
+
+    <!-- วันที่ยังไม่ได้วางแผน -->
+    <div class="day-panel day-empty" data-panel="empty" hidden>
+      <div class="empty-box">
+        <span class="ico"><svg width="42" height="42"><use href="#i-pin-solid"/></svg></span>
+        <b>ยังไม่มีแผนสำหรับวันนี้</b>
+        <small>เพิ่มสถานที่แรกเพื่อเริ่มวางแผนวันนี้</small>
+        <button class="empty-btn"><svg width="28" height="28"><use href="#i-plusc"/></svg>เพิ่มสถานที่</button>
+      </div>
+    </div>
+
+    <button class="fab"><span class="pl">+</span><small>เพิ่มสถานที่</small></button>
+  </div>
+
+  <nav class="bottom" data-nav></nav>
+</section>
+
+<!-- =====================================================  WALLET  ===================================================== -->
+<section class="screen" id="s-wallet">
+  <div class="hero" style="height:470px">
+    <img class="bg" src="art/hero_plan_hokkaido5.png" alt="">
+    <div class="statusbar"><div class="t">9:41</div><div class="r"><svg width="90" height="24"><use href="#i-status"/></svg></div></div>
+  </div>
+
+  <div class="card wcard">
+    <img class="cam" src="art/st_camera.png" alt="">
+    <div class="lbl-row" style="font-size:30px">ยอดเงินในทริปทั้งหมด <svg width="30" height="30" style="color:#16294D"><use href="#i-eye"/></svg></div>
+    <div class="wtotal">¥ 256,800.00</div>
+    <div class="wthb">≈ ฿ 60,320.00</div>
+
+    <div class="curs">
+      <div class="cur thb"><div class="r1"><img src="art/flag_thb.png"><span class="code">THB</span></div><div class="val">฿ 48,520.00</div></div>
+      <div class="cur sel"><img class="badge" src="art/ic_check.png"><div class="r1"><img src="art/flag_jpy.png"><span class="code">JPY</span></div><div class="val">¥ 256,800.00</div></div>
+      <div class="cur"><div class="r1"><img src="art/flag_usd.png"><span class="code">USD</span></div><div class="val">$ 1,750.00</div></div>
+    </div>
+  </div>
+
+  <button class="dashbtn">
+    <img src="art/st_newwallet.png" alt="">
+    <span class="tx"><b>สร้างกระเป๋าใหม่</b><small>จัดการงบให้แต่ละสกุลเงิน</small></span>
+    <svg class="go" width="34" height="34"><use href="#i-chev"/></svg>
+  </button>
+
+  <button class="fundbtn">
+    <img src="art/ic_fundwallet.png" alt="">
+    <b>เติมเงินเข้าทริป</b>
+    <svg class="go" width="34" height="34"><use href="#i-chev"/></svg>
+  </button>
+
+  <div class="card walletcard">
+    <div class="wch">
+      <img src="art/flag_jpy_lg.png" alt="">
+      <div class="nm"><b>กระเป๋าเยน (JPY)</b><span class="tag">ใช้งานอยู่</span></div>
+      <div class="rt">¥ 256,800.00 <svg width="28" height="28" style="color:#C3CAD6"><use href="#i-chev"/></svg></div>
+    </div>
+    <div class="wrate"><small>อัตราแลกเปลี่ยนเฉลี่ย</small>
+      <b>฿ 0.2350 / ¥ <svg width="24" height="24" style="color:#A6AEBD"><use href="#i-info"/></svg></b></div>
+
+    <div class="stats">
+      <div class="g"><span>เติมแล้ว</span><b>¥ 280,000.00</b></div>
+      <div class="r"><span>ใช้ไป</span><b>¥ 23,200.00</b></div>
+      <div class="n"><span>คงเหลือ</span><b>¥ 256,800.00</b></div>
+    </div>
+
+    <div class="wsec"><h3>รายการล่าสุด</h3><a>ดูทั้งหมด</a></div>
+    <div class="wex"><img src="art/ex_food.png"><div class="m"><b>อาหารกลางวัน – ราเมง</b><small>15 มิ.ย. 2025  •  โตเกียว</small></div>
+      <span class="a">(¥ 1,650.00)</span><svg class="c" width="24" height="24"><use href="#i-chev"/></svg></div>
+    <div class="wex"><img src="art/ex_train.png"><div class="m"><b>บัตรรถไฟ – JR Pass</b><small>14 มิ.ย. 2025  •  โตเกียว</small></div>
+      <span class="a">(¥ 15,000.00)</span><svg class="c" width="24" height="24"><use href="#i-chev"/></svg></div>
+    <div class="wex"><img src="art/ex_shop.png"><div class="m"><b>ช้อปปิ้ง – ชินไซบาชิ</b><small>13 มิ.ย. 2025  •  โอซาก้า</small></div>
+      <span class="a">(¥ 6,550.00)</span><svg class="c" width="24" height="24"><use href="#i-chev"/></svg></div>
+  </div>
+
+  <nav class="bottom" data-nav></nav>
+</section>
+
+<!-- =====================================================  SETTINGS  ===================================================== -->
+<section class="screen" id="s-settings">
+  <div class="hero" style="height:470px">
+    <img class="bg" src="art/hero_plan_hokkaido5.png" alt="">
+    <div class="statusbar"><div class="t">9:41</div><div class="r"><svg width="90" height="24"><use href="#i-status"/></svg></div></div>
+  </div>
+
+  <div class="setrow first-card"><img src="art/set_members.png">
+    <div class="m"><b>สมาชิกทริป</b><small>จัดการสมาชิกและบทบาท</small></div>
+    <span class="v">4 คน</span><svg class="c" width="28" height="28"><use href="#i-chev"/></svg></div>
+
+  <div class="setrow"><img src="art/set_budget.png">
+    <div class="m"><b>งบประมาณ</b><small>ตั้งและจัดการงบประมาณทริป</small></div>
+    <span class="v">฿ 120,000.00</span><svg class="c" width="28" height="28"><use href="#i-chev"/></svg></div>
+
+  <div class="setrow"><img src="art/set_docs.png">
+    <div class="m"><b>เอกสาร</b><small>จัดการเอกสารการเดินทาง</small></div>
+    <span class="v">3 รายการ</span><svg class="c" width="28" height="28"><use href="#i-chev"/></svg></div>
+
+  <div class="setrow"><img src="art/set_currency.png">
+    <div class="m"><b>สกุลเงิน</b><small>เลือกสกุลเงินหลักของทริป</small></div>
+    <span class="v">THB (฿)</span><svg class="c" width="28" height="28"><use href="#i-chev"/></svg></div>
+
+  <div class="setrow"><img src="art/set_weather.png">
+    <div class="m"><b>การแจ้งเตือนอากาศ</b><small>เปิดรับการแจ้งเตือนสภาพอากาศ</small></div>
+    <span class="toggle"></span></div>
+
+  <div class="bannercard">
+    <div class="hd"><img src="art/set_banner.png">
+      <div class="m" style="flex:1"><b style="display:block;font:600 30px var(--f-body);color:var(--navy)">รูปภาพ banner</b>
+        <small style="display:block;font:400 21px var(--f-body);color:var(--muted);margin-top:8px">เลือกภาพสำหรับหน้าทริปของคุณ</small></div>
+      <svg width="28" height="28" style="color:#B9C2D0"><use href="#i-chev"/></svg></div>
+    <div class="thumbs">
+      <div class="thumb sel"><img src="art/banner_1.png"><span class="ck"><svg width="26" height="26"><use href="#i-check"/></svg></span></div>
+      <div class="thumb"><img src="art/banner_2.png"></div>
+      <div class="thumb"><img src="art/banner_3.png"></div>
+      <div class="thumb"><img src="art/banner_4.png"></div>
+    </div>
+  </div>
+
+  <div class="closerow"><img src="art/set_close.png">
+    <div><b>ปิดทริปนี้</b><small>สรุปค่าใช้จ่ายและปิดทริปนี้อย่างถาวร</small></div>
+    <svg class="c" width="28" height="28"><use href="#i-chev"/></svg></div>
+
+  <nav class="bottom" data-nav></nav>
+</section>
+
+<!-- ===== bottom sheet เมนูย้าย / แก้ไข ===== -->
+<div class="sheet-mask" id="sheetMask" hidden></div>
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-grip"></div>
+  <div class="sheet-head"><b id="sheetTitle">Senso-ji Temple</b><small id="sheetSub">Asakusa · วัน 1</small></div>
+  <div class="sheet-body" id="sheetBody"></div>
+  <button class="sheet-cancel" data-close>ยกเลิก</button>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+
+
+
+</div>
+
+
+</div>
+
+<script src="prototype.js"></script>
+</body>
+</html>

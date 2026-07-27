@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#D5F0EC"/><stop offset="1" stop-color="#0F6E63"/></linearGradient></defs>
+<circle cx="96" cy="96" r="92" fill="url(#g)"/>
+<circle cx="96" cy="96" r="74" fill="#D5F0EC"/>
+<circle cx="96" cy="96" r="74" fill="none" stroke="#FFFFFF" stroke-width="7"/>
+<circle cx="96" cy="96" r="60" fill="none" stroke="#0F6E63" stroke-width="4" opacity=".38"/>
+<text x="96" y="96" text-anchor="middle" dominant-baseline="central"
+  font-family="Poppins,Helvetica,Arial,DejaVu Sans,sans-serif" font-weight="700"
+  font-size="46" fill="#0F6E63">RM</text>
+</svg>

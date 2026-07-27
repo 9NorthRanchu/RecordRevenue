@@ -11,3 +11,6 @@ venv/
 # os / logs
 .DS_Store
 *.log
+backup-before-trip-finance.sql
+backend/db/live_backup.sql
+backend/db/seed_historical_data.sql

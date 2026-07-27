@@ -1,0 +1,2236 @@
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const $ = (selector, root = document) => root.querySelector(selector);
+
+/* scrollIntoView is a no-op on a display:none element, so the active day tab
+   has to be centred after the plan screen is actually visible — not inside
+   renderPlanWorkspace(), which usually runs while the screen is still hidden. */
+function scrollActiveDayTab() {
+  $('#planDayTabs .active')?.scrollIntoView({ block:'nearest', inline:'center', behavior:'smooth' });
+}
+
+function showScreen(name) {
+  $$('.screen').forEach(screen => screen.classList.toggle('active', screen.id === `screen-${name}`));
+  $$('[data-screen]').forEach(button => button.classList.toggle('active', button.dataset.screen === name));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (name === 'plan') requestAnimationFrame(scrollActiveDayTab);
+}
+
+$$('[data-screen]').forEach(button => button.addEventListener('click', () => showScreen(button.dataset.screen)));
+
+const mask = $('#sheetMask');
+const sheet = $('#expenseSheet');
+const dialog = $('#closeDialog');
+const planEditor = $('#planEditor');
+
+function openSheet() {
+  if (blockedByClose()) return;
+  mask.classList.add('open');
+  sheet.classList.add('open');
+  sheet.setAttribute('aria-hidden', 'false');
+  resetQuickAdd();
+  showStep(1);
+}
+
+function closeLayers() {
+  mask.classList.remove('open');
+  [sheet, dialog, planEditor, $('#assetPicker'), $('#newTripDialog'), $('#currencyDialog'),
+   $('#fundDialog'), $('#walletDialog'), $('#reopenDialog')].forEach(layer => {
+    layer.classList.remove('open');
+    layer.setAttribute('aria-hidden', 'true');
+  });
+}
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeLayers();
+});
+
+function showStep(step) {
+  $$('.sheet-step').forEach(item => item.classList.toggle('active', Number(item.dataset.step) === step));
+}
+
+$$('.add-expense').forEach(button => button.addEventListener('click', openSheet));
+$('.sheet-close').addEventListener('click', closeLayers);
+// `.dialog-close` is the absolutely-positioned × ; `.close-layer` is an inline
+// cancel button. Keeping them separate stops cancel inheriting × 's position.
+$$('.dialog-close, .close-layer').forEach(button => button.addEventListener('click', closeLayers));
+mask.addEventListener('click', closeLayers);
+$$('.next-step').forEach(button => button.addEventListener('click', () => {
+  const current = Number(button.closest('.sheet-step').dataset.step);
+  showStep(Math.min(3, current + 1));
+}));
+$$('.prev-step').forEach(button => button.addEventListener('click', () => {
+  const current = Number(button.closest('.sheet-step').dataset.step);
+  showStep(Math.max(1, current - 1));
+}));
+
+$('#sharedToggle').addEventListener('click', event => {
+  event.currentTarget.classList.toggle('on');
+  refreshQuickAdd();
+});
+
+/* Fallback art per kind, so a wallet or currency created before icons existed
+   still renders something instead of a broken image box. */
+const DEFAULT_ICONS = { wallet:'art/icons/wallet_classic.svg', currency:'art/icons/coin_usd.svg' };
+const CURRENCY_ICON_BY_CODE = {
+  JPY:'art/icons/coin_jpy.svg', THB:'art/icons/coin_thb.svg', USD:'art/icons/coin_usd.svg',
+  EUR:'art/icons/coin_eur.svg', KRW:'art/icons/coin_krw.svg', GBP:'art/icons/coin_gbp.svg',
+  CNY:'art/icons/coin_cny.svg', SGD:'art/icons/coin_sgd.svg', AUD:'art/icons/coin_aud.svg',
+  TWD:'art/icons/coin_twd.svg', VND:'art/icons/coin_vnd.svg', MYR:'art/icons/coin_myr.svg'
+};
+
+const exchangeRate = 0.232;
+const TRIP_BUDGET_THB = 120000;
+/* Who the app is being viewed as. Switchable from the "เพิ่มเติม" screen so the
+   visibility rules can actually be checked, instead of taken on trust. */
+let viewerId = 'north';
+
+/* Trip members. `ledgerMode` is the single source of truth for whether a bill
+   posts to the family's main ledger — it is never inferred from a display
+   string, so renaming a member can't silently reclassify their money. */
+const TRIP_END_DATE = '2027-02-19';
+
+const members = [
+  { id:'north', name:'North',  ledgerMode:'MAIN',      role:'ผู้ดูแล', admin:true },
+  { id:'nimz',  name:'Nimz',   ledgerMode:'MAIN',      role:'สมาชิก' },
+  { id:'ann',   name:'Ann',    ledgerMode:'TRIP_ONLY', role:'ผู้ร่วมทริป' },
+  { id:'mew',   name:'Mew',    ledgerMode:'TRIP_ONLY', role:'ผู้ร่วมทริป' }
+];
+
+/* Wallets belong to a member. The wallet a bill is drawn from is recorded
+   separately from who paid and whose money it was — the three can differ
+   (North taps his own card to cover a bill that is really Ann's expense). */
+let wallets = [
+  { id:'w-north-jpy', ownerId:'north', label:'YouTrip JPY', currency:'JPY', icon:'art/icons/wallet_classic.svg' },
+  { id:'w-north-thb', ownerId:'north', label:'YouTrip THB', currency:'THB', icon:'art/icons/wallet_mint.svg' },
+  { id:'w-ann-jpy',   ownerId:'ann',   label:'กระเป๋า Ann', currency:'JPY', icon:'art/icons/wallet_pouch.svg' }
+];
+
+const categoryIcons = {
+  'อาหาร':'ic_ramen.png', 'ที่พัก':'ic_hotel.png', 'ช้อปปิ้ง':'ic_gift.png',
+  'เดินทาง':'ic_train.png', 'กิจกรรม':'act_marimo.png', 'เครื่องดื่ม':'st_camera2.png', 'อื่น ๆ':'st_camera2.png'
+};
+const categoryNames = Object.keys(categoryIcons);
+
+const memberById = id => members.find(member => member.id === id);
+const walletById = id => wallets.find(wallet => wallet.id === id);
+const memberName = id => memberById(id)?.name || '—';
+const isTripOnly = ownerId => memberById(ownerId)?.ledgerMode === 'TRIP_ONLY';
+
+function seedBills() {
+  return [
+    { id:'hotel-sounkyo', title:'Hotel Sounkyo', amount:80000, currency:'JPY',
+      payerId:'ann', ownerId:'ann', walletId:'w-ann-jpy',
+      categories:[{ name:'ที่พัก', amount:72000 }, { name:'อาหาร', amount:8000 }],
+      visibility:'trip', shared:true, splitMode:'equal',
+      participants:[{ memberId:'north', amount:20000 },{ memberId:'nimz', amount:20000 },{ memberId:'ann', amount:20000 },{ memberId:'mew', amount:20000 }],
+      activityId:'sounkyo' },
+    { id:'crab-dinner', title:'มื้อเย็นร้านปู', amount:24000, currency:'JPY',
+      payerId:'north', ownerId:'north', walletId:'w-north-jpy',
+      categories:[{ name:'อาหาร', amount:24000 }],
+      visibility:'trip', shared:true, splitMode:'equal',
+      participants:[{ memberId:'north', amount:6000 },{ memberId:'nimz', amount:6000 },{ memberId:'ann', amount:6000 },{ memberId:'mew', amount:6000 }],
+      activityId:'ainu-kotan' },
+    { id:'personal-gift', title:'ของฝากส่วนตัว', amount:8500, currency:'JPY',
+      payerId:'north', ownerId:'north', walletId:'w-north-jpy',
+      categories:[{ name:'ช้อปปิ้ง', amount:8500 }],
+      visibility:'private', shared:false, splitMode:'equal',
+      participants:[{ memberId:'north', amount:8500 }], activityId:'akan-lake' }
+  ];
+}
+
+/* Funding lots per wallet. Average rate is Σ THB ÷ Σ foreign across every lot,
+   matching how the production trip-finance code weights a trip's rate. */
+function seedFundings() {
+  return [
+    { id:'f1', walletId:'w-north-jpy', date:'2027-02-05', thb:34800, foreign:150000, note:'เติมจากบัญชีหลัก' },
+    { id:'f2', walletId:'w-north-jpy', date:'2027-02-11', thb:23400, foreign:100000, note:'เติมระหว่างทริป' },
+    { id:'f3', walletId:'w-north-thb', date:'2027-02-05', thb:12000, foreign:12000, note:'เติมเงินบาท' },
+    { id:'f4', walletId:'w-ann-jpy',   date:'2027-02-06', thb:20880, foreign:90000, note:'Ann เติมเอง' }
+  ];
+}
+let fundings = seedFundings();
+
+let bills = seedBills();
+let activeBillFilter = 'all';
+
+/* ── Number formatting ────────────────────────────────────────────────
+   House rule: thousands separated, negatives wrapped in parentheses
+   (accounting style) rather than carrying a minus sign.
+   Applies to money and counts. Temperatures keep their minus sign —
+   "(6)°" would read as a bookkeeping figure, not weather. */
+function fmtAmount(value, symbol = '') {
+  const rounded = Math.round(Math.abs(value));
+  const body = `${symbol}${rounded.toLocaleString('en-US')}`;
+  return value < 0 ? `(${body})` : body;
+}
+const yen = value => fmtAmount(value, '¥');
+const thb = value => fmtAmount(value, '฿');
+const symbolFor = currency => (currency === 'THB' ? '฿' : '¥');
+
+function baht(value) {
+  return fmtAmount(value * exchangeRate, '฿ ');
+}
+
+/* Weighted average cost of a wallet's money: Σ THB ÷ Σ foreign over every
+   funding lot, exactly as production's computeTripWallets() does. Funding
+   dates deliberately play no part — the rate is recomputed from scratch each
+   time, so a lot entered late (or backdated) lands on the same answer as one
+   entered on the day. The trade-off is that already-recorded expenses are
+   restated when a new lot appears, which is fine because the baht value is
+   only locked when the trip closes.
+   Returns null when nothing has been funded yet — callers must not invent a
+   rate, or the user sees a plausible number the system actually guessed. */
+function walletRate(walletId) {
+  const lots = fundings.filter(row => row.walletId === walletId);
+  if (!lots.length) return null;
+  const foreign = lots.reduce((sum, row) => sum + row.foreign, 0);
+  return foreign ? lots.reduce((sum, row) => sum + row.thb, 0) / foreign : null;
+}
+
+/* Currencies declared for this trip. `planRate` is the rate the family expects
+   before any money is actually exchanged — having it means a brand-new trip can
+   still show baht figures, honestly labelled as an estimate, instead of either
+   refusing to convert or silently inventing a rate. */
+let tripCurrencies = [
+  { code:'THB', symbol:'฿', label:'บาทไทย', planRate:1, base:true, icon:'art/icons/coin_thb.svg' },
+  { code:'JPY', symbol:'¥', label:'เยนญี่ปุ่น', planRate:0.2320, icon:'art/icons/coin_jpy.svg' }
+];
+let tripClosed = false;
+let postingDate = '';
+let tripLog = [];
+
+const currencyByCode = code => tripCurrencies.find(row => row.code === code);
+
+/* Where a rate came from matters as much as its value, so this returns the
+   provenance too and the UI labels it:
+     base    — the trip's own currency, no conversion
+     actual  — weighted average of real funding lots, still moves until close
+     planned — the declared estimate, no money exchanged yet
+     locked  — frozen at trip close
+     none    — nothing to go on; never guess */
+function rateInfo(currencyCode, walletId) {
+  const currency = currencyByCode(currencyCode);
+  if (currency?.base) return { rate:1, source:'base' };
+  if (tripClosed) {
+    const locked = walletId ? walletById(walletId)?.lockedRate : null;
+    return { rate: locked ?? walletRate(walletId) ?? currency?.planRate ?? null, source:'locked' };
+  }
+  const actual = walletId ? walletRate(walletId) : null;
+  if (actual !== null) return { rate: actual, source:'actual' };
+  if (currency?.planRate) return { rate: currency.planRate, source:'planned' };
+  return { rate: null, source:'none' };
+}
+
+const RATE_BADGES = {
+  actual:  { text:'เรทยังไม่นิ่ง · จะล็อกตอนปิดทริป', cls:'live' },
+  planned: { text:'เรทประมาณการ · ยังไม่มีการเติมเงินจริง', cls:'planned' },
+  locked:  { text:'ล็อกแล้วเมื่อปิดทริป', cls:'locked' },
+  none:    { text:'ยังคำนวณมูลค่าเป็นบาทไม่ได้', cls:'none' }
+};
+
+function rateBadge(source) {
+  const badge = RATE_BADGES[source];
+  return badge ? `<span class="rate-badge ${badge.cls}">${badge.text}</span>` : '';
+}
+
+/* Bills in a THB wallet are already baht. Foreign bills are valued at their
+   own wallet's cost basis, not one trip-wide constant — two wallets funded at
+   different times genuinely hold money of different cost. */
+function billBaht(bill) {
+  const info = rateInfo(bill.currency, bill.walletId);
+  return info.rate === null ? 0 : bill.amount * info.rate;
+}
+
+// Bills still valued at an estimate, and bills that can't be valued at all.
+const billsBySource = (list, source) =>
+  list.filter(bill => rateInfo(bill.currency, bill.walletId).source === source);
+
+function billAmountLabel(bill) {
+  return fmtAmount(bill.amount, symbolFor(bill.currency));
+}
+
+const participantIdsOf = bill => (bill.participants || []).map(row => row.memberId);
+
+function billVisibilityLabel(bill) {
+  const people = participantIdsOf(bill).length;
+  if (bill.visibility === 'private') return 'ส่วนตัว';
+  if (bill.visibility === 'selected') return bill.shared ? `ผู้เกี่ยวข้อง · แบ่ง ${people} คน` : 'เฉพาะผู้เกี่ยวข้อง';
+  return bill.shared ? `ทุกคนเห็น · แบ่ง ${people} คน` : 'ทุกคนเห็น';
+}
+
+function billCategoryLabel(bill) {
+  return bill.categories.map(row => `${row.name} ${fmtAmount(row.amount, symbolFor(bill.currency))}`).join(' · ');
+}
+
+/* An explicitly chosen icon wins; otherwise fall back to the first category. */
+function billIcon(bill) {
+  return bill.image || `${ART}${categoryIcons[bill.categories[0]?.name] || 'st_camera2.png'}`;
+}
+
+/* Visibility gate — the prototype only ever renders what the signed-in member
+   is allowed to see, so PRIVATE bills of other members never reach the DOM. */
+function canSee(bill, viewer = viewerId) {
+  if (bill.visibility === 'trip') return true;
+  if (bill.ownerId === viewer || bill.payerId === viewer) return true;
+  if (bill.visibility === 'selected') return participantIdsOf(bill).includes(viewer);
+  return false;
+}
+
+function renderBills() {
+  const readable = bills.filter(bill => canSee(bill));
+  const visibleBills = readable.filter(bill => {
+    if (activeBillFilter === 'shared') return bill.shared;
+    if (activeBillFilter === 'mine') return bill.payerId === viewerId;
+    if (activeBillFilter === 'trip-only') return isTripOnly(bill.ownerId);
+    return true;
+  });
+
+  $('#billTable').innerHTML = visibleBills.length ? visibleBills.map(bill => {
+    const wallet = walletById(bill.walletId);
+    const payerLine = bill.payerId === bill.ownerId
+      ? `${memberName(bill.payerId)} จ่าย`
+      : `${memberName(bill.payerId)} จ่าย · เงินของ ${memberName(bill.ownerId)}`;
+    return `
+    <div class="bill-row" data-bill-id="${bill.id}">
+      <img src="${billIcon(bill)}" alt="">
+      <div><b>${bill.title}</b><small>${billCategoryLabel(bill)}</small><span class="tag ${bill.visibility === 'private' ? 'private' : 'shared'}">${billVisibilityLabel(bill)}</span></div>
+      <div class="payer"><small>${payerLine}</small><b>${billAmountLabel(bill)}</b><small class="wallet-line">ตัดจาก ${wallet ? wallet.label : '—'}</small><em>${isTripOnly(bill.ownerId) ? 'เฉพาะทริป' : 'ลงบัญชีหลัก'}</em></div>
+    </div>`;
+  }).join('') : `<div class="bill-empty">ไม่มีรายการในมุมมองนี้</div>`;
+
+  const sum = list => list.reduce((total, bill) => total + billBaht(bill), 0);
+  $('#billTotal').textContent = fmtAmount(sum(readable), '฿ ');
+  $('#billMine').textContent = fmtAmount(sum(readable.filter(bill => bill.payerId === viewerId && !isTripOnly(bill.ownerId))), '฿ ');
+  $('#billTripOnly').textContent = fmtAmount(sum(readable.filter(bill => isTripOnly(bill.ownerId))), '฿ ');
+
+  const planned = billsBySource(readable, 'planned');
+  const unknown = billsBySource(readable, 'none');
+  const notes = [];
+  if (unknown.length) notes.push(`⛔ ${unknown.length} บิลยังตีมูลค่าเป็นบาทไม่ได้ — สกุลเงินนี้ยังไม่มีทั้งเรทประมาณการและการเติมเงินจริง จึงไม่ถูกนับในยอดรวม`);
+  if (planned.length) notes.push(`📌 ${planned.length} บิลใช้<b>เรทประมาณการ</b>อยู่ เพราะกระเป๋านั้นยังไม่มีการเติมเงินจริง — ตัวเลขจะเปลี่ยนเมื่อบันทึกเติมเงิน`);
+  if (!unknown.length && !planned.length && readable.length) {
+    notes.push(tripClosed
+      ? '🔒 ทริปปิดแล้ว · <b>เรทถูกล็อกไว้ที่ค่าตอนปิดทริป</b> ตัวเลขทั้งหมดจะไม่ขยับอีก'
+      : '💱 ทุกบิลใช้เรทเฉลี่ยจริงของกระเป๋า · <b>เรทยังไม่นิ่ง จะล็อกตอนปิดทริป</b>');
+  }
+  $('#billNotice').innerHTML = notes.join('<br>');
+  $('#billNotice').className = `field-note bill-notice${unknown.length ? ' danger' : (planned.length ? '' : ' calm')}`;
+  const counter = $('#storageCount');
+  if (counter) counter.textContent = `${bills.length} รายการ`;
+  renderWallets();
+  renderMoneyStrip();
+  renderMembers();
+  renderCurrencies();
+  renderCloseLines();
+  renderPresence();
+  applyTripLock();
+  saveState();
+}
+
+/* ── Wallets ───────────────────────────────────────────────────────────
+   Balance and funding history are private to the wallet's owner, so the
+   screen only ever builds cards for wallets the current viewer owns. */
+function walletSummary(wallet) {
+  const lots = fundings.filter(row => row.walletId === wallet.id);
+  const fundedForeign = lots.reduce((sum, row) => sum + row.foreign, 0);
+  const fundedThb = lots.reduce((sum, row) => sum + row.thb, 0);
+  const spent = bills.filter(bill => bill.walletId === wallet.id)
+    .reduce((sum, bill) => sum + bill.amount, 0);
+  return {
+    lots, fundedForeign, fundedThb, spent,
+    rate: walletRate(wallet.id),          // null until something is funded
+    leftover: fundedForeign - spent
+  };
+}
+
+function renderWallets() {
+  const viewer = memberById(viewerId);
+  const owned = wallets.filter(wallet => wallet.ownerId === viewerId);
+  $('#walletHeading').textContent = `กระเป๋าของ ${viewer.name}`;
+  $('#walletPrivacy').innerHTML = owned.length
+    ? `🔒 ยอดคงเหลือและประวัติการเติมเงินนี้เห็นเฉพาะ ${viewer.name} และผู้ดูแลที่ได้รับสิทธิ์ · สมาชิกอื่นเห็นได้แค่บิลที่แชร์`
+    : `🔒 ${viewer.name} ยังไม่มีกระเป๋าของตัวเอง · ยอดของสมาชิกคนอื่นถูกซ่อนไว้ตามสิทธิ์`;
+
+  $('#walletGrid').innerHTML = owned.map(wallet => {
+    const s = walletSummary(wallet);
+    const symbol = symbolFor(wallet.currency);
+
+    /* Show which rate is in play, never a bare number: an estimate and a real
+       weighted average look identical otherwise. */
+    const info = rateInfo(wallet.currency, wallet.id);
+    const secondary = info.source === 'base'
+      ? 'ใช้สำหรับรายการที่ตัดเป็นเงินบาท'
+      : (info.rate === null
+        ? `<span class="unknown-rate">ยังไม่มีทั้งเรทประมาณการและการเติมเงิน</span>`
+        : `≈ ${thb(s.leftover * info.rate)} · ${info.source === 'planned' ? 'เรทประมาณการ' : 'เรทเฉลี่ย'} ฿${info.rate.toFixed(4)}/${symbol}`);
+    const badge = info.source === 'base' ? '' : rateBadge(info.source);
+
+    /* Spending more than the recorded funding almost always means a top-up
+       hasn't been logged yet, not that the card is overdrawn. Say which. */
+    const warning = s.leftover < 0
+      ? `<p class="wallet-warn">⚠️ ใช้เกินยอดที่บันทึกเติมไว้ ${fmtAmount(Math.abs(s.leftover), symbol)} — น่าจะยังบันทึกการเติมเงินไม่ครบ<br>
+         <small>บันทึกย้อนหลังได้ ระบบคิดเรทเฉลี่ยใหม่ทั้งทริปให้เอง ไม่ขึ้นกับลำดับที่บันทึก</small></p>`
+      : '';
+
+    return `
+    <article class="wallet-card ${wallet.currency.toLowerCase()}${s.leftover < 0 ? ' short' : ''}">
+      <div class="wallet-top">
+        <span class="wallet-id">
+          <img class="wallet-icon" src="${wallet.icon || DEFAULT_ICONS.wallet}" alt="">
+          <b>${wallet.label}</b>
+        </span>
+        <button type="button" class="icon-swap" data-wallet-icon="${wallet.id}" title="เปลี่ยนไอคอนกระเป๋า">🎨</button>
+      </div>
+      <strong>${fmtAmount(s.leftover, `${symbol} `)}</strong>
+      <small>${secondary}</small>
+      ${badge}
+      ${warning}
+      <div class="wallet-stats"><span>เติมแล้ว<b>${fmtAmount(s.fundedForeign, symbol)}</b></span><span>ใช้ไป<b>${fmtAmount(s.spent, symbol)}</b></span></div>
+      ${info.source === 'base' ? '' : `<label class="carry-toggle${wallet.excludeOnClose ? ' on' : ''}">
+        <input type="checkbox" data-carry-wallet="${wallet.id}" ${wallet.excludeOnClose ? 'checked' : ''} ${tripClosed ? 'disabled' : ''}>
+        <span><b>ยกยอดไปทริปหน้า</b><small>${wallet.excludeOnClose
+          ? 'เงินเหลือจะไม่คืนเข้าบัญชี · เก็บไว้เป็นล็อตตั้งต้นของทริปถัดไป'
+          : 'เงินเหลือจะถูกคืนเข้าบัญชีต้นทางตอนปิดทริป'}</small></span></label>`}
+      <button class="soft-btn" data-fund-wallet="${wallet.id}"${tripClosed ? " disabled" : ""}>＋ เติมเงิน</button>
+    </article>`;
+  }).join('') || `<div class="bill-empty">ไม่มีกระเป๋าให้แสดงในมุมมองนี้</div>`;
+
+  const ownedIds = owned.map(wallet => wallet.id);
+  const rows = [
+    ...bills.filter(bill => ownedIds.includes(bill.walletId)).map(bill => ({
+      sort: bill.id, title: bill.title,
+      note: bill.shared ? 'ค่าใช้จ่ายร่วม' : 'ส่วนตัว',
+      value: -bill.amount, currency: walletById(bill.walletId).currency
+    })),
+    ...fundings.filter(row => ownedIds.includes(row.walletId)).map(row => ({
+      sort: row.date, title: row.note,
+      note: `${row.date} · เห็นเฉพาะคุณ`,
+      value: row.foreign, currency: walletById(row.walletId).currency
+    }))
+  ];
+  $('#walletActivity').innerHTML = rows.length ? rows.map(row => `
+    <div><span>${row.title}<small>${row.note}</small></span>
+    <b class="${row.value < 0 ? 'minus' : 'plus'}">${fmtAmount(row.value, symbolFor(row.currency))}</b></div>`).join('')
+    : `<div class="bill-empty">ยังไม่มีความเคลื่อนไหว</div>`;
+}
+
+/* "ใช้วันนี้" now sums the bills actually linked to today's activities
+   instead of quoting a fixed number that never moved. */
+function renderMoneyStrip() {
+  const todayId = journeyStops[actualJourneyIndex].dayId;
+  const todayActivityIds = (planDays.find(day => day.id === todayId)?.activities || []).map(a => a.id);
+  const readable = bills.filter(bill => canSee(bill));
+  const todayThb = readable
+    .filter(bill => todayActivityIds.includes(bill.activityId))
+    .reduce((sum, bill) => sum + billBaht(bill), 0);
+  const tripThb = readable.reduce((sum, bill) => sum + billBaht(bill), 0);
+  const left = TRIP_BUDGET_THB - tripThb;
+
+  $('#spentLabel').textContent = `ใช้วันนี้ (Day ${journeyStops[actualJourneyIndex].day})`;
+  $('#spentToday').textContent = fmtAmount(todayThb, '฿ ');
+  $('#spentTodayNote').textContent = todayActivityIds.length
+    ? `จาก ${readable.filter(bill => todayActivityIds.includes(bill.activityId)).length} บิลที่ผูกกับกิจกรรมวันนี้`
+    : 'ยังไม่มีกิจกรรมในวันนี้';
+  $('#budgetLeft').textContent = fmtAmount(left, '฿ ');
+  $('#budgetNote').textContent = `${Math.round(Math.max(0, left) / TRIP_BUDGET_THB * 100)}% ของงบ ${fmtAmount(TRIP_BUDGET_THB, '฿')}`;
+  $('#budgetLeft').classList.toggle('over', left < 0);
+}
+
+function renderMembers() {
+  const faces = { north:'pink', nimz:'blue', ann:'cream', mew:'sage' };
+  $('#memberRows').innerHTML = members.map(member => `
+    <button type="button" class="member-row ${member.id === viewerId ? 'viewing' : ''}" data-view-as="${member.id}">
+      <i class="face ${faces[member.id] || 'pink'}">${member.name[0]}</i>
+      <span><b>${member.name}</b><small>${member.role} · ${member.ledgerMode === 'TRIP_ONLY' ? 'TRIP ONLY' : 'ลงบัญชีหลัก'}</small></span>
+      <em>${member.id === viewerId ? 'กำลังดูอยู่' : 'ดูมุมมองนี้'}</em>
+    </button>`).join('');
+}
+
+/* ── Trip currencies ──────────────────────────────────────────────── */
+const currencyDialog = $('#currencyDialog');
+let editingCurrency = null;
+let currencyIcon = DEFAULT_ICONS.currency;
+
+/* Reopens the currency form after picking, same pattern as the other forms. */
+$('#pickCurrencyIcon').addEventListener('click', () => openAssetPicker('currency', currencyIcon, src => {
+  currencyIcon = src;
+  $('#currencyIconPreview').src = src;
+  mask.classList.add('open');
+  currencyDialog.classList.add('open');
+  currencyDialog.setAttribute('aria-hidden', 'false');
+}));
+
+function walletsUsing(code) {
+  return wallets.filter(wallet => wallet.currency === code);
+}
+
+function renderCurrencies() {
+  $('#currencyRows').innerHTML = tripCurrencies.map(currency => {
+    const used = walletsUsing(currency.code);
+    const funded = used.some(wallet => walletRate(wallet.id) !== null);
+    const state = currency.base ? 'สกุลหลักของทริป'
+      : (funded ? 'มีการเติมเงินจริงแล้ว · ใช้เรทเฉลี่ยจริง' : 'ยังไม่มีการเติมเงิน · ใช้เรทประมาณการ');
+    return `
+    <div class="currency-row">
+      <span class="currency-mark"><img src="${currency.icon || CURRENCY_ICON_BY_CODE[currency.code] || DEFAULT_ICONS.currency}" alt=""></span>
+      <span class="currency-main"><b>${currency.code} · ${currency.label}</b><small>${state}</small></span>
+      <span class="currency-rate">${currency.base ? '—' : `฿${Number(currency.planRate).toFixed(4)}`}<small>${used.length} กระเป๋า</small></span>
+      <span class="currency-actions">
+        ${currency.base ? '' : `<button type="button" data-edit-currency="${currency.code}" ${tripClosed ? `disabled title="${TRIP_LOCK_REASON}"` : ''}>แก้ไข</button>
+        <button type="button" data-remove-currency="${currency.code}" ${tripClosed ? `disabled title="${TRIP_LOCK_REASON}"` : (used.length ? 'disabled title="ยังมีกระเป๋าใช้สกุลนี้อยู่"' : '')}>ลบ</button>`}
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function openCurrencyDialog(code = null) {
+  if (blockedByClose()) return;
+  closeLayers();
+  editingCurrency = code;
+  const currency = code ? currencyByCode(code) : null;
+  $('#currencyTitle').textContent = currency ? `แก้ไข ${currency.code}` : 'เพิ่มสกุลเงิน';
+  $('#currencyCode').value = currency?.code || '';
+  $('#currencyCode').disabled = Boolean(currency);
+  $('#currencySymbol').value = currency?.symbol || '';
+  $('#currencyLabel').value = currency?.label || '';
+  $('#currencyRate').value = currency ? Number(currency.planRate).toFixed(4) : '';
+  currencyIcon = currency?.icon || CURRENCY_ICON_BY_CODE[currency?.code] || DEFAULT_ICONS.currency;
+  $('#currencyIconPreview').src = currencyIcon;
+  $('#currencyError').textContent = '';
+  updateCurrencyPreview();
+  mask.classList.add('open');
+  currencyDialog.classList.add('open');
+  currencyDialog.setAttribute('aria-hidden', 'false');
+}
+
+function updateCurrencyPreview() {
+  const rate = Number($('#currencyRate').value.replace(/[^\d.]/g, '')) || 0;
+  const symbol = $('#currencySymbol').value || '?';
+  $('#currencyPreview').innerHTML = rate > 0
+    ? `ตัวอย่าง: <b>${symbol}10,000</b> ≈ <b>${fmtAmount(10000 * rate, '฿')}</b>`
+    : '';
+}
+$('#currencyRate').addEventListener('input', updateCurrencyPreview);
+$('#currencyCode').addEventListener('input', event => {
+  if (editingCurrency) return;
+  const suggested = CURRENCY_ICON_BY_CODE[event.target.value.trim().toUpperCase()];
+  if (suggested) {
+    currencyIcon = suggested;
+    $('#currencyIconPreview').src = suggested;
+  }
+});
+$('#currencySymbol').addEventListener('input', updateCurrencyPreview);
+
+$('#addCurrency').addEventListener('click', () => openCurrencyDialog());
+$('#currencyRows').addEventListener('click', event => {
+  const edit = event.target.closest('[data-edit-currency]');
+  const remove = event.target.closest('[data-remove-currency]');
+  if (edit) return openCurrencyDialog(edit.dataset.editCurrency);
+  if (!remove || remove.disabled) return;
+  const code = remove.dataset.removeCurrency;
+  if (blockedByClose() || walletsUsing(code).length) return;
+  tripCurrencies = tripCurrencies.filter(currency => currency.code !== code);
+  renderCurrencies();
+  renderBills();
+  showPrototypeToast(`ลบสกุลเงิน ${code} แล้ว`);
+});
+
+$('#currencyForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const code = $('#currencyCode').value.trim().toUpperCase();
+  const rate = Number($('#currencyRate').value.replace(/[^\d.]/g, ''));
+  const error = $('#currencyError');
+  error.textContent = '';
+  if (!/^[A-Z]{3}$/.test(code)) { error.textContent = 'รหัสสกุลต้องเป็นตัวอักษร 3 ตัว เช่น JPY'; return; }
+  if (!(rate > 0)) { error.textContent = 'เรทประมาณการต้องมากกว่า 0'; return; }
+  if (!editingCurrency && currencyByCode(code)) { error.textContent = `มีสกุล ${code} อยู่แล้ว`; return; }
+
+  const payload = { code, symbol:$('#currencySymbol').value.trim(), label:$('#currencyLabel').value.trim(), planRate:rate, icon:currencyIcon };
+  if (editingCurrency) {
+    Object.assign(currencyByCode(editingCurrency), payload);
+  } else {
+    tripCurrencies.push(payload);
+  }
+  closeLayers();
+  renderCurrencies();
+  renderBills();
+  showPrototypeToast(`${editingCurrency ? 'อัปเดต' : 'เพิ่ม'}สกุลเงิน ${code} แล้ว`);
+});
+
+$('#walletGrid').addEventListener('click', event => {
+  const swap = event.target.closest('[data-wallet-icon]');
+  const fund = event.target.closest('[data-fund-wallet]');
+  if (swap) {
+    const wallet = walletById(swap.dataset.walletIcon);
+    openAssetPicker('wallet', wallet.icon || DEFAULT_ICONS.wallet, src => {
+      wallet.icon = src;
+      renderBills();
+      showScreen('wallets');
+      showPrototypeToast(`เปลี่ยนไอคอน ${wallet.label} แล้ว`);
+    });
+    return;
+  }
+  if (fund) openFundDialog(fund.dataset.fundWallet);
+});
+
+$('#walletGrid').addEventListener('change', event => {
+  const carry = event.target.closest('[data-carry-wallet]');
+  if (!carry) return;
+  if (blockedByClose()) { carry.checked = !carry.checked; return; }
+  const wallet = walletById(carry.dataset.carryWallet);
+  wallet.excludeOnClose = carry.checked;
+  renderBills();
+  showScreen('wallets');
+  showPrototypeToast(wallet.excludeOnClose
+    ? `${wallet.label}: เงินเหลือจะยกไปทริปหน้า ไม่คืนเข้าบัญชี`
+    : `${wallet.label}: เงินเหลือจะคืนเข้าบัญชีต้นทางตามปกติ`);
+});
+
+/* ── Fund a wallet ────────────────────────────────────────────────────
+   A funding lot is what turns a planned rate into a real one, so the form
+   shows the resulting rate before and after this lot lands. */
+let fundingWalletId = null;
+
+function openFundDialog(walletId) {
+  if (blockedByClose()) return;
+  closeLayers();
+  fundingWalletId = walletId;
+  const wallet = walletById(walletId);
+  const info = rateInfo(wallet.currency, wallet.id);
+  $('#fundWalletInfo').innerHTML = `
+    <img src="${wallet.icon || DEFAULT_ICONS.wallet}" alt="">
+    <span><b>${wallet.label}</b><small>${wallet.currency} · ${info.rate === null ? 'ยังไม่มีเรท' : `เรทตอนนี้ ฿${info.rate.toFixed(4)}`} ${info.source === 'planned' ? '(ประมาณการ)' : ''}</small></span>`;
+  $('#fundThb').value = '';
+  $('#fundForeign').value = '';
+  $('#fundNote').value = '';
+  $('#fundDate').value = new Date().toISOString().slice(0, 10);
+  $('#fundError').textContent = '';
+  updateFundPreview();
+  mask.classList.add('open');
+  $('#fundDialog').classList.add('open');
+  $('#fundDialog').setAttribute('aria-hidden', 'false');
+}
+
+function updateFundPreview() {
+  if (!fundingWalletId) return;
+  const wallet = walletById(fundingWalletId);
+  const thbIn = Number($('#fundThb').value.replace(/[^\d.]/g, '')) || 0;
+  const foreignIn = Number($('#fundForeign').value.replace(/[^\d.]/g, '')) || 0;
+  const before = walletRate(fundingWalletId);
+  if (!thbIn || !foreignIn) { $('#fundPreview').innerHTML = ''; return; }
+
+  const lotRate = thbIn / foreignIn;
+  const lots = fundings.filter(row => row.walletId === fundingWalletId);
+  const totalThb = lots.reduce((sum, row) => sum + row.thb, 0) + thbIn;
+  const totalForeign = lots.reduce((sum, row) => sum + row.foreign, 0) + foreignIn;
+  const after = totalThb / totalForeign;
+  $('#fundPreview').innerHTML = `
+    <span>เรทของล็อตนี้<b>฿${lotRate.toFixed(4)}/${symbolFor(wallet.currency)}</b></span>
+    <span>เรทเฉลี่ยหลังเติม<b>฿${after.toFixed(4)}</b>${before === null ? '<small>เดิมยังไม่มีเรทจริง</small>' : `<small>เดิม ฿${before.toFixed(4)}</small>`}</span>`;
+}
+['#fundThb', '#fundForeign'].forEach(id => $(id).addEventListener('input', updateFundPreview));
+
+$('#fundForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const thbIn = Number($('#fundThb').value.replace(/[^\d.]/g, ''));
+  const foreignIn = Number($('#fundForeign').value.replace(/[^\d.]/g, ''));
+  if (!(thbIn > 0) || !(foreignIn > 0)) {
+    $('#fundError').textContent = 'กรอกทั้งยอดเงินบาทและยอดเงินสกุลนั้นให้มากกว่า 0';
+    return;
+  }
+  fundings.push({
+    id: `f-${Date.now()}`, walletId: fundingWalletId,
+    date: $('#fundDate').value, thb: thbIn, foreign: foreignIn,
+    note: $('#fundNote').value.trim() || 'เติมเงิน'
+  });
+  closeLayers();
+  renderBills();
+  showScreen('wallets');
+  showPrototypeToast(`เติม ${fmtAmount(foreignIn, symbolFor(walletById(fundingWalletId).currency))} แล้ว · เรทเฉลี่ยคำนวณใหม่`);
+});
+
+/* ── Add a wallet ── */
+let newWalletIcon = DEFAULT_ICONS.wallet;
+
+$('#pickWalletIcon').addEventListener('click', () => openAssetPicker('wallet', newWalletIcon, src => {
+  newWalletIcon = src;
+  $('#walletIconPreview').src = src;
+  mask.classList.add('open');
+  $('#walletDialog').classList.add('open');
+  $('#walletDialog').setAttribute('aria-hidden', 'false');
+}));
+
+$('#addWallet').addEventListener('click', () => {
+  if (blockedByClose()) return;
+  closeLayers();
+  newWalletIcon = DEFAULT_ICONS.wallet;
+  $('#walletIconPreview').src = newWalletIcon;
+  $('#walletLabel').value = '';
+  $('#walletError').textContent = '';
+  /* Foreign currencies first: a trip wallet is far more often for spending
+     abroad than for baht, and THB sitting at the top made it the silent
+     default every time. */
+  const ordered = [...tripCurrencies].sort((a, b) => Number(Boolean(a.base)) - Number(Boolean(b.base)));
+  $('#walletCurrency').innerHTML = ordered
+    .map(currency => `<option value="${currency.code}">${currency.code} · ${currency.label}${currency.base ? ' (สกุลหลัก)' : ''}</option>`).join('');
+  mask.classList.add('open');
+  $('#walletDialog').classList.add('open');
+  $('#walletDialog').setAttribute('aria-hidden', 'false');
+});
+
+$('#walletForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const label = $('#walletLabel').value.trim();
+  if (!label) { $('#walletError').textContent = 'ตั้งชื่อกระเป๋าก่อน'; return; }
+  wallets.push({
+    id: `w-${Date.now()}`, ownerId: viewerId, label,
+    currency: $('#walletCurrency').value, icon: newWalletIcon
+  });
+  closeLayers();
+  renderBills();
+  showScreen('wallets');
+  showPrototypeToast(`สร้างกระเป๋า ${label} แล้ว`);
+});
+
+$('#memberRows').addEventListener('click', event => {
+  const row = event.target.closest('[data-view-as]');
+  if (!row || row.dataset.viewAs === viewerId) return;
+  viewerId = row.dataset.viewAs;
+  renderBills();
+  showPrototypeToast(`กำลังดูในมุมมองของ ${memberName(viewerId)}`);
+});
+
+$$('[data-bill-filter]').forEach(button => button.addEventListener('click', () => {
+  activeBillFilter = button.dataset.billFilter;
+  renderBills();
+}));
+
+/* ── Quick Add ─────────────────────────────────────────────────────────
+   Payer, money-owner and wallet are three separate fields. Picking a wallet
+   guesses the other two, but the guess stops as soon as the user edits a
+   field by hand — otherwise correcting "who paid" silently reverted. */
+let payerTouched = false;
+let ownerTouched = false;
+
+let expenseIcon = '';
+let splitMode = 'equal';
+
+/* Split modes (requirement 7). Equal is derived; manual is entered in the
+   bill's currency and must total the bill; percent is entered in % and must
+   total 100. Every mode ends up as the same participants[{memberId,amount}]
+   shape so the rest of the app never has to know which was used. */
+function splitState(amount) {
+  const rows = $$('#peopleChecks .people-row')
+    .filter(row => $('input[type="checkbox"]', row).checked);
+  const read = row => Number($('.share-input', row).value.replace(/[^\d.]/g, '')) || 0;
+
+  if (!rows.length) return { valid:false, problem:'ยังไม่ได้เลือกผู้เกี่ยวข้อง', participants:[], entered:0 };
+
+  if (splitMode === 'equal') {
+    const each = amount / rows.length;
+    return {
+      valid: true, entered: amount, each,
+      participants: rows.map(row => ({ memberId: row.dataset.member, amount: each }))
+    };
+  }
+
+  const entered = rows.reduce((sum, row) => sum + read(row), 0);
+  if (splitMode === 'percent') {
+    return {
+      valid: Math.abs(entered - 100) < 0.5,
+      problem: `เปอร์เซ็นต์รวมได้ ${fmtAmount(entered)}% ต้องเป็น 100%`,
+      entered,
+      participants: rows.map(row => ({ memberId: row.dataset.member, amount: amount * read(row) / 100 }))
+    };
+  }
+  return {
+    valid: Math.abs(entered - amount) < 0.5,
+    problem: `ยอดที่กำหนดเองรวมได้ ${fmtAmount(entered)} ต้องเท่ากับยอดบิล ${fmtAmount(amount)}`,
+    entered,
+    participants: rows.map(row => ({ memberId: row.dataset.member, amount: read(row) }))
+  };
+}
+
+function splitSummary(split, symbol) {
+  if (splitMode === 'equal') {
+    return `แบ่งเท่ากันคนละ <b>${fmtAmount(split.each, symbol)}</b> · ${split.participants.length} คน`;
+  }
+  if (splitMode === 'percent') {
+    return split.valid
+      ? `รวม <b>100%</b> ✓ · ${split.participants.map(p => `${memberName(p.memberId)} ${fmtAmount(p.amount, symbol)}`).join(' · ')}`
+      : `<b>รวม ${fmtAmount(split.entered)}%</b> — ต้องได้ 100%`;
+  }
+  return split.valid
+    ? `รวม <b>${fmtAmount(split.entered, symbol)}</b> ✓ ตรงกับยอดบิล`
+    : `<b>รวม ${fmtAmount(split.entered, symbol)}</b> — ต้องเท่ากับยอดบิล`;
+}
+
+$('#splitMode').addEventListener('click', event => {
+  const button = event.target.closest('[data-split]');
+  if (!button) return;
+  splitMode = button.dataset.split;
+  $$('#splitMode button').forEach(item => item.classList.toggle('active', item === button));
+  // Seed manual/percent with the equal split so the user edits from a valid state.
+  const rows = $$('#peopleChecks .people-row').filter(row => $('input[type="checkbox"]', row).checked);
+  if (rows.length && splitMode !== 'equal') {
+    const value = splitMode === 'percent'
+      ? Math.round(100 / rows.length)
+      : Math.round(readAmount() / rows.length);
+    rows.forEach(row => { $('.share-input', row).value = value; });
+  }
+  refreshQuickAdd();
+});
+
+$('#pickExpenseIcon').addEventListener('click', () => openAssetPicker('expense', expenseIcon, src => {
+  expenseIcon = src;
+  $('#expenseIconPreview').src = src;
+  mask.classList.add('open');
+  sheet.classList.add('open');
+  sheet.setAttribute('aria-hidden', 'false');
+  showStep(2);
+}));
+
+const readAmount = () => Number($('#expenseAmount').value.replace(/[^\d.]/g, '')) || 0;
+const currentCurrency = () => walletById($('#walletSelect').value)?.currency || 'JPY';
+
+function splitRowMarkup(name = 'อาหาร', amount = '') {
+  return `<div class="split-row">
+    <select class="category-name">${categoryNames.map(item => `<option${item === name ? ' selected' : ''}>${item}</option>`).join('')}</select>
+    <input class="category-amount" inputmode="numeric" value="${amount}" placeholder="0">
+    <button type="button" class="remove-split" aria-label="ลบหมวดนี้">×</button>
+  </div>`;
+}
+
+function allocationState() {
+  const total = readAmount();
+  const allocated = $$('#splitRows .split-row').reduce((sum, row) =>
+    sum + (Number($('.category-amount', row).value.replace(/[^\d.]/g, '')) || 0), 0);
+  return { total, allocated, balanced: Math.abs(total - allocated) < 0.5 };
+}
+
+function refreshQuickAdd() {
+  const currency = currentCurrency();
+  const symbol = symbolFor(currency);
+  const amount = readAmount();
+  $('#amountSymbol').textContent = symbol;
+
+  /* Preview at the selected wallet's own average rate — quoting the trip
+     constant here would disagree with the figure the bill list then shows. */
+  const info = rateInfo(currency, $('#walletSelect').value);
+  $('#conversionLine').innerHTML = info.source === 'base'
+    ? 'บันทึกเป็นเงินบาทโดยตรง'
+    : (info.rate === null
+      ? '<span class="unknown-rate">สกุลนี้ยังไม่มีทั้งเรทประมาณการและการเติมเงิน · ตีมูลค่าไม่ได้</span>'
+      : `≈ ${fmtAmount(amount * info.rate, '฿ ')} · ${info.source === 'planned' ? 'เรทประมาณการ' : 'เรทเฉลี่ยของกระเป๋านี้'} ฿${info.rate.toFixed(4)}/${symbol} ${rateBadge(info.source)}`);
+
+  const { total, allocated, balanced } = allocationState();
+  const remaining = total - allocated;
+  $('#allocatedLine').innerHTML = `<span>จัดสรรแล้ว</span><b>${fmtAmount(allocated, symbol)} / ${fmtAmount(total, symbol)} ${
+    balanced ? '✓' : (remaining > 0 ? `· เหลือ ${fmtAmount(remaining, symbol)}` : `· เกิน ${fmtAmount(Math.abs(remaining), symbol)}`)
+  }</b>`;
+  $('#allocatedLine').classList.toggle('off-balance', !balanced);
+  $$('#splitRows .remove-split').forEach(button => {
+    button.disabled = $$('#splitRows .split-row').length <= 1;
+  });
+
+  const payerId = $('#expensePayer').value;
+  const ownerId = $('#expenseOwner').value;
+  const wallet = walletById($('#walletSelect').value);
+  const notes = [];
+  if (payerId !== ownerId) notes.push(`${memberName(payerId)} จ่ายแทน โดยเป็นเงินของ ${memberName(ownerId)}`);
+  if (wallet && wallet.ownerId !== payerId) notes.push(`⚠️ กระเป๋านี้เป็นของ ${memberName(wallet.ownerId)} แต่ระบุคนจ่ายเป็น ${memberName(payerId)}`);
+  notes.push(isTripOnly(ownerId)
+    ? `${memberName(ownerId)} เป็น TRIP ONLY — บิลนี้จะเก็บในประวัติทริป ไม่ลงบัญชีหลัก`
+    : `บิลนี้จะลงบัญชีหลักของ ${memberName(ownerId)} ตอนปิดทริป`);
+  $('#ownerNote').innerHTML = notes.join('<br>');
+
+  const shared = $('#sharedToggle').classList.contains('on');
+  const picked = $$('#peopleChecks input[type="checkbox"]:checked');
+  $('#peopleChecks').classList.toggle('disabled', !shared);
+  $('#splitMode').classList.toggle('disabled', !shared);
+
+  // Equal split is computed, so its inputs stay read-only and mirror the maths.
+  $$('#peopleChecks .people-row').forEach(row => {
+    const checked = $('input[type="checkbox"]', row).checked;
+    const input = $('.share-input', row);
+    row.classList.toggle('off', !checked);
+    input.hidden = splitMode === 'equal';
+    input.disabled = !checked;
+    const unit = $('.share-unit', row);
+    unit.textContent = splitMode === 'percent' ? '%' : symbol;
+    unit.hidden = splitMode === 'equal';
+  });
+
+  const split = splitState(amount);
+  $('#shareResult').innerHTML = !shared
+    ? 'ไม่แบ่งกับใคร — เป็นรายการเดี่ยว'
+    : (!picked.length ? '<b>เลือกผู้เกี่ยวข้องอย่างน้อย 1 คน</b>' : splitSummary(split, symbol));
+
+  const problems = [];
+  if (amount <= 0) problems.push('ยังไม่ได้กรอกจำนวนเงิน');
+  if (!balanced) problems.push('ยอดรวมของหมวดยังไม่เท่ากับยอดบิล');
+  if (shared && !picked.length) problems.push('ยังไม่ได้เลือกผู้เกี่ยวข้อง');
+  if (shared && picked.length && !split.valid) problems.push(split.problem);
+  $('#saveWarning').textContent = problems.length ? `บันทึกไม่ได้: ${problems.join(' · ')}` : '';
+  $('#saveExpense').disabled = problems.length > 0;
+}
+
+function resetQuickAdd() {
+  payerTouched = false;
+  ownerTouched = false;
+  $('#walletSelect').innerHTML = wallets.map(wallet =>
+    `<option value="${wallet.id}">${wallet.label} · ${memberName(wallet.ownerId)}${isTripOnly(wallet.ownerId) ? ' · TRIP ONLY' : ''}</option>`).join('');
+  const defaultWallet = wallets.find(wallet => wallet.ownerId === viewerId) || wallets[0];
+  $('#walletSelect').value = defaultWallet.id;
+
+  const memberOptions = members.map(member =>
+    `<option value="${member.id}">${member.name}${member.ledgerMode === 'TRIP_ONLY' ? ' · TRIP ONLY' : ''}</option>`).join('');
+  $('#expensePayer').innerHTML = memberOptions;
+  $('#expenseOwner').innerHTML = memberOptions;
+  $('#expensePayer').value = defaultWallet.ownerId;
+  $('#expenseOwner').value = defaultWallet.ownerId;
+
+  $('#expenseAmount').value = '';
+  $('#expenseDescription').value = '';
+  $('#visibility').value = 'trip';
+  $('#sharedToggle').classList.add('on');
+  $('#splitRows').innerHTML = splitRowMarkup();
+  splitMode = 'equal';
+  $$('#splitMode button').forEach(button => button.classList.toggle('active', button.dataset.split === 'equal'));
+  $('#peopleChecks').innerHTML = members.map(member => `
+    <div class="people-row" data-member="${member.id}">
+      <label><input type="checkbox" value="${member.id}" checked> ${member.name}</label>
+      <input class="share-input" inputmode="decimal" placeholder="0" hidden>
+      <span class="share-unit" hidden>¥</span>
+    </div>`).join('');
+
+  const activities = planDays.flatMap(day => day.activities.map(activity =>
+    `<option value="${activity.id}">Day ${day.day} · ${activity.name} ${activity.time}</option>`));
+  $('#expenseActivity').innerHTML = `<option value="">ไม่ระบุ</option>${activities.join('')}`;
+  expenseIcon = '';
+  $('#expenseIconPreview').src = `${ART}cat_food.png`;
+  refreshQuickAdd();
+}
+
+$('#walletSelect').addEventListener('change', () => {
+  const wallet = walletById($('#walletSelect').value);
+  if (wallet && !payerTouched) $('#expensePayer').value = wallet.ownerId;
+  if (wallet && !ownerTouched) $('#expenseOwner').value = wallet.ownerId;
+  refreshQuickAdd();
+});
+$('#expensePayer').addEventListener('change', () => { payerTouched = true; refreshQuickAdd(); });
+$('#expenseOwner').addEventListener('change', () => { ownerTouched = true; refreshQuickAdd(); });
+$('#expenseAmount').addEventListener('input', refreshQuickAdd);
+$('#visibility').addEventListener('change', refreshQuickAdd);
+$('#peopleChecks').addEventListener('change', refreshQuickAdd);
+$('#peopleChecks').addEventListener('input', refreshQuickAdd);
+$('#addSplitRow').addEventListener('click', () => {
+  const { total, allocated } = allocationState();
+  $('#splitRows').insertAdjacentHTML('beforeend', splitRowMarkup('อาหาร', Math.max(0, total - allocated) || ''));
+  refreshQuickAdd();
+});
+$('#splitRows').addEventListener('input', refreshQuickAdd);
+$('#splitRows').addEventListener('change', refreshQuickAdd);
+$('#splitRows').addEventListener('click', event => {
+  const remove = event.target.closest('.remove-split');
+  if (!remove || $$('#splitRows .split-row').length <= 1) return;
+  remove.closest('.split-row').remove();
+  refreshQuickAdd();
+});
+
+$('#saveExpense').addEventListener('click', () => {
+  if (blockedByClose()) { closeLayers(); return; }
+  const { balanced } = allocationState();
+  const amount = readAmount();
+  const shared = $('#sharedToggle').classList.contains('on');
+  const split = splitState(amount);
+  if (!balanced || amount <= 0 || (shared && (!split.participants.length || !split.valid))) return;
+
+  const ownerId = $('#expenseOwner').value;
+  const categories = $$('#splitRows .split-row').map(row => ({
+    name: $('.category-name', row).value,
+    amount: Number($('.category-amount', row).value.replace(/[^\d.]/g, '')) || 0
+  }));
+
+  bills.unshift({
+    id: `bill-${Date.now()}`,
+    title: $('#expenseDescription').value.trim() || 'ค่าใช้จ่ายใหม่',
+    amount,
+    currency: currentCurrency(),
+    payerId: $('#expensePayer').value,
+    ownerId,
+    walletId: $('#walletSelect').value,
+    categories,
+    visibility: $('#visibility').value,
+    shared,
+    splitMode: shared ? splitMode : 'equal',
+    participants: shared ? split.participants : [{ memberId: ownerId, amount }],
+    activityId: $('#expenseActivity').value,
+    image: expenseIcon || ''
+  });
+
+  closeLayers();
+  renderBills();
+  showScreen('bills');
+  showPrototypeToast(`บันทึก ${fmtAmount(amount, symbolFor(currentCurrency()))} แล้ว · ${isTripOnly(ownerId) ? 'เฉพาะทริป' : 'ลงบัญชีหลัก'}`);
+});
+
+/* ── Presence ──────────────────────────────────────────────────────────
+   Deliberately NOT background tracking: a member's position is only shared
+   while their app is open, and each check-in goes stale on its own. That's
+   why every record carries a timestamp rather than a live coordinate — if
+   nothing refreshes it, the UI degrades to "ข้อมูลเก่า" and then to nothing,
+   instead of implying someone is still being followed. */
+const PRESENCE_FRESH_MINUTES = 15;
+const minutesAgo = minutes => Date.now() - minutes * 60000;
+
+let presence = {
+  north: { sharing:true,  at:minutesAgo(2),  place:'Akanko Ainu Kotan', status:'arrived', stopIndex:1 },
+  nimz:  { sharing:true,  at:minutesAgo(11), place:'ระหว่างทางไป Ainu Kotan', status:'moving', stopIndex:0 },
+  ann:   { sharing:false, at:null, place:'', status:'off', stopIndex:null },
+  mew:   { sharing:true,  at:minutesAgo(48), place:'ที่พัก Lake Akan', status:'arrived', stopIndex:1 }
+};
+
+/* Only members who are actively sharing get a marker, and a stale one fades
+   rather than disappearing — vanishing would read as "they left", which the
+   data cannot actually say. Several people at one stop fan out around the pin
+   instead of stacking into an unreadable blob. */
+function renderPresenceMap() {
+  const layer = $('#presenceLayer');
+  if (!layer) return;
+  const pins = $$('.journey-pin');
+  const faces = { north:'#f6bfd0', nimz:'#c8e5ed', ann:'#f0dfbf', mew:'#c4e3cd' };
+  const byStop = {};
+
+  const markers = members.map(member => {
+    const row = presence[member.id];
+    if (!row?.sharing || row.stopIndex === null || row.at === null) return '';
+    const pin = pins[row.stopIndex];
+    if (!pin) return '';
+    const seat = (byStop[row.stopIndex] = (byStop[row.stopIndex] || 0) + 1) - 1;
+    const angle = (-125 + seat * 46) * Math.PI / 180;
+    const x = Number(pin.dataset.x) + Math.cos(angle) * 54;
+    const y = Number(pin.dataset.y) + Math.sin(angle) * 54;
+    const stale = (Date.now() - row.at) / 60000 > PRESENCE_FRESH_MINUTES;
+    return `
+      <g class="presence-mark ${stale ? 'stale' : 'live'}${member.id === viewerId ? ' me' : ''}" transform="translate(${x} ${y})">
+        <circle r="21" fill="${faces[member.id] || '#f6bfd0'}"/>
+        <text y="8">${member.name[0]}</text>
+        ${stale ? '' : '<circle class="ping" r="21" fill="none"/>'}
+        <title>${member.name} · ${presenceLabel(member.id).text}</title>
+      </g>`;
+  }).join('');
+  layer.innerHTML = markers;
+}
+
+function presenceLabel(memberId) {
+  const row = presence[memberId];
+  if (!row || !row.sharing) return { text:'ยังไม่แชร์ตำแหน่ง', cls:'off' };
+  if (!row.at) return { text:'เปิดแชร์แล้ว · ยังไม่เช็กอิน', cls:'idle' };
+  const mins = Math.round((Date.now() - row.at) / 60000);
+  if (mins > PRESENCE_FRESH_MINUTES) {
+    return { text:`ข้อมูลเก่า ${mins} นาที · แอปอาจปิดอยู่`, cls:'stale' };
+  }
+  const when = mins < 1 ? 'เมื่อสักครู่' : `${mins} นาทีที่แล้ว`;
+  return { text:`${row.status === 'arrived' ? 'ถึง' : 'กำลังไป'} ${row.place} · ${when}`, cls:'live' };
+}
+
+function renderPresence() {
+  const faces = { north:'pink', nimz:'blue', ann:'cream', mew:'sage' };
+  const me = presence[viewerId] || {};
+  $('#memberPresence').innerHTML = members.map(member => {
+    const label = presenceLabel(member.id);
+    const isMe = member.id === viewerId;
+    return `<span class="presence-chip ${label.cls}${isMe ? ' me' : ''}" title="${label.text}">
+      <i class="face ${faces[member.id] || 'pink'}">${member.name[0]}</i>
+      <b>${member.name}${isMe ? ' (คุณ)' : ''}</b><small>${label.text}</small></span>`;
+  }).join('');
+
+  $('#shareLocation').classList.toggle('sharing', Boolean(me.sharing));
+  $('#shareLocation').title = me.sharing ? 'กำลังแชร์ตำแหน่ง · กดเพื่อหยุด' : 'ไม่ได้แชร์ตำแหน่ง · กดเพื่อเริ่ม';
+  $('#presenceConsent').innerHTML = me.sharing
+    ? `📍 <b>${memberName(viewerId)} กำลังแชร์ตำแหน่ง</b> — เฉพาะขณะเปิดแอปเท่านั้น ไม่มีการติดตามเบื้องหลัง · ข้อมูลจะถือว่าเก่าหลัง ${PRESENCE_FRESH_MINUTES} นาที`
+    : `📍 คุณยังไม่ได้แชร์ตำแหน่ง — สมาชิกคนอื่นจะไม่เห็นว่าคุณอยู่ที่ไหน`;
+
+  renderPresenceMap();
+
+  const checkIn = $('#checkIn');
+  const mine = presence[viewerId];
+  const fresh = mine?.sharing && mine.at && (Date.now() - mine.at) / 60000 <= PRESENCE_FRESH_MINUTES;
+  checkIn.textContent = fresh ? '✓ เช็กอินแล้ว · เช็กอินอีกครั้ง' : '✓ เช็กอิน';
+  checkIn.disabled = !mine?.sharing;
+  checkIn.title = mine?.sharing ? '' : 'เปิดแชร์ตำแหน่งก่อนจึงจะเช็กอินได้';
+}
+
+$('#shareLocation').addEventListener('click', () => {
+  const me = presence[viewerId] || (presence[viewerId] = { sharing:false, at:null, place:'', status:'off' });
+  me.sharing = !me.sharing;
+  if (!me.sharing) { me.at = null; me.status = 'off'; me.place = ''; me.stopIndex = null; }
+  renderPresence();
+  saveState();
+  showPrototypeToast(me.sharing
+    ? 'เริ่มแชร์ตำแหน่ง — เฉพาะขณะเปิดแอป'
+    : 'หยุดแชร์ตำแหน่งแล้ว · ตำแหน่งเดิมถูกลบออกจากมุมมองของคนอื่น');
+});
+
+$('#checkIn').addEventListener('click', () => {
+  const me = presence[viewerId];
+  if (!me?.sharing) return;
+  const nextActivity = activePlanDay()?.activities?.[0];
+  me.at = Date.now();
+  me.status = 'arrived';
+  me.place = nextActivity ? nextActivity.name : 'จุดหมายวันนี้';
+  // Anchor to the map pin for the day being viewed, so the marker moves too.
+  const stop = journeyStops.findIndex(item => item.dayId === activePlanDayId);
+  me.stopIndex = stop >= 0 ? stop : actualJourneyIndex;
+  renderPresence();
+  saveState();
+  showPrototypeToast(`เช็กอินที่ ${me.place} แล้ว · สมาชิกที่คุณแชร์ด้วยจะเห็น`);
+});
+
+
+/* ── Trip lock ─────────────────────────────────────────────────────────
+   A closed trip's money is history: its totals have already been reported as
+   the amounts posted to the family ledger. Adding a bill afterwards would
+   silently make the two disagree, so every money-changing entry point is shut
+   — but the itinerary, banner and icons stay editable, since they don't move
+   a single number. Buttons are greyed *and* the handlers re-check, so the
+   rule holds even if a disabled attribute is bypassed. */
+const TRIP_LOCK_REASON = 'ทริปนี้ปิดแล้ว · แก้ตัวเลขการเงินไม่ได้ เพื่อให้ตรงกับยอดที่สรุปเข้าบัญชี';
+
+function blockedByClose() {
+  if (!tripClosed) return false;
+  showPrototypeToast(TRIP_LOCK_REASON);
+  return true;
+}
+
+function applyTripLock() {
+  const buttons = [...$$('.add-expense'), $('#addWallet'), $('#addCurrency')].filter(Boolean);
+  buttons.forEach(button => {
+    button.disabled = tripClosed;
+    button.title = tripClosed ? TRIP_LOCK_REASON : '';
+  });
+  $$('.trip-locked-note').forEach(note => { note.hidden = !tripClosed; });
+  document.body.classList.toggle('trip-closed', tripClosed);
+}
+
+/* ── Close trip ────────────────────────────────────────────────────────
+   Who owes what comes from participants[], not from who paid — the payer
+   only fronted the money. Each member's share is then routed by their
+   ledgerMode: MAIN posts to the family ledger, TRIP_ONLY stays in the trip's
+   own history and never touches the main books. */
+function computeCloseSummary() {
+  const perMember = new Map();
+  const problems = [];
+  let totalThb = 0;
+
+  bills.forEach(bill => {
+    const info = rateInfo(bill.currency, bill.walletId);
+    if (info.rate === null) {
+      problems.push(`"${bill.title}" ยังตีมูลค่าเป็นบาทไม่ได้ — ตั้งเรทประมาณการหรือบันทึกเติมเงินก่อน`);
+      return;
+    }
+    const shares = bill.participants || [];
+    const shareSum = shares.reduce((sum, row) => sum + row.amount, 0);
+    if (Math.abs(shareSum - bill.amount) > 0.5) {
+      problems.push(`"${bill.title}" ยอดที่แบ่งรวม ${fmtAmount(shareSum, symbolFor(bill.currency))} ไม่ตรงกับยอดบิล ${fmtAmount(bill.amount, symbolFor(bill.currency))}`);
+    }
+    totalThb += bill.amount * info.rate;
+    shares.forEach(share => {
+      const row = perMember.get(share.memberId) || { thb:0, bills:0 };
+      row.thb += share.amount * info.rate;
+      row.bills += 1;
+      perMember.set(share.memberId, row);
+    });
+  });
+
+  const rows = [...perMember.entries()].map(([memberId, row]) => ({
+    memberId, name: memberName(memberId), ...row,
+    tripOnly: isTripOnly(memberId)
+  })).sort((a, b) => b.thb - a.thb);
+
+  const toLedger = rows.filter(row => !row.tripOnly);
+  const tripOnly = rows.filter(row => row.tripOnly);
+  const sum = list => list.reduce((total, row) => total + row.thb, 0);
+
+  /* Leftover cash splits two ways. Returned money goes back to the source
+     account. Carried money stays as foreign currency for the next trip — and
+     must keep the baht cost it was bought at, otherwise the next trip would
+     revalue it at a new rate and invent a gain or loss that never happened. */
+  const leftovers = wallets.map(wallet => {
+    const s = walletSummary(wallet);
+    const info = rateInfo(wallet.currency, wallet.id);
+    return {
+      wallet, foreign: s.leftover,
+      thb: info.rate === null ? null : s.leftover * info.rate,
+      rate: info.rate,
+      carry: Boolean(wallet.excludeOnClose)
+    };
+  }).filter(row => Math.abs(row.foreign) > 0.5);
+
+  const returned = leftovers.filter(row => !row.carry);
+  const carried = leftovers.filter(row => row.carry);
+
+  leftovers.filter(row => row.foreign < 0).forEach(row => {
+    problems.push(`กระเป๋า "${row.wallet.label}" ใช้เกินยอดที่บันทึกเติมไว้ ${fmtAmount(Math.abs(row.foreign), symbolFor(row.wallet.currency))}`);
+  });
+
+  const allocated = sum(rows);
+  const balanced = Math.abs(allocated - totalThb) < 1 && !problems.length;
+  const carriedThb = carried.reduce((total, row) => total + (row.thb || 0), 0);
+  return { rows, toLedger, tripOnly, totalThb, allocated, leftovers, returned, carried, carriedThb,
+           problems, balanced, ledgerTotal: sum(toLedger), tripOnlyTotal: sum(tripOnly) };
+}
+
+const isAdmin = memberId => Boolean(memberById(memberId)?.admin);
+const thaiDate = iso => iso
+  ? new Date(`${iso}T00:00:00`).toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' })
+  : '—';
+
+function renderCloseLines() {
+  const s = computeCloseSummary();
+  $('#closeLines').innerHTML = `
+    <span>ค่าใช้จ่ายรวม<b>${fmtAmount(s.totalThb, '฿')}</b></span>
+    <span>ลงบัญชีหลัก<b>${fmtAmount(s.ledgerTotal, '฿')}</b></span>
+    <span>เฉพาะทริป<b>${fmtAmount(s.tripOnlyTotal, '฿')}</b></span>`;
+  $('#closePreview').textContent = tripClosed ? 'ทริปนี้ปิดแล้ว' : 'ดูพรีวิวปิดทริป';
+  $('#closePreview').disabled = tripClosed;
+
+  /* Reopening rewrites settled figures, so it stays with the trip admin. */
+  const reopen = $('#reopenTrip');
+  reopen.hidden = !tripClosed;
+  reopen.disabled = !isAdmin(viewerId);
+  reopen.title = isAdmin(viewerId) ? '' : `เฉพาะผู้ดูแลทริปเท่านั้น · ${memberName(viewerId)} ไม่มีสิทธิ์`;
+
+  /* The log doubles as the ledger's posting history: every entry carries a
+     signed effect and the running net is what the family books should show. */
+  const net = tripLog.reduce((sum, entry) => sum + (entry.ledgerTotal || 0), 0);
+  const netTripOnly = tripLog.reduce((sum, entry) => sum + (entry.tripOnlyTotal || 0), 0);
+  $('#tripLog').innerHTML = tripLog.length ? `
+    <h4 class="log-title">ประวัติการลงบัญชี</h4>
+    <ol class="trip-log">${[...tripLog].reverse().map(entry => `
+      <li class="${entry.type}">
+        <b>${entry.type === 'close' ? 'ปิดทริป · ลงบัญชี' : 'เปิดกลับ · กลับรายการเดิม'}</b>
+        <small>${entry.at} · โดย ${entry.by} · ลงวันที่ ${thaiDate(entry.postingDate)}</small>
+        <small class="log-amounts ${(entry.ledgerTotal || 0) < 0 ? 'negative' : ''}">บัญชีหลัก ${fmtAmount(entry.ledgerTotal || 0, '฿')} · เฉพาะทริป ${fmtAmount(entry.tripOnlyTotal || 0, '฿')}</small>
+        ${entry.fxResult ? `<small class="log-fx ${entry.fxResult < 0 ? 'loss' : 'gain'}">${entry.fxResult > 0 ? 'กำไร' : 'ขาดทุน'}อัตราแลกเปลี่ยน ${fmtAmount(Math.abs(entry.fxResult), '฿')}</small>` : ''}
+        ${entry.carriedThb ? `<small class="log-carry">ยกยอดไปทริปหน้า ${entry.carried.map(row => `${row.label} ${fmtAmount(row.foreign, symbolFor(row.currency))}${row.swapped ? ` (แลกจาก ${row.fromCurrency})` : ''}`).join(' · ')} (ต้นทุน ${fmtAmount(entry.carriedThb, '฿')})</small>` : ''}
+        ${entry.reason ? `<small>เหตุผล: ${entry.reason}</small>` : ''}
+      </li>`).join('')}</ol>
+    <div class="log-net"><span>ยอดสุทธิที่อยู่ในบัญชีจริง</span>
+      <b>บัญชีหลัก ${fmtAmount(net, '฿')} · เฉพาะทริป ${fmtAmount(netTripOnly, '฿')}</b>
+      <small>ผลรวมของทุกรายการข้างบน — ไม่ใช่ยอดของครั้งล่าสุดเพียงอย่างเดียว</small></div>` : '';
+}
+
+/* The date money hits the ledger is not the date the trip ended — a trip that
+   finishes 19 Feb may only be settled in March, and posting it to the wrong
+   month puts the cost in the wrong period. Default to the trip's end date and
+   flag it loudly when the chosen date lands in another month or year. */
+function updatePostingNote() {
+  const chosen = $('#postingDate').value;
+  const note = $('#postingNote');
+  if (!chosen) { note.textContent = ''; note.className = 'field-note'; return; }
+  const end = new Date(`${TRIP_END_DATE}T00:00:00`);
+  const post = new Date(`${chosen}T00:00:00`);
+  const sameMonth = end.getFullYear() === post.getFullYear() && end.getMonth() === post.getMonth();
+  const days = Math.round((post - end) / 86400000);
+
+  if (post < end) {
+    note.className = 'field-note posting-warn';
+    note.textContent = `⚠️ วันลงบัญชีอยู่ก่อนวันจบทริป (${thaiDate(TRIP_END_DATE)}) — ตรวจอีกครั้งว่าตั้งใจ`;
+  } else if (!sameMonth) {
+    note.className = 'field-note posting-warn';
+    note.innerHTML = `⚠️ ทริปจบ ${thaiDate(TRIP_END_DATE)} แต่ลงบัญชี ${thaiDate(chosen)} — <b>คนละ${end.getFullYear() !== post.getFullYear() ? 'ปี' : 'เดือน'}บัญชี</b> ค่าใช้จ่ายก้อนนี้จะไปอยู่ในงวด ${post.toLocaleDateString('th-TH', { month:'long', year:'numeric' })}`;
+  } else {
+    note.className = 'field-note';
+    note.textContent = `ทริปจบ ${thaiDate(TRIP_END_DATE)} · ลงบัญชีห่างไป ${days} วัน อยู่ในงวดเดียวกัน`;
+  }
+}
+$('#postingDate').addEventListener('change', updatePostingNote);
+$('#postingDate').addEventListener('input', updatePostingNote);
+
+/* ── Settling leftover cash ────────────────────────────────────────────
+   Book cost and what you actually get back are never the same. Cashing
+   ¥10,000 that cost ฿2,320 might return ฿2,250 — that ฿70 is a realised FX
+   loss belonging to this trip, not a rounding error to bury. Carrying the
+   money instead touches no baht at all, so its cost simply travels with it
+   and nothing is realised. */
+let settlementPlan = {};
+
+function resetSettlementPlan() {
+  settlementPlan = {};
+  computeCloseSummary().leftovers.forEach(row => {
+    settlementPlan[row.wallet.id] = {
+      mode: row.wallet.excludeOnClose ? 'carry' : 'return',
+      receivedThb: row.thb === null ? '' : String(Math.round(row.thb)),
+      carryCurrency: row.wallet.currency,
+      carryAmount: String(Math.round(row.foreign))
+    };
+  });
+}
+
+function settlementResults() {
+  const s = computeCloseSummary();
+  return s.leftovers.map(row => {
+    const plan = settlementPlan[row.wallet.id] || { mode:'return' };
+    const cost = row.thb ?? 0;
+    if (plan.mode === 'return') {
+      const received = Number(String(plan.receivedThb).replace(/[^\d.]/g, '')) || 0;
+      return { ...row, plan, cost, received, fx: received - cost, realised: true };
+    }
+    const sameCurrency = plan.carryCurrency === row.wallet.currency;
+    const amount = sameCurrency ? row.foreign : (Number(String(plan.carryAmount).replace(/[^\d.]/g, '')) || 0);
+    // No baht was exchanged, so the cost basis transfers untouched.
+    return { ...row, plan, cost, carryCurrency:plan.carryCurrency, carryAmount:amount, fx:0, realised:false, sameCurrency };
+  });
+}
+
+function renderSettlement() {
+  const results = settlementResults();
+  $('#settlementBlock').hidden = !results.length;
+  if (!results.length) { $('#fxSummary').innerHTML = ''; return; }
+
+  $('#settlementRows').innerHTML = results.map(row => {
+    const symbol = symbolFor(row.wallet.currency);
+    const options = tripCurrencies.map(currency =>
+      `<option value="${currency.code}"${currency.code === row.plan.carryCurrency ? ' selected' : ''}>${currency.code}${currency.code === row.wallet.currency ? ' (คงเดิม)' : ''}</option>`).join('');
+    return `
+    <div class="settle-row" data-wallet="${row.wallet.id}">
+      <div class="settle-head">
+        <b>${row.wallet.label}</b>
+        <span>${fmtAmount(row.foreign, symbol)} · ต้นทุน ${fmtAmount(row.cost, '฿')}</span>
+      </div>
+      <div class="settle-modes">
+        <label><input type="radio" name="mode-${row.wallet.id}" value="return" ${row.plan.mode === 'return' ? 'checked' : ''}> แลกคืนเข้าบัญชี</label>
+        <label><input type="radio" name="mode-${row.wallet.id}" value="carry" ${row.plan.mode === 'carry' ? 'checked' : ''}> ยกไปทริปหน้า</label>
+      </div>
+      ${row.plan.mode === 'return' ? `
+        <div class="settle-input">
+          <label>ได้รับกลับมาจริง<div class="settle-amount"><span>฿</span><input class="settle-received" inputmode="decimal" value="${row.plan.receivedThb}"></div></label>
+          <p class="fx-line ${row.fx < 0 ? 'loss' : (row.fx > 0 ? 'gain' : '')}">${
+            Math.abs(row.fx) < 0.5
+              ? 'เท่ากับต้นทุนพอดี ไม่มีกำไร/ขาดทุน'
+              : `${row.fx > 0 ? 'กำไร' : 'ขาดทุน'}จากอัตราแลกเปลี่ยน <b>${fmtAmount(Math.abs(row.fx), '฿')}</b> · เทียบต้นทุน ${fmtAmount(row.cost, '฿')}`
+          }</p>
+        </div>` : `
+        <div class="settle-input">
+          <label>เก็บไว้เป็นสกุล<select class="settle-currency">${options}</select></label>
+          ${row.sameCurrency ? `
+            <p class="fx-line neutral">ไม่ได้แลกเงิน จึงไม่มีกำไร/ขาดทุน · ยกไป ${fmtAmount(row.foreign, symbol)} พร้อมต้นทุนเดิม ${fmtAmount(row.cost, '฿')}</p>`
+            : `<label>ได้รับเป็นจำนวน<div class="settle-amount"><span>${symbolFor(row.plan.carryCurrency)}</span><input class="settle-carry" inputmode="decimal" value="${row.plan.carryAmount}"></div></label>
+            <p class="fx-line neutral">แลกข้ามสกุลโดยไม่ผ่านเงินบาท · ต้นทุน ${fmtAmount(row.cost, '฿')} ถูกยกไปกับเงินก้อนใหม่ทั้งจำนวน ไม่เกิดกำไร/ขาดทุนที่ต้องลงบัญชี</p>`}
+        </div>`}
+    </div>`;
+  }).join('');
+
+  const fx = results.reduce((total, row) => total + row.fx, 0);
+  const returned = results.filter(row => row.plan.mode === 'return');
+  const carried = results.filter(row => row.plan.mode === 'carry');
+  $('#fxSummary').innerHTML = `
+    <span>แลกคืนเข้าบัญชี <b>${fmtAmount(returned.reduce((t, row) => t + row.received, 0), '฿')}</b> จาก ${returned.length} กระเป๋า</span>
+    <span>ยกไปทริปหน้า <b>${carried.length} กระเป๋า</b> · ต้นทุนรวม ${fmtAmount(carried.reduce((t, row) => t + row.cost, 0), '฿')}</span>
+    <span class="fx-total ${fx < 0 ? 'loss' : (fx > 0 ? 'gain' : '')}">${
+      Math.abs(fx) < 0.5 ? 'ไม่มีกำไร/ขาดทุนอัตราแลกเปลี่ยน'
+      : `${fx > 0 ? 'กำไร' : 'ขาดทุน'}อัตราแลกเปลี่ยนของทริปนี้ <b>${fmtAmount(Math.abs(fx), '฿')}</b>`
+    }</span>`;
+}
+
+$('#settlementRows').addEventListener('change', event => {
+  const row = event.target.closest('.settle-row');
+  if (!row) return;
+  const plan = settlementPlan[row.dataset.wallet];
+  if (event.target.type === 'radio') plan.mode = event.target.value;
+  if (event.target.classList.contains('settle-currency')) plan.carryCurrency = event.target.value;
+  renderSettlement();
+});
+$('#settlementRows').addEventListener('input', event => {
+  const row = event.target.closest('.settle-row');
+  if (!row) return;
+  const plan = settlementPlan[row.dataset.wallet];
+  if (event.target.classList.contains('settle-received')) plan.receivedThb = event.target.value;
+  if (event.target.classList.contains('settle-carry')) plan.carryAmount = event.target.value;
+  const fx = settlementResults();
+  renderSettlementTotalsOnly(fx);
+});
+
+// Retotal without re-rendering, so typing in a field doesn't lose focus.
+function renderSettlementTotalsOnly(results) {
+  const row = results.find(item => item.plan.mode === 'return');
+  const fx = results.reduce((total, item) => total + item.fx, 0);
+  results.forEach(item => {
+    const node = $(`.settle-row[data-wallet="${item.wallet.id}"] .fx-line`);
+    if (!node || item.plan.mode !== 'return') return;
+    node.className = `fx-line ${item.fx < 0 ? 'loss' : (item.fx > 0 ? 'gain' : '')}`;
+    node.innerHTML = Math.abs(item.fx) < 0.5
+      ? 'เท่ากับต้นทุนพอดี ไม่มีกำไร/ขาดทุน'
+      : `${item.fx > 0 ? 'กำไร' : 'ขาดทุน'}จากอัตราแลกเปลี่ยน <b>${fmtAmount(Math.abs(item.fx), '฿')}</b> · เทียบต้นทุน ${fmtAmount(item.cost, '฿')}`;
+  });
+  const total = $('.fx-total');
+  if (!total) return;
+  total.className = `fx-total ${fx < 0 ? 'loss' : (fx > 0 ? 'gain' : '')}`;
+  total.innerHTML = Math.abs(fx) < 0.5 ? 'ไม่มีกำไร/ขาดทุนอัตราแลกเปลี่ยน'
+    : `${fx > 0 ? 'กำไร' : 'ขาดทุน'}อัตราแลกเปลี่ยนของทริปนี้ <b>${fmtAmount(Math.abs(fx), '฿')}</b>`;
+}
+
+function renderClosePreview() {
+  const s = computeCloseSummary();
+  const block = (title, list, extraClass = '') => `
+    <div class="close-block ${extraClass}"><h3>${title}</h3>
+      ${list.length ? list.map(row => `<span>${row.name} · ${row.bills} บิล<b>${fmtAmount(row.thb, '฿')}</b></span>`).join('')
+        : '<span class="muted-line">ไม่มีรายการ</span>'}
+      <strong>รวม ${fmtAmount(list.reduce((t, row) => t + row.thb, 0), '฿')}</strong>
+    </div>`;
+
+  $('#closeBody').innerHTML = `
+    ${block('ลงบัญชีหลัก', s.toLedger)}
+    ${block('เก็บเฉพาะประวัติทริป', s.tripOnly, 'trip-only')}
+
+    ${s.problems.length
+      ? `<div class="close-problems"><b>ยังปิดทริปไม่ได้</b><ul>${s.problems.map(problem => `<li>${problem}</li>`).join('')}</ul></div>`
+      : `<p class="close-ok">✓ ยอดสมดุลแล้ว · ค่าใช้จ่ายรวม ${fmtAmount(s.totalThb, '฿')} ตรงกับยอดที่แบ่งให้สมาชิกครบทุกบาท<br>
+         <small>เมื่อยืนยัน เรทของทุกกระเป๋าจะถูกล็อกที่ค่าปัจจุบัน และตัวเลขจะไม่ขยับอีก</small></p>`}`;
+
+  resetSettlementPlan();
+  renderSettlement();
+  $('#postingDate').value = postingDate || TRIP_END_DATE;
+  updatePostingNote();
+  /* Closing reports money to the family ledger, so it takes a deliberate
+     acknowledgement rather than a single stray click. The text restates the
+     figures so ticking it means something. */
+  $('#closeAck').checked = false;
+  $('#closeAckText').innerHTML = `ตรวจแล้วว่าถูกต้อง — จะลงบัญชีหลัก <b>${fmtAmount(s.ledgerTotal, '฿')}</b> และเก็บเฉพาะประวัติทริป <b>${fmtAmount(s.tripOnlyTotal, '฿')}</b>`;
+  $('#closeAckRow').hidden = !s.balanced;
+  $('#confirmClose').disabled = true;
+  mask.classList.add('open');
+  dialog.classList.add('open');
+  dialog.setAttribute('aria-hidden', 'false');
+}
+
+$('#closePreview').addEventListener('click', renderClosePreview);
+
+$('#closeAck').addEventListener('change', event => {
+  $('#confirmClose').disabled = !event.target.checked || !computeCloseSummary().balanced;
+});
+
+$('#confirmClose').addEventListener('click', () => {
+  const s = computeCloseSummary();
+  if (!s.balanced || !$('#closeAck').checked) return;
+  /* Freeze each wallet's rate so the baht figures stop moving — this is the
+     moment the trip's numbers become history rather than an estimate. */
+  wallets.forEach(wallet => { wallet.lockedRate = walletRate(wallet.id) ?? currencyByCode(wallet.currency)?.planRate ?? null; });
+  const settled = settlementResults();
+  const fxResult = settled.reduce((total, row) => total + row.fx, 0);
+  tripClosed = true;
+  postingDate = $('#postingDate').value || TRIP_END_DATE;
+  tripLog.push({
+    type:'close', at:new Date().toLocaleString('th-TH'), by:memberName(viewerId),
+    postingDate, ledgerTotal:s.ledgerTotal, tripOnlyTotal:s.tripOnlyTotal,
+    carriedThb: settled.filter(row => row.plan.mode === 'carry').reduce((t, row) => t + row.cost, 0),
+    fxResult,
+    // Cost basis travels with the money, so next trip starts from what it cost.
+    carried: settled.filter(row => row.plan.mode === 'carry').map(row => ({
+      walletId: row.wallet.id, label: row.wallet.label,
+      currency: row.carryCurrency, fromCurrency: row.wallet.currency,
+      foreign: row.carryAmount, thbCost: row.cost, rate: row.rate, swapped: !row.sameCurrency
+    })),
+    returned: settled.filter(row => row.plan.mode === 'return').map(row => ({
+      walletId: row.wallet.id, label: row.wallet.label,
+      foreign: row.foreign, thbCost: row.cost, receivedThb: row.received, fx: row.fx
+    })),
+    rates: wallets.map(wallet => ({ id:wallet.id, rate:wallet.lockedRate }))
+  });
+  closeLayers();
+  renderBills();
+  showPrototypeToast(`ปิดทริปแล้ว · ลงบัญชีหลัก ${fmtAmount(s.ledgerTotal, '฿')}${
+    Math.abs(fxResult) >= 0.5 ? ` · ${fxResult > 0 ? 'กำไร' : 'ขาดทุน'}อัตราแลกเปลี่ยน ${fmtAmount(Math.abs(fxResult), '฿')}` : ''}`);
+});
+
+/* ── Reopen (admin only) ── */
+$('#reopenTrip').addEventListener('click', () => {
+  if (!isAdmin(viewerId)) {
+    showPrototypeToast(`เฉพาะผู้ดูแลทริปเท่านั้นที่เปิดทริปกลับได้`);
+    return;
+  }
+  closeLayers();
+  // Show exactly which posting is about to be reversed, with its own date.
+  const lastClose = [...tripLog].reverse().find(entry => entry.type === 'close');
+  $('#reopenImpact').innerHTML = lastClose
+    ? `จะบันทึก<b>รายการกลับ</b>ของการปิดเมื่อ ${lastClose.at}<br>
+       บัญชีหลัก <b>${fmtAmount(-lastClose.ledgerTotal, '฿')}</b> · เฉพาะทริป <b>${fmtAmount(-lastClose.tripOnlyTotal, '฿')}</b>
+       ลงวันที่ <b>${thaiDate(lastClose.postingDate)}</b> (วันเดียวกับที่ปิดครั้งนั้น)<br>
+       <small>ยอดเดิมไม่ถูกลบ · เมื่อปิดใหม่จะลงยอดเต็มอีกครั้ง ผลสุทธิจึงเท่ากับยอดล่าสุดเสมอ</small>`
+    : 'ยังไม่มีการปิดทริปก่อนหน้า จึงไม่มีรายการให้กลับ';
+  $('#reopenReason').value = '';
+  $('#reopenError').textContent = '';
+  mask.classList.add('open');
+  $('#reopenDialog').classList.add('open');
+  $('#reopenDialog').setAttribute('aria-hidden', 'false');
+  setTimeout(() => $('#reopenReason').focus(), 80);
+});
+
+$('#reopenForm').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!isAdmin(viewerId)) { $('#reopenError').textContent = 'เฉพาะผู้ดูแลทริปเท่านั้น'; return; }
+  const reason = $('#reopenReason').value.trim();
+  if (reason.length < 5) { $('#reopenError').textContent = 'ระบุเหตุผลอย่างน้อย 5 ตัวอักษร เพื่อเก็บไว้ในประวัติ'; return; }
+  /* Reopening must reverse the settlement that was already reported, not just
+     unlock the UI. Without this, closing again would post a second full total
+     and the ledger would double-count the first close. The reversal carries the
+     original close's posting date so the period that was reported gets undone
+     where it was reported — the ledger is only ever appended to. */
+  const lastClose = [...tripLog].reverse().find(entry => entry.type === 'close');
+  tripLog.push({
+    type:'reopen', at:new Date().toLocaleString('th-TH'), by:memberName(viewerId), reason,
+    postingDate: lastClose?.postingDate || '',
+    ledgerTotal: lastClose ? -lastClose.ledgerTotal : 0,
+    tripOnlyTotal: lastClose ? -lastClose.tripOnlyTotal : 0,
+    reversalOf: lastClose?.at || ''
+  });
+  // Rates go live again; the values they were locked at stay in the log.
+  wallets.forEach(wallet => { delete wallet.lockedRate; });
+  tripClosed = false;
+  postingDate = '';
+  closeLayers();
+  renderBills();
+  showPrototypeToast('เปิดทริปกลับมาแก้ไขแล้ว · บันทึกเหตุผลไว้ในประวัติ');
+});
+
+/* NOTE: the old duplicate drag handlers that lived here bound to .plan-item
+   nodes that renderPlanWorkspace() replaces on first render, so they never
+   fired. Drag/drop now lives entirely in bindPlanInteractions(). */
+
+$$('.segmented').forEach(group => group.addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  $$('button', group).forEach(item => item.classList.toggle('active', item === button));
+}));
+
+/* Journey stops are the 11 pins on the map. `dayId` links each pin to the
+   plan day that starts at that stop — Kushiro spans two days, so day2 simply
+   points back at the same stop index. Pin → day and day → pin now resolve
+   through this one table instead of being matched by day number, which never
+   worked (the route has 11 stops across 12 days and skips Day 02). */
+const journeyStops = [
+  { day:'01', dayId:'day1',  name:'Kushiro', next:'Lake Akan', region:'EAST HOKKAIDO', description:'ตลาดปลา สะพาน Nusamai และเมืองริมแม่น้ำ' },
+  { day:'03', dayId:'day3',  name:'Lake Akan', next:'Lake Kussharo', region:'EAST HOKKAIDO', description:'หิมะนุ่ม ออนเซ็นอุ่น และท้องฟ้าสีฟ้าหมอก' },
+  { day:'04', dayId:'day4',  name:'Lake Kussharo', next:'Sounkyo', region:'LAKE & MOUNTAIN', description:'ทะเลสาบหงส์ ก่อนเดินทางเข้าสู่หุบเขาตอนกลาง' },
+  { day:'05', dayId:'day5',  name:'Sounkyo', next:'Obihiro', region:'CENTRAL HOKKAIDO', description:'น้ำตก ภูเขาหิมะ และกระเช้า Asahidake' },
+  { day:'06', dayId:'day6',  name:'Obihiro', next:'Furano', region:'TOKACHI', description:'Moor Onsen และอาหารพื้นเมืองโทคาจิ' },
+  { day:'07', dayId:'day7',  name:'Furano', next:'Jozankei', region:'CENTRAL HOKKAIDO', description:'ทุ่งกว้าง เมืองชนบท และถนนผ่านภูเขา' },
+  { day:'08', dayId:'day8',  name:'Jozankei', next:'Niseko', region:'WEST HOKKAIDO', description:'แช่ออนเซ็นท่ามกลางหุบเขาก่อนเดินทางต่อ' },
+  { day:'09', dayId:'day9',  name:'Niseko', next:'Otaru', region:'WEST HOKKAIDO', description:'ภูเขาหิมะและเส้นทางสู่เมืองท่าริมทะเล' },
+  { day:'10', dayId:'day10', name:'Otaru', next:'Sapporo', region:'SAPPORO AREA', description:'คลองโอตารุ ถนนเก่า และแสงไฟยามเย็น' },
+  { day:'11', dayId:'day11', name:'Sapporo', next:'Chitose Airport', region:'SAPPORO AREA', description:'วันสุดท้ายในเมือง ก่อนเตรียมเดินทางกลับ' },
+  { day:'12', dayId:'day12', name:'Chitose Airport', next:'เดินทางกลับ', region:'NEW CHITOSE', description:'เก็บความทรงจำและเดินทางกลับโดยสวัสดิภาพ' }
+];
+const actualJourneyIndex = 1;
+let previewJourneyIndex = actualJourneyIndex;
+
+function renderJourneyPreview(selectedIndex) {
+  previewJourneyIndex = selectedIndex;
+  const pins = $$('.journey-pin');
+  const selected = journeyStops[selectedIndex];
+  pins.forEach((pin, index) => {
+    pin.classList.remove('completed', 'current', 'next', 'future');
+    if (index < selectedIndex) pin.classList.add('completed');
+    else if (index === selectedIndex) pin.classList.add('current');
+    else if (index === selectedIndex + 1) pin.classList.add('next');
+    else pin.classList.add('future');
+  });
+
+  const points = pins.map(pin => [Number(pin.dataset.x), Number(pin.dataset.y)]);
+  const completed = points.slice(0, selectedIndex + 1);
+  $('#completedRoute').setAttribute('d', completed.length > 1
+    ? completed.map((point, index) => `${index ? 'L' : 'M'}${point[0]} ${point[1]}`).join(' ')
+    : '');
+  const active = points.slice(selectedIndex, selectedIndex + 2);
+  $('#activeRoute').setAttribute('d', active.length > 1
+    ? `M${active[0][0]} ${active[0][1]} L${active[1][0]} ${active[1][1]}`
+    : '');
+
+  $('#journeyDay').textContent = selected.day;
+  $('#journeyRegion').textContent = selected.region;
+  $('#journeyTitle').textContent = `${selected.name} → ${selected.next}`;
+  $('#journeyDescription').textContent = selected.description;
+  $('#returnToday').hidden = selectedIndex === actualJourneyIndex;
+  $('.day-summary').classList.toggle('previewing', selectedIndex !== actualJourneyIndex);
+  $('#openSelectedPlan').textContent = selectedIndex === actualJourneyIndex
+    ? 'ดูแผนวันนี้ ›'
+    : `ดูแผน Day ${selected.day} ›`;
+  renderTodayWeather(selected.dayId);
+}
+
+/* The weather card used to be hardcoded to Lake Akan, so previewing Sapporo
+   still showed Akan's forecast. It now follows the selected pin's day. */
+function renderTodayWeather(dayId) {
+  const day = planDays.find(item => item.id === dayId);
+  if (!day) return;
+  const { weather } = day;
+  $('#weatherPlace').textContent = day.city;
+  $('#weatherNow').innerHTML = `<span>${weather.icon}</span><strong>${weather.temp}</strong><div>${weather.feels}<br>${weather.note}</div>`;
+  $('#weatherPeriods').innerHTML = weather.periods.map(period => `
+    <div class="${period.active ? 'selected' : ''}"><span>${period.label}</span><b>${period.temp}</b><small>${period.detail}</small></div>`).join('');
+  $('#weatherTip').textContent = weather.tip;
+  $('#weatherStamp').textContent = dayId === journeyStops[actualJourneyIndex].dayId
+    ? 'อัปเดต 5 นาทีที่แล้ว'
+    : `พยากรณ์ล่วงหน้า · ${day.date}`;
+}
+
+$$('.journey-pin').forEach(pin => {
+  pin.setAttribute('role', 'button');
+  pin.setAttribute('tabindex', '0');
+  pin.setAttribute('aria-label', `ดูแผน ${journeyStops[Number(pin.dataset.index)].name}`);
+  pin.addEventListener('click', () => renderJourneyPreview(Number(pin.dataset.index)));
+  pin.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      renderJourneyPreview(Number(pin.dataset.index));
+    }
+  });
+});
+$('#returnToday').addEventListener('click', () => renderJourneyPreview(actualJourneyIndex));
+
+/* Previously this only switched screens, so the button could read
+   "ดูแผน Day 05" and still drop you on whatever day was last open. */
+$('#openSelectedPlan').addEventListener('click', () => {
+  const target = journeyStops[previewJourneyIndex]?.dayId;
+  if (target && planDays.some(day => day.id === target)) {
+    activePlanDayId = target;
+    selectedActivityId = null;
+    renderPlanWorkspace();
+  }
+  showScreen('plan');
+});
+
+const ART = '../puppup-prototype/art/';
+const wx = (icon, temp, feels, note, tip, periods) => ({ icon, temp, feels, note, tip, periods });
+const periods = (morning, afternoon, evening, activeIndex = 1) =>
+  [['เช้า', ...morning], ['บ่าย', ...afternoon], ['ค่ำ', ...evening]]
+    .map(([label, temp, detail], index) => ({ label, temp, detail, active: index === activeIndex }));
+
+const planDays = [
+  {
+    id:'day1', day:1, city:'Kushiro', date:'8 ก.พ. 2027',
+    weather:wx('🌥️','−5°','รู้สึกเหมือน −9°','เมฆมาก · ลม 12 km/h','🧳 วันเดินทาง เก็บเสื้อกันหนาวไว้ในกระเป๋าถือ',
+      periods(['−7°','☁️ 20%'],['−5°','🌥️ 30%'],['−8°','❄️ 40%'], 2)),
+    activities:[
+      { id:'flight-ckt', time:'10:20', name:'ถึงสนามบิน Kushiro', detail:'รับรถเช่าและตรวจยางสำหรับถนนหิมะ', tag:'การเดินทาง', cost:'¥ 32,000', bills:'1 บิล', image:`${ART}ic_train.png` },
+      { id:'kushiro-checkin', time:'15:00', name:'เช็กอินที่พัก Kushiro', detail:'พักใกล้ท่าเรือ เดินไปตลาดได้', tag:'ที่พัก', cost:'¥ 18,500', bills:'1 บิล', image:`${ART}ic_hotel.png` },
+      { id:'nusamai', time:'17:10', name:'Nusamai Bridge Sunset', detail:'สะพานรูปปั้นสี่ฤดู · พระอาทิตย์ตกที่สวยที่สุดแห่งหนึ่งของโลก', tag:'กิจกรรมย่อย', cost:'—', bills:'ยังไม่มีบิล', image:`${ART}act_nusamai.png` }
+    ]
+  },
+  {
+    id:'day2', day:2, city:'Kushiro', date:'9 ก.พ. 2027',
+    weather:wx('🌨️','−7°','รู้สึกเหมือน −12°','หิมะ 60% · ลม 20 km/h','🧤 ตลาดเช้าเปิด 08:00 ควรไปก่อนคนเยอะ',
+      periods(['−10°','🌨️ 60%'],['−7°','🌨️ 50%'],['−12°','💨 ลมแรง'], 0)),
+    activities:[
+      { id:'washo-market', time:'08:00', name:'ตลาดปลา Washo', detail:'ข้าวหน้าปลาดิบเลือกเองแบบคัตเตะโดง', tag:'สถานที่หลัก', cost:'¥ 6,800', bills:'2 บิล', image:`${ART}ic_ramen.png` },
+      { id:'kushiro-crane', time:'11:00', name:'ศูนย์อนุรักษ์นกกระเรียน', detail:'นกกระเรียนมงกุฎแดงในทุ่งหิมะ', tag:'กิจกรรมย่อย', cost:'¥ 2,400', bills:'1 บิล', image:`${ART}act_crane.png` },
+      { id:'drive-akan', time:'15:00', name:'เดินทางไป Lake Akan', detail:'ประมาณ 1 ชม. 40 นาที · ถนนภูเขาช่วงท้าย', tag:'การเดินทาง', cost:'—', bills:'ยังไม่มีบิล', image:`${ART}ic_train.png` }
+    ]
+  },
+  {
+    id:'day3', day:3, city:'Lake Akan', date:'10 ก.พ. 2027',
+    weather:wx('🌨️','−6°','รู้สึกเหมือน −11°','หิมะ 70% · ลม 18 km/h','🧣 ถนนอาจลื่นและลมแรงช่วงเย็น ควรออกก่อนพระอาทิตย์ตก',
+      periods(['−9°','☁️ 30%'],['−6°','🌨️ 70%'],['−11°','💨 ลมแรง'])),
+    activities:[
+      { id:'akan-lake', time:'09:00', name:'Lake Akan', detail:'ทะเลสาบน้ำแข็ง · −8°C · หิมะ 40%', tag:'สถานที่หลัก', cost:'¥ 2,800', bills:'2 บิล', image:`${ART}act_marimo.png` },
+      { id:'ainu-kotan', time:'11:30', name:'Akanko Ainu Kotan', detail:'วัฒนธรรมไอนุ · เดินจากทะเลสาบ 8 นาที', tag:'กิจกรรมย่อย', cost:'¥ 4,200', bills:'3 บิล', image:`${ART}act_ainukotan.png` },
+      { id:'akan-onsen', time:'18:00', name:'Akan Onsen', detail:'แช่ออนเซ็นและพักผ่อนก่อนเดินทางวันถัดไป', tag:'กิจกรรมย่อย', cost:'¥ 1,600', bills:'1 บิล', image:`${ART}wx_night.png` }
+    ]
+  },
+  {
+    id:'day4', day:4, city:'Lake Kussharo', date:'11 ก.พ. 2027',
+    weather:wx('🌤️','−4°','รู้สึกเหมือน −8°','เมฆบาง · ถนนอาจมีน้ำแข็ง','🚗 ถนนช่วงเช้าเป็นน้ำแข็งดำ ขับช้าและเว้นระยะ',
+      periods(['−8°','🌤️ 10%'],['−4°','☀️ 10%'],['−9°','🌙 ใส'])),
+    activities:[
+      { id:'kussharo-lake', time:'09:30', name:'Lake Kussharo', detail:'ชมฝูงหงส์และทะเลสาบภูเขาไฟ', tag:'สถานที่หลัก', cost:'—', bills:'ยังไม่มีบิล', image:`${ART}act_crane.png` },
+      { id:'kitakitsune', time:'13:00', name:'Kitakitsune Farm', detail:'ฟาร์มสุนัขจิ้งจอก · ขับรถ 45 นาที', tag:'กิจกรรมย่อย', cost:'¥ 1,500', bills:'1 บิล', image:`${ART}ic_gift.png` },
+      { id:'drive-sounkyo', time:'16:00', name:'เดินทางไป Sounkyo', detail:'ประมาณ 2 ชม. 35 นาที · ถึงก่อนค่ำ', tag:'การเดินทาง', cost:'¥ 3,200', bills:'1 บิล', image:`${ART}ic_train.png` }
+    ]
+  },
+  {
+    id:'day5', day:5, city:'Sounkyo', date:'12 ก.พ. 2027',
+    weather:wx('❄️','−9°','รู้สึกเหมือน −15°','หิมะต่อเนื่อง · ทัศนวิสัยต่ำช่วงบ่าย','⚠️ ถ้าลมเกิน 15 m/s กระเช้า Asahidake จะปิด เตรียมแผนสำรอง',
+      periods(['−12°','❄️ 80%'],['−9°','❄️ 80%'],['−15°','💨 ลมแรงมาก'])),
+    activities:[
+      { id:'sounkyo', time:'08:30', name:'Sounkyo Gorge', detail:'หุบเขาหิมะและจุดชมวิว', tag:'สถานที่หลัก', cost:'—', bills:'ยังไม่มีบิล', image:`${ART}act_ginga.png` },
+      { id:'asahidake', time:'10:30', name:'Asahidake Ropeway', detail:'ตรวจลมก่อนขึ้นกระเช้า · สำรองแผน B', tag:'กิจกรรมย่อย', cost:'¥ 6,400', bills:'2 บิล', image:`${ART}act_kurodake.png` },
+      { id:'shirahige', time:'14:30', name:'Shirahige Waterfall', detail:'น้ำตกสีฟ้า · ขับรถ 1 ชม. 20 นาที', tag:'กิจกรรมย่อย', cost:'—', bills:'ยังไม่มีบิล', image:`${ART}act_ginga.png` }
+    ]
+  },
+  {
+    id:'day6', day:6, city:'Obihiro', date:'13 ก.พ. 2027',
+    weather:wx('☀️','−3°','รู้สึกเหมือน −6°','ท้องฟ้าเปิด · ลม 8 km/h','🚙 ท้องฟ้าเปิดทั้งวัน เหมาะกับการขับทางไกล',
+      periods(['−7°','☀️ 0%'],['−3°','☀️ 0%'],['−8°','🌙 ใส'])),
+    activities:[
+      { id:'obihiro', time:'10:00', name:'Obihiro', detail:'ตลาดท้องถิ่นและอาหารโทคาจิ', tag:'สถานที่หลัก', cost:'¥ 5,800', bills:'3 บิล', image:`${ART}ic_ramen.png` },
+      { id:'moor-onsen', time:'15:30', name:'Moor Onsen', detail:'ออนเซ็นพืชธรรมชาติเอกลักษณ์โทคาจิ', tag:'กิจกรรมย่อย', cost:'¥ 2,400', bills:'2 บิล', image:`${ART}wx_afternoon.png` }
+    ]
+  },
+  {
+    id:'day7', day:7, city:'Furano', date:'14 ก.พ. 2027',
+    weather:wx('🌨️','−6°','รู้สึกเหมือน −11°','หิมะโปรย · ลม 14 km/h','📷 หิมะโปรยเบา ๆ เหมาะกับถ่ายภาพทุ่งกว้าง',
+      periods(['−9°','🌨️ 50%'],['−6°','🌨️ 40%'],['−11°','☁️ 20%'])),
+    activities:[
+      { id:'furano', time:'10:30', name:'Furano', detail:'ทุ่งหิมะกว้างและเมืองชนบทกลางเกาะ', tag:'สถานที่หลัก', cost:'—', bills:'ยังไม่มีบิล', image:`${ART}st_camera.png` },
+      { id:'ningle', time:'13:30', name:'Ningle Terrace', detail:'กระท่อมงานคราฟต์ในป่าสน', tag:'กิจกรรมย่อย', cost:'¥ 3,600', bills:'1 บิล', image:`${ART}ic_gift.png` },
+      { id:'furano-curry', time:'18:30', name:'แกงกะหรี่ Furano', detail:'เมนูประจำเมือง เสิร์ฟในหม้อร้อน', tag:'อาหาร', cost:'¥ 4,800', bills:'1 บิล', image:`${ART}ic_ramen.png` }
+    ]
+  },
+  {
+    id:'day8', day:8, city:'Jozankei', date:'15 ก.พ. 2027',
+    weather:wx('🌥️','−4°','รู้สึกเหมือน −8°','เมฆมาก · ลม 10 km/h','♨️ ออนเซ็นกลางแจ้งอุ่นที่สุดช่วงหัวค่ำ',
+      periods(['−7°','🌥️ 20%'],['−4°','🌥️ 30%'],['−9°','🌨️ 40%'], 2)),
+    activities:[
+      { id:'jozankei', time:'11:00', name:'Jozankei Onsen', detail:'หมู่บ้านออนเซ็นในหุบเขา', tag:'สถานที่หลัก', cost:'¥ 22,000', bills:'1 บิล', image:`${ART}wx_afternoon.png` },
+      { id:'futami', time:'14:00', name:'Futami Suspension Bridge', detail:'สะพานแขวนเหนือลำธารน้ำแข็ง', tag:'กิจกรรมย่อย', cost:'—', bills:'ยังไม่มีบิล', image:`${ART}act_ginga.png` }
+    ]
+  },
+  {
+    id:'day9', day:9, city:'Niseko', date:'16 ก.พ. 2027',
+    weather:wx('❄️','−8°','รู้สึกเหมือน −14°','หิมะหนัก 90% · ลม 22 km/h','🎿 พาวเดอร์สโนว์วันนี้ดีที่สุดของทริป จองคอร์สล่วงหน้า',
+      periods(['−11°','❄️ 90%'],['−8°','❄️ 90%'],['−14°','💨 ลมแรง'])),
+    activities:[
+      { id:'niseko', time:'09:00', name:'Niseko Grand Hirafu', detail:'ลานสกีพาวเดอร์สโนว์ระดับโลก', tag:'สถานที่หลัก', cost:'¥ 28,000', bills:'2 บิล', image:`${ART}act_kurodake.png` },
+      { id:'niseko-lesson', time:'13:00', name:'คอร์สสกีสำหรับเด็ก', detail:'ครูสอนภาษาอังกฤษ 2 ชั่วโมง', tag:'กิจกรรมย่อย', cost:'¥ 12,000', bills:'1 บิล', image:`${ART}st_suitcase.png` }
+    ]
+  },
+  {
+    id:'day10', day:10, city:'Otaru', date:'17 ก.พ. 2027',
+    weather:wx('🌤️','−3°','รู้สึกเหมือน −7°','เมฆบาง · ลม 9 km/h','🕯️ คลองโอตารุสวยที่สุดหลังไฟเปิด ราว 17:00',
+      periods(['−6°','🌤️ 10%'],['−3°','🌤️ 20%'],['−7°','🌙 ใส'], 2)),
+    activities:[
+      { id:'otaru-canal', time:'10:00', name:'คลองโอตารุ', detail:'โกดังอิฐเก่าและตะเกียงแก๊สริมคลอง', tag:'สถานที่หลัก', cost:'—', bills:'ยังไม่มีบิล', image:`${ART}st_tokyo_city.png` },
+      { id:'otaru-sushi', time:'12:30', name:'ถนนซูชิโอตารุ', detail:'ซูชิหอยเชลล์และเม่นทะเลสด', tag:'อาหาร', cost:'¥ 16,000', bills:'2 บิล', image:`${ART}ic_ramen.png` },
+      { id:'otaru-glass', time:'15:00', name:'เวิร์กชอปเป่าแก้ว', detail:'ทำของที่ระลึกเอง · ใช้เวลา 40 นาที', tag:'กิจกรรมย่อย', cost:'¥ 7,200', bills:'1 บิล', image:`${ART}ic_gift.png` }
+    ]
+  },
+  {
+    id:'day11', day:11, city:'Sapporo', date:'18 ก.พ. 2027',
+    weather:wx('🌥️','−2°','รู้สึกเหมือน −5°','เมฆมาก · ลม 11 km/h','🛍️ วันช้อปปิ้งสุดท้าย เผื่อน้ำหนักกระเป๋าไว้ด้วย',
+      periods(['−5°','🌥️ 20%'],['−2°','🌥️ 30%'],['−6°','🌨️ 40%'])),
+    activities:[
+      { id:'sapporo-clock', time:'10:00', name:'หอนาฬิกาซัปโปโร', detail:'แลนด์มาร์กไม้สไตล์อเมริกัน', tag:'สถานที่หลัก', cost:'¥ 800', bills:'1 บิล', image:`${ART}st_tokyo_city.png` },
+      { id:'sapporo-market', time:'13:00', name:'ตลาดนิโจ', detail:'ปูขนและของฝากทะเล', tag:'กิจกรรมย่อย', cost:'¥ 14,500', bills:'2 บิล', image:`${ART}ic_gift.png` },
+      { id:'sapporo-ramen', time:'19:00', name:'ตรอกราเมนซัปโปโร', detail:'มิโสะราเมนต้นตำรับ', tag:'อาหาร', cost:'¥ 5,400', bills:'1 บิล', image:`${ART}ic_ramen.png` }
+    ]
+  },
+  {
+    id:'day12', day:12, city:'Chitose Airport', date:'19 ก.พ. 2027',
+    weather:wx('☁️','−4°','รู้สึกเหมือน −8°','เมฆเต็มฟ้า · ลม 13 km/h','✈️ เช็กสถานะเที่ยวบินก่อนออกจากที่พัก หิมะอาจทำให้ดีเลย์',
+      periods(['−6°','☁️ 30%'],['−4°','☁️ 30%'],['−8°','🌨️ 50%'], 0)),
+    activities:[
+      { id:'return-car', time:'09:30', name:'คืนรถเช่า', detail:'เติมน้ำมันก่อนคืน · เผื่อเวลา 40 นาที', tag:'การเดินทาง', cost:'¥ 4,200', bills:'1 บิล', image:`${ART}ic_train.png` },
+      { id:'chitose-shop', time:'11:00', name:'ช้อปปิ้งในสนามบิน', detail:'Royce, LeTAO และของฝากนาทีสุดท้าย', tag:'ช้อปปิ้ง', cost:'¥ 9,800', bills:'1 บิล', image:`${ART}ic_gift.png` },
+      { id:'flight-home', time:'14:40', name:'เที่ยวบินกลับ', detail:'เช็กอินล่วงหน้า 2 ชั่วโมง', tag:'การเดินทาง', cost:'—', bills:'ยังไม่มีบิล', image:`${ART}st_suitcase.png` }
+    ]
+  }
+];
+let activePlanDayId = 'day3';
+let selectedActivityId = null;
+let draggedActivityId = null;
+
+function activePlanDay() {
+  return planDays.find(day => day.id === activePlanDayId);
+}
+
+function showPrototypeToast(message) {
+  const toast = $('#toast');
+  toast.textContent = message;
+  toast.classList.add('show');
+  clearTimeout(showPrototypeToast.timer);
+  showPrototypeToast.timer = setTimeout(() => toast.classList.remove('show'), 2400);
+}
+
+function renderPlanWorkspace() {
+  const activeDay = activePlanDay();
+  $('#planDayTabs').innerHTML = planDays.map(day => `
+    <button class="${day.id === activePlanDayId ? 'active' : ''}" data-plan-day="${day.id}">
+      วันที่ ${day.day}<small>${day.city} · ${day.activities.length} จุด</small>
+    </button>`).join('');
+
+  $('#planDayOverview').innerHTML = `
+    <div><small>${activeDay.date}</small><h3>${activeDay.city}</h3><span>${activeDay.activities.length} กิจกรรม · ลากเรียงหรือเลือกเพื่อย้ายวัน</span></div>
+    <div class="plan-weather"><span>${activeDay.weather.icon}</span><div><b>${activeDay.weather.temp}</b><small>${activeDay.weather.note}</small></div></div>`;
+
+  $('#planList').innerHTML = activeDay.activities.length ? activeDay.activities.map(activity => `
+    <article class="plan-item ${activity.id === selectedActivityId ? 'selected' : ''}" draggable="true" data-activity="${activity.id}">
+      <span class="drag">⠿</span><time>${activity.time}</time><img src="${activity.image}" alt="">
+      <div><b>${activity.name}</b><small>${activity.detail}</small><em>${activity.tag}</em></div>
+      <div class="plan-cost">${activity.cost}<small>${activity.bills}</small></div>
+      <div class="plan-item-controls"><button class="edit-plan-item" data-edit="${activity.id}">แก้ไข</button><button data-move="up" aria-label="เลื่อนขึ้น">↑</button><button data-move="down" aria-label="เลื่อนลง">↓</button></div>
+    </article>`).join('') : `<div class="plan-empty">ยังไม่มีกิจกรรมในวันนี้</div>`;
+
+  $('#moveDayTargets').innerHTML = planDays.filter(day => day.id !== activePlanDayId).map(day => `
+    <button data-move-day="${day.id}" ${selectedActivityId ? '' : 'disabled'}>Day ${day.day} · ${day.city}</button>`).join('');
+  bindPlanInteractions();
+  scrollActiveDayTab();
+  saveState();
+}
+
+function bindPlanInteractions() {
+  $$('[data-plan-day]').forEach(button => button.addEventListener('click', () => {
+    activePlanDayId = button.dataset.planDay;
+    selectedActivityId = null;
+    renderPlanWorkspace();
+  }));
+
+  $$('.plan-item').forEach(item => {
+    item.addEventListener('click', event => {
+      const control = event.target.closest('[data-move]');
+      const edit = event.target.closest('[data-edit]');
+      const day = activePlanDay();
+      const index = day.activities.findIndex(activity => activity.id === item.dataset.activity);
+      if (edit) {
+        openPlanEditor(day.activities[index]);
+        return;
+      }
+      if (control) {
+        const nextIndex = control.dataset.move === 'up' ? index - 1 : index + 1;
+        if (nextIndex >= 0 && nextIndex < day.activities.length) {
+          [day.activities[index], day.activities[nextIndex]] = [day.activities[nextIndex], day.activities[index]];
+          showPrototypeToast(`สลับลำดับ ${day.activities[nextIndex].name} แล้ว`);
+          renderPlanWorkspace();
+        }
+        return;
+      }
+      selectedActivityId = selectedActivityId === item.dataset.activity ? null : item.dataset.activity;
+      renderPlanWorkspace();
+    });
+    item.addEventListener('dragstart', event => {
+      draggedActivityId = item.dataset.activity;
+      item.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', item.dataset.activity);
+    });
+    item.addEventListener('dragend', () => {
+      draggedActivityId = null;
+      item.classList.remove('dragging');
+      $$('.plan-item').forEach(row => row.classList.remove('drop-before', 'drop-after'));
+    });
+    /* Reordering used to happen in dragover, which called renderPlanWorkspace()
+       and destroyed the node mid-gesture — the drag died on the first move.
+       dragover now only paints the drop indicator; the array is reordered once,
+       on drop. */
+    item.addEventListener('dragover', event => {
+      if (!draggedActivityId || draggedActivityId === item.dataset.activity) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const rect = item.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+      item.classList.toggle('drop-before', before);
+      item.classList.toggle('drop-after', !before);
+    });
+    item.addEventListener('dragleave', () => item.classList.remove('drop-before', 'drop-after'));
+    item.addEventListener('drop', event => {
+      event.preventDefault();
+      const movingId = draggedActivityId || event.dataTransfer.getData('text/plain');
+      if (!movingId || movingId === item.dataset.activity) return;
+      const day = activePlanDay();
+      const rect = item.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+      const fromIndex = day.activities.findIndex(activity => activity.id === movingId);
+      if (fromIndex < 0) return;
+      const [moved] = day.activities.splice(fromIndex, 1);
+      const targetIndex = day.activities.findIndex(activity => activity.id === item.dataset.activity);
+      day.activities.splice(before ? targetIndex : targetIndex + 1, 0, moved);
+      draggedActivityId = null;
+      showPrototypeToast(`ย้าย ${moved.name} แล้ว`);
+      renderPlanWorkspace();
+    });
+  });
+
+  $$('[data-move-day]').forEach(button => button.addEventListener('click', () => {
+    if (!selectedActivityId) return;
+    const sourceDay = activePlanDay();
+    const targetDay = planDays.find(day => day.id === button.dataset.moveDay);
+    const sourceIndex = sourceDay.activities.findIndex(activity => activity.id === selectedActivityId);
+    const [moved] = sourceDay.activities.splice(sourceIndex, 1);
+    targetDay.activities.push(moved);
+    selectedActivityId = null;
+    showPrototypeToast(`ย้าย ${moved.name} ไป Day ${targetDay.day} แล้ว`);
+    renderPlanWorkspace();
+  }));
+}
+
+let editingActivityId = null;
+let activityIcon = `${ART}st_camera2.png`;
+
+/* Reopens the plan editor after the picker closes, so choosing an icon never
+   loses what's already typed in the form. */
+$('#pickActivityIcon').addEventListener('click', () => openAssetPicker('place', activityIcon, src => {
+  activityIcon = src;
+  $('#activityIconPreview').src = src;
+  mask.classList.add('open');
+  planEditor.classList.add('open');
+  planEditor.setAttribute('aria-hidden', 'false');
+}));
+
+function openPlanEditor(activity = null) {
+  editingActivityId = activity?.id || null;
+  $('#planEditorTitle').textContent = activity ? 'แก้ไขกิจกรรม' : 'เพิ่มสถานที่ในแผน';
+  $('#activityDay').innerHTML = planDays.map(day => `<option value="${day.id}">Day ${day.day} · ${day.city}</option>`).join('');
+  $('#activityDay').value = activity
+    ? planDays.find(day => day.activities.some(item => item.id === activity.id)).id
+    : activePlanDayId;
+  $('#activityName').value = activity?.name || '';
+  $('#activityTime').value = activity?.time === '—' ? '' : (activity?.time || '09:00');
+  $('#activityTag').value = activity?.tag === 'รอจัดแผน' ? 'กิจกรรมย่อย' : (activity?.tag || 'กิจกรรมย่อย');
+  $('#activityCost').value = activity?.cost?.replace(/[^\d]/g, '') || '';
+  $('#activityDetail').value = activity?.detail || '';
+  activityIcon = activity?.image || `${ART}st_camera2.png`;
+  $('#activityIconPreview').src = activityIcon;
+  mask.classList.add('open');
+  planEditor.classList.add('open');
+  planEditor.setAttribute('aria-hidden', 'false');
+  setTimeout(() => $('#activityName').focus(), 80);
+}
+
+$('#addPlace').addEventListener('click', () => openPlanEditor());
+$('#cancelPlanEditor').addEventListener('click', closeLayers);
+
+$('#planEditorForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const targetDay = planDays.find(day => day.id === $('#activityDay').value);
+  const sourceDay = editingActivityId
+    ? planDays.find(day => day.activities.some(activity => activity.id === editingActivityId))
+    : null;
+  const existing = sourceDay?.activities.find(activity => activity.id === editingActivityId);
+  const numericCost = $('#activityCost').value.replace(/\D/g, '');
+  const activity = {
+    id: existing?.id || `activity-${Date.now()}`,
+    time: $('#activityTime').value,
+    name: $('#activityName').value.trim(),
+    detail: $('#activityDetail').value.trim() || 'ยังไม่มีรายละเอียด',
+    tag: $('#activityTag').value,
+    cost: numericCost ? fmtAmount(Number(numericCost), '¥ ') : '—',
+    bills: existing?.bills || 'ยังไม่มีบิล',
+    image: activityIcon
+  };
+
+  if (existing) {
+    sourceDay.activities.splice(sourceDay.activities.findIndex(item => item.id === existing.id), 1);
+  }
+  targetDay.activities.push(activity);
+  targetDay.activities.sort((a, b) => a.time.localeCompare(b.time));
+  activePlanDayId = targetDay.id;
+  selectedActivityId = activity.id;
+  closeLayers();
+  renderPlanWorkspace();
+  showPrototypeToast(`${existing ? 'อัปเดต' : 'เพิ่ม'} ${activity.name} ใน Day ${targetDay.day} แล้ว`);
+});
+
+/* ── Image library & picker ───────────────────────────────────────────
+   One dialog serves all three asset kinds. Each kind declares the exact
+   pixel size it wants, shown to the user in the dialog, and uploads are
+   redrawn to that size on a canvas before being stored — this both enforces
+   the stated dimensions and keeps the data URL small enough that saving to
+   localStorage doesn't blow the quota. */
+const assetSpecs = {
+  banner: {
+    title:'ภาพแบนเนอร์ทริป', width:1920, height:810, shape:'wide',
+    hint:'แนวนอน อัตราส่วน 2.37 : 1 · ระบบจะครอบให้พอดีอัตโนมัติ',
+    note:'ใช้เป็นภาพหลักบนหน้า "วันนี้" หมุดและเส้นทางจะวางทับด้วยโค้ด จึงไม่ควรมีชื่อสถานที่ฝังในภาพ'
+  },
+  place: {
+    title:'ไอคอนสถานที่', width:256, height:256, shape:'rounded',
+    hint:'จัตุรัส 1 : 1 · PNG พื้นโปร่งใส',
+    note:'แสดงเป็นสี่เหลี่ยมมุมโค้งในแผนเที่ยว ควรเว้นขอบรอบภาพเล็กน้อย'
+  },
+  expense: {
+    title:'ไอคอนค่าใช้จ่าย', width:192, height:192, shape:'circle',
+    hint:'จัตุรัส 1 : 1 · PNG พื้นโปร่งใส',
+    note:'แสดงเป็นวงกลมในรายการบิล เนื้อหาสำคัญควรอยู่กลางภาพ'
+  },
+  wallet: {
+    title:'ไอคอนกระเป๋าเงิน', width:256, height:256, shape:'rounded',
+    hint:'จัตุรัส 1 : 1 · PNG พื้นโปร่งใส หรือ SVG',
+    note:'แสดงเป็นสี่เหลี่ยมมุมโค้งบนการ์ดกระเป๋า · ภาพแบน 2 มิติสีพาสเทลจะเข้ากับหน้าอื่นที่สุด'
+  },
+  currency: {
+    title:'ไอคอนสกุลเงิน', width:192, height:192, shape:'circle',
+    hint:'จัตุรัส 1 : 1 · เต็มวงกลม ไม่ต้องเว้นขอบ',
+    note:'แสดงเป็นเหรียญกลมในรายการสกุลเงิน · ควรมีสีเด่นประจำสกุลเพื่อให้แยกออกจากกันเร็ว'
+  }
+};
+
+const assetLibrary = {
+  banner: [
+    { id:'hokkaido-clean', label:'Hokkaido · ภาพวาด', src:'art/hokkaido-illustrated-clean.png' },
+    { id:'hokkaido-landmarks', label:'Hokkaido · มีชื่อสถานที่', src:'art/hokkaido-illustrated-landmarks.png' },
+    { id:'hokkaido-texture', label:'Hokkaido · เท็กซ์เจอร์', src:'art/hokkaido-texture-map.png' },
+    { id:'plan-hokkaido5', label:'Hokkaido · แผนที่เดิม', src:`${ART}hero_plan_hokkaido5.png` }
+  ],
+  place: [
+    { id:'marimo', label:'ทะเลสาบ', src:`${ART}act_marimo.png` },
+    { id:'ainukotan', label:'หมู่บ้านวัฒนธรรม', src:`${ART}act_ainukotan.png` },
+    { id:'crane', label:'นกกระเรียน', src:`${ART}act_crane.png` },
+    { id:'ginga', label:'น้ำตก', src:`${ART}act_ginga.png` },
+    { id:'kurodake', label:'ภูเขา / กระเช้า', src:`${ART}act_kurodake.png` },
+    { id:'nusamai', label:'สะพาน', src:`${ART}act_nusamai.png` },
+    { id:'hotel', label:'ที่พัก', src:`${ART}ic_hotel.png` },
+    { id:'train', label:'การเดินทาง', src:`${ART}ic_train.png` },
+    { id:'ramen', label:'อาหาร', src:`${ART}ic_ramen.png` },
+    { id:'gift', label:'ช้อปปิ้ง', src:`${ART}ic_gift.png` },
+    { id:'city', label:'เมือง', src:`${ART}st_tokyo_city.png` },
+    { id:'suitcase', label:'กระเป๋าเดินทาง', src:`${ART}st_suitcase.png` }
+  ],
+  expense: [
+    { id:'food', label:'อาหาร', src:`${ART}cat_food.png` },
+    { id:'hotel', label:'ที่พัก', src:`${ART}cat_hotel.png` },
+    { id:'shop', label:'ช้อปปิ้ง', src:`${ART}cat_shop.png` },
+    { id:'transport', label:'เดินทาง', src:`${ART}cat_transport.png` },
+    { id:'activity', label:'กิจกรรม', src:`${ART}cat_activity.png` },
+    { id:'ramen-ex', label:'ร้านอาหาร', src:`${ART}ic_ramen.png` },
+    { id:'hotel-ex', label:'โรงแรม', src:`${ART}ic_hotel.png` },
+    { id:'gift-ex', label:'ของฝาก', src:`${ART}ic_gift.png` }
+  ],
+  wallet: [
+    { id:'w-classic',  label:'บิลโฟลด์',       src:'art/icons/wallet_classic.svg' },
+    { id:'w-coin',     label:'กระเป๋าเหรียญ',   src:'art/icons/wallet_coin.svg' },
+    { id:'w-card',     label:'ที่ใส่บัตร',      src:'art/icons/wallet_card.svg' },
+    { id:'w-travel',   label:'กระเป๋าเดินทาง',  src:'art/icons/wallet_travel.svg' },
+    { id:'w-envelope', label:'ซองเงิน',        src:'art/icons/wallet_envelope.svg' },
+    { id:'w-pouch',    label:'ถุงผ้า',          src:'art/icons/wallet_pouch.svg' },
+    { id:'w-mint',     label:'มินต์',           src:'art/icons/wallet_mint.svg' },
+    { id:'w-night',    label:'กลางคืน',        src:'art/icons/wallet_night.svg' }
+  ],
+  currency: [
+    { id:'c-jpy', label:'เยน ¥',    src:'art/icons/coin_jpy.svg' },
+    { id:'c-thb', label:'บาท ฿',    src:'art/icons/coin_thb.svg' },
+    { id:'c-usd', label:'ดอลลาร์ $', src:'art/icons/coin_usd.svg' },
+    { id:'c-eur', label:'ยูโร €',    src:'art/icons/coin_eur.svg' },
+    { id:'c-krw', label:'วอน ₩',    src:'art/icons/coin_krw.svg' },
+    { id:'c-gbp', label:'ปอนด์ £',   src:'art/icons/coin_gbp.svg' },
+    { id:'c-cny', label:'หยวน',      src:'art/icons/coin_cny.svg' },
+    { id:'c-sgd', label:'สิงคโปร์',   src:'art/icons/coin_sgd.svg' },
+    { id:'c-aud', label:'ออสเตรเลีย', src:'art/icons/coin_aud.svg' },
+    { id:'c-twd', label:'ไต้หวัน',    src:'art/icons/coin_twd.svg' },
+    { id:'c-vnd', label:'ดอง ₫',     src:'art/icons/coin_vnd.svg' },
+    { id:'c-myr', label:'ริงกิต',     src:'art/icons/coin_myr.svg' }
+  ]
+};
+
+const assetDialog = $('#assetPicker');
+let assetKind = 'place';
+let assetChoice = '';
+let assetOnPick = null;
+
+function renderAssetGrid() {
+  const spec = assetSpecs[assetKind];
+  $('#assetGrid').innerHTML = assetLibrary[assetKind].map(asset => `
+    <button type="button" class="asset-option ${asset.src === assetChoice ? 'selected' : ''}" data-asset-src="${asset.src}">
+      <span class="asset-thumb ${spec.shape}"><img src="${asset.src}" alt=""></span>
+      <small>${asset.label}</small>
+    </button>`).join('');
+}
+
+function openAssetPicker(kind, currentSrc, onPick) {
+  // Always open on a clean stack — the picker is launched from three other
+  // layers, and leaving one of them open would cover it.
+  closeLayers();
+  assetKind = kind;
+  assetChoice = currentSrc || '';
+  assetOnPick = onPick;
+  const spec = assetSpecs[kind];
+  $('#assetPickerTitle').textContent = spec.title;
+  $('#assetSpec').innerHTML = `<b>ขนาดที่แนะนำ ${spec.width} × ${spec.height} px</b><span>${spec.hint}</span><small>${spec.note}</small>`;
+  $('#assetUploadHint').textContent = `ระบบจะย่อ/ครอบให้เป็น ${spec.width} × ${spec.height} px ให้อัตโนมัติ`;
+  $('#assetError').textContent = '';
+  $('#assetUpload').value = '';
+  renderAssetGrid();
+  mask.classList.add('open');
+  assetDialog.classList.add('open');
+  assetDialog.setAttribute('aria-hidden', 'false');
+}
+
+$('#assetGrid').addEventListener('click', event => {
+  const option = event.target.closest('[data-asset-src]');
+  if (!option) return;
+  assetChoice = option.dataset.assetSrc;
+  renderAssetGrid();
+});
+
+/* Redraw an upload to the kind's exact dimensions with a centre cover-crop. */
+function normaliseUpload(file, spec) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('ไฟล์นี้ไม่ใช่รูปภาพที่รองรับ'));
+      image.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = spec.width;
+        canvas.height = spec.height;
+        const context = canvas.getContext('2d');
+        const scale = Math.max(spec.width / image.width, spec.height / image.height);
+        const drawWidth = image.width * scale;
+        const drawHeight = image.height * scale;
+        context.drawImage(image, (spec.width - drawWidth) / 2, (spec.height - drawHeight) / 2, drawWidth, drawHeight);
+        resolve(canvas.toDataURL('image/webp', 0.86));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+$('#assetUpload').addEventListener('change', async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const spec = assetSpecs[assetKind];
+  $('#assetError').textContent = '';
+  if (file.size > 8 * 1024 * 1024) {
+    $('#assetError').textContent = 'ไฟล์ใหญ่เกิน 8 MB กรุณาย่อก่อนอัปโหลด';
+    return;
+  }
+  try {
+    const src = await normaliseUpload(file, spec);
+    const label = file.name.replace(/\.[^.]+$/, '').slice(0, 18) || 'รูปที่อัปโหลด';
+    assetLibrary[assetKind].unshift({ id:`up-${Date.now()}`, label, src, uploaded:true });
+    assetChoice = src;
+    renderAssetGrid();
+    saveState();
+  } catch (error) {
+    $('#assetError').textContent = error.message;
+  }
+});
+
+$('#assetConfirm').addEventListener('click', () => {
+  if (!assetChoice) {
+    $('#assetError').textContent = 'ยังไม่ได้เลือกรูป';
+    return;
+  }
+  /* Close first, then hand back: the callbacks re-open the form they were
+     called from, and closeLayers() would otherwise shut it again immediately. */
+  const onPick = assetOnPick;
+  assetOnPick = null;
+  closeLayers();
+  onPick?.(assetChoice);
+});
+
+/* ── Trip banner ── */
+let tripBanner = 'art/hokkaido-illustrated-clean.png';
+let newTripBanner = 'art/hokkaido-illustrated-clean.png';
+
+function applyTripBanner(src) {
+  tripBanner = src;
+  $('.map-hero img').src = src;
+  saveState();
+}
+
+const openBannerPicker = () => openAssetPicker('banner', tripBanner, src => {
+  applyTripBanner(src);
+  showPrototypeToast('เปลี่ยนภาพแบนเนอร์แล้ว');
+});
+$('#changeBanner').addEventListener('click', openBannerPicker);
+$('#editTripBanner').addEventListener('click', openBannerPicker);
+
+$('#pickNewTripBanner').addEventListener('click', () => openAssetPicker('banner', newTripBanner, src => {
+  newTripBanner = src;
+  $('#newTripBannerPreview').src = src;
+  mask.classList.add('open');
+  $('#newTripDialog').classList.add('open');
+  $('#newTripDialog').setAttribute('aria-hidden', 'false');
+}));
+
+$('#openNewTrip').addEventListener('click', () => {
+  newTripBanner = 'art/hokkaido-illustrated-clean.png';
+  $('#newTripBannerPreview').src = newTripBanner;
+  $('#newTripName').value = '';
+  mask.classList.add('open');
+  $('#newTripDialog').classList.add('open');
+  $('#newTripDialog').setAttribute('aria-hidden', 'false');
+});
+
+$('#newTripForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const name = $('#newTripName').value.trim();
+  const range = `${$('#newTripStart').value} – ${$('#newTripEnd').value}`;
+  $('.topbar b').textContent = name;
+  $('.topbar small').textContent = `${range} · วางแผนอยู่`;
+  applyTripBanner(newTripBanner);
+  closeLayers();
+  showScreen('today');
+  showPrototypeToast(`สร้างทริป ${name} แล้ว`);
+});
+
+/* ── Persistence ───────────────────────────────────────────────────────
+   Prototype-local only: everything lives in this browser under one key so a
+   review can span several sittings. Nothing is sent anywhere and no real
+   account is touched. STORAGE_VERSION invalidates saves whose shape predates
+   the payer/owner/wallet split, which would otherwise render as blank rows. */
+const STORAGE_KEY = 'unified-trip-prototype';
+/* Bump on any bill or planDay shape change. v3 = 12-day itinerary with the
+   richer weather object (feels/periods/tip). v4 = participants[] replaced the
+   flat participantIds[] and fundings were added; an older save would render
+   an empty weather card or a bill with no split. */
+const STORAGE_VERSION = 9;
+let restoring = false;
+
+function saveState() {
+  if (restoring) return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: STORAGE_VERSION, bills, planDays, activePlanDayId, tripBanner, fundings, viewerId, tripCurrencies, wallets, tripClosed, postingDate, tripLog, presence,
+      // Only user uploads need persisting; bundled art is already in the code.
+      uploads: Object.fromEntries(Object.entries(assetLibrary)
+        .map(([kind, list]) => [kind, list.filter(asset => asset.uploaded)]))
+    }));
+  } catch (error) {
+    // Most likely the 5 MB quota after several uploads — say so plainly.
+    console.warn('เก็บข้อมูล prototype ไม่สำเร็จ', error);
+    showPrototypeToast('พื้นที่เก็บในเบราว์เซอร์เต็ม · รูปที่อัปโหลดล่าสุดอาจไม่ถูกบันทึกข้าม reload');
+  }
+}
+
+function loadState() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+  } catch (error) {
+    saved = null;
+  }
+  if (!saved || saved.version !== STORAGE_VERSION) return;
+  restoring = true;
+  if (Array.isArray(saved.bills)) {
+    // Drop anything missing the current shape rather than half-rendering it.
+    bills = saved.bills.filter(bill => bill && bill.ownerId && bill.payerId
+      && Array.isArray(bill.categories) && Array.isArray(bill.participants));
+  }
+  if (Array.isArray(saved.planDays) && saved.planDays.length) {
+    planDays.length = 0;
+    planDays.push(...saved.planDays);
+  }
+  if (saved.activePlanDayId && planDays.some(day => day.id === saved.activePlanDayId)) {
+    activePlanDayId = saved.activePlanDayId;
+  }
+  if (saved.uploads) {
+    Object.entries(saved.uploads).forEach(([kind, list]) => {
+      if (assetLibrary[kind] && Array.isArray(list)) assetLibrary[kind].unshift(...list);
+    });
+  }
+  if (saved.tripBanner) tripBanner = saved.tripBanner;
+  if (Array.isArray(saved.fundings)) fundings = saved.fundings;
+  if (Array.isArray(saved.tripCurrencies) && saved.tripCurrencies.length) tripCurrencies = saved.tripCurrencies;
+  if (Array.isArray(saved.wallets) && saved.wallets.length) wallets = saved.wallets;
+  tripClosed = Boolean(saved.tripClosed);
+  postingDate = saved.postingDate || '';
+  if (Array.isArray(saved.tripLog)) tripLog = saved.tripLog;
+  if (saved.presence && typeof saved.presence === 'object') presence = { ...presence, ...saved.presence };
+  if (saved.viewerId && memberById(saved.viewerId)) viewerId = saved.viewerId;
+  restoring = false;
+  $('.map-hero img').src = tripBanner;
+}
+
+$('#resetDemo').addEventListener('click', () => {
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
+});
+
+loadState();
+renderPlanWorkspace();
+renderBills();
+// Paints the weather card and route state from data rather than the markup.
+renderJourneyPreview(actualJourneyIndex);
