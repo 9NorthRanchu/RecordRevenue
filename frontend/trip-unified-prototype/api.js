@@ -167,5 +167,51 @@ const TripApi = (() => {
   const saveExpense = bill => send('POST', '/expenses', { body: toExpenseBody(bill) });
   const removeExpense = id => send('DELETE', '/expenses', { query: `&id=${encodeURIComponent(id)}` });
 
-  return { config, fetchTrip, toPrototypeState, toExpenseBody, saveExpense, removeExpense };
+  const saveCurrency = currency => send('POST', '/currencies', {
+    body: {
+      code: currency.code, symbol: currency.symbol, label: currency.label,
+      plan_rate: currency.planRate, is_base: Boolean(currency.base), icon_url: currency.icon || null
+    }
+  });
+  const removeCurrency = code => send('DELETE', '/currencies', { query: `&code=${encodeURIComponent(code)}` });
+
+  const saveWallet = wallet => send('POST', '/wallets', {
+    body: {
+      wallet_id: wallet.id && !wallet.id.startsWith('w-') ? wallet.id : undefined,
+      name: wallet.label, currency: wallet.currency,
+      owner_member_id: wallet.ownerId, icon_url: wallet.icon || null,
+      exclude_on_close: Boolean(wallet.excludeOnClose)
+    }
+  });
+
+  /* ⚠️ ไม่ส่ง rate ขึ้นไป — เซิร์ฟเวอร์คำนวณ thb ÷ foreign เอง
+     ถ้าหน้าจอส่งไปด้วย เลขที่เก็บอาจไม่ตรงกับเงินที่จ่ายจริง */
+  const saveFunding = lot => send('POST', '/fundings', {
+    body: {
+      wallet_id: lot.walletId, thb_amount: lot.thb, foreign_amount: lot.foreign,
+      funding_date: lot.date, note: lot.note || null
+    }
+  });
+  const removeFunding = id => send('DELETE', '/fundings', { query: `&id=${encodeURIComponent(id)}` });
+
+  /* ปิดทริป — ต้องบอกทุกกระเป๋าที่มีเงินเหลือว่าจะเอาไปไหน ไม่งั้นเซิร์ฟเวอร์
+     ปฏิเสธ (เงินที่ไม่ได้ระบุจะหายจากบัญชีเงียบ ๆ)
+     ยอดที่ลงบัญชีเซิร์ฟเวอร์คิดเองจากผู้ร่วมจ่ายจริง หน้าจอไม่ส่งขึ้นไป */
+  const closeTrip = ({ postingDate, lines, reason }) => send('POST', '/closures', {
+    body: {
+      posting_date: postingDate, reason: reason || null,
+      lines: lines.map(line => line.mode === 'carry'
+        ? { wallet_id: line.walletId, disposition: 'CARRY',
+            carry_currency: line.carryCurrency, carry_amount: line.carryAmount }
+        : { wallet_id: line.walletId, disposition: 'RETURN', received_thb: line.receivedThb })
+    }
+  });
+
+  const reopenTrip = reason => send('POST', '/closures/reopen', { body: { reason } });
+
+  return {
+    config, fetchTrip, toPrototypeState, toExpenseBody,
+    saveExpense, removeExpense, saveCurrency, removeCurrency,
+    saveWallet, saveFunding, removeFunding, closeTrip, reopenTrip
+  };
 })();

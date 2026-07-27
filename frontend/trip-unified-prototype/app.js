@@ -200,6 +200,9 @@ let tripLog = [];
 /* โหมดข้อมูลจริง (?live=1) — ประกาศไว้บนสุดโดยตั้งใจ เพราะ applyTripLock()
    ถูกเรียกตั้งแต่ตอน render รอบแรก ถ้าประกาศไว้ท้ายไฟล์จะชน TDZ */
 let liveMode = false;
+/* วันจบทริปจริงจาก Projects.end_date — TRIP_END_DATE เป็นค่าสมมติของข้อมูล
+   ตัวอย่าง (ก.พ. 2027) ถ้าเผลอใช้ตัวนั้นตอนปิดทริปจริงจะลงบัญชีผิดงวดทั้งทริป */
+let liveTripEndDate = '';
 
 const currencyByCode = code => tripCurrencies.find(row => row.code === code);
 
@@ -531,11 +534,39 @@ $('#currencyRows').addEventListener('click', event => {
   if (!remove || remove.disabled) return;
   const code = remove.dataset.removeCurrency;
   if (blockedByClose('currencies') || walletsUsing(code).length) return;
+  if (liveMode) {
+    // เซิร์ฟเวอร์ตรวจซ้ำอีกชั้นว่ามีกระเป๋าหรือบิลใช้สกุลนี้อยู่ไหม
+    // ฝั่งหน้าจอเห็นเฉพาะกระเป๋าของตัวเอง จึงตัดสินใจแทนทั้งทริปไม่ได้
+    submitLive(null, () => TripApi.removeCurrency(code), `ลบสกุลเงิน ${code} แล้ว`)
+      .then(ok => { if (!ok) showPrototypeToast('ลบไม่สำเร็จ — ยังมีกระเป๋าหรือบิลใช้สกุลนี้อยู่'); });
+    return;
+  }
   tripCurrencies = tripCurrencies.filter(currency => currency.code !== code);
   renderCurrencies();
   renderBills();
   showPrototypeToast(`ลบสกุลเงิน ${code} แล้ว`);
 });
+
+/* ── ส่งขึ้นเซิร์ฟเวอร์แล้วดึงข้อมูลใหม่ทั้งชุด ─────────────────────────
+   ใช้ร่วมกันทุกฟอร์มในโหมดข้อมูลจริง
+
+   ล้มเหลว = ไม่ปิดฟอร์ม และแสดงเหตุผลจากเซิร์ฟเวอร์ตามจริง ไม่แปลงเป็น
+   ข้อความกลาง ๆ เพราะฝั่งเซิร์ฟเวอร์บอกสาเหตุละเอียดกว่าที่หน้าจอเดาเองได้
+   เช่น "ยังมีกระเป๋า 2 ใบใช้สกุล JPY อยู่" ซึ่งบอกทางแก้ไปในตัว */
+async function submitLive(errorSelector, action, successMessage) {
+  const errorBox = $(errorSelector);
+  if (errorBox) errorBox.textContent = 'กำลังบันทึก…';
+  try {
+    await action();
+    await refreshFromServer();
+    closeLayers();
+    showPrototypeToast(successMessage);
+    return true;
+  } catch (error) {
+    if (errorBox) errorBox.textContent = error.message;
+    return false;
+  }
+}
 
 $('#currencyForm').addEventListener('submit', event => {
   event.preventDefault();
@@ -548,6 +579,17 @@ $('#currencyForm').addEventListener('submit', event => {
   if (!editingCurrency && currencyByCode(code)) { error.textContent = `มีสกุล ${code} อยู่แล้ว`; return; }
 
   const payload = { code, symbol:$('#currencySymbol').value.trim(), label:$('#currencyLabel').value.trim(), planRate:rate, icon:currencyIcon };
+  const verb = editingCurrency ? 'อัปเดต' : 'เพิ่ม';
+
+  if (liveMode) {
+    // สกุลเดิมมี is_base อยู่แล้ว ต้องส่งกลับไปด้วย ไม่งั้นสกุลหลักจะกลายเป็นสกุลธรรมดา
+    const existing = currencyByCode(editingCurrency || code);
+    submitLive('#currencyError',
+      () => TripApi.saveCurrency({ ...payload, base: Boolean(existing?.base) }),
+      `${verb}สกุลเงิน ${code} แล้ว`);
+    return;
+  }
+
   if (editingCurrency) {
     Object.assign(currencyByCode(editingCurrency), payload);
   } else {
@@ -556,7 +598,7 @@ $('#currencyForm').addEventListener('submit', event => {
   closeLayers();
   renderCurrencies();
   renderBills();
-  showPrototypeToast(`${editingCurrency ? 'อัปเดต' : 'เพิ่ม'}สกุลเงิน ${code} แล้ว`);
+  showPrototypeToast(`${verb}สกุลเงิน ${code} แล้ว`);
 });
 
 $('#walletGrid').addEventListener('click', event => {
@@ -565,6 +607,11 @@ $('#walletGrid').addEventListener('click', event => {
   if (swap) {
     const wallet = walletById(swap.dataset.walletIcon);
     openAssetPicker('wallet', wallet.icon || DEFAULT_ICONS.wallet, src => {
+      if (liveMode) {
+        submitLive(null, () => TripApi.saveWallet({ ...wallet, icon: src }),
+          `เปลี่ยนไอคอน ${wallet.label} แล้ว`).then(() => showScreen('wallets'));
+        return;
+      }
       wallet.icon = src;
       renderBills();
       showScreen('wallets');
@@ -580,6 +627,13 @@ $('#walletGrid').addEventListener('change', event => {
   if (!carry) return;
   if (blockedByClose('wallets')) { carry.checked = !carry.checked; return; }
   const wallet = walletById(carry.dataset.carryWallet);
+  if (liveMode) {
+    // ล้มเหลว = คืนช่องติ๊กกลับ ไม่ปล่อยให้จอโชว์สถานะที่ไม่ตรงกับฐาน
+    submitLive(null, () => TripApi.saveWallet({ ...wallet, excludeOnClose: carry.checked }),
+      `${carry.checked ? 'ยกเว้น' : 'รวม'} ${wallet.label} ตอนปิดทริป`)
+      .then(ok => { if (!ok) { carry.checked = !carry.checked; showPrototypeToast('บันทึกไม่สำเร็จ'); } });
+    return;
+  }
   wallet.excludeOnClose = carry.checked;
   renderBills();
   showScreen('wallets');
@@ -640,15 +694,25 @@ $('#fundForm').addEventListener('submit', event => {
     $('#fundError').textContent = 'กรอกทั้งยอดเงินบาทและยอดเงินสกุลนั้นให้มากกว่า 0';
     return;
   }
-  fundings.push({
+  const lot = {
     id: `f-${Date.now()}`, walletId: fundingWalletId,
     date: $('#fundDate').value, thb: thbIn, foreign: foreignIn,
     note: $('#fundNote').value.trim() || 'เติมเงิน'
-  });
+  };
+  const label = fmtAmount(foreignIn, symbolFor(walletById(fundingWalletId).currency));
+
+  if (liveMode) {
+    submitLive('#fundError', () => TripApi.saveFunding(lot),
+      `เติม ${label} แล้ว · เรทเฉลี่ยคำนวณใหม่`)
+      .then(() => showScreen('wallets'));
+    return;
+  }
+
+  fundings.push(lot);
   closeLayers();
   renderBills();
   showScreen('wallets');
-  showPrototypeToast(`เติม ${fmtAmount(foreignIn, symbolFor(walletById(fundingWalletId).currency))} แล้ว · เรทเฉลี่ยคำนวณใหม่`);
+  showPrototypeToast(`เติม ${label} แล้ว · เรทเฉลี่ยคำนวณใหม่`);
 });
 
 /* ── Add a wallet ── */
@@ -684,10 +748,18 @@ $('#walletForm').addEventListener('submit', event => {
   event.preventDefault();
   const label = $('#walletLabel').value.trim();
   if (!label) { $('#walletError').textContent = 'ตั้งชื่อกระเป๋าก่อน'; return; }
-  wallets.push({
+  const wallet = {
     id: `w-${Date.now()}`, ownerId: viewerId, label,
     currency: $('#walletCurrency').value, icon: newWalletIcon
-  });
+  };
+
+  if (liveMode) {
+    submitLive('#walletError', () => TripApi.saveWallet(wallet), `สร้างกระเป๋า ${label} แล้ว`)
+      .then(() => showScreen('wallets'));
+    return;
+  }
+
+  wallets.push(wallet);
   closeLayers();
   renderBills();
   showScreen('wallets');
@@ -1143,7 +1215,7 @@ const LIVE_LOCK_REASON = 'โหมดข้อมูลจริง · อ่�
 /* เปิดการเขียนกลับทีละส่วน ไม่ใช่เปิดทีเดียวทั้งหน้า
    ส่วนที่ยังไม่เปิดจะถูกล็อกเหมือนเดิม จะได้ไม่มีปุ่มที่กดแล้วดูเหมือนสำเร็จ
    แต่ไม่ได้บันทึกลงฐานจริง */
-const LIVE_WRITABLE = { expenses: true, wallets: false, currencies: false, fundings: false, closing: false };
+const LIVE_WRITABLE = { expenses: true, wallets: true, currencies: true, fundings: true, closing: true };
 
 const lockReason = () => (liveMode ? LIVE_LOCK_REASON : TRIP_LOCK_REASON);
 /* area = ส่วนที่กำลังจะแก้ · ไม่ระบุ = ถือว่ายังไม่เปิดในโหมดข้อมูลจริง */
@@ -1156,22 +1228,31 @@ function blockedByClose(area) {
 }
 
 function applyTripLock() {
+  // ปุ่มแต่ละตัวผูกกับส่วนของตัวเอง ไม่ใช่สถานะรวมของทั้งหน้า
+  // ไม่งั้นพอเปิดการเขียนทีละส่วน ปุ่มจะยังถูกล็อกทั้งแถบทั้งที่ API พร้อมแล้ว
+  const byArea = [
+    [$$('.add-expense'), 'expenses'],
+    [[$('#addWallet')], 'wallets'],
+    [[$('#addCurrency')], 'currencies']
+  ];
+  byArea.forEach(([buttons, area]) => {
+    const off = financeLocked(area);
+    [...buttons].filter(Boolean).forEach(button => {
+      button.disabled = off;
+      button.title = off ? lockReason() : '';
+    });
+  });
   const locked = financeLocked();
-  [...$$('.add-expense')].forEach(button => {
-    const off = financeLocked('expenses');
-    button.disabled = off;
-    button.title = off ? lockReason() : '';
-  });
-  [$('#addWallet'), $('#addCurrency')].filter(Boolean).forEach(button => {
-    button.disabled = locked;
-    button.title = locked ? lockReason() : '';
-  });
   $$('.trip-locked-note').forEach(note => {
     note.hidden = !locked;
     // ข้อความในป้ายต้องตรงกับเหตุผลที่ล็อกจริง ไม่ใช่บอกว่าทริปปิดทั้งที่ยังเปิดอยู่
-    note.innerHTML = (liveMode && !tripClosed)
-      ? '🔴 <b>โหมดข้อมูลจริง</b> — บันทึกบิลลงฐานจริงได้แล้ว ส่วนกระเป๋า สกุลเงิน และการปิดทริปยังแก้จากหน้านี้ไม่ได้'
-      : '🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้';
+    // สามสถานะ ไม่ใช่สอง: ปิดแล้ว(จริง) · ปิดแล้ว(ตัวอย่าง) · เปิดอยู่แต่เป็นข้อมูลจริง
+    // ถ้ารวบเหลือสอง จะมีกรณีที่ป้ายบอกว่า "ทริปปิดแล้ว" ทั้งที่ทริปยังเปิดอยู่
+    note.innerHTML = tripClosed
+      ? (liveMode
+          ? '🔒🔴 <b>ทริปนี้ปิดแล้ว (ข้อมูลจริง)</b> — ยอดถูกรายงานเข้าบัญชีไปแล้ว ต้องเปิดทริปกลับก่อนจึงจะแก้ได้'
+          : '🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้')
+      : '🔴 <b>โหมดข้อมูลจริง</b> — ทุกอย่างที่บันทึกจากหน้านี้ลงฐานจริงทั้งหมด รวมถึงการปิดทริป';
   });
   document.body.classList.toggle('trip-closed', locked);
 }
@@ -1477,6 +1558,26 @@ $('#closeAck').addEventListener('change', event => {
 $('#confirmClose').addEventListener('click', () => {
   const s = computeCloseSummary();
   if (!s.balanced || !$('#closeAck').checked) return;
+
+  if (liveMode) {
+    /* วันจบทริปในโหมดข้อมูลจริงต้องมาจาก Projects.end_date ไม่ใช่ TRIP_END_DATE
+       ซึ่งเป็นค่าสมมติของข้อมูลตัวอย่าง (ก.พ. 2027) — ถ้าเผลอใช้ตัวนั้นจะลง
+       บัญชีผิดงวดไปทั้งทริป */
+    const posting = $('#postingDate').value || liveTripEndDate;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(posting)) {
+      $('#closeError').textContent = 'เลือกวันลงบัญชีก่อน';
+      return;
+    }
+    const lines = settlementResults().map(row => ({
+      walletId: row.wallet.id, mode: row.plan.mode,
+      receivedThb: row.received, carryCurrency: row.carryCurrency, carryAmount: row.carryAmount
+    }));
+    submitLive('#closeError', () => TripApi.closeTrip({ postingDate: posting, lines }),
+      'ปิดทริปแล้ว · ยอดถูกบันทึกเข้าบัญชีจริง')
+      .then(ok => { if (!ok) showPrototypeToast('ปิดทริปไม่สำเร็จ — ดูเหตุผลในกล่อง'); });
+    return;
+  }
+
   /* Freeze each wallet's rate so the baht figures stop moving — this is the
      moment the trip's numbers become history rather than an estimate. */
   wallets.forEach(wallet => { wallet.lockedRate = walletRate(wallet.id) ?? currencyByCode(wallet.currency)?.planRate ?? null; });
@@ -1535,6 +1636,15 @@ $('#reopenForm').addEventListener('submit', event => {
   if (!isAdmin(viewerId)) { $('#reopenError').textContent = 'เฉพาะผู้ดูแลทริปเท่านั้น'; return; }
   const reason = $('#reopenReason').value.trim();
   if (reason.length < 5) { $('#reopenError').textContent = 'ระบุเหตุผลอย่างน้อย 5 ตัวอักษร เพื่อเก็บไว้ในประวัติ'; return; }
+
+  if (liveMode) {
+    // เซิร์ฟเวอร์เป็นคนหาว่าจะกลับรายการปิดครั้งไหน และลงวันไหน
+    // หน้าจอไม่ต้องคำนวณเอง ไม่งั้นสองที่อาจเลือกคนละแถว
+    submitLive('#reopenError', () => TripApi.reopenTrip(reason),
+      'เปิดทริปกลับแล้ว · บันทึกรายการกลับเข้าบัญชีจริง');
+    return;
+  }
+
   /* Reopening must reverse the settlement that was already reported, not just
      unlock the UI. Without this, closing again would post a second full total
      and the ledger would double-count the first close. The reversal carries the
@@ -2325,6 +2435,7 @@ function applyLiveState(state) {
   tripLog = state.tripLog;
   tripClosed = state.tripClosed;
   postingDate = state.postingDate;
+  liveTripEndDate = state.tripEndDate || '';
   if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
   if (state.viewerId) viewerId = state.viewerId;
   if (state.banner) {
