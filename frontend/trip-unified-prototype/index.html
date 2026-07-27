@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Unified Trip — Hokkaido Prototype</title>
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
-  <link rel="stylesheet" href="style.css?v=31">
+  <link rel="stylesheet" href="style.css?v=32">
 </head>
 <body>
   <div class="prototype-note">UNIFIED TRIP · STATIC PROTOTYPE · ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง</div>
@@ -390,6 +390,8 @@
     </div>
   </section>
   <div class="toast" id="toast"></div>
-  <script src="app.js?v=33"></script>
+  <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
+  <script src="api.js?v=2"></script>
+  <script src="app.js?v=35"></script>
 </body>
 </html>

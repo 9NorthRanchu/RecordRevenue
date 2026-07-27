@@ -23,7 +23,7 @@ const dialog = $('#closeDialog');
 const planEditor = $('#planEditor');
 
 function openSheet() {
-  if (blockedByClose()) return;
+  if (blockedByClose('expenses')) return;
   mask.classList.add('open');
   sheet.classList.add('open');
   sheet.setAttribute('aria-hidden', 'false');
@@ -197,6 +197,9 @@ let tripCurrencies = [
 let tripClosed = false;
 let postingDate = '';
 let tripLog = [];
+/* โหมดข้อมูลจริง (?live=1) — ประกาศไว้บนสุดโดยตั้งใจ เพราะ applyTripLock()
+   ถูกเรียกตั้งแต่ตอน render รอบแรก ถ้าประกาศไว้ท้ายไฟล์จะชน TDZ */
+let liveMode = false;
 
 const currencyByCode = code => tripCurrencies.find(row => row.code === code);
 
@@ -483,7 +486,7 @@ function renderCurrencies() {
 }
 
 function openCurrencyDialog(code = null) {
-  if (blockedByClose()) return;
+  if (blockedByClose('currencies')) return;
   closeLayers();
   editingCurrency = code;
   const currency = code ? currencyByCode(code) : null;
@@ -527,7 +530,7 @@ $('#currencyRows').addEventListener('click', event => {
   if (edit) return openCurrencyDialog(edit.dataset.editCurrency);
   if (!remove || remove.disabled) return;
   const code = remove.dataset.removeCurrency;
-  if (blockedByClose() || walletsUsing(code).length) return;
+  if (blockedByClose('currencies') || walletsUsing(code).length) return;
   tripCurrencies = tripCurrencies.filter(currency => currency.code !== code);
   renderCurrencies();
   renderBills();
@@ -575,7 +578,7 @@ $('#walletGrid').addEventListener('click', event => {
 $('#walletGrid').addEventListener('change', event => {
   const carry = event.target.closest('[data-carry-wallet]');
   if (!carry) return;
-  if (blockedByClose()) { carry.checked = !carry.checked; return; }
+  if (blockedByClose('wallets')) { carry.checked = !carry.checked; return; }
   const wallet = walletById(carry.dataset.carryWallet);
   wallet.excludeOnClose = carry.checked;
   renderBills();
@@ -591,7 +594,7 @@ $('#walletGrid').addEventListener('change', event => {
 let fundingWalletId = null;
 
 function openFundDialog(walletId) {
-  if (blockedByClose()) return;
+  if (blockedByClose('fundings')) return;
   closeLayers();
   fundingWalletId = walletId;
   const wallet = walletById(walletId);
@@ -660,7 +663,7 @@ $('#pickWalletIcon').addEventListener('click', () => openAssetPicker('wallet', n
 }));
 
 $('#addWallet').addEventListener('click', () => {
-  if (blockedByClose()) return;
+  if (blockedByClose('wallets')) return;
   closeLayers();
   newWalletIcon = DEFAULT_ICONS.wallet;
   $('#walletIconPreview').src = newWalletIcon;
@@ -937,8 +940,8 @@ $('#splitRows').addEventListener('click', event => {
   refreshQuickAdd();
 });
 
-$('#saveExpense').addEventListener('click', () => {
-  if (blockedByClose()) { closeLayers(); return; }
+$('#saveExpense').addEventListener('click', async () => {
+  if (blockedByClose('expenses')) { closeLayers(); return; }
   const { balanced } = allocationState();
   const amount = readAmount();
   const shared = $('#sharedToggle').classList.contains('on');
@@ -951,7 +954,7 @@ $('#saveExpense').addEventListener('click', () => {
     amount: Number($('.category-amount', row).value.replace(/[^\d.]/g, '')) || 0
   }));
 
-  bills.unshift({
+  const bill = {
     id: `bill-${Date.now()}`,
     title: $('#expenseDescription').value.trim() || 'ค่าใช้จ่ายใหม่',
     amount,
@@ -959,6 +962,7 @@ $('#saveExpense').addEventListener('click', () => {
     payerId: $('#expensePayer').value,
     ownerId,
     walletId: $('#walletSelect').value,
+    date: new Date().toISOString().slice(0, 10),
     categories,
     visibility: $('#visibility').value,
     shared,
@@ -966,12 +970,48 @@ $('#saveExpense').addEventListener('click', () => {
     participants: shared ? split.participants : [{ memberId: ownerId, amount }],
     activityId: $('#expenseActivity').value,
     image: expenseIcon || ''
-  });
+  };
 
-  closeLayers();
-  renderBills();
-  showScreen('bills');
-  showPrototypeToast(`บันทึก ${fmtAmount(amount, symbolFor(currentCurrency()))} แล้ว · ${isTripOnly(ownerId) ? 'เฉพาะทริป' : 'ลงบัญชีหลัก'}`);
+  const routing = isTripOnly(ownerId) ? 'เฉพาะทริป' : 'ลงบัญชีหลัก';
+  const label = fmtAmount(amount, symbolFor(bill.currency));
+
+  if (!liveMode) {
+    bills.unshift(bill);
+    closeLayers();
+    renderBills();
+    showScreen('bills');
+    showPrototypeToast(`บันทึก ${label} แล้ว · ${routing}`);
+    return;
+  }
+
+  /* โหมดข้อมูลจริง: ส่งขึ้นเซิร์ฟเวอร์ก่อน แล้วค่อยดึงมาแสดงใหม่ทั้งชุด
+     ไม่ใส่ลงในอาร์เรย์ฝั่งหน้าจอเองเลย เพราะเซิร์ฟเวอร์เป็นคนปัดเศษและ
+     เกลี่ยเศษให้ admin ถ้าหน้าจอเดาเองจะได้ตัวเลขคนละชุดกับที่บันทึกจริง */
+  const button = $('#saveExpense');
+  button.disabled = true;
+  const previous = button.textContent;
+  button.textContent = 'กำลังบันทึก…';
+  let serverError = '';
+  try {
+    const result = await TripApi.saveExpense(bill);
+    await refreshFromServer();
+    closeLayers();
+    showScreen('bills');
+    const residual = result.residual
+      ? ` · เศษ ${fmtAmount(Math.abs(result.residual), symbolFor(bill.currency))} ไปที่ ${memberName(result.residual_member_id)}`
+      : '';
+    showPrototypeToast(`บันทึกลงฐานจริงแล้ว ${label} · ${routing}${residual}`);
+  } catch (error) {
+    // ค้างฟอร์มไว้พร้อมข้อความจากเซิร์ฟเวอร์ ไม่ปิดทิ้ง คนกรอกจะได้แก้ต่อได้เลย
+    serverError = error.message;
+  } finally {
+    button.textContent = previous;
+    // ⚠️ ต้องเขียนข้อความ *หลัง* refreshQuickAdd() เพราะฟังก์ชันนั้นเขียนทับ
+    //    #saveWarning ด้วยผลตรวจของฝั่งหน้าจอ ถ้าสลับลำดับ เหตุผลจากเซิร์ฟเวอร์
+    //    จะถูกลบทิ้งทันทีจนคนใช้ไม่เห็นว่าทำไมบันทึกไม่ผ่าน
+    refreshQuickAdd();
+    if (serverError) $('#saveWarning').textContent = `บันทึกไม่สำเร็จ: ${serverError}`;
+  }
 });
 
 /* ── Presence ──────────────────────────────────────────────────────────
@@ -1096,21 +1136,44 @@ $('#checkIn').addEventListener('click', () => {
    a single number. Buttons are greyed *and* the handlers re-check, so the
    rule holds even if a disabled attribute is bypassed. */
 const TRIP_LOCK_REASON = 'ทริปนี้ปิดแล้ว · แก้ตัวเลขการเงินไม่ได้ เพื่อให้ตรงกับยอดที่สรุปเข้าบัญชี';
+/* โหมดข้อมูลจริงล็อกด้วยเหตุผลคนละอย่างกับทริปที่ปิดแล้ว จึงต้องแยกข้อความ
+   ไม่งั้นคนใช้จะเห็น "ทริปนี้ปิดแล้ว" ทั้งที่ทริปยังเปิดอยู่ */
+const LIVE_LOCK_REASON = 'โหมดข้อมูลจริง · อ่านอย่างเดียว ยังแก้จากหน้านี้ไม่ได้';
 
-function blockedByClose() {
-  if (!tripClosed) return false;
-  showPrototypeToast(TRIP_LOCK_REASON);
+/* เปิดการเขียนกลับทีละส่วน ไม่ใช่เปิดทีเดียวทั้งหน้า
+   ส่วนที่ยังไม่เปิดจะถูกล็อกเหมือนเดิม จะได้ไม่มีปุ่มที่กดแล้วดูเหมือนสำเร็จ
+   แต่ไม่ได้บันทึกลงฐานจริง */
+const LIVE_WRITABLE = { expenses: true, wallets: false, currencies: false, fundings: false, closing: false };
+
+const lockReason = () => (liveMode ? LIVE_LOCK_REASON : TRIP_LOCK_REASON);
+/* area = ส่วนที่กำลังจะแก้ · ไม่ระบุ = ถือว่ายังไม่เปิดในโหมดข้อมูลจริง */
+const financeLocked = (area) => tripClosed || (liveMode && !LIVE_WRITABLE[area]);
+
+function blockedByClose(area) {
+  if (!financeLocked(area)) return false;
+  showPrototypeToast(lockReason());
   return true;
 }
 
 function applyTripLock() {
-  const buttons = [...$$('.add-expense'), $('#addWallet'), $('#addCurrency')].filter(Boolean);
-  buttons.forEach(button => {
-    button.disabled = tripClosed;
-    button.title = tripClosed ? TRIP_LOCK_REASON : '';
+  const locked = financeLocked();
+  [...$$('.add-expense')].forEach(button => {
+    const off = financeLocked('expenses');
+    button.disabled = off;
+    button.title = off ? lockReason() : '';
   });
-  $$('.trip-locked-note').forEach(note => { note.hidden = !tripClosed; });
-  document.body.classList.toggle('trip-closed', tripClosed);
+  [$('#addWallet'), $('#addCurrency')].filter(Boolean).forEach(button => {
+    button.disabled = locked;
+    button.title = locked ? lockReason() : '';
+  });
+  $$('.trip-locked-note').forEach(note => {
+    note.hidden = !locked;
+    // ข้อความในป้ายต้องตรงกับเหตุผลที่ล็อกจริง ไม่ใช่บอกว่าทริปปิดทั้งที่ยังเปิดอยู่
+    note.innerHTML = (liveMode && !tripClosed)
+      ? '🔴 <b>โหมดข้อมูลจริง</b> — บันทึกบิลลงฐานจริงได้แล้ว ส่วนกระเป๋า สกุลเงิน และการปิดทริปยังแก้จากหน้านี้ไม่ได้'
+      : '🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้';
+  });
+  document.body.classList.toggle('trip-closed', locked);
 }
 
 /* ── Close trip ────────────────────────────────────────────────────────
@@ -2170,7 +2233,9 @@ const STORAGE_VERSION = 9;
 let restoring = false;
 
 function saveState() {
-  if (restoring) return;
+  // โหมดข้อมูลจริงไม่เขียนลง localStorage เลย ไม่งั้นข้อมูลจริงจะไปทับ
+  // ข้อมูลตัวอย่างที่ค้างไว้ และพอกลับมาโหมดปกติจะเห็นตัวเลขจริงปนอยู่
+  if (restoring || liveMode) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       version: STORAGE_VERSION, bills, planDays, activePlanDayId, tripBanner, fundings, viewerId, tripCurrencies, wallets, tripClosed, postingDate, tripLog, presence,
@@ -2229,7 +2294,84 @@ $('#resetDemo').addEventListener('click', () => {
   location.reload();
 });
 
+/* ── โหมดข้อมูลจริง ────────────────────────────────────────────────────
+   เปิดด้วย ?live=1&projectId=…&userId=… เท่านั้น ไม่ใส่ = ข้อมูลตัวอย่างเหมือนเดิม
+
+   อ่านอย่างเดียว: ปิด saveState ทันทีที่เข้าโหมดนี้ เพื่อไม่ให้ข้อมูลจริง
+   ไปทับ localStorage ของโหมดตัวอย่าง และไม่ให้เผลอคิดว่าที่แก้บนจอถูกบันทึกแล้ว
+   ทุกปุ่มที่แก้เงินถูกล็อกด้วย applyTripLock() ตัวเดียวกับตอนปิดทริป
+   (ตัวแปร liveMode ประกาศไว้บนสุดของไฟล์ เพราะ applyTripLock ใช้ตั้งแต่ render แรก) */
+
+function markLiveBanner(text, tone = 'live') {
+  let bar = document.querySelector('#liveBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'liveBar';
+    document.body.prepend(bar);
+  }
+  bar.className = `live-bar live-bar--${tone}`;
+  bar.textContent = text;
+}
+
+function applyLiveState(state) {
+  restoring = true;
+  liveMode = true;
+  // members เป็น const จึงต้องเปลี่ยนของในอาร์เรย์เดิม ไม่ใช่ผูกตัวใหม่
+  members.length = 0;
+  members.push(...state.members);
+  wallets = state.wallets;
+  fundings = state.fundings;
+  bills = state.bills;
+  tripLog = state.tripLog;
+  tripClosed = state.tripClosed;
+  postingDate = state.postingDate;
+  if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
+  if (state.viewerId) viewerId = state.viewerId;
+  if (state.banner) {
+    tripBanner = state.banner;
+    $('.map-hero img').src = tripBanner;
+  }
+  restoring = false;
+
+  // แถบบนสุดของหน้าเขียนไว้ว่า "ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง" ซึ่งกลายเป็น
+  // ข้อความที่ผิดทันทีในโหมดนี้ — ต้องแก้ ไม่ใช่ปล่อยให้ขัดกับความจริง
+  const note = document.querySelector('.prototype-note');
+  if (note) note.textContent = 'UNIFIED TRIP · เชื่อมฐานข้อมูลจริง · บิลที่บันทึกจะถูกเก็บถาวร';
+
+  applyTripLock();
+  [renderBills, renderWallets, renderMoneyStrip, renderMembers, renderCurrencies,
+   renderPresence, refreshQuickAdd].forEach(render => render());
+
+  const bits = [
+    state.tripName || 'ข้อมูลจริง',
+    `${bills.length} บิล`,
+    `สุทธิ ${thb(state.netLedgerThb)}`
+  ];
+  if (state.hiddenExpenseCount) bits.push(`ซ่อนจากคุณ ${state.hiddenExpenseCount} ใบ`);
+  markLiveBanner(`🔴 ${bits.join(' · ')} — ข้อมูลจริง`);
+}
+
+/* ดึงใหม่ทั้งชุดหลังเขียนสำเร็จ แทนที่จะแก้อาร์เรย์ฝั่งหน้าจอเอง
+   เพราะเซิร์ฟเวอร์เป็นคนปัดเศษ เกลี่ยเศษ และคิดเรทเฉลี่ยใหม่ — ถ้าหน้าจอ
+   เดาผลลัพธ์เอง ตัวเลขบนจอกับในฐานจะค่อย ๆ ห่างกันโดยไม่มีใครรู้ */
+async function refreshFromServer() {
+  applyLiveState(await TripApi.fetchTrip());
+}
+
+async function enterLiveMode() {
+  markLiveBanner('กำลังโหลดข้อมูลจริง…', 'loading');
+  applyLiveState(await TripApi.fetchTrip());
+}
+
 loadState();
+if (TripApi.config.enabled) {
+  enterLiveMode().catch(error => {
+    // ล้มแล้วต้องบอกให้ชัดว่ากำลังดูข้อมูลตัวอย่างอยู่ ไม่ใช่เงียบแล้วปล่อย
+    // ให้เข้าใจผิดว่าตัวเลขบนจอมาจากฐานจริง
+    console.error(error);
+    markLiveBanner(`โหลดข้อมูลจริงไม่สำเร็จ: ${error.message} · ตัวเลขที่เห็นเป็นข้อมูลตัวอย่าง`, 'error');
+  });
+}
 renderPlanWorkspace();
 renderBills();
 // Paints the weather card and route state from data rather than the markup.
