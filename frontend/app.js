@@ -1220,7 +1220,8 @@ function switchView(viewName) {
         'debtor': 'ทะเบียนลูกหนี้/เจ้าหนี้คงค้าง',
         'reports': 'รายงานสรุปทางการเงิน',
         'settings': 'ตั้งค่าระบบข้อมูลหลัก',
-        'travel': '✈️ TRIPS'
+        'travel': '✈️ TRIPS',
+        'puppup': '🗺️ Prototype Trip'
     };
     document.getElementById("page-title").innerText = titleMap[viewName] || 'ระบบบันทึกรายได้';
 
@@ -1264,6 +1265,7 @@ function switchView(viewName) {
     else if (viewName === 'reports') loadReports();
     else if (viewName === 'settings') { loadSettings(); fitSettingsHeight(); }
     else if (viewName === 'travel') loadTrips();
+    else if (viewName === 'puppup') { if (typeof loadPuppupTrip === 'function') loadPuppupTrip(); }
 }
 
 // ล็อกความสูงหน้า Settings ให้พอดีจอเป๊ะ (วัดตำแหน่งจริง ไม่เดาตัวเลข)
@@ -9013,7 +9015,7 @@ function renderTripsView() {
         return;
     }
     
-    const tab = TravelState.currentTripTab || 'ONGOING';
+    const tab = TravelState.currentTripListTab || 'ONGOING';
     let filteredTrips = [];
     if (tab === 'ONGOING') {
         filteredTrips = TravelState.trips.filter(t => t.status === 'active');
@@ -9029,72 +9031,58 @@ function renderTripsView() {
     }
 
     container.innerHTML = filteredTrips.map(trip => {
-        const themeId = trip.color_theme || trip.theme_icon || trip.destination || 'default';
-        const theme   = getTripTheme(themeId);
-        const boldColor = getThemeBoldColor(themeId);
-        const budget  = parseFloat(trip.total_budget) || 0;
         const spent   = parseFloat(trip.total_spent)  || 0;
-        const budgetPct  = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
-        
-        // Multi-colored gauge based on usage
-        const budgetColor = budgetPct > 90 ? 'linear-gradient(90deg, #f43f5e, #fda4af)' : budgetPct > 70 ? 'linear-gradient(90deg, #f59e0b, #fcd34d)' : 'linear-gradient(90deg, #10b981, #6ee7b7)';
-        
-        // Colorful numbers based on usage
-        const numColor = budgetPct > 90 ? '#e11d48' : budgetPct > 70 ? '#d97706' : '#059669';
-        
-        let borderColor = '#e2e8f0';
-        if (theme && theme.gradient) {
-            const match = theme.gradient.match(/#[a-fA-F0-9]{6}/);
-            if (match) borderColor = match[0];
-        }
         
         let bannerImg = trip.theme_banner || 'assets/images/banner_japan.jpg';
         if (!bannerImg.startsWith('/')) bannerImg = '/' + bannerImg;
-        
-        let thumbImg = trip.theme_thumb || 'assets/images/thumb_girl.jpg';
-        if (!thumbImg.startsWith('/')) thumbImg = '/' + thumbImg;
         
         const startDateStr = typeof formatTripDate === 'function' ? formatTripDate(trip.start_date) : new Date(trip.start_date).toLocaleDateString();
         const endDateStr = typeof formatTripDate === 'function' ? formatTripDate(trip.end_date) : new Date(trip.end_date).toLocaleDateString();
         const dest = trip.destination || 'Not set';
 
-        const days = getTripDays(trip.start_date, trip.end_date);
-        const highlightsHtml = renderTripHighlights(trip);
-        const statusBadge = trip.status === 'closed'
-            ? '<span style="background:rgba(167,139,250,0.9); color:#fff; font-size:10px; font-weight:800; padding:3px 9px; border-radius:20px;">💜 Memory</span>'
-            : trip.status === 'planned'
-            ? '<span style="background:rgba(56,189,248,0.9); color:#fff; font-size:10px; font-weight:800; padding:3px 9px; border-radius:20px;">💧 Incoming</span>'
-            : '<span style="background:rgba(244,114,182,0.95); color:#fff; font-size:10px; font-weight:800; padding:3px 9px; border-radius:20px;">🌸 Ongoing</span>';
+        let members = [];
+        try { if(trip.members) members = JSON.parse(trip.members); } 
+        catch(e) { members = (trip.members || '').split(',').map(m => m.trim()).filter(Boolean); }
+
+        let destPins = dest;
+        if (dest.includes(',')) {
+            const parts = dest.split(',').map(p => p.trim());
+            if (parts.length > 2) {
+                destPins = parts.slice(0, 2).join(' · ') + ` +${parts.length - 2} จุด`;
+            } else {
+                destPins = parts.join(' · ');
+            }
+        }
+
+        // Determine unique Ghibli/Anime theme based on project_id hash
+        const styles = ['theme-ghibli-forest', 'theme-ghibli-sky', 'theme-ghibli-wood', 'theme-ghibli-sunset', 'theme-ghibli-ocean'];
+        let hash = 0;
+        for (let i = 0; i < trip.project_id.length; i++) {
+            hash = trip.project_id.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const themeIndex = Math.abs(hash) % styles.length;
+        const themeClass = styles[themeIndex];
+
+        const statusBadgeText = trip.status === 'closed' ? 'Memory' : trip.status === 'planned' ? 'Incoming' : 'Ongoing';
+
+        const cleanTripName = (trip.name || '').replace(/^[^\w\sก-๙a-zA-Z0-9]+/, '').trim();
 
         return `
-            <div class="debt-list-item" onclick="openTripDetail('${trip.project_id}')" style="box-sizing:border-box; flex-shrink:0; background:#fff; border:2.5px solid ${borderColor}; border-radius:22px; cursor:pointer; display:flex; flex-direction:column; position:relative; overflow:hidden; box-shadow:0 6px 18px rgba(0,0,0,0.07); margin-bottom:14px; transition:transform .15s, box-shadow .15s;" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 12px 26px rgba(0,0,0,0.12)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 6px 18px rgba(0,0,0,0.07)';">
-                <!-- Banner -->
-                <div style="position:relative; height:130px; overflow:hidden;">
-                    <div style="position:absolute; inset:0; background-image:url('${bannerImg}'); background-size:cover; background-position:center;"></div>
-                    <div style="position:absolute; inset:0; background:linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 40%, rgba(255,255,255,0.92) 100%);"></div>
-                    <div style="position:absolute; top:10px; right:10px;">${statusBadge}</div>
-                    ${highlightsHtml ? `<div style="position:absolute; bottom:8px; right:10px; display:flex; gap:4px;">${highlightsHtml}</div>` : ''}
-                    <!-- Name pill overlapping bottom -->
-                    <div style="position:absolute; bottom:8px; left:12px; right:12px;">
-                        <span style="background:#fff; border:2.5px solid ${borderColor}; padding:4px 12px; border-radius:16px; font-size:1.05rem; font-weight:800; color:${boldColor}; box-shadow:0 3px 8px rgba(0,0,0,0.1); display:inline-block; max-width:calc(100% - 4px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box;">${trip.name}</span>
-                    </div>
+            <div class="trip-card-v4-hybrid ${themeClass}" onclick="openTripDetail('${trip.project_id}')">
+                <!-- Left illustration thumbnail -->
+                <div class="trip-card-v4-hybrid-left">
+                    <img class="trip-card-v4-hybrid-img" src="${bannerImg}" onerror="this.src='/assets/images/banner_japan.jpg'" />
                 </div>
-                <!-- Body -->
-                <div style="padding:12px 14px 14px; display:flex; flex-direction:column; gap:9px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                        <span style="font-size:12px; color:#475569; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📍 ${dest}</span>
-                        <span style="font-size:11px; color:#94a3b8; white-space:nowrap;">🗓️ ${days} วัน</span>
-                    </div>
-                    <div style="font-size:11px; color:#64748b;">${startDateStr} – ${endDateStr}</div>
-                    <!-- Budget gauge -->
-                    <div>
-                        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
-                            <span style="font-size:11px; color:#64748b; font-weight:600;">💰 งบประมาณ</span>
-                            <span style="font-size:11px; font-weight:800; color:${numColor};">฿${tripFmtNum(spent)} <span style="color:#cbd5e1; font-weight:500;">/ ฿${tripFmtNum(budget)}</span></span>
-                        </div>
-                        <div style="height:9px; background:#f1f5f9; border-radius:20px; overflow:hidden;">
-                            <div style="height:100%; width:${budgetPct}%; background:${budgetColor}; border-radius:20px; transition:width .4s;"></div>
-                        </div>
+                
+                <!-- Right 5 details fields -->
+                <div class="trip-card-v4-hybrid-right">
+                    <h4 class="trip-card-v4-hybrid-title">✨ ${cleanTripName}</h4>
+                    <div class="trip-card-v4-hybrid-row">📅 ${startDateStr} – ${endDateStr}</div>
+                    <div class="trip-card-v4-hybrid-row">📍 ${destPins}</div>
+                    <div class="trip-card-v4-hybrid-row">👥 ${members.length > 0 ? members.join(', ') : 'ไม่มีสมาชิก'}</div>
+                    <div class="trip-card-v4-hybrid-spent-row">
+                        <span>ใช้ไป</span>
+                        <span class="trip-card-v4-hybrid-spent-val">฿${tripFmtNum(spent)}</span>
                     </div>
                 </div>
             </div>
@@ -9159,29 +9147,46 @@ window.renderTripDetailModal = function() {
     let bannerImg = trip.theme_banner || 'assets/images/banner_japan.jpg';
     if (!bannerImg.startsWith('/')) bannerImg = '/' + bannerImg;
     
+    const cleanTripName = (trip.name || '').replace(/^[^\w\sก-๙a-zA-Z0-9]+/, '').trim();
+    
     let headerHtml = `
-        <div class="trip-detail-header ${theme.bgClass}" style="background-image: linear-gradient(to bottom, rgba(144, 169, 137, 0.2), rgba(67, 85, 62, 0.95)), url('${bannerImg}'); background-size: cover; background-position: center; padding: 20px 15px; position: sticky; top: 0; z-index: 10; display: flex; flex-direction: column; justify-content: flex-end; min-height: 140px;">
-            <button onclick="closeTripDetail()" style="position: absolute; top: 15px; left: 15px; background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 20px; backdrop-filter: blur(4px); cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 6px;">
-                <i class="fa-solid fa-arrow-left"></i> ย้อนกลับ
-            </button>
-            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                <div>
-                    <h2 style="margin:0; font-size:22px; color:white; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">${trip.name}</h2>
-                    <div style="font-size:12px; color:rgba(255,255,255,0.9); margin-top:4px; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">
-                        ${formatTripDate(trip.start_date)} – ${formatTripDate(trip.end_date)} · ${getTripDays(trip.start_date, trip.end_date)} วัน
-                    </div>
-                </div>
-                <div style="font-size:11px; background:rgba(0,0,0,0.4); color:white; padding:4px 8px; border-radius:12px; backdrop-filter: blur(4px);">
-                    👥 ${members.length > 0 ? members.join(' · ') : 'ไม่มีสมาชิก'}
+        <!-- V3 Header -->
+        <div class="trip-detail-v3-header">
+            <div class="trip-detail-v3-nav">
+                <button class="trip-detail-v3-back" onclick="closeTripDetail()">
+                    <i class="fa-solid fa-chevron-left"></i> กลับ
+                </button>
+                <div class="trip-detail-v3-status">
+                    ${trip.status === 'closed' ? '🌸 Memory' : trip.status === 'planned' ? '💧 Incoming' : '🌸 กำลังเที่ยว'}
                 </div>
             </div>
+            <h2 class="trip-detail-v3-title">✨ ${cleanTripName}</h2>
+            <div class="trip-detail-v3-meta">
+                📅 ${formatTripDate(trip.start_date)} – ${formatTripDate(trip.end_date)} · ✈️ ${getTripDays(trip.start_date, trip.end_date)} วัน · 👥 ${members.length > 0 ? members.join(' · ') : 'ไม่มีสมาชิก'}
+            </div>
         </div>
-        
+
+        <!-- Budget summary cards -->
+        <div class="trip-detail-v3-stats">
+            <div class="trip-detail-v3-stat-card budget">
+                <div class="trip-detail-v3-stat-label budget">งบทั้งหมด</div>
+                <div class="trip-detail-v3-stat-val budget">฿${tripFmtNum(budget)}</div>
+            </div>
+            <div class="trip-detail-v3-stat-card spent">
+                <div class="trip-detail-v3-stat-label spent">ใช้ไป</div>
+                <div class="trip-detail-v3-stat-val spent">฿${tripFmtNum(spent)}</div>
+            </div>
+            <div class="trip-detail-v3-stat-card ${remaining < 0 ? 'overbudget' : 'remaining'}">
+                <div class="trip-detail-v3-stat-label ${remaining < 0 ? 'overbudget' : 'remaining'}">${remaining < 0 ? 'เกินงบ' : 'เหลือ'}</div>
+                <div class="trip-detail-v3-stat-val ${remaining < 0 ? 'overbudget' : 'remaining'}">฿${tripFmtNum(Math.abs(remaining))}</div>
+            </div>
+        </div>
+
         <!-- Tab Navigation -->
-        <div style="display:flex; padding: 10px 15px; background: #fff; border-bottom: 1px solid #e2e8f0; position: sticky; top: 140px; z-index: 9; overflow-x: auto; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-            <button onclick="switchTravelTab('itinerary')" style="white-space: nowrap; padding: 8px 16px; border-radius: 20px; border: none; font-weight: bold; cursor: pointer; transition: all 0.2s; background: ${tab === 'itinerary' ? '#43553E' : '#f1f5f9'}; color: ${tab === 'itinerary' ? 'white' : '#64748b'};">📍 แผนเดินทาง</button>
-            <button onclick="switchTravelTab('expenses')" style="white-space: nowrap; padding: 8px 16px; border-radius: 20px; border: none; font-weight: bold; cursor: pointer; transition: all 0.2s; background: ${tab === 'expenses' ? '#43553E' : '#f1f5f9'}; color: ${tab === 'expenses' ? 'white' : '#64748b'};">💳 ค่าใช้จ่าย</button>
-            <button onclick="switchTravelTab('settings')" style="white-space: nowrap; padding: 8px 16px; border-radius: 20px; border: none; font-weight: bold; cursor: pointer; transition: all 0.2s; background: ${tab === 'settings' ? '#43553E' : '#f1f5f9'}; color: ${tab === 'settings' ? 'white' : '#64748b'};">⚙️ ตั้งค่าทริป</button>
+        <div style="display:flex; padding: 10px 15px; background: #fff; border-bottom: 1px solid #f1f5f9; position: sticky; top: 0; z-index: 9; overflow-x: auto; gap: 8px;">
+            ${[['itinerary','📍 แผนเดินทาง','linear-gradient(135deg,#a78bfa,#c4b5fd)'],['expenses','💸 ค่าใช้จ่าย','linear-gradient(135deg,#f472b6,#fb7185)'],['wallets','👛 กระเป๋าเงิน','linear-gradient(135deg,#10b981,#6ee7b7)'],['members','👥 สมาชิก','linear-gradient(135deg,#f59e0b,#fcd34d)'],['docs','📄 เอกสาร','linear-gradient(135deg,#6366f1,#818cf8)'],['settings','⚙️ ตั้งค่า','linear-gradient(135deg,#64748b,#94a3b8)']].map(([id,label,grad]) => `
+                <button onclick="switchTravelTab('${id}')" style="white-space:nowrap; padding:8px 16px; border-radius:20px; border:none; font-weight:bold; cursor:pointer; transition:all 0.2s; background:${tab === id ? grad : '#f1f5f9'}; color:${tab === id ? 'white' : '#64748b'}; box-shadow:${tab === id ? '0 3px 8px rgba(0,0,0,0.12)' : 'none'};">${label}</button>
+            `).join('')}
         </div>
     `;
 
@@ -9201,16 +9206,9 @@ window.renderTripDetailModal = function() {
                         <button onclick="openAddStopModal('${trip.project_id}')" class="btn-trip-add-sm" style="background: #43553E; color: white;">+ จุดแวะ</button>
                     </div>
                 </div>
-                <div id="timeline-container" style="position: relative; margin-left: 5px;">
-                                       <div style="position: relative; padding-left: 20px;">
-                        <!-- Wavy Ghibli watercolor style travel route line -->
-                        <svg style="position: absolute; left: 8px; top: 15px; bottom: 15px; width: 14px; height: calc(100% - 30px); pointer-events: none; z-index: 1;" preserveAspectRatio="none">
-                            <path d="M 6,0 Q 14,25 2,50 T 6,100" fill="none" stroke="#8B5A2B" stroke-width="2.5" stroke-dasharray="4,4" stroke-linecap="round" style="opacity: 0.8;" />
-                        </svg>
-                        
+                <div id="timeline-container" style="position: relative; padding: 10px 5px;">
+                    <div class="trip-timeline-v3">
                         ${(() => {
-                            const renderedNonMainDates = new Set();
-
                             return parentStops.map((parent, parentIndex) => {
                                 const isFirst = parentIndex === 0;
                                 const isLast = parentIndex === parentStops.length - 1;
@@ -9219,10 +9217,9 @@ window.renderTripDetailModal = function() {
                                 const isMainDay = parent.is_main_day === 1 && ((parent.location_type || '').includes('เมือง') || (parent.location_type || '').includes('City'));
                                 const dateStr = parent.stop_date ? formatTripDate(parent.stop_date) : 'รอระบุวัน';
                                 const dKey = parent.stop_date ? parent.stop_date.substring(0, 10) : 'รอระบุวัน';
-
-                                const currentHeaderBgColor = parent.header_color || '#8CA9C4';
-                                const currentHeaderTextColor = parent.text_color || '#ffffff';
-                                const currentHeaderFontSize = parent.font_size || '13px';
+                                const _sd = trip.start_date ? trip.start_date.substring(0, 10) : null;
+                                const dayNum = (_sd && dKey !== 'รอระบุวัน') ? Math.max(1, Math.round((new Date(dKey) - new Date(_sd)) / 86400000) + 1) : null;
+                                const dayLabel = dayNum ? `วันที่ ${dayNum} · ` : '';
 
                                 const wData = TravelState.weatherData;
                                 let weatherSummaryHtml = '';
@@ -9261,38 +9258,26 @@ window.renderTripDetailModal = function() {
                                     `;
                                 };
 
-                                const renderStopNode = (stopItem, level = 1, pIndex = -1, pTotal = 0) => {
+                                const renderStopNode = (stopItem, level = 1) => {
                                     if (level > 10) return '';
                                     const children = stops.filter(s => s.parent_stop_id === stopItem.stop_id).sort((a,b) => (a.time || '').localeCompare(b.time || ''));
                                     const isItemMainDay = stopItem.is_main_day === 1 && ((stopItem.location_type || '').includes('เมือง') || (stopItem.location_type || '').includes('City'));
                                     
                                     let nodeHtml = '';
                                     if (!isItemMainDay) {
-                                        const isFirst = pIndex === 0;
-                                        const isLast = pIndex === pTotal - 1 && pTotal > 0;
-                                        const defaultMainIcon = (pIndex !== -1 && (isFirst || isLast)) ? '✈️' : (pIndex !== -1 ? '🚂' : '🏙️');
-                                        
-                                        const stopIconHtml = level > 1
-                                            ? `<span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #7A2214; border: 1.5px solid #D4AF37; color: #D4AF37; font-size: 8px; font-weight: 900; line-height: 1; font-family: 'Times New Roman', serif; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.15);" title="Platform 9¾">9¾</span>`
-                                            : `<span style="flex-shrink:0; font-size:16px;">${stopItem.icon || defaultMainIcon}</span>`;
-
                                         nodeHtml = `
                                             <div id="stop-item-${stopItem.stop_id}" draggable="true" 
                                                  ondragstart="window.handleTimelineStopDragStart(event, '${stopItem.stop_id}')" 
-                                                 ondragover="event.preventDefault(); this.style.background='#e2ecd5';" 
-                                                 ondragleave="this.style.background='#FFFDF9';" 
-                                                 ondrop="event.stopPropagation(); this.style.background='#FFFDF9'; window.handleTimelineStopDrop(event, '${stopItem.stop_date || ''}', '${stopItem.stop_id}')"
-                                                 class="itinerary-item" style="position: relative; display: flex; flex-direction: column; padding: 6px 12px; border-radius: 8px; cursor: default; transition: all 0.2s; background: #FFFDF9; border: 1.5px solid ${stopItem.border_color || '#E6DFD3'}; margin-left: 2px; margin-bottom: 4px;">
+                                                 ondragover="event.preventDefault(); this.style.background='#eff6ff';" 
+                                                 ondragleave="this.style.background='#ffffff';" 
+                                                 ondrop="event.stopPropagation(); this.style.background='#ffffff'; window.handleTimelineStopDrop(event, '${stopItem.stop_date || ''}', '${stopItem.stop_id}')"
+                                                 class="trip-timeline-subitem-v3">
                                                 
-                                                <div style="display:flex; width:100%; align-items:center; justify-content:space-between; gap:6px; line-height: 1.2;">
-                                                    <div style="width: 6px; height: 6px; background: #CD853F; border: 1.5px solid #8B5A2B; border-radius: 50%; flex-shrink:0;"></div>
+                                                <div style="display:flex; width:100%; align-items:center; justify-content:space-between; gap:6px;">
                                                     <div style="display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1;">
-                                                        <div style="min-width: 0; flex: 1; display: flex; align-items: center; gap: 6px; font-size: ${stopItem.font_size || '15px'};">
-                                                            ${stopItem.time ? `<span style="color: ${stopItem.time_color || '#3b82f6'}; font-weight: bold; flex-shrink:0;">${stopItem.time}</span>` : ''}
-                                                            ${stopIconHtml}
-                                                            <span style="font-weight: 800; color: ${stopItem.text_color || '#4a5568'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${stopItem.accommodation}</span>
-                                                            ${getDocsHtml(stopItem.stop_id)}
-                                                        </div>
+                                                        ${stopItem.time ? `<span class="time">${stopItem.time}</span>` : ''}
+                                                        <span>${stopItem.icon || '📍'} ${stopItem.accommodation}</span>
+                                                        ${getDocsHtml(stopItem.stop_id)}
                                                     </div>
                                                     
                                                     <div class="timeline-edit-controls" style="display: ${TravelState.editModeEnabled ? 'flex' : 'none'}; gap: 8px; flex-shrink: 0; align-items: center;">
@@ -9307,7 +9292,7 @@ window.renderTripDetailModal = function() {
                                     let childrenHtml = '';
                                     if (children.length > 0) {
                                         childrenHtml = `
-                                            <div style="margin-left: 14px; padding-left: 12px; border-left: 2px dashed #CD853F; margin-top: 4px; display: flex; flex-direction: column; gap: 4px; position: relative; margin-bottom: 4px;">
+                                            <div style="margin-left: 14px; padding-left: 12px; border-left: 2px dashed #cbd5e1; margin-top: 4px; display: flex; flex-direction: column; gap: 4px; position: relative; margin-bottom: 4px;">
                                                 ${children.map(child => renderStopNode(child, level + 1)).join('')}
                                             </div>
                                         `;
@@ -9319,21 +9304,16 @@ window.renderTripDetailModal = function() {
                                     `;
                                 };
 
-                                let dayHeaderHtml = '';
-                                if (isMainDay) {
-                                    // Pastel Crystal Glassmorphism style
-                                    dayHeaderHtml = `
-                                        <div class="trip-day-header" onclick="window.showWeatherTooltip(event, '${parent.stop_id}')" 
-                                             ondragover="event.preventDefault(); this.style.background='#7aa2d6';" 
-                                             ondragleave="this.style.background='color-mix(in srgb, ${currentHeaderBgColor} 40%, rgba(255, 255, 255, 0.55))';" 
-                                             ondrop="event.stopPropagation(); this.style.background='color-mix(in srgb, ${currentHeaderBgColor} 40%, rgba(255, 255, 255, 0.55))'; window.handleTimelineStopDrop(event, '${dKey}', '${parent.stop_id}')"
-                                             style="cursor: pointer; background: color-mix(in srgb, ${currentHeaderBgColor} 40%, rgba(255, 255, 255, 0.55)) !important; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1.5px solid rgba(255, 255, 255, 0.65); padding: 6px 12px; border-radius: 8px; font-weight: 800; font-size: ${currentHeaderFontSize}; color: ${parent.text_color || '#334155'} !important; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 10px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.6); margin-bottom: 6px; margin-left: 2px; width: calc(100% - 2px); box-sizing: border-box; transition: background 0.2s;" title="คลิกเพื่อดูสภาพอากาศ">
-                                            
-                                            <!-- Row 1: Date, City and Weather in a single line -->
+                                const statusClass = trip.status === 'closed' ? 'memory' : trip.status === 'planned' ? 'incoming' : '';
+                                
+                                return `
+                                    <div class="trip-timeline-day-v3">
+                                        <div class="trip-timeline-dot-v3 ${statusClass}"></div>
+                                        <div class="trip-timeline-day-card-v3 ${statusClass}">
                                             <div style="display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 6px; line-height: 1.2;">
                                                 <div style="display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1;">
-                                                    <span style="font-size: 15px; margin-right: 2px;">${routeIcon}</span>
-                                                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 850;">${dateStr} - ${parent.accommodation}</span>
+                                                    <span>${routeIcon}</span>
+                                                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 850;">${dayLabel}${dateStr} · ${parent.accommodation}</span>
                                                 </div>
                                                 <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
                                                     ${weatherSummaryHtml}
@@ -9344,41 +9324,13 @@ window.renderTripDetailModal = function() {
                                                 </div>
                                             </div>
                                         </div>
-                                    `;
-                                } else {
-                                    if (!renderedNonMainDates.has(dKey)) {
-                                        renderedNonMainDates.add(dKey);
-                                        dayHeaderHtml = `
-                                            <div class="trip-day-header" onclick="window.showWeatherTooltip(event, '${parent.stop_id}')" 
-                                                 ondragover="event.preventDefault(); this.style.background='#7aa2d6';" 
-                                                 ondragleave="this.style.background='${currentHeaderBgColor}';" 
-                                                 ondrop="event.stopPropagation(); this.style.background='${currentHeaderBgColor}'; window.handleTimelineStopDrop(event, '${dKey}')"
-                                                 style="cursor: pointer; background: ${currentHeaderBgColor} !important; padding: 6px 12px; border-radius: 8px; font-weight: 800; font-size: ${currentHeaderFontSize}; color: ${currentHeaderTextColor} !important; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 6px; margin-left: 2px; width: calc(100% - 2px); box-sizing: border-box; transition: background 0.2s;" title="คลิกเพื่อดูสภาพอากาศ">
-                                                
-                                                <div style="display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 6px; line-height: 1.2;">
-                                                    <div style="display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1;">
-                                                        <span style="font-size: 15px; margin-right: 2px;">${routeIcon}</span>
-                                                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dateStr}</span>
-                                                    </div>
-                                                    <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                                                        ${weatherSummaryHtml}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        `;
-                                    }
-                                }
-
-                                return `
-                                    <div class="trip-parent-stop-group" ondragover="event.preventDefault(); this.style.background='rgba(168, 195, 160, 0.15)';" ondragleave="this.style.background='';" ondrop="this.style.background=''; window.handleTimelineStopDrop(event, '${dKey}')" style="margin-bottom: 12px; position: relative; padding: 4px; border-radius: 8px; transition: background 0.2s;">
-                                        ${dayHeaderHtml}
-                                        ${renderStopNode(parent, 1, parentIndex, parentStops.length)}
+                                        ${renderStopNode(parent, 1)}
                                     </div>
                                 `;
-
                             }).join('');
                         })()}
                     </div>
+                    <button class="trip-timeline-add-btn-v3" onclick="openAddStopModal('${trip.project_id}')">+ เพิ่มจุดแวะ</button>
                 </div>
                 
                 <!-- Center: Custom Game Board Map (No Leaflet!) -->
@@ -9485,13 +9437,14 @@ window.renderTripDetailModal = function() {
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <h3 class="trip-section-title" style="margin:0;">👛 กระเป๋าเงินทริป</h3>
                     <div style="display:flex; gap:6px;">
+                        ${trip.status !== 'closed' && !TravelState.isGuest ? `<button class="btn-trip-add-sm" style="background:#0ea5e9;" onclick="switchTravelTab('settings')">👛 สร้างกระเป๋า</button>` : ''}
                         <button class="btn-trip-add-sm" style="background:#10b981;" onclick="openFundWalletModal('${trip.project_id}')">💰 เติมเงิน</button>
                         <button class="btn-trip-add-sm" style="background:#6366f1;" onclick="openTripCalcModal('${trip.project_id}')">🧮 คิดเงิน</button>
                         ${trip.status !== 'closed' && !TravelState.isGuest ? `<button class="btn-trip-add-sm" style="background:#ef4444;" onclick="openCloseTripModal('${trip.project_id}')">🔒 ปิดทริป</button>` : ''}
                     </div>
                 </div>
                 <div class="trip-wallets-grid">
-                    ${activeWallets.map(w => {
+                    ${activeWallets.length === 0 ? `<div style="padding:14px; border:1px dashed #94a3b8; border-radius:12px; color:#64748b; font-size:12px;">ยังไม่มีกระเป๋าเงินสำหรับทริปนี้ · กด <b>👛 สร้างกระเป๋า</b> เพื่อเพิ่มสกุลเงินก่อนเติมเงิน</div>` : activeWallets.map(w => {
                         // ใช้ค่าคำนวณจาก backend (funded = ตั้งต้น + ทุกล็อตเติม), spent = Σบิล
                         const funded = (w.funded_foreign != null) ? parseFloat(w.funded_foreign) : parseFloat(w.initial_balance_foreign || 0);
                         const spent = (w.spent_foreign != null) ? parseFloat(w.spent_foreign)
@@ -9721,14 +9674,7 @@ window.renderTripDetailModal = function() {
                             ${activeCurrencies.map(c=>`<option value="${c}">${c}</option>`).join('')}
                         </select>
                     </div>
-                    <div style="display:flex; gap:6px;">
-                        <input type="number" step="any" id="new-wallet-foreign-amt" class="trip-input" placeholder="ยอดเงินสกุลต่างประเทศ" required style="flex:1;">
-                        <input type="number" step="any" id="new-wallet-thb-amt" class="trip-input" placeholder="มูลค่าบาทเริ่มต้น" required style="flex:1;">
-                    </div>
-                    <label style="display:flex; align-items:center; gap:6px; font-size:11px; cursor:pointer; color:#475569;">
-                        <input type="checkbox" id="new-wallet-exclude">
-                        ไม่นำกระเป๋าเงินนี้ไปคิดเป็นรายจ่ายของแอปเมื่อจบทริป (บันทึกส่วนตัว)
-                    </label>
+                    <p style="margin:0; font-size:11px; color:#64748b;">เริ่มต้นที่ยอด 0 แล้วใช้ปุ่ม “เติมเงิน” เพื่อโอนจากบัญชีจริงเข้ากระเป๋าทริป</p>
                     <button type="button" onclick="createNewWallet()" style="background:#3b82f6; color:white; border:none; padding:8px; border-radius:8px; font-size:12px; font-weight:bold; cursor:pointer;">+ เพิ่มกระเป๋าเงิน</button>
                 </form>
             </div>
@@ -9736,8 +9682,8 @@ window.renderTripDetailModal = function() {
             <!-- Close Trip / End Trip -->
             <div class="trip-detail-section" style="padding:0 15px; border-top:1px solid #e2e8f0; margin-top:15px; padding-top:15px; text-align:center;">
                 <h3 class="trip-section-title" style="color:#ef4444;">🏁 สรุปและปิดทริป</h3>
-                <p style="font-size:11px; color:#64748b;">ระบบจะโอนย้ายค่าใช้จ่ายของทริปทั้งหมด (ยกเว้นกระเป๋าเงินที่กดไม่นำมาคิดยอด) ไปรวมในประวัติรายรับรายจ่ายหลักของครอบครัว</p>
-                <button class="btn-trip-close" onclick="closeAndSettleTrip()" style="background:#ef4444; width:100%; font-weight:bold;">🏁 จบทริป &amp; โอนข้อมูลรายจ่ายหลัก</button>
+                <p style="font-size:11px; color:#64748b;">ตรวจสรุปเงินเหลือและเลือกคืนบัญชีหรือย้ายไปทริปถัดไปก่อนยืนยันปิดทริป</p>
+                <button class="btn-trip-close" onclick="openCloseTripModal('${trip.project_id}')" style="background:#ef4444; width:100%; font-weight:bold;">🏁 ตรวจสรุปและปิดทริป</button>
             </div>
         `;
     }
@@ -10122,8 +10068,6 @@ function closeTripDetailModal() {
 
 // ---- NEW TRIP MODAL ----
 window.openNewTripModal = function() {
-    selectedHighlights = [];
-    renderHighlightOptions();
     const today    = new Date().toISOString().slice(0, 10);
     const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
@@ -11563,9 +11507,9 @@ window.createNewWallet = async function() {
 
     const name = document.getElementById('new-wallet-name').value;
     const currency = document.getElementById('new-wallet-currency').value;
-    const foreign = parseFloat(document.getElementById('new-wallet-foreign-amt').value) || 0;
-    const thb = parseFloat(document.getElementById('new-wallet-thb-amt').value) || 0;
-    const exclude = document.getElementById('new-wallet-exclude').checked ? 1 : 0;
+    const foreign = 0;
+    const thb = 0;
+    const exclude = 0;
 
     if(!name) {
         showToast('กรุณากรอกชื่อกระเป๋าเงิน', 'warning');
@@ -11575,7 +11519,7 @@ window.createNewWallet = async function() {
     try {
         const res = await fetch(`${API_BASE}/api/wallets`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
             body: JSON.stringify({
                 project_id: trip.project_id,
                 name, currency,
@@ -11584,13 +11528,15 @@ window.createNewWallet = async function() {
                 exclude_on_close: exclude
             })
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if(data.success) {
             showToast('เพิ่มกระเป๋าเงินสำเร็จ', 'success');
             openTripDetail(trip.project_id);
+        } else {
+            showToast(data.error || `เพิ่มกระเป๋าเงินไม่สำเร็จ (HTTP ${res.status})`, 'error');
         }
     } catch(e) {
-        showToast('เพิ่มกระเป๋าเงินล้มเหลว', 'error');
+        showToast('เพิ่มกระเป๋าเงินล้มเหลว: ' + (e.message || 'เชื่อมต่อ API ไม่ได้'), 'error');
     }
 };
 
@@ -11600,16 +11546,18 @@ window.deleteWallet = async function(walletId) {
     try {
         const res = await fetch(`${API_BASE}/api/wallets/delete`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
             body: JSON.stringify({ wallet_id: walletId })
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if(data.success) {
             showToast('ลบกระเป๋าเงินแล้ว', 'success');
             openTripDetail(TravelState.currentTrip.project_id);
+        } else {
+            showToast(data.error || `ลบกระเป๋าเงินไม่สำเร็จ (HTTP ${res.status})`, 'error');
         }
     } catch(e) {
-        showToast('ลบกระเป๋าเงินล้มเหลว', 'error');
+        showToast('ลบกระเป๋าเงินล้มเหลว: ' + (e.message || 'เชื่อมต่อ API ไม่ได้'), 'error');
     }
 };
 
@@ -11632,7 +11580,7 @@ window.openFundWalletModal = function(projectId) {
             </select>
             <label style="font-size:12px; font-weight:bold; color:#64748b;">บัญชีต้นทาง (หักเงินบาท)</label>
             <select id="fund-source-account" style="width:100%; padding:9px; margin:4px 0 12px; border:1px solid #e2e8f0; border-radius:10px;">
-                <option value="">-- ไม่หักบัญชี (บันทึกเฉพาะกระเป๋า) --</option>
+                <option value="">-- เลือกบัญชีต้นทาง --</option>
                 ${accts.map(a => `<option value="${a.account_id}">${a.name}</option>`).join('')}
             </select>
             <div style="display:flex; gap:10px;">
@@ -11693,6 +11641,7 @@ window.submitFundWallet = async function(projectId) {
     const foreign_amount = isThb ? thb_amount : (parseFloat(document.getElementById('fund-foreign').value) || 0);
     const funding_date = document.getElementById('fund-date').value;
     const note = document.getElementById('fund-note').value;
+    if (!source_account_id) { showToast('กรุณาเลือกบัญชีต้นทางสำหรับการโอน', 'warning'); return; }
     if (thb_amount <= 0) { showToast('กรุณากรอกจำนวนเงินบาท', 'warning'); return; }
     if (!isThb && foreign_amount <= 0) { showToast('กรุณากรอกจำนวนเงินตปท.ที่ได้', 'warning'); return; }
     try {
@@ -11760,10 +11709,15 @@ window.closeTripCalcModal = function() { const m = document.getElementById('trip
 
 // ══════════ Trip Finance P3 — ปิดทริป (สรุป → ยืนยัน) ══════════
 window.openCloseTripModal = async function(projectId) {
-    let s;
+    let s, targetWallets = [];
     try {
-        const res = await fetch(`${API_BASE}/api/trips/close-preview?projectId=${projectId}`, { headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) } });
+        const headers = { 'x-user-id': encodeURIComponent(getUserIdHeader()) };
+        const [res, targetsRes] = await Promise.all([
+            fetch(`${API_BASE}/api/trips/close-preview?projectId=${projectId}`, { headers }),
+            fetch(`${API_BASE}/api/trips/wallet-options?projectId=${projectId}`, { headers })
+        ]);
         s = await res.json();
+        if (targetsRes.ok) targetWallets = await targetsRes.json();
     } catch(e) { showToast('โหลดสรุปปิดทริปล้มเหลว', 'error'); return; }
     const t = s.totals || {};
     const modal = document.createElement('div');
@@ -11779,6 +11733,16 @@ window.openCloseTripModal = async function(projectId) {
     }).join('') || '<p style="font-size:12px; color:#94a3b8;">ไม่มีบิลค่าใช้จ่าย</p>';
     const keptRows = (s.wallets || []).filter(w => Number(w.exclude_on_close) === 1).map(w =>
         `<div style="font-size:11px; color:#0369a1;">📌 เก็บ ${w.name}: ${w.currency} ${tripFmtNum(w.leftover_foreign)} (≈฿${tripFmtNum(w.leftover_thb)}) ไว้ทริปหน้า</div>`).join('');
+    const leftoverControls = (s.wallets || []).filter(w => Number(w.leftover_foreign || 0) > 0.005).map(w => {
+        const targets = targetWallets.filter(t => String(t.currency || '').toUpperCase() === String(w.currency || '').toUpperCase());
+        return `<div style="margin:8px 0; padding:9px; background:#f8fafc; border-radius:9px; font-size:12px;">
+            <div style="font-weight:bold; margin-bottom:5px;">${w.name}: ${tripFmtNum(w.leftover_foreign)} ${w.currency} เหลือ</div>
+            <select id="close-leftover-${w.wallet_id}" style="width:100%; padding:7px; border:1px solid #cbd5e1; border-radius:7px;">
+                <option value="RETURN">คืนเข้าบัญชีต้นทาง (≈฿${tripFmtNum(w.leftover_thb)})</option>
+                ${targets.map(t => `<option value="MOVE_TO_WALLET:${t.wallet_id}">ย้ายไป ${t.trip_name} › ${t.name} (${t.currency})</option>`).join('')}
+            </select>
+        </div>`;
+    }).join('');
     modal.innerHTML = `
         <div style="background:var(--card-bg,#fff); border-radius:18px; padding:22px; width:100%; max-width:460px; max-height:88vh; overflow-y:auto; box-shadow:0 12px 40px rgba(0,0,0,0.25);">
             <h3 style="margin:0 0 4px 0; font-size:18px;">🔒 ปิดทริป & สรุปยอด</h3>
@@ -11795,6 +11759,7 @@ window.openCloseTripModal = async function(projectId) {
             <div style="font-size:13px; font-weight:bold; margin-bottom:4px;">สรุปรายจ่ายต่อคน</div>
             <div style="margin-bottom:12px;">${memberRows}</div>
             ${keptRows ? `<div style="background:#eff6ff; border-radius:10px; padding:8px 10px; margin-bottom:12px;">${keptRows}</div>` : ''}
+            ${leftoverControls ? `<div style="font-size:13px; font-weight:bold; margin:10px 0 4px;">เลือกปลายทางเงินเหลือ</div><div style="margin-bottom:12px;">${leftoverControls}</div>` : ''}
             <div style="display:flex; gap:10px;">
                 <button onclick="closeCloseTripModal()" style="flex:1; padding:11px; border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; cursor:pointer; font-weight:bold;">ยกเลิก</button>
                 <button id="btn-confirm-close-trip" onclick="submitCloseTrip('${projectId}')" style="flex:1.4; padding:11px; border:none; background:#ef4444; color:#fff; border-radius:10px; cursor:pointer; font-weight:bold;">🔒 ยืนยันปิดทริป</button>
@@ -11807,10 +11772,17 @@ window.submitCloseTrip = async function(projectId) {
     const btn = document.getElementById('btn-confirm-close-trip');
     if (btn) { btn.disabled = true; btn.textContent = 'กำลังปิดทริป...'; }
     try {
+        const leftover_actions = {};
+        (TravelState.wallets || []).forEach(w => {
+            const select = document.getElementById(`close-leftover-${w.wallet_id}`);
+            if (!select) return;
+            const [mode, target_wallet_id] = select.value.split(':');
+            leftover_actions[w.wallet_id] = mode === 'MOVE_TO_WALLET' ? { mode, target_wallet_id } : { mode: 'RETURN' };
+        });
         const res = await fetch(`${API_BASE}/api/trips/close`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
-            body: JSON.stringify({ project_id: projectId, confirm: 'CLOSE' })
+            body: JSON.stringify({ project_id: projectId, confirm: 'CLOSE', leftover_actions })
         });
         const data = await res.json();
         if (data.success) {
@@ -12496,4 +12468,225 @@ window.showStopDocumentsPopup = function(stopId) {
         </div>
     `;
     document.body.appendChild(modal);
+};
+
+// ============================================================================
+// Trip workspace 2026
+// The former trip dashboard above remains only as an API compatibility layer.
+// These renderers are the single UI entry point for the responsive trip workspace.
+// ============================================================================
+function tripUiEscape(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
+}
+
+function tripUiMembers(trip) {
+    try { return Array.isArray(trip.members) ? trip.members : JSON.parse(trip.members || '[]'); }
+    catch (_) { return String(trip.members || '').split(',').map(item => item.trim()).filter(Boolean); }
+}
+
+function tripUiBanner(trip) {
+    const banner = trip.theme_banner || 'assets/images/banner_japan.jpg';
+    if (/^https?:\/\//i.test(banner) || banner.startsWith('data:')) return banner;
+    return banner.replace(/^\/+/, '');
+}
+
+function tripUiMapAsset(trip) {
+    const location = `${trip.name || ''} ${trip.destination || ''}`.toLowerCase();
+    if (location.includes('hokkaido') || location.includes('ฮอกไกโด')) return 'assets/images/hokkaido_ghibli_map.jpg';
+    return 'assets/images/banner_japan.jpg';
+}
+
+function tripUiStopImage(stop, index) {
+    const text = `${stop.accommodation || ''} ${stop.notes || ''}`.toLowerCase();
+    if (/วัด|temple|ศาลเจ้า/.test(text)) return 'assets/images/highlights/hl_temple.jpg';
+    if (/รถไฟ|train|jr|flight|บิน/.test(text)) return 'assets/images/highlights/hl_train.jpg';
+    if (/อาหาร|ramen|ราเมง|sushi|ซูชิ/.test(text)) return 'assets/images/highlights/hl_ramen.jpg';
+    if (/ช้อป|shop|market|ตลาด/.test(text)) return 'assets/images/highlights/hl_shopping.jpg';
+    if (/ออนเซ็น|onsen/.test(text)) return 'assets/images/highlights/hl_onsen.jpg';
+    return ['assets/images/highlights/hl_mountain.jpg', 'assets/images/highlights/hl_snow.jpg', 'assets/images/highlights/hl_sunrise.jpg'][index % 3];
+}
+
+function tripUiPinPositions(trip, rootStops) {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(`trip_map_pins_${trip.project_id}`) || '{}'); } catch (_) {}
+    const defaults = [[18,65],[51,76],[82,57],[68,38],[31,44]];
+    return rootStops.map((stop, index) => ({
+        id: stop.stop_id,
+        x: Number(saved[stop.stop_id]?.x ?? defaults[index % defaults.length][0]),
+        y: Number(saved[stop.stop_id]?.y ?? defaults[index % defaults.length][1])
+    }));
+}
+
+window.tripUiSelectPlace = function(stopId) {
+    TravelState.currentItineraryStopId = stopId;
+    window.renderTripDetailModal();
+};
+
+window.tripUiBeginPinDrag = function(event, projectId, stopId) {
+    event.preventDefault();
+    event.stopPropagation();
+    const pin = event.currentTarget;
+    const hero = pin.closest('.it-map-hero');
+    if (!hero) return;
+    let moved = false;
+    const move = moveEvent => {
+        moved = true;
+        const rect = hero.getBoundingClientRect();
+        const x = Math.max(6, Math.min(94, ((moveEvent.clientX - rect.left) / rect.width) * 100));
+        const y = Math.max(22, Math.min(86, ((moveEvent.clientY - rect.top) / rect.height) * 100));
+        pin.style.left = `${x}%`;
+        pin.style.top = `${y}%`;
+        const points = [...hero.querySelectorAll('.it-map-pin')].map(item => `${parseFloat(item.style.left)} ${parseFloat(item.style.top)}`).join(', ');
+        hero.querySelector('.it-route-svg polyline')?.setAttribute('points', points);
+    };
+    const up = () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem(`trip_map_pins_${projectId}`) || '{}'); } catch (_) {}
+        saved[stopId] = { x: parseFloat(pin.style.left), y: parseFloat(pin.style.top) };
+        localStorage.setItem(`trip_map_pins_${projectId}`, JSON.stringify(saved));
+        if (!moved) window.tripUiSelectPlace(stopId);
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+};
+
+function tripUiItineraryScreen(trip, members, stops, rootStops) {
+    const first = rootStops.find(stop => stop.stop_id === TravelState.currentItineraryStopId) || rootStops[0] || {};
+    const routeStops = rootStops.slice(0, 3);
+    const pinPositions = tripUiPinPositions(trip, routeStops);
+    const dateLabel = `${formatTripDate(trip.start_date)} – ${formatTripDate(trip.end_date)}`;
+    const dayNumber = first.stop_date && trip.start_date ? Math.max(1, Math.round((new Date(first.stop_date) - new Date(trip.start_date)) / 86400000) + 1) : 1;
+    const mapPins = routeStops.map((stop, index) => { const pos = pinPositions[index]; return `<button class="it-map-pin pin-${index} ${first.stop_id === stop.stop_id ? 'active' : ''}" style="left:${pos.x}%;top:${pos.y}%" onclick="tripUiSelectPlace('${stop.stop_id}')" onpointerdown="tripUiBeginPinDrag(event,'${trip.project_id}','${stop.stop_id}')" title="ลากเพื่อจัดตำแหน่งหมุด"><i>${['📍','📍','📍'][index % 3]}</i><b>${tripUiEscape(stop.accommodation || stop.location || `เมือง ${index + 1}`)}</b><small>${tripUiEscape(stop.stop_date ? formatTripDate(stop.stop_date) : '')}</small></button>`; }).join('');
+    const routePoints = pinPositions.map(pos => `${pos.x} ${pos.y}`).join(', ');
+    const placesHtml = rootStops.length ? rootStops.map((place, placeIndex) => {
+        const children = stops.filter(stop => stop.parent_stop_id === place.stop_id).sort((a,b) => String(a.time || '').localeCompare(String(b.time || '')));
+        const placeName = tripUiEscape(place.accommodation || place.location || `สถานที่ ${placeIndex + 1}`);
+        return `<article class="it-place-card"><div class="it-main-pin">📍</div><div class="it-place-heading"><div><h3>${placeName}</h3><p>${tripUiEscape(place.notes || 'วางแผนกิจกรรมและจุดแวะในสถานที่นี้')}</p></div><button class="it-collapse" aria-label="ย่อรายการ">⌃</button></div><div class="it-substeps">${children.length ? children.map((child, childIndex) => `<div class="it-substep"><span class="it-branch"></span><img src="${tripUiStopImage(child, childIndex)}" alt=""><div class="it-substep-copy"><b>${tripUiEscape(child.accommodation || child.location || 'จุดแวะ')}</b><small>${tripUiEscape(child.notes || 'รายละเอียดกิจกรรม')}</small></div><div class="it-substep-time"><span>◷ ${tripUiEscape(child.time || '—')}</span><small>◷ ${tripUiEscape(child.duration || '—')}</small></div><button class="it-more" aria-label="ตัวเลือก">⋮</button></div>`).join('') : `<div class="it-empty-substep"><span>＋</span><div><b>ยังไม่มีจุดย่อย</b><small>เพิ่มกิจกรรมภายใต้ ${placeName}</small></div></div>`}</div><button class="it-add-substep" onclick="openAddStopModal('${trip.project_id}', '${place.stop_id}')">＋ เพิ่มกิจกรรมใน ${placeName}</button></article>`;
+    }).join('') : `<div class="it-empty-plan"><b>ยังไม่มีสถานที่ในแผน</b><span>เริ่มจากการเพิ่มเมืองหรือสถานที่หลักของวันแรก</span></div>`;
+    return `<div class="trip-itinerary-screen"><header class="it-map-hero" style="background-image:linear-gradient(90deg,rgba(255,255,255,.92) 0%,rgba(255,255,255,.58) 48%,rgba(255,255,255,.08) 100%),url('${tripUiEscape(tripUiMapAsset(trip))}')"><button class="it-back" onclick="closeTripDetail()">← ทริปทั้งหมด</button><span class="it-status">${trip.status === 'closed' ? 'ความทรงจำ' : trip.status === 'planned' ? 'กำลังจะไป' : 'กำลังเดินทาง'}</span><div class="it-hero-copy"><h1>แผนเที่ยว</h1><h2>${tripUiEscape(trip.name || 'ทริปใหม่')}</h2><div class="it-date-card"><span>▣ ${tripUiEscape(dateLabel)}</span><span>♟ ${members.length || 1}</span></div></div><svg class="it-route-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="${routePoints}" /></svg>${mapPins}</header><main class="it-day-sheet"><div class="it-day-heading"><span class="it-day-bubble">วัน<br><b>${dayNumber}</b></span><div><span class="it-city-icon">🏙️</span><h2>${tripUiEscape(first.accommodation || first.location || 'เริ่มวางแผนวันแรก')}</h2><p>📅 ${tripUiEscape(first.stop_date ? formatTripDate(first.stop_date) : dateLabel)}</p></div></div><section class="it-weather-card"><div class="it-weather-title"><b>สภาพอากาศ</b><span>📍 ${tripUiEscape(first.accommodation || 'ยังไม่ระบุเมือง')}</span></div><div class="it-weather-row">${tripUiWeather(trip, first)}</div></section><section class="it-places">${placesHtml}</section></main><button class="it-fab-add" onclick="openAddStopModal('${trip.project_id}')"><b>＋</b><span>เพิ่มสถานที่</span></button><nav class="it-bottom-nav"><button class="active">📍<span>แผนเที่ยว</span></button><button onclick="switchTravelTab('wallets')">👛<span>กระเป๋าเงิน</span></button><button onclick="switchTravelTab('expenses')">🧾<span>รายจ่าย</span></button><button onclick="switchTravelTab('settings')">•••<span>เพิ่มเติม</span></button></nav></div>`;
+}
+
+function tripUiWalletStats(wallet, expenses) {
+    const funded = Number(wallet.funded_foreign ?? wallet.initial_balance_foreign ?? 0);
+    const spent = Number(wallet.spent_foreign ?? expenses.filter(expense => expense.wallet_id === wallet.wallet_id && expense.approved !== 0)
+        .reduce((sum, expense) => sum + Number(expense.amount_foreign ?? expense.amount_thb ?? 0), 0));
+    const remaining = Number(wallet.leftover_foreign ?? (funded - spent));
+    const rate = Number(wallet.avg_rate || (Number(wallet.initial_balance_thb || 0) / (Number(wallet.initial_balance_foreign) || 1)) || 0);
+    return { funded, spent, remaining, rate, thb: Number(wallet.leftover_thb ?? (remaining * rate)) };
+}
+
+function tripUiWeather(trip, stop) {
+    const date = String(stop.stop_date || '').slice(0, 10);
+    const daily = TravelState.weatherData?.daily;
+    const index = daily?.time?.indexOf(date);
+    const max = index >= 0 ? Math.round(daily.temperature_2m_max?.[index] ?? 0) : null;
+    const min = index >= 0 ? Math.round(daily.temperature_2m_min?.[index] ?? 0) : null;
+    if (max === null) return `<div>🌤️ เช้า<strong>—</strong></div><div>☀️ บ่าย<strong>—</strong></div><div>🌙 ค่ำ<strong>—</strong></div>`;
+    const middle = Math.round((max + min) / 2);
+    return `<div>🌤️ เช้า<strong>${min}°</strong><small>ฝน 10%</small></div><div>☀️ บ่าย<strong>${max}°</strong><small>ฝน 20%</small></div><div>🌙 ค่ำ<strong>${middle}°</strong><small>ฝน 10%</small></div>`;
+}
+
+window.renderTripsView = function renderTripsWorkspace() {
+    const container = document.getElementById('travel-trips-list');
+    if (!container) return;
+    const tab = TravelState.currentTripListTab || 'ONGOING';
+    const status = { ONGOING:'active', INCOMING:'planned', MEMORY:'closed' }[tab] || 'active';
+    const trips = (TravelState.trips || []).filter(trip => trip.status === status);
+    container.innerHTML = trips.length ? trips.map(trip => {
+        const selected = TravelState.currentTrip?.project_id === trip.project_id ? ' active' : '';
+        const statusText = trip.status === 'closed' ? 'ความทรงจำ' : trip.status === 'planned' ? 'กำลังจะไป' : 'กำลังเดินทาง';
+        return `<button class="trip-list-card${selected}" onclick="openTripDetail('${trip.project_id}')">
+            <img src="${tripUiEscape(tripUiBanner(trip))}" alt="" onerror="this.src='assets/images/banner_japan.jpg'">
+            <span><strong>${tripUiEscape(trip.name || 'ทริปใหม่')}</strong><small>📍 ${tripUiEscape(trip.destination || 'ยังไม่ระบุปลายทาง')}</small><small>📅 ${tripUiEscape(formatTripDate(trip.start_date))} – ${tripUiEscape(formatTripDate(trip.end_date))}</small><span class="trip-list-status">${statusText}</span></span>
+        </button>`;
+    }).join('') : `<div style="padding:24px 10px;text-align:center;color:#7b8aa3;font-size:.85rem">ยังไม่มีทริปในหมวดนี้<br><button class="trip-btn soft" style="margin-top:10px" onclick="openNewTripModal()">+ สร้างทริป</button></div>`;
+};
+
+window.switchTripTab = function switchTripWorkspaceTab(tab) {
+    TravelState.currentTripListTab = tab;
+    document.querySelectorAll('.trip-filter-tabs button').forEach(button => button.classList.toggle('active', button.id === `tab-trip-${tab.toLowerCase()}`));
+    renderTripsView();
+};
+
+window.openTripDetail = async function openTripWorkspace(projectId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/travel?projectId=${encodeURIComponent(projectId)}`, {
+            headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        TravelState.currentTrip = data.trip;
+        TravelState.expenses = data.expenses || [];
+        TravelState.stops = data.stops || [];
+        TravelState.wallets = data.wallets || [];
+        TravelState.weatherData = data.weatherData || null;
+        TravelState.documents = data.documents || [];
+        TravelState.currentTripTabDetail = TravelState.currentTripTabDetail || 'itinerary';
+        document.getElementById('travel-empty-state')?.style.setProperty('display', 'none');
+        document.getElementById('travel-details-panel')?.style.setProperty('display', 'block');
+        renderTripsView();
+        window.renderTripDetailModal();
+    } catch (error) {
+        console.error('openTripDetail error', error);
+        showToast(`โหลดทริปล้มเหลว: ${error.message}`, 'error');
+    }
+};
+
+window.closeTripDetail = function closeTripWorkspace() {
+    TravelState.currentTrip = null;
+    document.getElementById('travel-details-panel')?.style.setProperty('display', 'none');
+    document.getElementById('travel-empty-state')?.style.setProperty('display', 'grid');
+    renderTripsView();
+};
+
+window.switchTravelTab = function switchTripWorkspaceDetail(tab) {
+    TravelState.currentTripTabDetail = tab;
+    window.renderTripDetailModal();
+};
+
+window.renderTripDetailModal = function renderTripWorkspaceDetail() {
+    const trip = TravelState.currentTrip;
+    const container = document.querySelector('#travel-details-panel .trip-detail-content');
+    if (!trip || !container) return;
+    const tab = TravelState.currentTripTabDetail || 'itinerary';
+    const expenses = TravelState.expenses || [];
+    const wallets = TravelState.wallets || [];
+    const stops = TravelState.stops || [];
+    const members = tripUiMembers(trip);
+    const budget = Number(trip.total_budget || 0);
+    const spent = expenses.filter(expense => expense.approved !== 0).reduce((sum, expense) => sum + Number(expense.amount_thb || 0), 0);
+    const remaining = budget - spent;
+    const rootStops = stops.filter(stop => !stop.parent_stop_id).sort((a,b) => String(a.stop_date || '').localeCompare(String(b.stop_date || '')) || String(a.time || '').localeCompare(String(b.time || '')));
+    if (tab === 'itinerary') {
+        container.innerHTML = tripUiItineraryScreen(trip, members, stops, rootStops);
+        return;
+    }
+    const navigation = [['itinerary','🗺️ แผนเที่ยว'],['wallets','👛 กระเป๋าเงิน'],['expenses','🧾 บิล'],['settings','⚙️ จัดการทริป']];
+    const hero = `<header class="trip-map-hero" style="background-image:linear-gradient(90deg,rgba(255,255,255,.94) 0%,rgba(255,255,255,.72) 46%,rgba(218,244,249,.18) 100%),url('${tripUiEscape(tripUiMapAsset(trip))}')">
+        <div class="trip-hero-actions"><button class="trip-back" onclick="closeTripDetail()">← ทริปทั้งหมด</button><span class="trip-status">${trip.status === 'closed' ? 'ความทรงจำ' : trip.status === 'planned' ? 'กำลังจะไป' : 'กำลังเดินทาง'}</span></div>
+        <h1>${tripUiEscape(trip.name || 'ทริปใหม่')}</h1><p>📅 ${tripUiEscape(formatTripDate(trip.start_date))} – ${tripUiEscape(formatTripDate(trip.end_date))} &nbsp;·&nbsp; 👥 ${members.length || 1} คน</p>
+    </header>
+    <div class="trip-summary-row"><div class="trip-summary-card"><span>งบประมาณ</span><strong>฿${tripFmtNum(budget)}</strong></div><div class="trip-summary-card"><span>ใช้ไป</span><strong>฿${tripFmtNum(spent)}</strong></div><div class="trip-summary-card"><span>${remaining < 0 ? 'เกินงบ' : 'คงเหลือ'}</span><strong>฿${tripFmtNum(Math.abs(remaining))}</strong></div></div>
+    <nav class="trip-nav">${navigation.map(([id,label]) => `<button class="${tab === id ? 'active' : ''}" onclick="switchTravelTab('${id}')">${label}</button>`).join('')}</nav>`;
+    let content = '';
+    if (tab === 'itinerary') {
+        content = `<div class="trip-page-grid"><section class="trip-panel"><div class="trip-panel-head"><h3>แผนเที่ยวรายวัน</h3><button class="trip-btn" onclick="openAddStopModal('${trip.project_id}')">+ เพิ่มสถานที่</button></div>${rootStops.length ? `<div class="trip-itinerary">${rootStops.map((place, index) => {
+            const children = stops.filter(stop => stop.parent_stop_id === place.stop_id).sort((a,b) => String(a.time || '').localeCompare(String(b.time || '')));
+            const placeName = tripUiEscape(place.accommodation || place.location || `สถานที่ ${index + 1}`);
+            return `<article class="trip-place"><div class="trip-place-title"><span>📍 ${placeName}</span><small>${tripUiEscape(place.stop_date ? formatTripDate(place.stop_date) : 'รอระบุวัน')}</small></div><div class="trip-substops">${children.length ? children.map(child => `<div class="trip-substop"><time>${tripUiEscape(child.time || '—')}</time><i>${tripUiEscape(child.icon || '📍')}</i><span><b>${tripUiEscape(child.accommodation || child.location || 'จุดแวะ')}</b><small>${tripUiEscape(child.notes || child.duration || '')}</small></span></div>`).join('') : `<div class="trip-substop"><time>—</time><i>＋</i><span><b>ยังไม่มีจุดย่อย</b><small>เพิ่มกิจกรรมภายใต้ ${placeName}</small></span></div>`}</div><button class="trip-btn soft" style="margin:8px 0 0 12px" onclick="openAddStopModal('${trip.project_id}', '${place.stop_id}')">+ เพิ่มจุดย่อย</button></article>`;
+        }).join('')}</div>` : `<div style="text-align:center;padding:30px;color:#71809b">ยังไม่มีแผนเที่ยว<br><button class="trip-btn" style="margin-top:10px" onclick="openAddStopModal('${trip.project_id}')">เริ่มเพิ่มสถานที่</button></div>`}</section>
+        <aside class="trip-panel"><div class="trip-panel-head"><h3>อากาศตามแผน</h3><span style="font-size:.72rem;color:#71809b">${rootStops[0]?.accommodation || 'ยังไม่ระบุเมือง'}</span></div><div class="trip-weather">${tripUiWeather(trip, rootStops[0] || {})}</div><p style="font-size:.75rem;color:#71809b;margin:14px 0 0">พยากรณ์จะแสดงตามเมืองและวันที่ของจุดแวะแรกในแต่ละวัน</p></aside></div>`;
+    } else if (tab === 'wallets') {
+        const walletTotal = wallets.reduce((sum,wallet) => sum + tripUiWalletStats(wallet, expenses).thb, 0);
+        content = `<div class="trip-wallet-hero"><div class="trip-total-card"><span>ยอดเงินคงเหลือทุกกระเป๋า</span><strong>฿${tripFmtNum(walletTotal)}</strong><small>${wallets.length} กระเป๋าเงินในทริปนี้</small></div><div class="trip-wallet-action"><b>👛 กระเป๋าเงินทริป</b><button class="trip-btn soft" style="margin-top:10px" onclick="switchTravelTab('settings')">สร้างกระเป๋า</button></div></div><div style="display:flex;gap:8px;margin:12px 0"><button class="trip-btn" onclick="openFundWalletModal('${trip.project_id}')">+ เติมเงินเข้าทริป</button><button class="trip-btn soft" onclick="openTripCalcModal('${trip.project_id}')">คำนวณเรท</button></div><div class="trip-wallet-grid">${wallets.map(wallet => { const stats = tripUiWalletStats(wallet, expenses); return `<article class="trip-wallet-card-new"><small>${tripUiEscape(wallet.name || 'Wallet')} · ${tripUiEscape(wallet.currency || 'THB')}</small><div class="amount">${tripUiEscape(wallet.currency || 'THB')} ${tripFmtNum(stats.remaining)}</div><small>≈ ฿${tripFmtNum(stats.thb)} · เรทเฉลี่ย ${stats.rate ? stats.rate.toFixed(4) : '—'}</small><div class="trip-wallet-meta"><span>เติม ${tripFmtNum(stats.funded)}</span><span>ใช้ ${tripFmtNum(stats.spent)}</span></div></article>`; }).join('') || `<div class="trip-wallet-action"><b>ยังไม่มีกระเป๋าเงิน</b><p>สร้างกระเป๋า ก่อนเติมเงินเข้าทริป</p><button class="trip-btn" onclick="switchTravelTab('settings')">สร้างกระเป๋า</button></div>`}</div>`;
+    } else if (tab === 'expenses') {
+        const categories = {}; expenses.filter(expense => expense.approved !== 0).forEach(expense => { const item = getCategoryInfo(expense.category_id); categories[item.label] = (categories[item.label] || 0) + Number(expense.amount_thb || 0); });
+        content = `<div class="trip-page-grid"><section class="trip-panel"><div class="trip-panel-head"><h3>บิลล่าสุด</h3><button class="trip-btn" onclick="openAddExpenseModal('${trip.project_id}')">+ เพิ่มบิล</button></div>${expenses.length ? expenses.filter(expense => expense.approved !== 0).sort((a,b) => String(b.expense_date || '').localeCompare(String(a.expense_date || ''))).map(expense => { const category = getCategoryInfo(expense.category_id); const stop = stops.find(item => item.stop_id === expense.stop_id); return `<div class="trip-expense-row-new"><div class="trip-expense-icon">${category.icon || '🧾'}</div><div><b>${tripUiEscape(expense.note || category.label)}</b><small>${tripUiEscape(stop?.accommodation || 'ทั่วไป')} · ${tripUiEscape(expense.member_id || 'ไม่ระบุผู้จ่าย')}</small></div><div class="value">฿${tripFmtNum(expense.amount_thb)}<small>${tripUiEscape(expense.amount_foreign ? `${expense.amount_foreign} ${expense.currency || ''}` : '')}</small></div></div>`; }).join('') : `<div style="text-align:center;padding:30px;color:#71809b">ยังไม่มีบิล<br><button class="trip-btn" style="margin-top:10px" onclick="openAddExpenseModal('${trip.project_id}')">เพิ่มบิลแรก</button></div>`}</section><aside class="trip-panel"><h3>ภาพรวมการใช้จ่าย</h3><div class="trip-expense-summary"><div><strong style="font-size:1.5rem">฿${tripFmtNum(spent)}</strong><p style="color:#71809b;font-size:.75rem">รวมค่าใช้จ่ายทั้งหมด</p><button class="trip-btn soft" onclick="openTripCalcModal('${trip.project_id}')">คำนวณเงิน</button></div><div class="trip-donut" aria-label="สัดส่วนค่าใช้จ่าย"></div></div><div style="margin-top:14px;font-size:.78rem;color:#53627d">${Object.entries(categories).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([name,value]) => `<div style="display:flex;justify-content:space-between;padding:5px 0"><span>${tripUiEscape(name)}</span><b>฿${tripFmtNum(value)}</b></div>`).join('') || 'ยังไม่มีข้อมูลหมวดหมู่'}</div></aside></div>`;
+    } else {
+        const currentBanner = tripUiBanner(trip);
+        content = `<div class="trip-page-grid"><section class="trip-panel"><h3>จัดการทริป</h3><div class="trip-settings-list"><div class="trip-setting"><span class="icon">👥</span><span><b>สมาชิกทริป</b><small>${members.length ? tripUiEscape(members.join(', ')) : 'เพิ่มผู้ร่วมทริป'}</small></span><span class="arrow">›</span></div><div class="trip-setting"><span class="icon">💰</span><span><b>งบประมาณ</b><small>฿${tripFmtNum(budget)} · ใช้แล้ว ฿${tripFmtNum(spent)}</small></span><span class="arrow">›</span></div><div class="trip-setting"><span class="icon">📄</span><span><b>เอกสาร</b><small>${(TravelState.documents || []).length} รายการ</small></span><span class="arrow">›</span></div><div class="trip-setting"><span class="icon">☀️</span><span><b>การแจ้งเตือนอากาศ</b><small>แจ้งสภาพอากาศตามวันที่ในแผน</small></span><span class="arrow">›</span></div></div></section><aside class="trip-panel"><div class="trip-panel-head"><h3>ภาพ banner</h3><button class="trip-btn soft" onclick="openBannerModal('${trip.project_id}','${tripUiEscape(currentBanner)}')">เปลี่ยนภาพ</button></div><p style="font-size:.75rem;color:#71809b">เลือกภาพหน้าปกของทริปได้ทุกเมื่อ</p><div class="trip-banner-options"><img class="selected" src="${tripUiEscape(currentBanner)}" alt="ภาพหน้าปก" onerror="this.src='assets/images/banner_japan.jpg'"><img src="assets/images/banner_japan.jpg" alt="ตัวอย่าง"><img src="assets/images/hokkaido_ghibli_map.jpg" alt="ตัวอย่าง"></div><div style="margin-top:18px;padding-top:14px;border-top:1px solid #fee2e2"><h3 style="color:#df5577">ปิดทริปนี้</h3><p style="font-size:.75rem;color:#71809b">ตรวจเงินเหลือและเลือกคืนบัญชีหรือย้ายไปทริปถัดไป</p><button class="trip-btn pink full" onclick="openCloseTripModal('${trip.project_id}')">ตรวจสรุปและปิดทริป</button></div></aside></div>`;
+    }
+    container.innerHTML = `<div class="trip-screen">${hero}${content}</div>`;
 };

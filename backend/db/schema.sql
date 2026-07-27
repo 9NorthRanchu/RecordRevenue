@@ -223,10 +223,12 @@ CREATE TABLE IF NOT EXISTS TripStops (
     project_id TEXT NOT NULL,
     stop_date TEXT, -- YYYY-MM-DD
     time TEXT, -- HH:MM
+    end_time TEXT, -- HH:MM
     city TEXT,
     accommodation TEXT,
     restaurants TEXT, -- JSON array of restaurant names or text
     notes TEXT,
+    icon_asset TEXT,
     is_starred INTEGER DEFAULT 0, -- 0 or 1
     latitude REAL,
     longitude REAL,

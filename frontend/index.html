@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Family Revenue - ระบบบันทึกรายได้ครอบครัว</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=120">
+    <link rel="stylesheet" href="style.css?v=127">
+    <link rel="stylesheet" href="puppup-trip.css?v=1">
     <!-- pdf-lib -->
     <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
     <!-- pdf.js (Mozilla) for AES-256 fallback -->
@@ -88,6 +89,8 @@
                     <!-- grid-input merged into pending -->
                     <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i> <span>ทะเบียนลูกหนี้/เจ้าหนี้</span></a>
                     <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i> <span>TRIPS</span></a>
+                    <a href="#" class="nav-item" data-target="puppup"><i class="fa-solid fa-map-location-dot"></i> <span>Prototype Trip</span><small>ใหม่</small></a>
+                    <a href="hunsa/index.html" onclick="this.href='hunsa/index.html?user='+encodeURIComponent(AppState.userId || '')" class="hunsa-menu-link"><i class="fa-solid fa-suitcase-rolling"></i> <span>Hunsa Trip</span><small>ใหม่</small></a>
                     <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-pie"></i> <span>รายงานทางการเงิน</span></a>
                     <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i> <span>ตั้งค่าระบบ</span></a>
                 </nav>
@@ -459,42 +462,34 @@
                     </div>
                 </section>
 
-                <!-- 5.5. Travel Trip View (Split View) -->
-                <section id="view-travel" class="content-view hidden travel-page" style="min-height: 80vh;">
-                    <div class="debts-neumorph-dashboard">
-                        <!-- Left Panel: Trip List -->
-                        <div class="debt-list-panel" style="padding: 15px; border-radius: 20px; background: #ffffff; border: 1px solid #e2e8f0; display: flex; flex-direction: column; max-height: calc(100vh - 100px);">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                                <h3 style="margin: 0; color: #2c3e50; font-weight: 700; font-size: 1.1rem; text-shadow: 1px 1px 2px rgba(255,255,255,0.8);"><i class="fa-solid fa-plane" style="color: #74b9ff;"></i> TRIPS</h3>
-                                <button class="btn" onclick="openNewTripModal()" style="border-radius: 50%; width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; background: #e0fbfc; color: #3d5a80; border: none; box-shadow: 2px 2px 5px rgba(162, 210, 255, 0.5), -2px -2px 5px #fff;"><i class="fa-solid fa-plus"></i></button>
-                            </div>
-                            
-                            <div class="tabs" style="display: flex; gap: 10px; margin-bottom: 15px;">
-                                <button class="btn btn-outline active" id="tab-trip-ongoing" onclick="switchTripTab('ONGOING')" style="flex: 1; border-radius: 10px; background: linear-gradient(135deg, #f472b6, #fb7185); color: white; border: none; box-shadow: 0 4px 6px rgba(244, 114, 182, 0.3); font-weight: bold; padding: 10px 5px; cursor: pointer; transition: all 0.2s; font-size: 0.95rem;">Ongoing</button>
-                                <button class="btn btn-outline" id="tab-trip-incoming" onclick="switchTripTab('INCOMING')" style="flex: 1; border-radius: 10px; background: #f8fafc; color: #64748b; border: 2px solid #e2e8f0; font-weight: bold; padding: 10px 5px; cursor: pointer; transition: all 0.2s; font-size: 0.95rem;">Incoming</button>
-                                <button class="btn btn-outline" id="tab-trip-memory" onclick="switchTripTab('MEMORY')" style="flex: 1; border-radius: 10px; background: #f8fafc; color: #64748b; border: 2px solid #e2e8f0; font-weight: bold; padding: 10px 5px; cursor: pointer; transition: all 0.2s; font-size: 0.95rem;">Memory</button>
-                            </div>
-
-                            <div id="travel-trips-list" style="display: flex; flex-direction: column; gap: 12px; overflow-y: auto; padding-right: 0px; padding-bottom: 10px; flex: 1;">
-                                <!-- Trip items will be injected here -->
-                            </div>
+                <!-- Trip workspace: the previous split dashboard is retired in favour of this responsive UI. -->
+                <section id="view-travel" class="content-view hidden travel-page trip-workspace">
+                    <aside class="trip-sidebar">
+                        <div class="trip-sidebar-head">
+                            <div><span class="trip-eyebrow">MY JOURNEYS</span><h2>ทริปของฉัน</h2></div>
+                            <button class="trip-round-action" onclick="openNewTripModal()" aria-label="สร้างทริปใหม่"><i class="fa-solid fa-plus"></i></button>
                         </div>
-
-                        <!-- Right Panel: Trip Details -->
-                        <div id="travel-details-panel" class="travel-details-column theme-ghibli" style="display: none; padding: 0; border-radius: 20px; height: calc(100vh - 100px); overflow-y: auto; position: relative; border: none; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
-                            <div class="trip-detail-content" style="min-height: 100%;">
-                                <!-- Details injected here -->
-                            </div>
+                        <div class="trip-filter-tabs" role="tablist">
+                            <button id="tab-trip-ongoing" onclick="switchTripTab('ONGOING')" class="active">กำลังไป</button>
+                            <button id="tab-trip-incoming" onclick="switchTripTab('INCOMING')">กำลังจะไป</button>
+                            <button id="tab-trip-memory" onclick="switchTripTab('MEMORY')">ความทรงจำ</button>
                         </div>
-                        
-                        <!-- Empty State -->
-                        <div id="travel-empty-state" style="display: flex; align-items: center; justify-content: center; height: calc(100vh - 100px); border-radius: 20px; background: rgba(255,255,255,0.5); backdrop-filter: blur(10px); border: 2px dashed #a2d2ff;">
-                            <div style="text-align: center; color: #3d5a80;">
-                                <i class="fa-solid fa-plane-departure" style="font-size: 3rem; color: #a2d2ff; margin-bottom: 15px; text-shadow: 2px 2px 4px rgba(162, 210, 255, 0.4);"></i>
-                                <h3 style="font-weight: bold; margin:0;">เลือกทริปเพื่อดูรายละเอียด</h3>
-                            </div>
-                        </div>
+                        <div id="travel-trips-list" class="trip-list" aria-live="polite"></div>
+                    </aside>
+                    <main id="travel-details-panel" class="trip-canvas" aria-live="polite" style="display:none">
+                        <div class="trip-detail-content"></div>
+                    </main>
+                    <div id="travel-empty-state" class="trip-empty-state">
+                        <div class="trip-empty-art">🧳</div>
+                        <h3>เลือกทริปเพื่อเริ่มวางแผน</h3>
+                        <p>จัดแผน จุดแวะ กระเป๋าเงิน และบิลไว้ในที่เดียว</p>
+                        <button onclick="openNewTripModal()">+ สร้างทริปใหม่</button>
                     </div>
+                </section>
+
+                <!-- Prototype Trip: หน้าใหม่ตาม mockup PupPup Trip เชื่อมข้อมูลจริงแล้ว (เฟส 1 = แผนที่/itinerary) -->
+                <section id="view-puppup" class="content-view hidden">
+                    <div id="ppRoot"></div>
                 </section>
 
                 <!-- ===== MODAL: New Trip ===== -->
@@ -1146,6 +1141,8 @@
             <a href="#" class="nav-item" data-target="pending"><i class="fa-solid fa-plus"></i><span>เพิ่มรายการ</span></a>
             <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i><span>ลูกหนี้</span></a>
             <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i><span>ทริป</span></a>
+            <a href="#" class="nav-item" data-target="puppup"><i class="fa-solid fa-map-location-dot"></i><span>Prototype</span></a>
+            <a href="hunsa/index.html" onclick="this.href='hunsa/index.html?user='+encodeURIComponent(AppState.userId || '')" class="hunsa-menu-link"><i class="fa-solid fa-suitcase-rolling"></i><span>Hunsa</span></a>
             <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-bar"></i><span>รายงาน</span></a>
             <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i><span>ตั้งค่า</span></a>
         </nav>
@@ -1464,7 +1461,8 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="travel.js?v=105"></script>
-    <script src="app.js?v=157"></script>
+    <script src="app.js?v=171"></script>
+    <script src="puppup-trip.js?v=1"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">
