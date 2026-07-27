@@ -66,6 +66,21 @@ INSERT INTO TripMembers (member_id,project_id,user_id,display_name,role,ledger_m
   ('TM-3','TRP-1',NULL,'XinXin','สมาชิก','MAIN',0),
   ('TM-C1','TRP-CLOSED','9North','North','ผู้ดูแล','MAIN',1);
 INSERT INTO TripCurrencies (project_id,code,symbol,label,plan_rate,is_base) VALUES ('TRP-1','THB','฿','บาท',1,1);
+
+-- ทริปแยกสำหรับเทสปิด/เปิด เพื่อไม่ให้ข้อมูลของเทสอื่นมาปนจนอ่านตัวเลขไม่ออก
+-- TM-X2 เป็น TRIP_ONLY = ยอดของคนนี้ไม่เข้าบัญชีหลัก
+INSERT INTO Projects (project_id,family_id,name,status,start_date,end_date)
+  VALUES ('TRP-2','FAM-1','ทริปทดสอบปิด','active','2026-12-17','2026-12-27');
+INSERT INTO TripMembers (member_id,project_id,user_id,display_name,role,ledger_mode,is_admin) VALUES
+  ('TM-X1','TRP-2','9North','North','ผู้ดูแล','MAIN',1),
+  ('TM-X2','TRP-2','uPuii','Puii','สมาชิก','TRIP_ONLY',0);
+INSERT INTO TripCurrencies (project_id,code,symbol,label,plan_rate,is_base) VALUES
+  ('TRP-2','THB','฿','บาท',1,1), ('TRP-2','JPY','¥','เยน',0.23,0);
+INSERT INTO TripWallets (wallet_id,project_id,name,currency,owner_member_id,exclude_on_close)
+  VALUES ('W-X','TRP-2','เงินสดเยน','JPY','TM-X1',0);
+-- ฿2,340 แลกได้ ¥10,000 → เรทจริง 0.234 (ไม่ใช่ 0.23 ที่ตั้งไว้ตอนวางแผน)
+INSERT INTO TripWalletFundings (funding_id,project_id,wallet_id,thb_amount,foreign_amount,rate,funding_date)
+  VALUES ('F-X','TRP-2','W-X',2340,10000,0.234,'2026-12-17');
 `);
 
 // ── D1 shim ────────────────────────────────────────────────────────────────
@@ -112,11 +127,11 @@ function check(name, cond, detail = '') {
 console.log('\n── สกุลเงิน ─────────────────────────────────────');
 let r = await call('POST', '/api/unified-trip/currencies', { body: { code: 'jpy', symbol: '¥', label: 'เยน', plan_rate: 0.234 } });
 check('admin เพิ่มสกุลได้ + รหัสถูกทำเป็นตัวใหญ่', r.status === 200 && r.data.code === 'JPY', JSON.stringify(r));
-check('บันทึกลงฐานจริง', db.prepare(`SELECT plan_rate FROM TripCurrencies WHERE code='JPY'`).get()?.plan_rate === 0.234);
+check('บันทึกลงฐานจริง', db.prepare(`SELECT plan_rate FROM TripCurrencies WHERE project_id='TRP-1' AND code='JPY'`).get()?.plan_rate === 0.234);
 
 r = await call('POST', '/api/unified-trip/currencies', { body: { code: 'JPY', symbol: '¥', label: 'เยน', plan_rate: 0.25 } });
-check('รันซ้ำ = อัปเดต ไม่ใช่ error', r.status === 200 && db.prepare(`SELECT COUNT(*) n FROM TripCurrencies WHERE code='JPY'`).get().n === 1);
-check('เรทใหม่ทับของเดิม', db.prepare(`SELECT plan_rate FROM TripCurrencies WHERE code='JPY'`).get().plan_rate === 0.25);
+check('รันซ้ำ = อัปเดต ไม่ใช่ error', r.status === 200 && db.prepare(`SELECT COUNT(*) n FROM TripCurrencies WHERE project_id='TRP-1' AND code='JPY'`).get().n === 1);
+check('เรทใหม่ทับของเดิม', db.prepare(`SELECT plan_rate FROM TripCurrencies WHERE project_id='TRP-1' AND code='JPY'`).get().plan_rate === 0.25);
 
 r = await call('POST', '/api/unified-trip/currencies', { user: 'uPuii', body: { code: 'USD', symbol: '$', plan_rate: 36 } });
 check('สมาชิกธรรมดาเพิ่มสกุลไม่ได้ → 403', r.status === 403, JSON.stringify(r));
@@ -168,7 +183,7 @@ check('สมาชิกแก้กระเป๋าคนอื่นไม�
 
 r = await call('POST', '/api/unified-trip/wallets', { body: { wallet_id: walletId, name: 'เงินสดเยน (แก้ชื่อ)', currency: 'JPY' } });
 check('เจ้าของแก้ชื่อกระเป๋าตัวเองได้', r.status === 200 && db.prepare(`SELECT name n FROM TripWallets WHERE wallet_id=?`).get(walletId).n === 'เงินสดเยน (แก้ชื่อ)');
-check('แก้แล้วไม่เกิดกระเป๋าใหม่', db.prepare(`SELECT COUNT(*) n FROM TripWallets`).get().n === 3);
+check('แก้แล้วไม่เกิดกระเป๋าใหม่', db.prepare(`SELECT COUNT(*) n FROM TripWallets WHERE project_id='TRP-1'`).get().n === 3);
 
 r = await call('POST', '/api/unified-trip/wallets', { body: { wallet_id: 'TW-ไม่มีจริง', name: 'x', currency: 'JPY' } });
 check('แก้กระเป๋าที่ไม่มี → 404', r.status === 404);
@@ -190,11 +205,11 @@ check('ลบสกุลที่ไม่มีใครใช้ได้', r
 
 // บั๊กที่เคยเจอ: สร้างหลายใบในมิลลิวินาทีเดียวกันแล้ว id ชน → ทับกันเงียบ ๆ
 {
-  const before = db.prepare(`SELECT COUNT(*) n FROM TripWallets`).get().n;
+  const before = db.prepare(`SELECT COUNT(*) n FROM TripWallets WHERE project_id='TRP-1'`).get().n;
   const ids = await Promise.all(Array.from({ length: 20 }, (_, i) =>
     call('POST', '/api/unified-trip/wallets', { body: { name: `รัว ${i}`, currency: 'JPY' } })
       .then(x => x.data.wallet_id)));
-  const after = db.prepare(`SELECT COUNT(*) n FROM TripWallets`).get().n;
+  const after = db.prepare(`SELECT COUNT(*) n FROM TripWallets WHERE project_id='TRP-1'`).get().n;
   check('สร้าง 20 ใบรวดเดียวได้ครบ ไม่ทับกัน', after - before === 20 && new Set(ids).size === 20,
     `เพิ่มจริง ${after - before} · id ไม่ซ้ำ ${new Set(ids).size}`);
   db.prepare(`DELETE FROM TripWallets WHERE name LIKE 'รัว %'`).run();
@@ -374,7 +389,7 @@ check('คนต่างครอบครัว → 404 (ไม่บอกว
 r = await call('PUT', '/api/unified-trip/wallets', { body: {} });
 check('method ที่ยังไม่รองรับ → 405', r.status === 405, JSON.stringify(r));
 r = await call('POST', '/api/unified-trip/closures', { body: {} });
-check('endpoint ปิดทริปยังไม่เปิด → 405', r.status === 405);
+check('ปิดทริปโดยไม่ระบุวันลงบัญชี → 400', r.status === 400, JSON.stringify(r));
 
 r = await call('POST', '/api/unified-trip/currencies', { body: 'ไม่ใช่ json' });
 check('body พังไม่ทำให้ 500', r.status === 400, JSON.stringify(r));
@@ -453,6 +468,94 @@ check('ลบล็อตที่ยกยอดมาจากทริปก�
 db.prepare(`UPDATE TripWalletFundings SET carried_from_closure_id=NULL WHERE funding_id=?`).run(lot1);
 r = await call('DELETE', '/api/unified-trip/fundings', { query: `&id=${lot1}` });
 check('เจ้าของลบล็อตปกติได้', r.status === 200, JSON.stringify(r));
+
+console.log('\n── ปิดทริป · เปิดกลับ · ปิดซ้ำ ──────────────────');
+const T2 = { project: 'TRP-2' };
+const netOf = () => db.prepare(`SELECT ROUND(SUM(ledger_total),2) n FROM TripClosures WHERE project_id='TRP-2'`).get().n;
+
+// บิลใบแรก ¥5,000 หารสองคน → คนละ ¥2,500 × 0.234 = ฿585
+r = await call('POST', '/api/unified-trip/expenses', {
+  ...T2, body: {
+    expense_date: '2026-12-18', amount_foreign: 5000, currency_code: 'JPY', wallet_id: 'W-X',
+    split_mode: 'EQUAL', participants: [{ member_id: 'TM-X1' }, { member_id: 'TM-X2' }]
+  }
+});
+check('บันทึกบิลในทริปทดสอบได้', r.status === 200, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/closures', { ...T2, body: { posting_date: '2027-01-10' } });
+check('ปิดทั้งที่ยังมีเงินเหลือค้าง → 400 ต้องบอกก่อนว่าจะเอาไปไหน',
+  r.status === 400 && /เงินเหลือ/.test(r.data.error), JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/closures', {
+  ...T2, user: 'uPuii',
+  body: { posting_date: '2027-01-10', lines: [{ wallet_id: 'W-X', disposition: 'RETURN', received_thb: 1200 }] }
+});
+check('สมาชิกธรรมดาปิดทริปไม่ได้ → 403', r.status === 403, JSON.stringify(r));
+
+// เหลือ ¥5,000 ต้นทุน ฿1,170 แลกกลับได้ ฿1,200 → กำไรอัตราแลกเปลี่ยน ฿30
+r = await call('POST', '/api/unified-trip/closures', {
+  ...T2, body: { posting_date: '2027-01-10', lines: [{ wallet_id: 'W-X', disposition: 'RETURN', received_thb: 1200 }] }
+});
+const close1 = r.data.closure_id;
+check('ปิดทริปสำเร็จ', r.status === 200, JSON.stringify(r));
+check('ยอดเข้าบัญชีหลัก = ฿585 (ของ TRIP_ONLY ไม่นับ)', r.data.ledger_total === 585, String(r.data.ledger_total));
+check('ยอด TRIP_ONLY แยกไว้ต่างหาก ฿585', r.data.trip_only_total === 585, String(r.data.trip_only_total));
+check('กำไรอัตราแลกเปลี่ยน = 1200 − 1170 = ฿30', r.data.fx_result === 30, String(r.data.fx_result));
+check('เรทถูกล็อกไว้ที่กระเป๋า', db.prepare(`SELECT locked_rate r FROM TripWallets WHERE wallet_id='W-X'`).get().r === 0.234);
+check('ยอดบาทของบิลถูกแช่ไว้',
+  db.prepare(`SELECT settled_amount_thb t FROM TripExpenses WHERE project_id='TRP-2'`).get().t === 1170);
+check('ทริปถูกทำเครื่องหมายว่าปิดแล้ว',
+  db.prepare(`SELECT status s FROM Projects WHERE project_id='TRP-2'`).get().s === 'closed');
+
+r = await call('POST', '/api/unified-trip/expenses', { ...T2, body: { expense_date: '2026-12-19', amount_foreign: 100, currency_code: 'JPY' } });
+check('ปิดแล้วเพิ่มบิลไม่ได้ → 409', r.status === 409, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/closures/reopen', { ...T2, body: {} });
+check('เปิดกลับโดยไม่บอกเหตุผล → 400', r.status === 400, JSON.stringify(r));
+r = await call('POST', '/api/unified-trip/closures/reopen', { ...T2, user: 'uPuii', body: { reason: 'ขอแก้' } });
+check('สมาชิกธรรมดาเปิดกลับไม่ได้ → 403', r.status === 403, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/closures/reopen', { ...T2, body: { reason: 'บันทึกค่าใช้จ่ายไม่ครบ' } });
+check('admin เปิดทริปกลับได้', r.status === 200, JSON.stringify(r));
+check('แถวกลับชี้กลับไปที่ครั้งที่ปิด', r.data.reverses === close1, JSON.stringify(r.data));
+check('แถวกลับใช้วันลงบัญชีเดิม ไม่ใช่วันนี้', r.data.posting_date === '2027-01-10', r.data.posting_date);
+check('แถวกลับเป็นค่าลบของครั้งที่ปิด', r.data.ledger_total === -585, String(r.data.ledger_total));
+check('🔑 สุทธิหลังเปิดกลับ = 0 ไม่ใช่ค้างอยู่ 585', netOf() === 0, String(netOf()));
+check('เรทถูกปลดล็อก กลับไปคำนวณสด',
+  db.prepare(`SELECT locked_rate r FROM TripWallets WHERE wallet_id='W-X'`).get().r === null);
+check('ยอดบาทที่แช่ไว้ถูกล้าง',
+  db.prepare(`SELECT settled_amount_thb t FROM TripExpenses WHERE project_id='TRP-2'`).get().t === null);
+
+r = await call('POST', '/api/unified-trip/closures/reopen', { ...T2, body: { reason: 'ซ้ำ' } });
+check('เปิดกลับซ้ำทั้งที่เปิดอยู่แล้ว → 409', r.status === 409, JSON.stringify(r));
+
+// บิลที่ลืมบันทึก ¥1,000 เจ้าของคนเดียว → ฿234 เข้าบัญชีหลัก
+r = await call('POST', '/api/unified-trip/expenses', {
+  ...T2, body: { expense_date: '2026-12-20', amount_foreign: 1000, currency_code: 'JPY', wallet_id: 'W-X', split_mode: 'EQUAL' }
+});
+check('เปิดกลับแล้วเพิ่มบิลได้', r.status === 200, JSON.stringify(r));
+
+// เหลือ ¥4,000 ต้นทุน ฿936 · คราวนี้ยกไปทริปหน้าแทนการแลกกลับ
+r = await call('POST', '/api/unified-trip/closures', {
+  ...T2, body: { posting_date: '2027-01-15', lines: [{ wallet_id: 'W-X', disposition: 'CARRY', carry_currency: 'JPY', carry_amount: 4000 }] }
+});
+check('ปิดรอบสองสำเร็จ', r.status === 200, JSON.stringify(r));
+check('ยอดรอบสอง = 585 + 234 = ฿819', r.data.ledger_total === 819, String(r.data.ledger_total));
+check('ยกไปทริปหน้า → ยังไม่รับรู้กำไรขาดทุน fx = 0', r.data.fx_result === 0, String(r.data.fx_result));
+check('ต้นทุนที่ยกไป = ฿936 ไม่ใช่คิดใหม่จากเรทปัจจุบัน', r.data.carried_thb === 936, String(r.data.carried_thb));
+check('🔑 สุทธิ = 819 ไม่ใช่ 1,404 (ไม่โพสต์ซ้ำ)', netOf() === 819, String(netOf()));
+check('มี 3 แถวในสมุด: ปิด · กลับ · ปิด',
+  db.prepare(`SELECT COUNT(*) n FROM TripClosures WHERE project_id='TRP-2'`).get().n === 3);
+
+// วนอีกรอบ ต้องยังไม่เพี้ยน
+await call('POST', '/api/unified-trip/closures/reopen', { ...T2, body: { reason: 'รอบสาม' } });
+check('เปิดกลับรอบสอง → สุทธิกลับเป็น 0 อีกครั้ง', netOf() === 0, String(netOf()));
+r = await call('POST', '/api/unified-trip/closures', {
+  ...T2, body: { posting_date: '2027-01-20', lines: [{ wallet_id: 'W-X', disposition: 'CARRY', carry_amount: 4000 }] }
+});
+check('ปิดรอบสาม → สุทธิยังเป็น 819 เท่าเดิม', netOf() === 819, String(netOf()));
+check('แถวกลับล่าสุดชี้ถูกตัว (ไม่ไปกลับแถวที่กลับไปแล้ว)',
+  db.prepare(`SELECT COUNT(*) n FROM TripClosures WHERE project_id='TRP-2' AND entry_type='REOPEN'`).get().n === 2);
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 process.exit(fail ? 1 : 0);
