@@ -34,7 +34,8 @@ CREATE TABLE TripWallets (wallet_id TEXT PRIMARY KEY, project_id TEXT, name TEXT
   owner_member_id TEXT, icon_url TEXT, locked_rate REAL);
 CREATE TABLE TripWalletFundings (funding_id TEXT PRIMARY KEY, project_id TEXT, wallet_id TEXT,
   thb_amount REAL, foreign_amount REAL, rate REAL, funding_date TEXT,
-  carried_from_wallet_id TEXT, carried_from_closure_id TEXT);
+  carried_from_wallet_id TEXT, carried_from_closure_id TEXT,
+  note TEXT, source_account_id TEXT, linked_transaction_id TEXT, created_at DATETIME);
 -- amount_thb เป็น NOT NULL ตามของจริง (คอลัมน์เดิมที่หน้าอื่นยังอ่านอยู่)
 -- ตั้งไว้แบบนี้เพื่อให้เทสจับได้ถ้าโค้ดลืมใส่ค่า
 CREATE TABLE TripExpenses (trip_expense_id TEXT PRIMARY KEY, project_id TEXT, member_id TEXT,
@@ -174,7 +175,9 @@ check('แก้กระเป๋าที่ไม่มี → 404', r.status
 
 // เติมเงินแล้วห้ามเปลี่ยนสกุล
 // เติม ¥10,000 ด้วยเงิน ฿2,340 → เรทเฉลี่ย 0.234
-db.prepare(`INSERT INTO TripWalletFundings VALUES ('F-1','TRP-1',?,2340,10000,0.234,'2026-12-17',NULL,NULL)`).run(walletId);
+db.prepare(`INSERT INTO TripWalletFundings
+  (funding_id, project_id, wallet_id, thb_amount, foreign_amount, rate, funding_date)
+  VALUES ('F-1','TRP-1',?,2340,10000,0.234,'2026-12-17')`).run(walletId);
 await call('POST', '/api/unified-trip/currencies', { body: { code: 'USD', symbol: '$', plan_rate: 36 } });
 r = await call('POST', '/api/unified-trip/wallets', { body: { wallet_id: walletId, name: 'เงินสดเยน', currency: 'USD' } });
 check('เปลี่ยนสกุลกระเป๋าที่เติมเงินแล้ว → 409', r.status === 409, JSON.stringify(r));
@@ -391,6 +394,65 @@ r = await call('GET', '/api/unified-trip', { user: 'uPuii' });
 check('Puii เห็นเฉพาะกระเป๋าของ Puii', r.data.wallets?.length === 1 && r.data.wallets[0].wallet_id === puiiWallet,
   JSON.stringify(r.data.wallets?.map(w2 => w2.wallet_id)));
 check('กระเป๋า Puii ยังไม่เติมเงิน → เรท planned', r.data.wallets[0].rate_source === 'planned', r.data.wallets?.[0]?.rate_source);
+
+console.log('\n── เติมเงินเข้ากระเป๋า ──────────────────────────');
+// ใช้กระเป๋าใบใหม่ เพื่อไม่ให้เรทเฉลี่ยของกระเป๋าที่เทสอื่นใช้อยู่ขยับ
+r = await call('POST', '/api/unified-trip/wallets', { body: { name: 'กระเป๋าทดสอบเติมเงิน', currency: 'JPY' } });
+const fundWallet = r.data.wallet_id;
+
+r = await call('POST', '/api/unified-trip/fundings', {
+  body: { wallet_id: fundWallet, thb_amount: 2340, foreign_amount: 10000, funding_date: '2026-12-17' }
+});
+const lot1 = r.data.funding_id;
+check('เติมเงินได้', r.status === 200 && lot1, JSON.stringify(r));
+check('เรทของล็อตคิดจาก thb ÷ foreign', Math.abs(r.data.lot_rate - 0.234) < 1e-9, String(r.data.lot_rate));
+// ส่ง rate ปลอมมาด้วย ต้องถูกเมิน ไม่ใช่เชื่อตาม
+r = await call('POST', '/api/unified-trip/fundings', {
+  body: { wallet_id: fundWallet, thb_amount: 100, foreign_amount: 1000, funding_date: '2026-12-18', rate: 99 }
+});
+check('ไม่รับ rate จาก client — คำนวณ thb ÷ foreign เองเสมอ',
+  Math.abs(db.prepare(`SELECT rate FROM TripWalletFundings WHERE funding_id=?`).get(r.data.funding_id).rate - 0.1) < 1e-9,
+  JSON.stringify(r.data));
+db.prepare(`DELETE FROM TripWalletFundings WHERE funding_id=?`).run(r.data.funding_id);
+
+// ล็อตที่สองเรทแย่กว่า → ค่าเฉลี่ยต้องขยับ ไม่ใช่ใช้ล็อตล่าสุด
+r = await call('POST', '/api/unified-trip/fundings', {
+  body: { wallet_id: fundWallet, thb_amount: 2500, foreign_amount: 10000, funding_date: '2026-12-20' }
+});
+check('เติมล็อตที่สองได้', r.status === 200, JSON.stringify(r));
+check('เรทกระเป๋า = ค่าเฉลี่ยถ่วงน้ำหนัก ไม่ใช่ล็อตล่าสุด',
+  Math.abs(r.data.wallet_rate - 4840 / 20000) < 1e-9, String(r.data.wallet_rate));
+
+// บันทึกย้อนหลัง: ล็อตที่ลงวันก่อนหน้าต้องให้ผลเหมือนกัน ลำดับไม่มีผล
+r = await call('POST', '/api/unified-trip/fundings', {
+  body: { wallet_id: fundWallet, thb_amount: 1160, foreign_amount: 5000, funding_date: '2026-12-01' }
+});
+check('บันทึกย้อนหลังแล้วเฉลี่ยยังถูก (ลำดับ/วันที่ไม่มีผล)',
+  Math.abs(r.data.wallet_rate - 6000 / 25000) < 1e-9, String(r.data.wallet_rate));
+
+r = await call('POST', '/api/unified-trip/fundings', { body: { wallet_id: fundWallet, thb_amount: 0, foreign_amount: 100, funding_date: '2026-12-17' } });
+check('ยอดบาท 0 → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/fundings', { body: { wallet_id: fundWallet, thb_amount: 100, foreign_amount: 0, funding_date: '2026-12-17' } });
+check('ยอดเงินที่ได้ 0 → 400 (กันหารด้วยศูนย์)', r.status === 400, JSON.stringify(r));
+r = await call('POST', '/api/unified-trip/fundings', { body: { wallet_id: fundWallet, thb_amount: 100, foreign_amount: 100, funding_date: '17/12/2026' } });
+check('วันที่ผิดรูป → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/fundings', { body: { wallet_id: 'TW-ไม่มีจริง', thb_amount: 100, foreign_amount: 100, funding_date: '2026-12-17' } });
+check('กระเป๋าที่ไม่มี → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/fundings', { user: 'uPuii', body: { wallet_id: fundWallet, thb_amount: 100, foreign_amount: 100, funding_date: '2026-12-17' } });
+check('เติมเงินเข้ากระเป๋าคนอื่น → 403', r.status === 403, JSON.stringify(r));
+
+r = await call('DELETE', '/api/unified-trip/fundings', { user: 'uPuii', query: `&id=${lot1}` });
+check('ลบล็อตของคนอื่น → 403', r.status === 403);
+r = await call('DELETE', '/api/unified-trip/fundings', { query: '&id=TWF-ไม่มีจริง' });
+check('ลบล็อตที่ไม่มี → 404', r.status === 404);
+
+// ล็อตที่ยกยอดมาจากทริปก่อนห้ามลบ ไม่งั้นต้นทุนหายจากทั้งสองทริป
+db.prepare(`UPDATE TripWalletFundings SET carried_from_closure_id='TC-เก่า' WHERE funding_id=?`).run(lot1);
+r = await call('DELETE', '/api/unified-trip/fundings', { query: `&id=${lot1}` });
+check('ลบล็อตที่ยกยอดมาจากทริปก่อน → 409', r.status === 409, JSON.stringify(r));
+db.prepare(`UPDATE TripWalletFundings SET carried_from_closure_id=NULL WHERE funding_id=?`).run(lot1);
+r = await call('DELETE', '/api/unified-trip/fundings', { query: `&id=${lot1}` });
+check('เจ้าของลบล็อตปกติได้', r.status === 200, JSON.stringify(r));
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 process.exit(fail ? 1 : 0);

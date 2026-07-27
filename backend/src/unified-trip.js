@@ -5,11 +5,13 @@
 //   POST   /api/unified-trip/currencies     — เพิ่ม/แก้สกุลเงิน  (admin เท่านั้น)
 //   DELETE /api/unified-trip/currencies?code=
 //   POST   /api/unified-trip/wallets        — สร้าง/แก้กระเป๋า
+//   POST   /api/unified-trip/fundings       — เติมเงินเข้ากระเป๋า (ที่มาของเรทจริง)
+//   DELETE /api/unified-trip/fundings?id=
 //   POST   /api/unified-trip/expenses       — สร้าง/แก้บิล พร้อมหมวดและผู้ร่วมจ่าย
 //   DELETE /api/unified-trip/expenses?id=
 //
 //   ทั้งหมดต้องมี ?projectId= และ header x-user-id
-//   ทดสอบด้วย: node backend/test/unified-trip-write.test.mjs  (87 เคส)
+//   ทดสอบด้วย: node backend/test/unified-trip-write.test.mjs  (102 เคส)
 //
 //   แยกเป็นไฟล์ต่างหากจาก index.js โดยตั้งใจ: index.js ยาว 3,568 บรรทัดและ
 //   เสิร์ฟหน้าอื่นทั้งระบบอยู่ การเพิ่ม endpoint ใหม่ตรงนั้นเสี่ยงเกินจำเป็น
@@ -197,6 +199,66 @@ async function writeWallet(request, env, ctx, projectId, corsHeaders) {
           body.exclude_on_close ? 1 : 0, body.wallet_id, projectId).run();
 
   return json({ ok: true, wallet_id: body.wallet_id, created: false }, corsHeaders);
+}
+
+/* ── เขียนข้อมูล: เติมเงินเข้ากระเป๋า ──────────────────────────────────
+   ล็อตเติมเงินคือที่มาของเรท "จริง" ทั้งหมด ถ้าไม่มีตัวนี้ ทุกอย่างจะค้าง
+   อยู่ที่ plan_rate ตลอดทริป
+
+   ⚠️ rate ไม่รับจาก client เด็ดขาด คำนวณเป็น thb ÷ foreign เสมอ
+      ถ้าปล่อยให้ส่งมา ตัวเลขที่เก็บอาจไม่ตรงกับเงินที่จ่ายจริง แล้วยอด
+      ต้นทุนตอนปิดทริปจะเพี้ยนโดยไม่มีใครจับได้ */
+async function writeFunding(request, env, ctx, projectId, corsHeaders) {
+  const body = await request.json().catch(() => ({}));
+  const thb = round2(body.thb_amount);
+  const foreign = round2(body.foreign_amount);
+  const fundingDate = String(body.funding_date || '').trim();
+
+  if (!(thb > 0)) return json({ error: 'ยอดบาทที่จ่ายออกต้องมากกว่า 0' }, corsHeaders, 400);
+  if (!(foreign > 0)) return json({ error: 'ยอดเงินที่ได้รับต้องมากกว่า 0' }, corsHeaders, 400);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fundingDate)) return json({ error: 'ต้องระบุวันที่แบบ YYYY-MM-DD' }, corsHeaders, 400);
+
+  const wallet = await env.DB.prepare(`SELECT * FROM TripWallets WHERE wallet_id=? AND project_id=?`)
+    .bind(body.wallet_id || '', projectId).first();
+  if (!wallet) return json({ error: 'ไม่พบกระเป๋าที่ระบุในทริปนี้' }, corsHeaders, 400);
+  if (wallet.owner_member_id && wallet.owner_member_id !== ctx.viewer?.member_id && !ctx.viewer?.is_admin) {
+    return json({ error: 'เติมเงินเข้ากระเป๋าของคนอื่นได้เฉพาะผู้ดูแลทริป' }, corsHeaders, 403);
+  }
+
+  const fundingId = `TWF-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await env.DB.prepare(`
+    INSERT INTO TripWalletFundings (funding_id, wallet_id, project_id, funding_date, thb_amount, foreign_amount, rate, note)
+    VALUES (?,?,?,?,?,?,?,?)
+  `).bind(fundingId, wallet.wallet_id, projectId, fundingDate, thb, foreign, thb / foreign, body.note || null).run();
+
+  // คืนเรทเฉลี่ยใหม่ของทั้งกระเป๋า ไม่ใช่แค่เรทของล็อตนี้
+  // เพราะยอดบาทของบิลทุกใบในกระเป๋านี้จะขยับตามค่าเฉลี่ย ไม่ใช่ตามล็อตล่าสุด
+  const lots = await env.DB.prepare(`SELECT * FROM TripWalletFundings WHERE project_id=?`).bind(projectId).all();
+  return json({
+    ok: true, funding_id: fundingId, lot_rate: thb / foreign,
+    wallet_rate: walletRateFrom(lots.results || [], wallet.wallet_id)
+  }, corsHeaders);
+}
+
+async function deleteFunding(env, ctx, projectId, fundingId, corsHeaders) {
+  if (!fundingId) return json({ error: 'ต้องระบุ id' }, corsHeaders, 400);
+  const lot = await env.DB.prepare(`
+    SELECT f.*, w.owner_member_id FROM TripWalletFundings f
+    JOIN TripWallets w ON w.wallet_id = f.wallet_id
+    WHERE f.funding_id=? AND f.project_id=?
+  `).bind(fundingId, projectId).first();
+  if (!lot) return json({ error: 'ไม่พบรายการเติมเงินนี้' }, corsHeaders, 404);
+  if (lot.owner_member_id && lot.owner_member_id !== ctx.viewer?.member_id && !ctx.viewer?.is_admin) {
+    return json({ error: 'ลบรายการเติมเงินของคนอื่นได้เฉพาะผู้ดูแลทริป' }, corsHeaders, 403);
+  }
+  // ล็อตที่ยกยอดมาจากทริปก่อนลบไม่ได้ ต้องไปเปิดทริปนั้นกลับแล้วแก้ที่ต้นทาง
+  // ไม่งั้นต้นทุนที่ยกมาจะหายไปจากทั้งสองทริปพร้อมกัน
+  if (lot.carried_from_closure_id) {
+    return json({ error: 'ล็อตนี้ยกยอดมาจากการปิดทริปก่อนหน้า ต้องแก้ที่ทริปต้นทาง' }, corsHeaders, 409);
+  }
+  await env.DB.prepare(`DELETE FROM TripWalletFundings WHERE funding_id=? AND project_id=?`)
+    .bind(fundingId, projectId).run();
+  return json({ ok: true, deleted: fundingId }, corsHeaders);
 }
 
 /* ── เขียนข้อมูล: บิล ──────────────────────────────────────────────────
@@ -468,6 +530,10 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders) {
       return deleteCurrency(env, ctx, projectId, String(url.searchParams.get('code') || '').toUpperCase(), corsHeaders);
     }
     if (sub === '/wallets' && request.method === 'POST') return writeWallet(request, env, ctx, projectId, corsHeaders);
+    if (sub === '/fundings' && request.method === 'POST') return writeFunding(request, env, ctx, projectId, corsHeaders);
+    if (sub === '/fundings' && request.method === 'DELETE') {
+      return deleteFunding(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);
+    }
     if (sub === '/expenses' && request.method === 'POST') return writeExpense(request, env, ctx, projectId, corsHeaders);
     if (sub === '/expenses' && request.method === 'DELETE') {
       return deleteExpense(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);
