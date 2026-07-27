@@ -35,8 +35,11 @@ CREATE TABLE TripWallets (wallet_id TEXT PRIMARY KEY, project_id TEXT, name TEXT
 CREATE TABLE TripWalletFundings (funding_id TEXT PRIMARY KEY, project_id TEXT, wallet_id TEXT,
   thb_amount REAL, foreign_amount REAL, rate REAL, funding_date TEXT,
   carried_from_wallet_id TEXT, carried_from_closure_id TEXT);
+-- amount_thb เป็น NOT NULL ตามของจริง (คอลัมน์เดิมที่หน้าอื่นยังอ่านอยู่)
+-- ตั้งไว้แบบนี้เพื่อให้เทสจับได้ถ้าโค้ดลืมใส่ค่า
 CREATE TABLE TripExpenses (trip_expense_id TEXT PRIMARY KEY, project_id TEXT, member_id TEXT,
-  wallet_id TEXT, amount_foreign REAL, expense_date TEXT, created_at DATETIME,
+  wallet_id TEXT, category_id TEXT, amount_foreign REAL, amount_thb REAL NOT NULL,
+  expense_date TEXT NOT NULL, note TEXT, created_at DATETIME,
   owner_member_id TEXT, visibility TEXT, is_shared INTEGER, split_mode TEXT,
   currency_code TEXT, icon_url TEXT, settled_amount_thb REAL, settled_rate REAL);
 CREATE TABLE TripExpenseCategories (line_id TEXT PRIMARY KEY, trip_expense_id TEXT, category_id TEXT, label TEXT, amount_foreign REAL);
@@ -72,9 +75,16 @@ const DB = {
       bind(...a) { args = a.map(v => (v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v))); return api; },
       async first() { return db.prepare(sql).get(...args) ?? null; },
       async all() { return { results: db.prepare(sql).all(...args) }; },
-      async run() { return { success: true, meta: db.prepare(sql).run(...args) }; }
+      async run() { return { success: true, meta: db.prepare(sql).run(...args) }; },
+      _exec() { return db.prepare(sql).run(...args); }
     };
     return api;
+  },
+  // D1 batch = ทุกคำสั่งอยู่ใน transaction เดียว พังตัวใดตัวหนึ่ง = ย้อนทั้งชุด
+  async batch(stmts) {
+    db.exec('BEGIN');
+    try { const out = stmts.map(s => s._exec()); db.exec('COMMIT'); return out; }
+    catch (err) { db.exec('ROLLBACK'); throw err; }
   }
 };
 const env = { DB };
@@ -187,7 +197,166 @@ check('ลบสกุลที่ไม่มีใครใช้ได้', r
   db.prepare(`DELETE FROM TripWallets WHERE name LIKE 'รัว %'`).run();
 }
 
+console.log('\n── บิล ──────────────────────────────────────────');
+const bill = (over = {}) => ({
+  expense_date: '2026-12-18', amount_foreign: 1000, currency_code: 'JPY',
+  wallet_id: walletId, split_mode: 'EQUAL', visibility: 'TRIP', ...over
+});
+
+r = await call('POST', '/api/unified-trip/expenses', { body: bill() });
+const billId = r.data.trip_expense_id;
+check('บันทึกบิลได้', r.status === 200 && billId, JSON.stringify(r));
+check('amount_thb คิดจากเรทจริงของกระเป๋า', Math.abs(r.data.amount_thb - 234) < 1e-9, String(r.data.amount_thb));
+check('บอกที่มาของเรทกลับมาด้วย', r.data.rate_source === 'actual', r.data.rate_source);
+check('ไม่ระบุผู้ร่วมจ่าย → เจ้าของรับเต็ม', (() => {
+  const p = db.prepare(`SELECT * FROM TripExpenseParticipants WHERE trip_expense_id=?`).all(billId);
+  return p.length === 1 && p[0].member_id === 'TM-1' && p[0].amount_foreign === 1000;
+})());
+
+// หารไม่ลงตัว — ปัด 2 ตำแหน่ง เศษไปที่ admin ต้องไม่มีเงินหายหรือเกิน
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ participants: [{ member_id: 'TM-2' }, { member_id: 'TM-3' }, { member_id: 'TM-1' }] })
+});
+const splitId = r.data.trip_expense_id;
+check('หาร 3 คนได้', r.status === 200, JSON.stringify(r));
+{
+  const rows = db.prepare(`SELECT member_id m, amount_foreign a FROM TripExpenseParticipants WHERE trip_expense_id=?`).all(splitId);
+  const by = Object.fromEntries(rows.map(x => [x.m, x.a]));
+  const sum = rows.reduce((s, x) => s + x.a, 0);
+  check('¥1,000 ÷ 3 ปัดเป็น 2 ตำแหน่ง', by['TM-2'] === 333.33 && by['TM-3'] === 333.33, JSON.stringify(by));
+  check('เศษ 0.01 ไปที่ admin แม้จะอยู่ท้ายรายการ', by['TM-1'] === 333.34, JSON.stringify(by));
+  check('ผลรวมยังเท่ากับยอดบิลพอดี', Math.abs(sum - 1000) < 1e-9, String(sum));
+  check('บอกกลับมาว่าเศษไปตกที่ใคร', r.data.residual_member_id === 'TM-1' && Math.abs(r.data.residual - 0.01) < 1e-9,
+    JSON.stringify({ to: r.data.residual_member_id, amount: r.data.residual }));
+}
+
+// admin ไม่ได้ร่วมบิลนี้ → เศษต้องตกที่เจ้าของบิล ไม่ใช่หายไปเฉย ๆ
+// ¥10.01 ÷ 2 = 5.005 ปัดขึ้นเป็น 5.01 ทั้งคู่ = 10.02 เกินมา 0.01 ต้องหักคืนที่เจ้าของ
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ amount_foreign: 10.01, owner_member_id: 'TM-2', participants: [{ member_id: 'TM-3' }, { member_id: 'TM-2' }] })
+});
+{
+  const by = Object.fromEntries(db.prepare(
+    `SELECT member_id m, amount_foreign a FROM TripExpenseParticipants WHERE trip_expense_id=?`
+  ).all(r.data.trip_expense_id).map(x => [x.m, x.a]));
+  check('admin ไม่อยู่ในบิล → เศษตกที่เจ้าของบิล', by['TM-2'] === 5 && by['TM-3'] === 5.01, JSON.stringify(by));
+  check('เศษติดลบก็รายงานกลับถูก', r.data.residual_member_id === 'TM-2' && Math.abs(r.data.residual + 0.01) < 1e-9,
+    JSON.stringify({ to: r.data.residual_member_id, amount: r.data.residual }));
+}
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ amount_foreign: 100, participants: [{ member_id: 'TM-1' }, { member_id: 'TM-2' }] })
+});
+check('หารลงตัว → ไม่มีเศษ ไม่ต้องมีคนรับ', r.data.residual === 0 && r.data.residual_member_id === null,
+  JSON.stringify({ r: r.data.residual, to: r.data.residual_member_id }));
+
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ amount_foreign: 1234.567 }) });
+check('ยอดบิลเองก็ถูกปัดเป็น 2 ตำแหน่ง',
+  db.prepare(`SELECT amount_foreign a FROM TripExpenses WHERE trip_expense_id=?`).get(r.data.trip_expense_id).a === 1234.57,
+  JSON.stringify(r.data));
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ split_mode: 'MANUAL', participants: [{ member_id: 'TM-1', amount_foreign: 600 }, { member_id: 'TM-2', amount_foreign: 300 }] })
+});
+check('MANUAL ที่ยอดไม่ครบ → 400', r.status === 400 && /ไม่เท่ากับยอดบิล/.test(r.data.error), JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ split_mode: 'MANUAL', participants: [{ member_id: 'TM-1', amount_foreign: 600 }, { member_id: 'TM-2', amount_foreign: 400 }] })
+});
+check('MANUAL ที่ยอดครบผ่าน', r.status === 200, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ split_mode: 'PERCENT', participants: [{ member_id: 'TM-1', percent: 70 }, { member_id: 'TM-2', percent: 20 }] })
+});
+check('PERCENT รวมไม่ถึง 100 → 400', r.status === 400 && /100/.test(r.data.error), JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ split_mode: 'PERCENT', participants: [{ member_id: 'TM-1', percent: 70 }, { member_id: 'TM-2', percent: 30 }] })
+});
+check('PERCENT รวม 100 ผ่าน + แปลงเป็นยอดถูก', r.status === 200 &&
+  db.prepare(`SELECT amount_foreign a FROM TripExpenseParticipants WHERE trip_expense_id=? AND member_id='TM-1'`)
+    .get(r.data.trip_expense_id).a === 700, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ participants: [{ member_id: 'TM-1' }, { member_id: 'TM-1' }] })
+});
+check('ชื่อผู้ร่วมจ่ายซ้ำ → 400', r.status === 400, JSON.stringify(r));
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ participants: [{ member_id: 'TM-C1' }] })
+});
+check('ผู้ร่วมจ่ายนอกทริป → 400', r.status === 400, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ categories: [{ label: 'อาหาร', amount_foreign: 600 }, { label: 'ของฝาก', amount_foreign: 300 }] })
+});
+check('ยอดหมวดไม่ครบ → 400', r.status === 400 && /หมวด/.test(r.data.error), JSON.stringify(r));
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ categories: [{ label: 'อาหาร', amount_foreign: 600 }, { label: 'ของฝาก', amount_foreign: 400 }] })
+});
+check('ยอดหมวดครบผ่าน + เก็บ 2 แถว', r.status === 200 &&
+  db.prepare(`SELECT COUNT(*) n FROM TripExpenseCategories WHERE trip_expense_id=?`).get(r.data.trip_expense_id).n === 2);
+
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ amount_foreign: 0 }) });
+check('ยอดบิล 0 → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ amount_foreign: -500 }) });
+check('ยอดบิลติดลบ → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ expense_date: '18/12/2026' }) });
+check('รูปแบบวันที่ผิด → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ visibility: 'PUBLIC' }) });
+check('visibility นอกรายการ → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ visibility: 'SELECTED' }) });
+check('SELECTED ที่มีคนเดียว → 400 (ควรใช้ PRIVATE)', r.status === 400, JSON.stringify(r));
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ currency_code: 'KRW' }) });
+check('สกุลที่ไม่ได้ตั้งในทริป → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ wallet_id: puiiWallet }) });
+check('ตัดเงินจากกระเป๋าคนอื่น → 400', r.status === 400 && /กระเป๋าต้องเป็นของคนจ่าย/.test(r.data.error), JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', { user: 'uPuii', body: bill({ wallet_id: null, owner_member_id: 'TM-1' }) });
+check('สมาชิกบันทึกบิลให้คนอื่นเป็นเจ้าของ → 403', r.status === 403, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', { user: 'uPuii', body: bill({ trip_expense_id: billId }) });
+check('สมาชิกแก้บิลที่ตัวเองไม่ใช่เจ้าของ → 403', r.status === 403, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ trip_expense_id: billId, amount_foreign: 1500 }) });
+check('เจ้าของแก้ยอดบิลตัวเองได้', r.status === 200 && r.data.created === false, JSON.stringify(r));
+check('ยอดใหม่ถูกบันทึก', db.prepare(`SELECT amount_foreign a FROM TripExpenses WHERE trip_expense_id=?`).get(billId).a === 1500);
+check('amount_thb ถูกคิดใหม่ตามยอดใหม่', Math.abs(db.prepare(`SELECT amount_thb t FROM TripExpenses WHERE trip_expense_id=?`).get(billId).t - 351) < 1e-9);
+check('ผู้ร่วมจ่ายถูกเขียนใหม่ ไม่ค้างของเก่า',
+  db.prepare(`SELECT COUNT(*) n FROM TripExpenseParticipants WHERE trip_expense_id=?`).get(billId).n === 1);
+
+// batch ต้อง atomic — ผู้ร่วมจ่ายพังกลางทางห้ามทิ้งบิลกำพร้าไว้
+{
+  const before = db.prepare(`SELECT COUNT(*) n FROM TripExpenses`).get().n;
+  const orig = DB.batch;
+  DB.batch = async (stmts) => orig.call(DB, [...stmts, { _exec() { throw new Error('พังกลางทาง'); } }]);
+  let threw = false;
+  try { await call('POST', '/api/unified-trip/expenses', { body: bill() }); } catch { threw = true; }
+  DB.batch = orig;
+  check('batch พังกลางทาง → ย้อนทั้งชุด ไม่มีบิลกำพร้า',
+    threw && db.prepare(`SELECT COUNT(*) n FROM TripExpenses`).get().n === before);
+}
+
+r = await call('DELETE', '/api/unified-trip/expenses', { user: 'uPuii', query: `&id=${billId}` });
+check('สมาชิกลบบิลคนอื่น → 403', r.status === 403, JSON.stringify(r));
+r = await call('DELETE', '/api/unified-trip/expenses', { query: '&id=TE-ไม่มีจริง' });
+check('ลบบิลที่ไม่มี → 404', r.status === 404);
+r = await call('DELETE', '/api/unified-trip/expenses', { query: `&id=${splitId}` });
+check('เจ้าของลบบิลตัวเองได้', r.status === 200, JSON.stringify(r));
+check('ลบแล้วผู้ร่วมจ่ายหายตาม ไม่เหลือแถวกำพร้า',
+  db.prepare(`SELECT COUNT(*) n FROM TripExpenseParticipants WHERE trip_expense_id=?`).get(splitId).n === 0);
+
+// สกุลที่ไม่มีกระเป๋าใช้เลย แต่มีบิล — เพื่อให้ชนด่าน "มีบิลอยู่" ตรง ๆ
+// ไม่ใช่ชนด่าน "มีกระเป๋าอยู่" ที่มาก่อน
+await call('POST', '/api/unified-trip/currencies', { body: { code: 'EUR', symbol: '€', plan_rate: 39 } });
+r = await call('POST', '/api/unified-trip/expenses', { body: bill({ currency_code: 'EUR', wallet_id: null }) });
+check('บิลที่ไม่ผูกกระเป๋าใช้เรท planned ของสกุลนั้น', r.status === 200 && r.data.rate_source === 'planned', JSON.stringify(r));
+check('amount_thb ใช้ plan_rate', Math.abs(r.data.amount_thb - 39000) < 1e-9, String(r.data.amount_thb));
+r = await call('DELETE', '/api/unified-trip/currencies', { query: '&code=EUR' });
+check('ลบสกุลที่ยังมีบิลใช้อยู่ → 409', r.status === 409 && /บิล/.test(r.data.error), JSON.stringify(r));
+
 console.log('\n── ด่านความปลอดภัย ──────────────────────────────');
+r = await call('POST', '/api/unified-trip/expenses', { project: 'TRP-CLOSED', body: bill() });
+check('ทริปปิดแล้วบันทึกบิลไม่ได้ → 409', r.status === 409, JSON.stringify(r));
 r = await call('POST', '/api/unified-trip/currencies', { project: 'TRP-CLOSED', body: { code: 'JPY', symbol: '¥', plan_rate: 0.24 } });
 check('ทริปปิดแล้วเขียนไม่ได้ → 409', r.status === 409, JSON.stringify(r));
 

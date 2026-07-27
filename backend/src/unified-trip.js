@@ -5,17 +5,18 @@
 //   POST   /api/unified-trip/currencies     — เพิ่ม/แก้สกุลเงิน  (admin เท่านั้น)
 //   DELETE /api/unified-trip/currencies?code=
 //   POST   /api/unified-trip/wallets        — สร้าง/แก้กระเป๋า
+//   POST   /api/unified-trip/expenses       — สร้าง/แก้บิล พร้อมหมวดและผู้ร่วมจ่าย
+//   DELETE /api/unified-trip/expenses?id=
 //
 //   ทั้งหมดต้องมี ?projectId= และ header x-user-id
-//   ทดสอบด้วย: node backend/test/unified-trip-write.test.mjs  (44 เคส)
+//   ทดสอบด้วย: node backend/test/unified-trip-write.test.mjs  (87 เคส)
 //
 //   แยกเป็นไฟล์ต่างหากจาก index.js โดยตั้งใจ: index.js ยาว 3,568 บรรทัดและ
 //   เสิร์ฟหน้าอื่นทั้งระบบอยู่ การเพิ่ม endpoint ใหม่ตรงนั้นเสี่ยงเกินจำเป็น
 //   ไฟล์นี้ถูกเรียกด้วยบรรทัดเดียวจาก index.js และคืน null ถ้าไม่ใช่ path ของตัวเอง
 //
-//   เฟส 2 เปิดเฉพาะสกุลเงินกับกระเป๋า ซึ่ง "ไม่แตะ ledger" เลย
-//   บิลและการปิดทริปยังไม่เปิด — สองตัวนั้นเขียนตัวเลขเข้าบัญชีจริง
-//   จึงต้องมี reversal ให้ถูกก่อน (ดู TripClosures ใน add_unified_trip_schema.sql)
+//   ยังไม่เปิด: การปิดทริป — ตัวเดียวที่โพสต์ตัวเลขเข้าบัญชีจริง
+//   ต้องทำ reversal ให้ถูกก่อน (ดู TripClosures ใน add_unified_trip_schema.sql)
 //
 //   ⚠️ สิ่งที่ตัวนี้ทำต่างจาก prototype: **กรอง visibility ที่เซิร์ฟเวอร์**
 //      prototype กรองฝั่ง client ซึ่งพอสำหรับข้อมูลจำลอง แต่กับข้อมูลจริง
@@ -125,6 +126,12 @@ async function deleteCurrency(env, ctx, projectId, code, corsHeaders) {
   ).bind(projectId, code).first();
   if (inUse?.n) return json({ error: `ยังมีกระเป๋า ${inUse.n} ใบใช้สกุล ${code} อยู่` }, corsHeaders, 409);
 
+  // บิลที่บันทึกด้วยสกุลนี้จะกลายเป็นบิลที่ตีมูลค่าไม่ได้ทันทีเช่นกัน
+  const billed = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM TripExpenses WHERE project_id=? AND currency_code=?`
+  ).bind(projectId, code).first();
+  if (billed?.n) return json({ error: `ยังมีบิล ${billed.n} ใบใช้สกุล ${code} อยู่` }, corsHeaders, 409);
+
   await env.DB.prepare(`DELETE FROM TripCurrencies WHERE project_id=? AND code=?`)
     .bind(projectId, code).run();
   return json({ ok: true, deleted: code }, corsHeaders);
@@ -192,6 +199,251 @@ async function writeWallet(request, env, ctx, projectId, corsHeaders) {
   return json({ ok: true, wallet_id: body.wallet_id, created: false }, corsHeaders);
 }
 
+/* ── เขียนข้อมูล: บิล ──────────────────────────────────────────────────
+   ตัวแรกที่แตะ ledger จริง กติกาทั้งหมดจึงบังคับที่เซิร์ฟเวอร์ ไม่ใช่ที่ฟอร์ม
+
+   สามมิติของเงินในบิลหนึ่งใบ แยกกันจริง:
+     member_id       = คนจ่าย (มือที่ควักเงิน)
+     owner_member_id = เจ้าของค่าใช้จ่าย → ตัวนี้ตัดสินว่าลงบัญชีหลักไหม
+     wallet_id       = กระเป๋าที่ตัดเงินจริง
+
+   ยอดที่แต่ละคนรับผิดชอบมาจาก TripExpenseParticipants เท่านั้น
+   ไม่ใช่จาก member_id — North รูดบัตรจ่ายแทน ไม่ได้แปลว่า North เป็นคนจ่ายจริง */
+
+const VISIBILITIES = ['PRIVATE', 'TRIP', 'SELECTED'];
+const SPLIT_MODES = ['EQUAL', 'MANUAL', 'PERCENT'];
+const EPSILON = 0.005;   // ครึ่งสตางค์ — ผ่อนให้ความคลาดเคลื่อนของ float เท่านั้น
+
+/* เก็บทุกยอดเป็นทศนิยม 2 ตำแหน่ง
+   คูณ 100 แล้วปัดก่อนหาร เพื่อเลี่ยงกรณีคลาสสิกอย่าง 1.005 ที่ปัดผิดเพราะ float */
+const round2 = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+/* หารแล้วปัด 2 ตำแหน่ง — เศษที่เหลือไปรวมที่คนเดียว ไม่กระจาย
+   เพราะถ้ากระจายทีละสตางค์ ยอดของแต่ละคนจะไม่ตรงกับที่เห็นในใบเสร็จ
+   ผู้รับเศษ: admin ของทริปก่อน (เป็นคนสรุปยอดอยู่แล้ว) ถ้า admin ไม่ได้ร่วมบิลนี้
+   ก็ตกที่เจ้าของบิล และถ้ายังไม่ใช่ก็คนแรกในรายการ — ต้องมีคนรับเสมอ ไม่ปล่อยหาย */
+function pickResidualTaker(memberIds, preferredIds) {
+    const found = preferredIds.map(id => memberIds.indexOf(id)).find(i => i >= 0);
+    return found === undefined ? 0 : found;
+}
+
+function shareEvenly(total, memberIds, preferredIds) {
+    const base = round2(total / memberIds.length);
+    const shares = memberIds.map(() => base);
+    const residual = round2(total - base * memberIds.length);
+    if (residual === 0) return { shares, residual: 0, takerIndex: null };
+    const takerIndex = pickResidualTaker(memberIds, preferredIds);
+    shares[takerIndex] = round2(shares[takerIndex] + residual);
+    return { shares, residual, takerIndex };
+}
+
+async function writeExpense(request, env, ctx, projectId, corsHeaders) {
+  const body = await request.json().catch(() => ({}));
+  const viewerId = ctx.viewer?.member_id;
+  if (!viewerId) return json({ error: 'ผู้ใช้นี้ยังไม่ได้ผูกกับสมาชิกในทริป' }, corsHeaders, 400);
+
+  const amount = round2(body.amount_foreign);
+  const currency = String(body.currency_code || '').trim().toUpperCase();
+  const expenseDate = String(body.expense_date || '').trim();
+  const visibility = String(body.visibility || 'TRIP').toUpperCase();
+  const splitMode = String(body.split_mode || 'EQUAL').toUpperCase();
+  const payerId = body.member_id || viewerId;
+  const ownerId = body.owner_member_id || payerId;
+
+  if (!(amount > 0)) return json({ error: 'ยอดบิลต้องมากกว่า 0' }, corsHeaders, 400);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) return json({ error: 'ต้องระบุวันที่แบบ YYYY-MM-DD' }, corsHeaders, 400);
+  if (!VISIBILITIES.includes(visibility)) return json({ error: `visibility ต้องเป็น ${VISIBILITIES.join(' | ')}` }, corsHeaders, 400);
+  if (!SPLIT_MODES.includes(splitMode)) return json({ error: `split_mode ต้องเป็น ${SPLIT_MODES.join(' | ')}` }, corsHeaders, 400);
+
+  // แก้บิลเดิม: เจ้าของเงินหรือ admin เท่านั้น — คนจ่ายแทนแก้ไม่ได้
+  // เพราะยอดที่เข้าบัญชีเป็นของเจ้าของเงิน ไม่ใช่ของคนที่ควักก่อน
+  let existing = null;
+  if (body.trip_expense_id) {
+    existing = await env.DB.prepare(`SELECT * FROM TripExpenses WHERE trip_expense_id=? AND project_id=?`)
+      .bind(body.trip_expense_id, projectId).first();
+    if (!existing) return json({ error: 'ไม่พบบิลที่จะแก้ไข' }, corsHeaders, 404);
+    if (existing.owner_member_id !== viewerId && !ctx.viewer?.is_admin) {
+      return json({ error: 'แก้บิลของคนอื่นได้เฉพาะเจ้าของเงินหรือผู้ดูแลทริป' }, corsHeaders, 403);
+    }
+  } else if (ownerId !== viewerId && !ctx.viewer?.is_admin) {
+    return json({ error: 'บันทึกบิลให้คนอื่นเป็นเจ้าของได้เฉพาะผู้ดูแลทริป' }, corsHeaders, 403);
+  }
+
+  const [members, currencyRow, wallet] = await Promise.all([
+    env.DB.prepare(`SELECT member_id, is_admin FROM TripMembers WHERE project_id=? ORDER BY is_admin DESC`).bind(projectId).all(),
+    env.DB.prepare(`SELECT * FROM TripCurrencies WHERE project_id=? AND code=?`).bind(projectId, currency).first(),
+    body.wallet_id
+      ? env.DB.prepare(`SELECT * FROM TripWallets WHERE wallet_id=? AND project_id=?`).bind(body.wallet_id, projectId).first()
+      : Promise.resolve(null)
+  ]);
+  const memberRows = members.results || [];
+  const memberIds = memberRows.map(row => row.member_id);
+  const adminIds = memberRows.filter(row => row.is_admin).map(row => row.member_id);
+  if (!memberIds.includes(payerId)) return json({ error: 'คนจ่ายไม่ได้อยู่ในทริปนี้' }, corsHeaders, 400);
+  if (!memberIds.includes(ownerId)) return json({ error: 'เจ้าของค่าใช้จ่ายไม่ได้อยู่ในทริปนี้' }, corsHeaders, 400);
+  if (!currencyRow) return json({ error: `สกุล ${currency || '(ว่าง)'} ยังไม่ได้ตั้งไว้ในทริปนี้` }, corsHeaders, 400);
+
+  if (body.wallet_id) {
+    if (!wallet) return json({ error: 'ไม่พบกระเป๋าที่ระบุในทริปนี้' }, corsHeaders, 400);
+    if (wallet.currency !== currency) {
+      return json({ error: `กระเป๋าเป็นสกุล ${wallet.currency} แต่บิลเป็น ${currency}` }, corsHeaders, 400);
+    }
+    // เงินที่ออกจากกระเป๋าใคร ต้องเป็นคนนั้นที่จ่าย ไม่งั้นยอดคงเหลือจะเพี้ยน
+    if (wallet.owner_member_id && wallet.owner_member_id !== payerId) {
+      return json({ error: 'ตัดเงินจากกระเป๋าของคนอื่นไม่ได้ — กระเป๋าต้องเป็นของคนจ่าย' }, corsHeaders, 400);
+    }
+  }
+
+  // ── ผู้ร่วมรับผิดชอบ ────────────────────────────────────────────────
+  // EQUAL/PERCENT คำนวณที่เซิร์ฟเวอร์เอง ไม่รับตัวเลขจาก client
+  // ทุกยอดเป็นทศนิยม 2 ตำแหน่ง เศษที่หารไม่ลงตัวไปรวมที่ admin
+  // MANUAL ไม่มีการเกลี่ยเศษให้ — ตัวเลขที่คนพิมพ์เองต้องบวกได้ตรงยอดบิล
+  // ถ้าระบบไปแก้ให้เงียบ ๆ คนกรอกจะไม่รู้ว่ายอดที่ตัวเองตั้งใจเพี้ยนไปแล้ว
+  let participants = Array.isArray(body.participants) ? body.participants : [];
+  let residualTo = null;
+  let residualAmount = 0;
+  const preferred = [...adminIds, ownerId];
+
+  if (splitMode === 'EQUAL') {
+    const ids = participants.length ? participants.map(p => p.member_id) : [ownerId];
+    const { shares, residual, takerIndex } = shareEvenly(amount, ids, preferred);
+    participants = ids.map((id, i) => ({ member_id: id, amount_foreign: shares[i], percent: null }));
+    residualTo = takerIndex === null ? null : ids[takerIndex];
+    residualAmount = residual;
+  } else if (splitMode === 'PERCENT') {
+    const totalPct = participants.reduce((sum, p) => sum + Number(p.percent || 0), 0);
+    if (Math.abs(totalPct - 100) > EPSILON) {
+      return json({ error: `เปอร์เซ็นต์รวมได้ ${totalPct} ต้องเป็น 100` }, corsHeaders, 400);
+    }
+    const rounded = participants.map(p => round2(amount * Number(p.percent) / 100));
+    const residual = round2(amount - rounded.reduce((sum, v) => sum + v, 0));
+    if (residual !== 0) {
+      const ids = participants.map(p => p.member_id);
+      const taker = pickResidualTaker(ids, preferred);
+      rounded[taker] = round2(rounded[taker] + residual);
+      residualTo = ids[taker];
+      residualAmount = residual;
+    }
+    participants = participants.map((p, i) => ({
+      member_id: p.member_id, percent: Number(p.percent), amount_foreign: rounded[i]
+    }));
+  } else {
+    participants = participants.map(p => ({
+      member_id: p.member_id, percent: null, amount_foreign: round2(p.amount_foreign)
+    }));
+  }
+  if (!participants.length) return json({ error: 'ต้องมีผู้รับผิดชอบอย่างน้อย 1 คน' }, corsHeaders, 400);
+
+  const badMember = participants.find(p => !memberIds.includes(p.member_id));
+  if (badMember) return json({ error: `ผู้ร่วมจ่าย ${badMember.member_id} ไม่ได้อยู่ในทริปนี้` }, corsHeaders, 400);
+  if (new Set(participants.map(p => p.member_id)).size !== participants.length) {
+    return json({ error: 'มีชื่อผู้ร่วมจ่ายซ้ำกัน' }, corsHeaders, 400);
+  }
+  if (participants.some(p => !(p.amount_foreign >= 0))) {
+    return json({ error: 'ยอดของผู้ร่วมจ่ายต้องเป็นตัวเลขไม่ติดลบ' }, corsHeaders, 400);
+  }
+  const partSum = participants.reduce((sum, p) => sum + p.amount_foreign, 0);
+  if (Math.abs(partSum - amount) > EPSILON) {
+    return json({ error: `ยอดผู้ร่วมจ่ายรวม ${partSum} ไม่เท่ากับยอดบิล ${amount}` }, corsHeaders, 400);
+  }
+  if (visibility === 'SELECTED' && participants.length < 2) {
+    return json({ error: 'visibility SELECTED ต้องเลือกคนที่เห็นได้มากกว่า 1 คน มิฉะนั้นให้ใช้ PRIVATE' }, corsHeaders, 400);
+  }
+
+  // ── หมวดในบิลเดียว ────────────────────────────────────────────────
+  const categories = Array.isArray(body.categories) ? body.categories : [];
+  if (categories.length) {
+    if (categories.some(c => !(Number(c.amount_foreign) >= 0))) {
+      return json({ error: 'ยอดของหมวดต้องเป็นตัวเลขไม่ติดลบ' }, corsHeaders, 400);
+    }
+    const catSum = categories.reduce((sum, c) => sum + Number(c.amount_foreign), 0);
+    if (Math.abs(catSum - amount) > EPSILON) {
+      return json({ error: `ยอดหมวดรวม ${catSum} ไม่เท่ากับยอดบิล ${amount}` }, corsHeaders, 400);
+    }
+  }
+
+  // ── ยอดบาท ────────────────────────────────────────────────────────
+  // TripExpenses.amount_thb เป็น NOT NULL มาแต่เดิม (หน้าอื่นในระบบยังอ่านอยู่)
+  // จึงต้องใส่ค่า — แต่ **ห้ามใส่ 0 เมื่อไม่รู้เรท** เพราะนั่นคือการโกหกว่าฟรี
+  // ไม่มีเรทเลย = ปฏิเสธไปเลย · ค่าที่เก็บนี้เป็นภาพนิ่ง ณ ตอนบันทึก
+  // ตัวเลขที่ใช้จริงคือค่าที่ GET คำนวณสด และค่าที่ล็อกตอนปิดทริป
+  const fundings = await env.DB.prepare(`SELECT * FROM TripWalletFundings WHERE project_id=?`).bind(projectId).all();
+  const currencies = await env.DB.prepare(`SELECT * FROM TripCurrencies WHERE project_id=?`).bind(projectId).all();
+  const info = rateInfoFor({
+    currencyCode: currency, wallet, fundings: fundings.results || [],
+    currencies: currencies.results || [], tripClosed: false
+  });
+  if (info.rate === null) {
+    return json({ error: `ยังไม่มีอัตราแลกเปลี่ยนสำหรับ ${currency} — ตั้ง plan_rate ของสกุลนี้ก่อน` }, corsHeaders, 400);
+  }
+  const amountThb = round2(amount * info.rate);
+
+  // ── เขียน ─────────────────────────────────────────────────────────
+  // ลบลูกทั้งหมดแล้วเขียนใหม่ ง่ายกว่าและถูกกว่าการ diff ทีละแถว
+  // ใช้ batch เพื่อให้บิลกับลูกของมันเข้า-ออกพร้อมกัน ไม่มีสภาพครึ่ง ๆ กลาง ๆ
+  const expenseId = body.trip_expense_id || `TE-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const statements = [];
+
+  if (existing) {
+    statements.push(env.DB.prepare(`
+      UPDATE TripExpenses SET expense_date=?, member_id=?, owner_member_id=?, wallet_id=?,
+        amount_foreign=?, amount_thb=?, currency_code=?, visibility=?, is_shared=?,
+        split_mode=?, icon_url=?, note=?
+      WHERE trip_expense_id=? AND project_id=?
+    `).bind(expenseDate, payerId, ownerId, body.wallet_id || null, amount, amountThb, currency,
+            visibility, body.is_shared ? 1 : 0, splitMode, body.icon_url || null,
+            body.note || null, expenseId, projectId));
+    statements.push(env.DB.prepare(`DELETE FROM TripExpenseParticipants WHERE trip_expense_id=?`).bind(expenseId));
+    statements.push(env.DB.prepare(`DELETE FROM TripExpenseCategories WHERE trip_expense_id=?`).bind(expenseId));
+  } else {
+    statements.push(env.DB.prepare(`
+      INSERT INTO TripExpenses (trip_expense_id, project_id, expense_date, member_id, owner_member_id,
+        wallet_id, amount_foreign, amount_thb, currency_code, visibility, is_shared, split_mode, icon_url, note)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).bind(expenseId, projectId, expenseDate, payerId, ownerId, body.wallet_id || null,
+            amount, amountThb, currency, visibility, body.is_shared ? 1 : 0,
+            splitMode, body.icon_url || null, body.note || null));
+  }
+
+  participants.forEach((p, i) => {
+    statements.push(env.DB.prepare(`
+      INSERT INTO TripExpenseParticipants (participant_id, trip_expense_id, member_id, amount_foreign, percent)
+      VALUES (?,?,?,?,?)
+    `).bind(`${expenseId}-P${i}`, expenseId, p.member_id, p.amount_foreign, p.percent ?? null));
+  });
+  categories.forEach((c, i) => {
+    statements.push(env.DB.prepare(`
+      INSERT INTO TripExpenseCategories (line_id, trip_expense_id, category_id, label, amount_foreign)
+      VALUES (?,?,?,?,?)
+    `).bind(`${expenseId}-C${i}`, expenseId, c.category_id || null, c.label || null, Number(c.amount_foreign)));
+  });
+
+  await env.DB.batch(statements);
+  // คืน residual กลับไปด้วย เพื่อให้หน้าจอบอกได้ว่าเศษไปตกที่ใคร
+  // ถ้าเงียบไว้ คนที่รับเศษจะเห็นยอดตัวเองไม่ตรงกับคนอื่นโดยไม่รู้สาเหตุ
+  return json({
+    ok: true, trip_expense_id: expenseId, created: !existing,
+    amount_thb: amountThb, rate: info.rate, rate_source: info.source,
+    residual: residualAmount, residual_member_id: residualTo
+  }, corsHeaders);
+}
+
+async function deleteExpense(env, ctx, projectId, expenseId, corsHeaders) {
+  if (!expenseId) return json({ error: 'ต้องระบุ id' }, corsHeaders, 400);
+  const existing = await env.DB.prepare(`SELECT * FROM TripExpenses WHERE trip_expense_id=? AND project_id=?`)
+    .bind(expenseId, projectId).first();
+  if (!existing) return json({ error: 'ไม่พบบิลนี้' }, corsHeaders, 404);
+  if (existing.owner_member_id !== ctx.viewer?.member_id && !ctx.viewer?.is_admin) {
+    return json({ error: 'ลบบิลของคนอื่นได้เฉพาะเจ้าของเงินหรือผู้ดูแลทริป' }, corsHeaders, 403);
+  }
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM TripExpenseParticipants WHERE trip_expense_id=?`).bind(expenseId),
+    env.DB.prepare(`DELETE FROM TripExpenseCategories WHERE trip_expense_id=?`).bind(expenseId),
+    env.DB.prepare(`DELETE FROM TripExpenses WHERE trip_expense_id=? AND project_id=?`).bind(expenseId, projectId)
+  ]);
+  return json({ ok: true, deleted: expenseId }, corsHeaders);
+}
+
 export async function handleUnifiedTrip(request, env, url, corsHeaders) {
   if (!url.pathname.startsWith('/api/unified-trip')) return null;
 
@@ -216,6 +468,10 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders) {
       return deleteCurrency(env, ctx, projectId, String(url.searchParams.get('code') || '').toUpperCase(), corsHeaders);
     }
     if (sub === '/wallets' && request.method === 'POST') return writeWallet(request, env, ctx, projectId, corsHeaders);
+    if (sub === '/expenses' && request.method === 'POST') return writeExpense(request, env, ctx, projectId, corsHeaders);
+    if (sub === '/expenses' && request.method === 'DELETE') {
+      return deleteExpense(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);
+    }
     return json({ error: `ยังไม่รองรับ ${request.method} ${sub || '/'} ในเฟสนี้` }, corsHeaders, 405);
   }
 
