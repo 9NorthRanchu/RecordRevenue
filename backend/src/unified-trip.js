@@ -1,12 +1,21 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// Unified Trip API — อ่านอย่างเดียว (เฟส 1)
+// Unified Trip API
+//
+//   GET    /api/unified-trip                — อ่านทั้งทริป (เฟส 1)
+//   POST   /api/unified-trip/currencies     — เพิ่ม/แก้สกุลเงิน  (admin เท่านั้น)
+//   DELETE /api/unified-trip/currencies?code=
+//   POST   /api/unified-trip/wallets        — สร้าง/แก้กระเป๋า
+//
+//   ทั้งหมดต้องมี ?projectId= และ header x-user-id
+//   ทดสอบด้วย: node backend/test/unified-trip-write.test.mjs  (44 เคส)
 //
 //   แยกเป็นไฟล์ต่างหากจาก index.js โดยตั้งใจ: index.js ยาว 3,568 บรรทัดและ
 //   เสิร์ฟหน้าอื่นทั้งระบบอยู่ การเพิ่ม endpoint ใหม่ตรงนั้นเสี่ยงเกินจำเป็น
 //   ไฟล์นี้ถูกเรียกด้วยบรรทัดเดียวจาก index.js และคืน null ถ้าไม่ใช่ path ของตัวเอง
 //
-//   เฟส 1 ไม่มี endpoint เขียนข้อมูลเลย — prototype ย้าย "การอ่าน" มาก่อน
-//   ส่วนการเขียนยังอยู่ที่ localStorage จนกว่าจะ review รอบนี้ผ่าน
+//   เฟส 2 เปิดเฉพาะสกุลเงินกับกระเป๋า ซึ่ง "ไม่แตะ ledger" เลย
+//   บิลและการปิดทริปยังไม่เปิด — สองตัวนั้นเขียนตัวเลขเข้าบัญชีจริง
+//   จึงต้องมี reversal ให้ถูกก่อน (ดู TripClosures ใน add_unified_trip_schema.sql)
 //
 //   ⚠️ สิ่งที่ตัวนี้ทำต่างจาก prototype: **กรอง visibility ที่เซิร์ฟเวอร์**
 //      prototype กรองฝั่ง client ซึ่งพอสำหรับข้อมูลจำลอง แต่กับข้อมูลจริง
@@ -57,27 +66,158 @@ function canSee(expense, participantIds, viewerMemberId) {
   return false;
 }
 
-export async function handleUnifiedTrip(request, env, url, corsHeaders) {
-  if (!url.pathname.startsWith('/api/unified-trip')) return null;
-
-  // เฟส 1 อ่านอย่างเดียว — ปฏิเสธ method อื่นชัด ๆ ดีกว่าเงียบ ๆ ไม่ทำอะไร
-  if (request.method !== 'GET') {
-    return json({ error: 'เฟสนี้ยังรองรับเฉพาะการอ่าน (GET)' }, corsHeaders, 405);
-  }
-
-  const projectId = url.searchParams.get('projectId');
-  const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
-  if (!projectId) return json({ error: 'ต้องระบุ projectId' }, corsHeaders, 400);
-  if (!userId) return json({ error: 'ต้องส่ง header x-user-id' }, corsHeaders, 401);
-
-  // ตรวจว่าผู้ใช้อยู่ครอบครัวเดียวกับทริปก่อนคืนข้อมูลการเงินใด ๆ
+/* ทุก endpoint ต้องผ่านด่านนี้ก่อน: ผู้ใช้ต้องอยู่ครอบครัวเดียวกับทริป
+   และต้องเป็นสมาชิกของทริปจึงจะเห็น/แก้อะไรได้ */
+async function loadContext(env, userId, projectId) {
   const trip = await env.DB.prepare(`
       SELECT p.project_id, p.family_id, p.name, p.status, p.start_date, p.end_date,
              p.total_budget, p.banner_url, p.theme_banner, p.posting_date, p.closed_at
       FROM Projects p JOIN Users u ON u.user_id = ?
       WHERE p.project_id = ? AND p.family_id = u.family_id
     `).bind(userId, projectId).first();
-  if (!trip) return json({ error: 'ไม่พบทริปนี้ หรือไม่มีสิทธิ์เข้าถึง' }, corsHeaders, 404);
+  if (!trip) return null;
+  const viewer = await env.DB.prepare(
+    `SELECT * FROM TripMembers WHERE project_id=? AND user_id=?`
+  ).bind(projectId, userId).first();
+  return { trip, viewer, closed: trip.status === 'closed' || Boolean(trip.closed_at) };
+}
+
+/* ── เขียนข้อมูล: สกุลเงิน ─────────────────────────────────────────────
+   จำกัดเฉพาะ admin เพราะ plan_rate เปลี่ยนวิธีตีมูลค่าเงินของ *ทุกคน*
+   ในทริป ไม่ใช่แค่ของคนที่กดแก้ */
+async function writeCurrency(request, env, ctx, projectId, corsHeaders) {
+  if (!ctx.viewer?.is_admin) {
+    return json({ error: 'เฉพาะผู้ดูแลทริปเท่านั้นที่แก้สกุลเงินได้ เพราะมีผลกับการตีมูลค่าของทุกคน' }, corsHeaders, 403);
+  }
+  const body = await request.json().catch(() => ({}));
+  const code = String(body.code || '').trim().toUpperCase();
+  const planRate = Number(body.plan_rate);
+
+  if (!/^[A-Z]{3}$/.test(code)) return json({ error: 'รหัสสกุลต้องเป็นตัวอักษร 3 ตัว เช่น JPY' }, corsHeaders, 400);
+  if (!(planRate > 0)) return json({ error: 'เรทประมาณการต้องมากกว่า 0' }, corsHeaders, 400);
+  if (!String(body.symbol || '').trim()) return json({ error: 'ต้องระบุสัญลักษณ์สกุลเงิน' }, corsHeaders, 400);
+
+  await env.DB.prepare(`
+    INSERT INTO TripCurrencies (project_id, code, symbol, label, plan_rate, is_base, icon_url)
+    VALUES (?,?,?,?,?,?,?)
+    ON CONFLICT(project_id, code) DO UPDATE SET
+      symbol=excluded.symbol, label=excluded.label,
+      plan_rate=excluded.plan_rate, icon_url=excluded.icon_url
+  `).bind(projectId, code, String(body.symbol).trim(), body.label || null,
+          planRate, body.is_base ? 1 : 0, body.icon_url || null).run();
+
+  return json({ ok: true, code }, corsHeaders);
+}
+
+async function deleteCurrency(env, ctx, projectId, code, corsHeaders) {
+  if (!ctx.viewer?.is_admin) return json({ error: 'เฉพาะผู้ดูแลทริปเท่านั้น' }, corsHeaders, 403);
+  if (!code) return json({ error: 'ต้องระบุ code' }, corsHeaders, 400);
+
+  const currency = await env.DB.prepare(
+    `SELECT * FROM TripCurrencies WHERE project_id=? AND code=?`
+  ).bind(projectId, code).first();
+  if (!currency) return json({ error: `ไม่พบสกุล ${code} ในทริปนี้` }, corsHeaders, 404);
+  if (currency.is_base) return json({ error: 'ลบสกุลหลักของทริปไม่ได้' }, corsHeaders, 409);
+
+  // กระเป๋าที่ใช้สกุลนี้อยู่จะตีมูลค่าไม่ได้ทันทีถ้าลบทิ้ง
+  const inUse = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM TripWallets WHERE project_id=? AND currency=?`
+  ).bind(projectId, code).first();
+  if (inUse?.n) return json({ error: `ยังมีกระเป๋า ${inUse.n} ใบใช้สกุล ${code} อยู่` }, corsHeaders, 409);
+
+  await env.DB.prepare(`DELETE FROM TripCurrencies WHERE project_id=? AND code=?`)
+    .bind(projectId, code).run();
+  return json({ ok: true, deleted: code }, corsHeaders);
+}
+
+/* ── เขียนข้อมูล: กระเป๋า ──────────────────────────────────────────────
+   สมาชิกสร้างกระเป๋าของตัวเองได้ แต่จะสร้างให้คนอื่นต้องเป็น admin
+   เพราะเจ้าของกระเป๋าคือคนที่เห็นยอดคงเหลือและประวัติเติมเงิน */
+async function writeWallet(request, env, ctx, projectId, corsHeaders) {
+  const body = await request.json().catch(() => ({}));
+  const label = String(body.name || body.label || '').trim();
+  const currency = String(body.currency || '').trim().toUpperCase();
+  const ownerId = body.owner_member_id || ctx.viewer?.member_id;
+
+  if (!label) return json({ error: 'ต้องตั้งชื่อกระเป๋า' }, corsHeaders, 400);
+  if (!ownerId) return json({ error: 'ระบุเจ้าของกระเป๋าไม่ได้ — ผู้ใช้นี้ยังไม่ได้ผูกกับสมาชิกในทริป' }, corsHeaders, 400);
+  if (ownerId !== ctx.viewer?.member_id && !ctx.viewer?.is_admin) {
+    return json({ error: 'สร้างกระเป๋าให้สมาชิกคนอื่นได้เฉพาะผู้ดูแลทริป' }, corsHeaders, 403);
+  }
+
+  const owner = await env.DB.prepare(
+    `SELECT member_id FROM TripMembers WHERE member_id=? AND project_id=?`
+  ).bind(ownerId, projectId).first();
+  if (!owner) return json({ error: 'ไม่พบสมาชิกที่จะเป็นเจ้าของกระเป๋าในทริปนี้' }, corsHeaders, 400);
+
+  const known = await env.DB.prepare(
+    `SELECT code FROM TripCurrencies WHERE project_id=? AND code=?`
+  ).bind(projectId, currency).first();
+  if (!known) return json({ error: `สกุล ${currency || '(ว่าง)'} ยังไม่ได้ตั้งไว้ในทริปนี้ — เพิ่มสกุลเงินก่อน` }, corsHeaders, 400);
+
+  // ⚠️ สร้างกับแก้ต้องแยกกันเด็ดขาด ห้ามใช้ upsert ตัวเดียวจบ
+  //    ถ้าใช้ INSERT ... ON CONFLICT DO UPDATE แล้ว id ชนกัน (Date.now() ชนกันได้จริง
+  //    เมื่อสองคนกดพร้อมกัน) การสร้างกระเป๋าใหม่จะกลายเป็นการ "ทับ" กระเป๋าของคนอื่น
+  //    พร้อมเปลี่ยนเจ้าของ โดยไม่มี error ให้เห็นเลย — เจอจากการทดสอบจริง
+  if (!body.wallet_id) {
+    const walletId = `TW-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await env.DB.prepare(`
+      INSERT INTO TripWallets (wallet_id, project_id, name, currency, owner_member_id, icon_url, exclude_on_close)
+      VALUES (?,?,?,?,?,?,?)
+    `).bind(walletId, projectId, label, currency, ownerId,
+            body.icon_url || null, body.exclude_on_close ? 1 : 0).run();
+    return json({ ok: true, wallet_id: walletId, created: true }, corsHeaders);
+  }
+
+  const existing = await env.DB.prepare(`SELECT * FROM TripWallets WHERE wallet_id=? AND project_id=?`)
+    .bind(body.wallet_id, projectId).first();
+  if (!existing) return json({ error: 'ไม่พบกระเป๋าที่จะแก้ไข' }, corsHeaders, 404);
+  if (existing.owner_member_id && existing.owner_member_id !== ctx.viewer?.member_id && !ctx.viewer?.is_admin) {
+    return json({ error: 'แก้กระเป๋าของสมาชิกคนอื่นได้เฉพาะผู้ดูแลทริป' }, corsHeaders, 403);
+  }
+  // เปลี่ยนสกุลหลังจากมีการเติมเงินแล้วจะทำให้เรทเฉลี่ยไร้ความหมาย
+  if (existing.currency !== currency) {
+    const lots = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM TripWalletFundings WHERE wallet_id=?`
+    ).bind(body.wallet_id).first();
+    if (lots?.n) return json({ error: 'เปลี่ยนสกุลเงินของกระเป๋าที่เติมเงินไปแล้วไม่ได้' }, corsHeaders, 409);
+  }
+
+  await env.DB.prepare(`
+    UPDATE TripWallets SET name=?, currency=?, owner_member_id=?, icon_url=?, exclude_on_close=?
+    WHERE wallet_id=? AND project_id=?
+  `).bind(label, currency, ownerId, body.icon_url || null,
+          body.exclude_on_close ? 1 : 0, body.wallet_id, projectId).run();
+
+  return json({ ok: true, wallet_id: body.wallet_id, created: false }, corsHeaders);
+}
+
+export async function handleUnifiedTrip(request, env, url, corsHeaders) {
+  if (!url.pathname.startsWith('/api/unified-trip')) return null;
+
+  const projectId = url.searchParams.get('projectId');
+  const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+  if (!projectId) return json({ error: 'ต้องระบุ projectId' }, corsHeaders, 400);
+  if (!userId) return json({ error: 'ต้องส่ง header x-user-id' }, corsHeaders, 401);
+
+  const ctx = await loadContext(env, userId, projectId);
+  if (!ctx) return json({ error: 'ไม่พบทริปนี้ หรือไม่มีสิทธิ์เข้าถึง' }, corsHeaders, 404);
+  const { trip } = ctx;
+
+  const sub = url.pathname.replace('/api/unified-trip', '').replace(/\/$/, '');
+
+  if (request.method !== 'GET') {
+    // ปิดทริปแล้ว = ตัวเลขถูกรายงานเข้าบัญชีไปแล้ว ห้ามขยับ
+    if (ctx.closed) {
+      return json({ error: 'ทริปนี้ปิดแล้ว · แก้ข้อมูลการเงินไม่ได้ ต้องเปิดทริปกลับก่อน' }, corsHeaders, 409);
+    }
+    if (sub === '/currencies' && request.method === 'POST') return writeCurrency(request, env, ctx, projectId, corsHeaders);
+    if (sub === '/currencies' && request.method === 'DELETE') {
+      return deleteCurrency(env, ctx, projectId, String(url.searchParams.get('code') || '').toUpperCase(), corsHeaders);
+    }
+    if (sub === '/wallets' && request.method === 'POST') return writeWallet(request, env, ctx, projectId, corsHeaders);
+    return json({ error: `ยังไม่รองรับ ${request.method} ${sub || '/'} ในเฟสนี้` }, corsHeaders, 405);
+  }
 
   const [members, currencies, wallets, fundings, expenses, categories, participants, closures, closureLines, presence, stops] =
     await Promise.all([
@@ -104,8 +244,10 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders) {
   const closureRows = closures.results || [];
 
   // ผู้ใช้คนนี้เป็นสมาชิกคนไหนของทริป — ทุกอย่างที่ตามมากรองด้วยตัวนี้
-  const viewer = memberRows.find(row => row.user_id === userId) || null;
-  const tripClosed = trip.status === 'closed' || Boolean(trip.closed_at);
+  // ใช้ค่าจาก loadContext ตัวเดียวกับที่ฝั่งเขียนใช้ตรวจสิทธิ์ จะได้ไม่มีทาง
+  // เกิดกรณี "อ่านเห็นแต่เขียนไม่ได้" เพราะสองที่ตัดสินคนละแบบ
+  const viewer = ctx.viewer;
+  const tripClosed = ctx.closed;
 
   const walletById = id => walletRows.find(row => row.wallet_id === id);
   const rateFor = (currencyCode, walletId) =>
