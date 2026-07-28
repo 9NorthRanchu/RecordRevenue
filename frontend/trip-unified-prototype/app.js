@@ -867,9 +867,26 @@ $('#pickExpenseIcon').addEventListener('click', () => openAssetPicker('expense',
 const readAmount = () => Number($('#expenseAmount').value.replace(/[^\d.]/g, '')) || 0;
 const currentCurrency = () => walletById($('#walletSelect').value)?.currency || 'JPY';
 
-function splitRowMarkup(name = 'อาหาร', amount = '') {
-  return `<div class="split-row">
+/* ผังบัญชีจริงจากฐาน — ว่างในโหมดข้อมูลตัวอย่าง
+   จัดกลุ่มด้วย <optgroup> ตาม Caption เพราะผังบัญชีอ่านเป็นสองชั้นอยู่แล้ว
+   (Caption = กลุ่มหลัก · Category = ประเภทย่อย) */
+let ledgerCategories = [];
+
+function ledgerOptions(selected = '') {
+  if (!ledgerCategories.length) return '';
+  const byCaption = {};
+  ledgerCategories.forEach(row => { (byCaption[row.caption_name] ||= []).push(row); });
+  const groups = Object.entries(byCaption).map(([caption, rows]) => `
+    <optgroup label="${caption}">${rows.map(row =>
+      `<option value="${row.category_id}"${row.category_id === selected ? ' selected' : ''}>${row.category_name}</option>`
+    ).join('')}</optgroup>`).join('');
+  return `<select class="category-ledger"><option value="">— ผูกกับสมุดบัญชี —</option>${groups}</select>`;
+}
+
+function splitRowMarkup(name = 'อาหาร', amount = '', categoryId = '') {
+  return `<div class="split-row${ledgerCategories.length ? ' with-ledger' : ''}">
     <select class="category-name">${categoryNames.map(item => `<option${item === name ? ' selected' : ''}>${item}</option>`).join('')}</select>
+    ${ledgerOptions(categoryId)}
     <input class="category-amount" inputmode="numeric" value="${amount}" placeholder="0">
     <button type="button" class="remove-split" aria-label="ลบหมวดนี้">×</button>
   </div>`;
@@ -945,6 +962,11 @@ function refreshQuickAdd() {
   if (!balanced) problems.push('ยอดรวมของหมวดยังไม่เท่ากับยอดบิล');
   if (shared && !picked.length) problems.push('ยังไม่ได้เลือกผู้เกี่ยวข้อง');
   if (shared && picked.length && !split.valid) problems.push(split.problem);
+  /* บังคับผูกสมุดบัญชีเฉพาะโหมดข้อมูลจริง — เตือนตั้งแต่ตอนกรอก ไม่ใช่ไปโผล่
+     ตอนปิดทริป ซึ่งคนแก้จะเป็นคนปิด ไม่ใช่คนที่รู้ว่าบิลนี้คือค่าอะไร */
+  if (ledgerCategories.length && $$('#splitRows .split-row').some(row => !$('.category-ledger', row)?.value)) {
+    problems.push('ยังไม่ได้ผูกหมวดกับสมุดบัญชีครบทุกแถว');
+  }
   $('#saveWarning').textContent = problems.length ? `บันทึกไม่ได้: ${problems.join(' · ')}` : '';
   $('#saveExpense').disabled = problems.length > 0;
 }
@@ -1023,6 +1045,8 @@ $('#saveExpense').addEventListener('click', async () => {
   const ownerId = $('#expenseOwner').value;
   const categories = $$('#splitRows .split-row').map(row => ({
     name: $('.category-name', row).value,
+    // ช่องผูกสมุดบัญชีมีเฉพาะโหมดข้อมูลจริง — โหมดตัวอย่างไม่มีผังบัญชีให้เลือก
+    categoryId: $('.category-ledger', row)?.value || '',
     amount: Number($('.category-amount', row).value.replace(/[^\d.]/g, '')) || 0
   }));
 
@@ -2505,6 +2529,7 @@ function applyLiveState(state) {
     activePlanDayId = planDays[0].id;
   }
   if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
+  ledgerCategories = state.ledgerCategories || [];
   if (state.viewerId) viewerId = state.viewerId;
   if (state.banner) {
     tripBanner = state.banner;

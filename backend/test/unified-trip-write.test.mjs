@@ -56,7 +56,13 @@ CREATE TABLE TripPresence (project_id TEXT, member_id TEXT, is_sharing INTEGER, 
   PRIMARY KEY (project_id, member_id));
 CREATE TABLE Entities (entity_id TEXT PRIMARY KEY, family_id TEXT, name TEXT);
 CREATE TABLE Accounts (account_id TEXT PRIMARY KEY, entity_id TEXT, name TEXT);
-CREATE TABLE Categories (category_id TEXT PRIMARY KEY, name TEXT);
+-- ⚠️ คีย์ของ Captions คือ type_id ไม่ใช่ caption_id — ลอกจากฐาน production จริง
+-- (backend/db/schema.sql เป็นแบบร่าง ไม่ตรงกับของจริง เคยหลงเชื่อจนพังมาแล้ว)
+CREATE TABLE Captions (type_id TEXT PRIMARY KEY, family_id TEXT, name TEXT, behavior TEXT,
+  created_at DATETIME, default_entity_id TEXT, default_contact_id TEXT, default_type TEXT, sub_behavior TEXT);
+CREATE TABLE Categories (category_id TEXT PRIMARY KEY, family_id TEXT, name TEXT,
+  created_at DATETIME, default_entity_id TEXT, default_contact_id TEXT, default_type TEXT,
+  caption_id TEXT REFERENCES Captions(type_id));
 CREATE TABLE Transactions (transaction_id TEXT PRIMARY KEY, account_id TEXT, ref_code TEXT,
   date TEXT NOT NULL, time TEXT, total_amount REAL NOT NULL, statement_desc TEXT,
   status TEXT, source TEXT, slip_image_url TEXT, created_by_user_id TEXT NOT NULL, created_at DATETIME);
@@ -97,7 +103,11 @@ INSERT INTO TripWalletFundings (funding_id,project_id,wallet_id,thb_amount,forei
 -- บัญชีจริงสำหรับทดสอบการโพสต์ตอนปิดทริป
 INSERT INTO Entities VALUES ('ENT-1','FAM-1','บ้าน'), ('ENT-X','FAM-9','ครอบครัวอื่น');
 INSERT INTO Accounts VALUES ('ACC-1','ENT-1','บัญชีหลัก'), ('ACC-X','ENT-X','บัญชีคนอื่น');
-INSERT INTO Categories VALUES ('CAT-FOOD','อาหาร'), ('CAT-STAY','ที่พัก');
+INSERT INTO Captions (type_id,family_id,name,behavior) VALUES
+  ('CAP-EXP','FAM-1','Expense','EXPENSE'), ('CAP-REV','FAM-1','Revenue','REVENUE');
+INSERT INTO Categories (category_id,family_id,name,caption_id) VALUES
+  ('CAT-FOOD','FAM-1','ค่าอาหาร','CAP-EXP'), ('CAT-STAY','FAM-1','ค่าที่พัก','CAP-EXP'),
+  ('CAT-SALE','FAM-1','รายได้','CAP-REV'), ('CAT-OTHER','FAM-9','ของครอบครัวอื่น','CAP-EXP');
 `);
 
 // ── D1 shim ────────────────────────────────────────────────────────────────
@@ -575,6 +585,38 @@ r = await call('POST', '/api/unified-trip/closures', {
 check('ปิดรอบสาม → สุทธิยังเป็น 819 เท่าเดิม', netOf() === 819, String(netOf()));
 check('แถวกลับล่าสุดชี้ถูกตัว (ไม่ไปกลับแถวที่กลับไปแล้ว)',
   db.prepare(`SELECT COUNT(*) n FROM TripClosures WHERE project_id='TRP-2' AND entry_type='REOPEN'`).get().n === 2);
+
+console.log('\n── ผูกหมวดบิลกับสมุดบัญชีตั้งแต่ตอนบันทึก ──────');
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ categories: [{ label:'อาหาร', category_id:'CAT-FOOD', amount_foreign: 1000 }] })
+});
+check('ผูกหมวดที่ถูกต้องได้', r.status === 200, JSON.stringify(r));
+check('category_id ถูกเก็บลงฐาน',
+  db.prepare(`SELECT category_id c FROM TripExpenseCategories WHERE trip_expense_id=?`).get(r.data.trip_expense_id).c === 'CAT-FOOD');
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ categories: [{ label:'อาหาร', category_id:'CAT-SALE', amount_foreign: 1000 }] })
+});
+check('ผูกกับหมวดฝั่งรายได้ → 400 (นี่คือฟอร์มค่าใช้จ่าย)', r.status === 400, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ categories: [{ label:'อาหาร', category_id:'CAT-OTHER', amount_foreign: 1000 }] })
+});
+check('ผูกกับหมวดของครอบครัวอื่น → 400', r.status === 400, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: bill({ categories: [{ label:'อาหาร', category_id:'CAT-ไม่มีจริง', amount_foreign: 1000 }] })
+});
+check('ผูกกับหมวดที่ไม่มีอยู่ → 400', r.status === 400);
+
+r = await call('GET', '/api/unified-trip');
+check('GET ส่งผังบัญชีมาให้ฟอร์มเลือก',
+  Array.isArray(r.data.ledger_categories) && r.data.ledger_categories.length === 2,
+  JSON.stringify(r.data.ledger_categories));
+check('ส่งเฉพาะหมวดฝั่งค่าใช้จ่าย ไม่ปนรายได้',
+  r.data.ledger_categories.every(c => c.behavior === 'EXPENSE'));
+check('ส่งชื่อ Caption มาด้วยเพื่อจัดกลุ่มในฟอร์ม',
+  r.data.ledger_categories.every(c => c.caption_name === 'Expense'));
 
 console.log('\n── โพสต์เข้าบัญชีจริงตอนปิดทริป ────────────────');
 // เปิดทริปกลับก่อน แล้วปิดใหม่พร้อมระบุบัญชีปลายทาง

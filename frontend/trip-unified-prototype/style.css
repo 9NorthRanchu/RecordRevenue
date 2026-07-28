@@ -545,3 +545,12 @@ body.trip-closed .mobile-fab{opacity:.4;pointer-events:none}
 
 /* วันที่มาจากฐานจริงยังไม่มีพยากรณ์อากาศ — บอกว่าไม่มี ดีกว่าโชว์เลขที่ไม่จริง */
 .weather-empty{padding:14px 0;color:var(--muted);font-size:14px;line-height:1.6}
+
+/* แถวหมวดที่มีช่องผูกสมุดบัญชีเพิ่มมา — ต้องกว้างขึ้นอีกคอลัมน์
+   บนจอแคบวางซ้อนกันแทน เพราะ select สองอันเรียงกันจะแคบจนอ่านไม่ออก */
+.split-row.with-ledger{grid-template-columns:1fr 1fr 110px 32px}
+.split-row .category-ledger{min-width:0}
+@media(max-width:640px){
+  .split-row.with-ledger{grid-template-columns:1fr 90px 32px}
+  .split-row.with-ledger .category-ledger{grid-column:1 / -1}
+}

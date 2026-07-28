@@ -66,6 +66,10 @@ const PAYLOAD = {
     participants:[{ member_id:'TM-1', amount_foreign:2500 },{ member_id:'TM-2', amount_foreign:2500 }],
     rate:0.234, rate_source:'actual', amount_thb_computed:1170
   }],
+  ledger_categories: [
+    { category_id:'CAT-FOOD', category_name:'ค่าอาหาร', caption_id:'CAP-EXP', caption_name:'Expense', behavior:'EXPENSE' },
+    { category_id:'CAT-STAY', category_name:'ค่าที่พัก', caption_id:'CAP-EXP', caption_name:'Expense', behavior:'EXPENSE' }
+  ],
   stops: [
     { stop_id:'S-1', stop_date:'2026-12-17', time:'10:20', sort_order:1, city:'Kushiro',
       name_en:'Kushiro Airport', name_th:'สนามบินคุชิโระ', notes:'รับรถเช่า', icon_asset:'' },
@@ -381,6 +385,9 @@ async function fillBill(amount, title) {
   await page.fill('#expenseDescription', title);
   await page.locator('.sheet-step.active .next-step').click();      // → ขั้นหมวด
   await page.waitForTimeout(200);
+  // โหมดข้อมูลจริงบังคับผูกหมวดกับสมุดบัญชี ต้องเลือกก่อนถึงจะบันทึกได้
+  const ledger = page.locator('#splitRows .split-row .category-ledger').first();
+  if (await ledger.count()) await ledger.selectOption('CAT-FOOD');
   await page.locator('#splitRows .split-row .category-amount').first().fill(String(amount));
   await page.locator('.sheet-step.active .next-step').click();      // → ขั้นแบ่งจ่าย
   await page.waitForTimeout(250);
@@ -396,6 +403,8 @@ const sent = posted[0] || {};
 check('แมปยอดถูก', sent.amount_foreign === 1000, JSON.stringify(sent));
 check('แมปสกุลถูก', sent.currency_code === 'JPY', sent.currency_code);
 check('visibility ถูกแปลงเป็นตัวใหญ่', /^[A-Z]+$/.test(sent.visibility || ''), sent.visibility);
+check('ส่ง category_id ที่ผูกกับสมุดบัญชีขึ้นไปด้วย',
+  (sent.categories || []).every(c => c.category_id === 'CAT-FOOD'), JSON.stringify(sent.categories));
 check('split_mode ถูกแปลงเป็นตัวใหญ่', /^[A-Z]+$/.test(sent.split_mode || ''), sent.split_mode);
 check('ใช้ member_id จริงจากฐาน ไม่ใช่ id ของข้อมูลตัวอย่าง',
   String(sent.owner_member_id).startsWith('TM-'), sent.owner_member_id);
@@ -566,6 +575,20 @@ await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${B
 await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
 check('ระบุตัวตนจาก URL ต้องมีคำเตือนบนแถบ',
   (await page.textContent('#liveBar')).includes('ไม่ใช่การล็อกอิน'), await page.textContent('#liveBar'));
+
+// ยังไม่ผูกสมุดบัญชี = บันทึกไม่ได้ ต้องเตือนตั้งแต่ในฟอร์ม
+await page.locator('.add-expense:visible').first().click();
+await page.waitForTimeout(250);
+await page.fill('#expenseAmount', '500');
+await page.locator('.sheet-step.active .next-step').click();
+await page.waitForTimeout(200);
+await page.locator('#splitRows .split-row .category-amount').first().fill('500');
+await page.locator('.sheet-step.active .next-step').click();
+await page.waitForTimeout(300);
+check('ยังไม่ผูกสมุดบัญชี → กดบันทึกไม่ได้', await page.locator('#saveExpense').isDisabled());
+check('และบอกเหตุผลตั้งแต่ในฟอร์ม',
+  (await page.textContent('#saveWarning')).includes('สมุดบัญชี'), await page.textContent('#saveWarning'));
+await page.keyboard.press('Escape');
 
 console.log('\n── แผนเที่ยว: เขียนลงฐานจริง ───────────────────');
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,

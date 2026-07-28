@@ -103,7 +103,7 @@ const TripApi = (() => {
       walletId: row.wallet_id,
       date: row.expense_date,
       categories: (row.categories || []).map(line => ({
-        name: line.label || 'อื่น ๆ', amount: line.amount_foreign || 0
+        name: line.label || 'อื่น ๆ', categoryId: line.category_id || '', amount: line.amount_foreign || 0
       })),
       visibility: lower(row.visibility) || 'trip',
       shared: Boolean(row.is_shared),
@@ -166,6 +166,7 @@ const TripApi = (() => {
       tripStartDate: payload.trip?.start_date || '',
       tripEndDate: payload.trip?.end_date || '',
       banner: payload.trip?.banner_url || payload.trip?.theme_banner || '',
+      ledgerCategories: payload.ledger_categories || [],
       netLedgerThb: payload.ledger?.net_thb ?? 0,
       hiddenExpenseCount: payload.meta?.hidden_expense_count ?? 0
     };
@@ -225,7 +226,9 @@ const TripApi = (() => {
     visibility: String(bill.visibility || 'trip').toUpperCase(),
     is_shared: Boolean(bill.shared),
     split_mode: String(bill.splitMode || 'equal').toUpperCase(),
-    categories: (bill.categories || []).map(row => ({ label: row.name, amount_foreign: row.amount })),
+    categories: (bill.categories || []).map(row => ({
+      label: row.name, category_id: row.categoryId || undefined, amount_foreign: row.amount
+    })),
     participants: (bill.participants || []).map(row =>
       String(bill.splitMode).toLowerCase() === 'equal'
         ? { member_id: row.memberId }

@@ -427,6 +427,26 @@ async function writeExpense(request, env, ctx, projectId, corsHeaders) {
     if (Math.abs(catSum - amount) > EPSILON) {
       return json({ error: `ยอดหมวดรวม ${catSum} ไม่เท่ากับยอดบิล ${amount}` }, corsHeaders, 400);
     }
+
+    /* หมวดที่ผูกกับสมุดบัญชีต้องมีอยู่จริง อยู่ในครอบครัวเดียวกัน และต้องเป็น
+       หมวดฝั่งค่าใช้จ่าย — ตรวจตอนนี้เลย เพราะถ้าปล่อยไปเจอตอนปิดทริป
+       คนที่ต้องมาแก้คือคนปิด ซึ่งไม่ใช่คนที่รู้ว่าบิลนี้คือค่าอะไร */
+    const wanted = [...new Set(categories.map(c => c.category_id).filter(Boolean))];
+    if (wanted.length) {
+      const rows = await env.DB.prepare(`
+        SELECT c.category_id FROM Categories c
+        JOIN Captions cap ON cap.type_id = c.caption_id
+        WHERE c.family_id = ? AND cap.behavior = 'EXPENSE'
+          AND c.category_id IN (${wanted.map(() => '?').join(',')})
+      `).bind(ctx.trip.family_id, ...wanted).all();
+      const usable = new Set((rows.results || []).map(row => row.category_id));
+      const bad = wanted.filter(id => !usable.has(id));
+      if (bad.length) {
+        return json({
+          error: `หมวดในสมุดบัญชีใช้ไม่ได้: ${bad.join(' · ')} — ต้องเป็นหมวดของครอบครัวนี้และอยู่ใต้ Caption ที่เป็นค่าใช้จ่าย`
+        }, corsHeaders, 400);
+      }
+    }
   }
 
   // ── ยอดบาท ────────────────────────────────────────────────────────
@@ -1000,7 +1020,7 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     return json({ error: `ยังไม่รองรับ ${request.method} ${sub || '/'} ในเฟสนี้` }, corsHeaders, 405);
   }
 
-  const [members, currencies, wallets, fundings, expenses, categories, participants, closures, closureLines, presence, stops] =
+  const [members, currencies, wallets, fundings, expenses, categories, participants, closures, closureLines, presence, stops, ledgerCategories] =
     await Promise.all([
       env.DB.prepare(`SELECT * FROM TripMembers WHERE project_id=? ORDER BY is_admin DESC, display_name`).bind(projectId).all(),
       env.DB.prepare(`SELECT * FROM TripCurrencies WHERE project_id=? ORDER BY is_base DESC, code`).bind(projectId).all(),
@@ -1015,7 +1035,18 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
       env.DB.prepare(`SELECT l.* FROM TripClosureLines l
                       JOIN TripClosures c ON c.closure_id=l.closure_id WHERE c.project_id=?`).bind(projectId).all(),
       env.DB.prepare(`SELECT * FROM TripPresence WHERE project_id=?`).bind(projectId).all(),
-      env.DB.prepare(`SELECT * FROM TripStops WHERE project_id=? ORDER BY stop_date, time`).bind(projectId).all()
+      env.DB.prepare(`SELECT * FROM TripStops WHERE project_id=? ORDER BY stop_date, time`).bind(projectId).all(),
+      /* ผังบัญชีของครอบครัว — ส่งไปให้ฟอร์มบิลเลือกได้ตั้งแต่ตอนบันทึก
+         จะได้ไม่ต้องมานั่งจับคู่ทีหลังตอนปิดทริป ซึ่งคนปิดต้องเดาว่าบิล
+         "ของฝาก" ควรลงหมวดอะไร ทั้งที่คนจดรู้อยู่แล้ว
+         เอาเฉพาะ behavior = EXPENSE เพราะนี่คือฟอร์มค่าใช้จ่าย */
+      env.DB.prepare(`
+        SELECT c.category_id, c.name AS category_name, c.caption_id,
+               cap.name AS caption_name, cap.behavior
+          FROM Categories c JOIN Captions cap ON cap.type_id = c.caption_id
+         WHERE c.family_id = ? AND cap.behavior = 'EXPENSE'
+         ORDER BY cap.name, c.name
+      `).bind(trip.family_id).all()
     ]);
 
   const memberRows = members.results || [];
@@ -1096,6 +1127,7 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     wallets: walletSummaries,
     expenses: visibleExpenses,
     stops: stops.results || [],
+    ledger_categories: ledgerCategories.results || [],
     presence: presence.results || [],
     closures: closureRows.map(row => ({
       ...row,
