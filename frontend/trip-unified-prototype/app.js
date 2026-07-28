@@ -1330,6 +1330,10 @@ const thaiDate = iso => iso
   ? new Date(`${iso}T00:00:00`).toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' })
   : '—';
 
+/* วันจบทริปที่ใช้ได้จริง — โหมดข้อมูลจริงต้องอ่านจาก Projects.end_date
+   TRIP_END_DATE เป็นค่าสมมติของข้อมูลตัวอย่างเท่านั้น ถ้าปนกันจะเตือนผิดวัน */
+const tripEndISO = () => (liveMode ? liveTripEndDate : TRIP_END_DATE);
+
 function renderCloseLines() {
   const s = computeCloseSummary();
   $('#closeLines').innerHTML = `
@@ -1373,20 +1377,20 @@ function updatePostingNote() {
   const chosen = $('#postingDate').value;
   const note = $('#postingNote');
   if (!chosen) { note.textContent = ''; note.className = 'field-note'; return; }
-  const end = new Date(`${TRIP_END_DATE}T00:00:00`);
+  const end = new Date(`${tripEndISO()}T00:00:00`);
   const post = new Date(`${chosen}T00:00:00`);
   const sameMonth = end.getFullYear() === post.getFullYear() && end.getMonth() === post.getMonth();
   const days = Math.round((post - end) / 86400000);
 
   if (post < end) {
     note.className = 'field-note posting-warn';
-    note.textContent = `⚠️ วันลงบัญชีอยู่ก่อนวันจบทริป (${thaiDate(TRIP_END_DATE)}) — ตรวจอีกครั้งว่าตั้งใจ`;
+    note.textContent = `⚠️ วันลงบัญชีอยู่ก่อนวันจบทริป (${thaiDate(tripEndISO())}) — ตรวจอีกครั้งว่าตั้งใจ`;
   } else if (!sameMonth) {
     note.className = 'field-note posting-warn';
-    note.innerHTML = `⚠️ ทริปจบ ${thaiDate(TRIP_END_DATE)} แต่ลงบัญชี ${thaiDate(chosen)} — <b>คนละ${end.getFullYear() !== post.getFullYear() ? 'ปี' : 'เดือน'}บัญชี</b> ค่าใช้จ่ายก้อนนี้จะไปอยู่ในงวด ${post.toLocaleDateString('th-TH', { month:'long', year:'numeric' })}`;
+    note.innerHTML = `⚠️ ทริปจบ ${thaiDate(tripEndISO())} แต่ลงบัญชี ${thaiDate(chosen)} — <b>คนละ${end.getFullYear() !== post.getFullYear() ? 'ปี' : 'เดือน'}บัญชี</b> ค่าใช้จ่ายก้อนนี้จะไปอยู่ในงวด ${post.toLocaleDateString('th-TH', { month:'long', year:'numeric' })}`;
   } else {
     note.className = 'field-note';
-    note.textContent = `ทริปจบ ${thaiDate(TRIP_END_DATE)} · ลงบัญชีห่างไป ${days} วัน อยู่ในงวดเดียวกัน`;
+    note.textContent = `ทริปจบ ${thaiDate(tripEndISO())} · ลงบัญชีห่างไป ${days} วัน อยู่ในงวดเดียวกัน`;
   }
 }
 $('#postingDate').addEventListener('change', updatePostingNote);
@@ -1535,7 +1539,7 @@ function renderClosePreview() {
 
   resetSettlementPlan();
   renderSettlement();
-  $('#postingDate').value = postingDate || TRIP_END_DATE;
+  $('#postingDate').value = postingDate || tripEndISO();
   updatePostingNote();
   /* Closing reports money to the family ledger, so it takes a deliberate
      acknowledgement rather than a single stray click. The text restates the
@@ -1563,7 +1567,7 @@ $('#confirmClose').addEventListener('click', () => {
     /* วันจบทริปในโหมดข้อมูลจริงต้องมาจาก Projects.end_date ไม่ใช่ TRIP_END_DATE
        ซึ่งเป็นค่าสมมติของข้อมูลตัวอย่าง (ก.พ. 2027) — ถ้าเผลอใช้ตัวนั้นจะลง
        บัญชีผิดงวดไปทั้งทริป */
-    const posting = $('#postingDate').value || liveTripEndDate;
+    const posting = $('#postingDate').value || tripEndISO();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(posting)) {
       $('#closeError').textContent = 'เลือกวันลงบัญชีก่อน';
       return;
@@ -1584,7 +1588,7 @@ $('#confirmClose').addEventListener('click', () => {
   const settled = settlementResults();
   const fxResult = settled.reduce((total, row) => total + row.fx, 0);
   tripClosed = true;
-  postingDate = $('#postingDate').value || TRIP_END_DATE;
+  postingDate = $('#postingDate').value || tripEndISO();
   tripLog.push({
     type:'close', at:new Date().toLocaleString('th-TH'), by:memberName(viewerId),
     postingDate, ledgerTotal:s.ledgerTotal, tripOnlyTotal:s.tripOnlyTotal,
@@ -2448,6 +2452,34 @@ function applyLiveState(state) {
   // ข้อความที่ผิดทันทีในโหมดนี้ — ต้องแก้ ไม่ใช่ปล่อยให้ขัดกับความจริง
   const note = document.querySelector('.prototype-note');
   if (note) note.textContent = 'UNIFIED TRIP · เชื่อมฐานข้อมูลจริง · บิลที่บันทึกจะถูกเก็บถาวร';
+
+  /* ชื่อทริปและช่วงวันที่ใน header เป็นข้อความคงที่ในไฟล์ HTML — ในโหมดข้อมูลจริง
+     มันจะโชว์ "8–19 ก.พ. 2027" ทั้งที่ทริปจริงคือ 17–27 ธ.ค. 2026 ซึ่งขัดกับ
+     ตัวเลขที่อยู่ข้างล่างทั้งหน้า จึงต้องเขียนทับด้วยของจริง */
+  const range = state.tripStartDate && state.tripEndDate
+    ? `${thaiDate(state.tripStartDate)} – ${thaiDate(state.tripEndDate)}`
+    : (state.tripEndDate ? `จบ ${thaiDate(state.tripEndDate)}` : '');
+  const status = state.tripClosed ? 'ปิดทริปแล้ว' : 'กำลังดำเนินอยู่';
+  if (state.tripName) {
+    $('#tripTitle').textContent = state.tripName;
+    $('#brandTitle').textContent = state.tripName;
+  }
+  $('#tripDates').textContent = [range, status].filter(Boolean).join(' · ');
+  $('#brandSub').textContent = range || status;
+
+  /* แผนเที่ยวกับสภาพอากาศยังไม่มี API — ยังเป็นข้อมูลตัวอย่างอยู่
+     ต้องติดป้ายบอกให้ชัด ไม่งั้นพอตัวเลขการเงินข้าง ๆ เป็นของจริง คนจะเหมาเอาว่า
+     ทั้งหน้าเป็นของจริงหมด แล้วเชื่อพยากรณ์อากาศที่ระบบไม่ได้ไปดึงมาจริง */
+  const flag = (selector, text) => {
+    const host = document.querySelector(selector);
+    if (!host || host.querySelector('.demo-flag')) return;
+    const tag = document.createElement('p');
+    tag.className = 'demo-flag';
+    tag.textContent = text;
+    host.prepend(tag);
+  };
+  flag('.weather-card', '⚠️ สภาพอากาศเป็นข้อมูลตัวอย่าง ระบบยังไม่ได้ดึงพยากรณ์จริง');
+  flag('#screen-plan .plan-layout', '⚠️ แผนเที่ยวยังเป็นข้อมูลตัวอย่าง — ยังไม่ได้เชื่อมกับจุดแวะจริงในฐานข้อมูล');
 
   applyTripLock();
   [renderBills, renderWallets, renderMoneyStrip, renderMembers, renderCurrencies,

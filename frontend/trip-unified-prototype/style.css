@@ -389,6 +389,12 @@ body{font-family:Poppins,Anuphan,system-ui,sans-serif}
 @media(max-width:640px){#fundDialog .editor-grid,#walletDialog .editor-grid{grid-template-columns:1fr}}
 
 /* ── v24 · closed-trip lock ── */
+/* ป้ายบอกว่าส่วนนี้ยังเป็นข้อมูลตัวอย่าง ใช้เฉพาะในโหมดข้อมูลจริง
+   สีอ่อนกว่าแถบแดงด้านบน เพราะเป็นคำเตือนระดับ "อย่าเชื่อตัวเลขนี้"
+   ไม่ใช่ "ระวังจะแก้ของจริง" */
+.demo-flag{margin:0 0 10px;padding:7px 11px;border-radius:10px;
+  background:#fef3c7;color:#78350f;font-size:12px;line-height:1.5}
+
 /* แถบบอกว่ากำลังดูข้อมูลจริง — ติดบนสุดของจอและอยู่เหนือทุกอย่าง
    ตั้งใจให้เด่นจนมองข้ามไม่ได้ เพราะความต่างระหว่าง "ข้อมูลตัวอย่าง"
    กับ "เงินจริง" ต้องไม่ต้องเดา */

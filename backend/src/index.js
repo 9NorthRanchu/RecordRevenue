@@ -1,4 +1,5 @@
 import { handleUnifiedTrip } from './unified-trip.js';
+import { verifyPassword, upgradeStoredPassword, hashPassword, isHashed } from './auth.js';
 // backend/src/index.js
 
 // คำนวณยอดกระเป๋าทริป: funded = ตั้งต้น + ทุกล็อตเติม, spent = Σบิล,
@@ -138,12 +139,28 @@ export default {
         if (!username || !password) {
           return new Response(JSON.stringify({ error: 'กรุณากรอกผู้ใช้และรหัสผ่าน' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
+        /* ⚠️ ห้ามใส่ password ลงใน SQL อีกต่อไป — พอเก็บเป็น hash แล้ว
+           การเทียบด้วย `AND password = ?` จะไม่มีวันตรง ต้องดึงผู้ใช้ด้วย
+           ชื่อ/อีเมลก่อน แล้วค่อยตรวจรหัสในโค้ด */
         const user = await env.DB.prepare(`
-          SELECT * FROM Users WHERE (LOWER(email) = LOWER(?) OR LOWER(user_id) = LOWER(?) OR LOWER(name) = LOWER(?)) AND password = ?
-        `).bind(username, username, username, password).first();
-        
-        if (!user) {
+          SELECT * FROM Users
+          WHERE LOWER(email) = LOWER(?) OR LOWER(user_id) = LOWER(?) OR LOWER(name) = LOWER(?)
+          LIMIT 1
+        `).bind(username, username, username).first();
+
+        const check = user
+          ? await verifyPassword(password, user.password)
+          : { ok: false, needsUpgrade: false };
+
+        if (!user || !check.ok) {
+          // ข้อความเดียวกันทั้งกรณีไม่มีผู้ใช้และรหัสผิด จะได้ไม่บอกใบ้ว่าชื่อไหนมีอยู่จริง
           return new Response(JSON.stringify({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        /* รหัสถูกต้องแต่ยังเก็บแบบเก่า → เขียนทับด้วย hash เดี๋ยวนี้เลย
+           ทำหลังยืนยันตัวตนแล้วเท่านั้น และล้มเหลวก็ไม่กระทบการล็อกอิน */
+        if (check.needsUpgrade) {
+          await upgradeStoredPassword(env, user.user_id, password);
         }
 
         // Fetch user permissions
@@ -1536,6 +1553,11 @@ export default {
             return new Response(JSON.stringify({ error: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
           }
 
+          /* รหัสที่มาจากฟอร์มเป็นข้อความธรรมดา ต้อง hash ก่อนเก็บเสมอ
+             ถ้าหน้าจอส่งค่าที่ hash แล้วกลับมา (เช่นกรณีแก้ผู้ใช้โดยไม่เปลี่ยนรหัส)
+             ต้องไม่ hash ซ้ำ ไม่งั้นรหัสเดิมจะใช้ไม่ได้ทันที */
+          const storedPassword = isHashed(password) ? password : await hashPassword(password);
+
           const statements = [];
 
           if (old_user_id && old_user_id !== user_id) {
@@ -1556,7 +1578,7 @@ export default {
             statements.push(env.DB.prepare(`
               INSERT INTO Users (user_id, family_id, name, email, password, role, line_user_id)
               VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).bind(user_id, userCheck.family_id, name, email, password, role || 'member', line_user_id || null));
+            `).bind(user_id, userCheck.family_id, name, email, storedPassword, role || 'member', line_user_id || null));
 
             // Update in permissions & transactions
             statements.push(env.DB.prepare(`UPDATE UserPermissions SET user_id = ? WHERE user_id = ?`).bind(user_id, old_user_id));
@@ -1569,7 +1591,7 @@ export default {
             statements.push(env.DB.prepare(`
               INSERT OR REPLACE INTO Users (user_id, family_id, name, email, password, role, line_user_id)
               VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).bind(user_id, userCheck.family_id, name, email, password, role || 'member', line_user_id || null));
+            `).bind(user_id, userCheck.family_id, name, email, storedPassword, role || 'member', line_user_id || null));
           }
 
           // Clear permissions for this user (old or new ID)

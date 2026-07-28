@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Unified Trip — Hokkaido Prototype</title>
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
-  <link rel="stylesheet" href="style.css?v=32">
+  <link rel="stylesheet" href="style.css?v=33">
 </head>
 <body>
   <div class="prototype-note">UNIFIED TRIP · STATIC PROTOTYPE · ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง</div>
   <div class="app-shell">
     <aside class="side-rail">
-      <div class="brand"><span>旅</span><div><b>Hokkaido Family</b><small>Winter road trip · 12 วัน</small></div></div>
+      <div class="brand"><span>旅</span><div><b id="brandTitle">Hokkaido Family</b><small id="brandSub">Winter road trip · 12 วัน</small></div></div>
       <nav class="main-nav">
         <button class="active" data-screen="today"><i>⌂</i><span>วันนี้</span></button>
         <button data-screen="plan"><i>⌁</i><span>แผนเที่ยว</span></button>
@@ -25,7 +25,7 @@
     <main class="workspace">
       <header class="topbar">
         <button class="back">‹</button>
-        <div><b>Hokkaido Family Trip</b><small>8–19 ก.พ. 2027 · กำลังเดินทาง</small></div>
+        <div><b id="tripTitle">Hokkaido Family Trip</b><small id="tripDates">8–19 ก.พ. 2027 · กำลังเดินทาง</small></div>
         <div class="top-actions"><button class="icon-btn" id="shareLocation">⌖</button><button class="avatar">N</button></div>
       </header>
 
@@ -392,7 +392,7 @@
   </section>
   <div class="toast" id="toast"></div>
   <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
-  <script src="api.js?v=4"></script>
-  <script src="app.js?v=37"></script>
+  <script src="api.js?v=5"></script>
+  <script src="app.js?v=38"></script>
 </body>
 </html>

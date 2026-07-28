@@ -39,8 +39,8 @@ if (!existsSync(path.join(ROOT, 'index.html'))) {
 
 // API ปลอมที่คืนรูปเดียวกับของจริง เพื่อทดสอบหน้าจอโดยไม่แตะฐานจริง
 const PAYLOAD = {
-  trip: { project_id:'TRP-9', name:'Hokkaido 2026', end_date:'2026-12-27', closed:false,
-          posting_date:'', banner_url:'', status:'active' },
+  trip: { project_id:'TRP-9', name:'Hokkaido 2026', start_date:'2026-12-17', end_date:'2026-12-27',
+          closed:false, posting_date:'', banner_url:'', status:'active' },
   viewer: { member_id:'TM-1', display_name:'North', is_admin:1, ledger_mode:'MAIN' },
   members: [
     { member_id:'TM-1', display_name:'North', ledger_mode:'MAIN', role:'ผู้ดูแล', is_admin:1 },
@@ -233,6 +233,7 @@ console.log('\n── โหมดปกติ (ไม่ใส่ ?live) ──
 await page.goto(`${BASE}/index.html`, { waitUntil:'domcontentloaded' });
 await page.waitForTimeout(600);
 check('ไม่มีแถบข้อมูลจริง', await page.locator('#liveBar').count() === 0);
+check('โหมดปกติไม่มีป้ายเตือนข้อมูลตัวอย่างโผล่มา', await page.locator('.demo-flag').count() === 0);
 check('ยังเห็นบิลตัวอย่าง', (await page.locator('.bill-card, .expense-card, [data-bill-id]').count()) > 0
   || (await page.textContent('body')).includes('Hotel Sounkyo'));
 check('ปุ่มเพิ่มค่าใช้จ่ายยังกดได้', !(await page.locator('.add-expense').first().isDisabled()));
@@ -248,6 +249,19 @@ check('แถบบอกจำนวนบิลที่ถูกซ่อน'
 check('แถบเดิมที่เขียนว่า "ข้อมูลจำลอง" ถูกแก้ ไม่ขัดกับความจริง',
   !(await page.textContent('.prototype-note')).includes('ข้อมูลจำลอง'),
   await page.textContent('.prototype-note'));
+
+// header เดิมเขียนวันที่ของข้อมูลตัวอย่างไว้ตายตัว ต้องถูกทับด้วยของจริง
+check('ชื่อทริปใน header เป็นของจริง',
+  (await page.textContent('#tripTitle')) === 'Hokkaido 2026', await page.textContent('#tripTitle'));
+check('ช่วงวันที่ใน header เป็นของจริง ไม่ใช่ ก.พ. 2027',
+  (await page.textContent('#tripDates')).includes('2569') || (await page.textContent('#tripDates')).includes('2026'),
+  await page.textContent('#tripDates'));
+check('ไม่มีวันที่ของข้อมูลตัวอย่างหลงเหลือใน header',
+  !(await page.textContent('#tripDates')).includes('2570'), await page.textContent('#tripDates'));
+check('ติดป้ายว่าพยากรณ์อากาศยังเป็นข้อมูลตัวอย่าง',
+  (await page.textContent('.weather-card .demo-flag')).includes('ข้อมูลตัวอย่าง'));
+check('ติดป้ายว่าแผนเที่ยวยังเป็นข้อมูลตัวอย่าง',
+  (await page.textContent('#screen-plan .demo-flag')).includes('ข้อมูลตัวอย่าง'));
 
 const body = await page.textContent('body');
 check('เห็นบิลจากฐาน', body.includes('ราเมงซัปโปโร'));

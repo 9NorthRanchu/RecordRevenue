@@ -108,6 +108,7 @@ const TripApi = (() => {
       tripClosed: Boolean(payload.trip?.closed),
       postingDate: payload.trip?.posting_date || '',
       tripName: payload.trip?.name || '',
+      tripStartDate: payload.trip?.start_date || '',
       tripEndDate: payload.trip?.end_date || '',
       banner: payload.trip?.banner_url || payload.trip?.theme_banner || '',
       netLedgerThb: payload.ledger?.net_thb ?? 0,
