@@ -1,5 +1,6 @@
 import { handleUnifiedTrip } from './unified-trip.js';
 import { verifyPassword, upgradeStoredPassword, hashPassword, isHashed } from './auth.js';
+import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSessions } from './session.js';
 // backend/src/index.js
 
 // คำนวณยอดกระเป๋าทริป: funded = ตั้งต้น + ทุกล็อตเติม, spent = Σบิล,
@@ -128,10 +129,22 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
+    /* ระบุตัวตน "ที่เดียว" แล้วส่งต่อให้ทุก route ใช้
+       เดิมแต่ละ route อ่าน x-user-id เองแล้วเชื่อทันที รวม 45 จุด ซึ่งแปลว่า
+       ถ้าจะเพิ่มการตรวจสอบต้องแก้ทั้ง 45 จุดและพลาดจุดเดียวก็รั่วทั้งระบบ */
+    const authUserId = await resolveUserId(request, env);
+
     try {
       // Unified Trip (โมดูลแยก) — คืน null ถ้าไม่ใช่ path ของตัวเอง จึงไม่กระทบ route เดิม
-      const unified = await handleUnifiedTrip(request, env, url, corsHeaders);
+      const unified = await handleUnifiedTrip(request, env, url, corsHeaders, authUserId);
       if (unified) return unified;
+
+      /* ออกจากระบบ — ลบ token ทิ้งฝั่งเซิร์ฟเวอร์ ไม่ใช่แค่ลบในเบราว์เซอร์
+         ถ้าลบแค่ฝั่งหน้าจอ token ที่หลุดไปแล้วจะยังใช้ได้จนหมดอายุ */
+      if (url.pathname === '/api/logout' && request.method === 'POST') {
+        await revokeSession(env, bearerFrom(request));
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
 
       // 0. Login Endpoint
       if (url.pathname === '/api/login' && request.method === 'POST') {
@@ -167,8 +180,20 @@ export default {
         const perms = await env.DB.prepare(`SELECT entity_id FROM UserPermissions WHERE user_id = ?`).bind(user.user_id).all();
         const allowedEntities = perms.results.map(p => p.entity_id);
 
+        /* ออก token ให้ตรงนี้ — จุดเดียวในระบบที่พิสูจน์ตัวตนด้วยรหัสผ่านจริง
+           ล้มเหลวไม่ทำให้ล็อกอินพัง เพราะยังมี fallback x-user-id อยู่ช่วงเปลี่ยนผ่าน */
+        let session = null;
+        try {
+          session = await createSession(env, user.user_id);
+          purgeExpiredSessions(env);   // ไม่ต้องรอ
+        } catch (error) {
+          console.error('ออก session token ไม่สำเร็จ', error.message);
+        }
+
         return new Response(JSON.stringify({
           success: true,
+          token: session?.token || null,
+          token_expires_at: session?.expiresAt || null,
           user: {
             user_id: user.user_id,
             name: user.name,
@@ -282,7 +307,7 @@ export default {
 
       // 3. Transactions CRUD
       if (url.pathname === '/api/transactions') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
         if (request.method === 'GET') {
@@ -593,7 +618,7 @@ export default {
         return new Response(JSON.stringify(categories.results), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       if (url.pathname === '/api/contacts') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = userId ? await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first() : null;
         if (!userCheck) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const allContacts = await env.DB.prepare(`SELECT * FROM Contacts WHERE family_id = ? ORDER BY name`).bind(userCheck.family_id).all();
@@ -608,7 +633,7 @@ export default {
         return new Response(JSON.stringify(filtered), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       if (url.pathname === '/api/projects') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = userId ? await env.DB.prepare(`SELECT family_id, role FROM Users WHERE user_id = ?`).bind(userId).first() : null;
         if (!userCheck) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const allProjects = await env.DB.prepare(`SELECT * FROM Projects WHERE family_id = ? ORDER BY name`).bind(userCheck.family_id).all();
@@ -623,7 +648,7 @@ export default {
         return new Response(JSON.stringify(filtered), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       if (url.pathname === '/api/entities') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const entities = await env.DB.prepare(`
           SELECT e.* 
@@ -636,7 +661,7 @@ export default {
       }
       
       if (url.pathname === '/api/debts' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         const allDebts = await env.DB.prepare(`SELECT * FROM Debts WHERE family_id = ? ORDER BY name`).bind(userCheck.family_id).all();
@@ -652,7 +677,7 @@ export default {
       }
 
       if (url.pathname === '/api/debts' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         const data = await request.json();
@@ -673,7 +698,7 @@ export default {
       }
 
       if (url.pathname === '/api/debts/delete' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         const data = await request.json();
@@ -682,7 +707,7 @@ export default {
       }
 
       if (url.pathname === '/api/accounts') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const accounts = await env.DB.prepare(`
           SELECT a.account_id, a.entity_id, a.name, a.bank_name, a.account_number, a.pdf_password, e.name as entity_name,
@@ -698,7 +723,7 @@ export default {
 
       // 7. AR/AP Debtor/Creditor Outstanding Report
       if (url.pathname === '/api/reports/outstanding') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const contactId = url.searchParams.get('contactId');
         
@@ -770,7 +795,7 @@ export default {
 
       // 10. Withholding Tax (WHT) Monthly Report
       if (url.pathname === '/api/reports/wht') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const yearMonth = url.searchParams.get('month'); // Format: YYYY-MM
         
@@ -821,7 +846,7 @@ export default {
 
       // 12. Settings Get All Lists
       if (url.pathname === '/api/settings' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -887,7 +912,7 @@ export default {
 
       // 13. Settings Save Endpoint (Add/Edit with Cascade Update)
       if (url.pathname === '/api/settings/save' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -1113,7 +1138,7 @@ export default {
 
       // 13.7. Flat Export — 1 row per TransactionDetail with all joins
       if (url.pathname === '/api/export/flat' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const fid = userCheck.family_id;
@@ -1170,7 +1195,7 @@ export default {
 
       // 14. Full Database Backup (admin only)
       if (url.pathname === '/api/backup/full' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck || userCheck.role !== 'admin') {
           return new Response(JSON.stringify({ error: 'Admin only' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -1221,7 +1246,7 @@ export default {
 
       // 15. Full Database Restore / Upsert (admin only)
       if (url.pathname === '/api/restore/full' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck || userCheck.role !== 'admin') {
           return new Response(JSON.stringify({ error: 'Admin only' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -1331,7 +1356,7 @@ export default {
 
       // 15.1 Delete Member (Admin only) — ลบสมาชิกออกจากครอบครัว
       if (url.pathname === '/api/users/delete' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const me = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!me || me.role !== 'admin') {
           return new Response(JSON.stringify({ error: 'เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่ลบสมาชิกได้' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -1395,7 +1420,7 @@ export default {
       //   scope = 'transactions' → ลบเฉพาะ Transactions/Details/Settlements (เก็บ master data)
       //   scope = 'all'          → ลบทุกอย่างของครอบครัว ยกเว้น Users + Families
       if (url.pathname === '/api/reset' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const me = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!me || me.role !== 'admin') {
           return new Response(JSON.stringify({ error: 'เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่ล้างข้อมูลได้' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -1443,7 +1468,7 @@ export default {
 
       // 13.5. Settings Delete Endpoint
       if (url.pathname === '/api/settings/delete' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -1507,7 +1532,7 @@ export default {
 
       // 14. Users Management
       if (url.pathname === '/api/users') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -1615,7 +1640,7 @@ export default {
       // ==========================================
 
       if (url.pathname === '/api/trips' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         
@@ -1634,7 +1659,7 @@ export default {
       }
 
       if (url.pathname === '/api/trips' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         
@@ -1667,7 +1692,7 @@ export default {
       }
 
       if (url.pathname === '/api/trips/routes' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         
@@ -1681,7 +1706,7 @@ export default {
       }
 
       if (url.pathname === '/api/trips/delete' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         
@@ -1691,7 +1716,7 @@ export default {
       }
 
       if (url.pathname === '/api/trips/theme' && request.method === 'PUT') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         
@@ -1704,7 +1729,7 @@ export default {
       }
 
       if (url.pathname === '/api/trips/members' && request.method === 'PUT') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         
@@ -1727,7 +1752,7 @@ export default {
 
       
       if (url.pathname === '/api/travel' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
         
@@ -1824,7 +1849,7 @@ export default {
 
       // Approve pending guest expenses
       if (url.pathname === '/api/trip-expenses/approve' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) return new Response('Unauthorized', { status: 401, headers: corsHeaders });
 
@@ -1835,7 +1860,7 @@ export default {
 
       // CRUD for TripWallets
       if (url.pathname === '/api/wallets' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const projectId = url.searchParams.get('projectId');
         if (!projectId) return new Response('Missing projectId', { status: 400, headers: corsHeaders });
         if (!await getAccessibleTrip(env, userId, projectId)) return new Response(JSON.stringify({ error: 'ไม่พบทริป หรือไม่มีสิทธิ์เข้าถึง' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -1844,7 +1869,7 @@ export default {
       }
 
       if (url.pathname === '/api/wallets' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const data = await request.json();
         const { wallet_id, project_id, name, currency, initial_balance_foreign, initial_balance_thb, exclude_on_close } = data;
         
@@ -1881,7 +1906,7 @@ export default {
       }
 
       if (url.pathname === '/api/wallets/delete' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const { wallet_id } = await request.json();
         const wallet = await env.DB.prepare(`SELECT project_id FROM TripWallets WHERE wallet_id=?`).bind(wallet_id).first();
         if (!wallet || !await getAccessibleTrip(env, userId, wallet.project_id)) return new Response(JSON.stringify({ error: 'ไม่พบกระเป๋า หรือไม่มีสิทธิ์เข้าถึง' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -1896,7 +1921,7 @@ export default {
       // ── Trip Finance P1: เติมเงินเข้ากระเป๋าทริป (หลายรอบ + เรท) ──
       // สร้าง Transaction จริง (ลดบัญชีต้นทาง) + บันทึกล็อตการเติม + อัปเดตเรทเฉลี่ยอัตโนมัติ
       if (url.pathname === '/api/trips/fund' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const me = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!me) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const fid = me.family_id;
@@ -2073,7 +2098,7 @@ export default {
 
       // Wallet ปลายทางที่เลือกได้เมื่อต้องย้ายเงินเหลือไปทริปถัดไป
       if (url.pathname === '/api/trips/wallet-options' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const sourceProjectId = url.searchParams.get('projectId');
         const sourceTrip = await getAccessibleTrip(env, userId, sourceProjectId);
         if (!sourceTrip) return new Response(JSON.stringify({ error: 'ไม่พบทริป หรือไม่มีสิทธิ์เข้าถึง' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -2096,7 +2121,7 @@ export default {
 
       // 8.5 Trip Settlement — ปิดทริปจริง (ต้องยืนยัน confirm='CLOSE')
       if ((url.pathname === '/api/trips/close' || url.pathname === '/api/trips/settle') && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const me = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!me) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const body = await request.json();
@@ -2254,7 +2279,7 @@ export default {
 
       // 20. Stats: date range of available transaction data
       if (url.pathname === '/api/stats/date-range' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const userCheck = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) {
           return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -2281,7 +2306,7 @@ export default {
       // Returns: { saved, skipped, errors: [] }
       // Uses INSERT OR REPLACE — safe to re-import same data (idempotent)
       if (url.pathname === '/api/bulk-import' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -2376,7 +2401,7 @@ export default {
       // BUDGETS — /api/budgets  (CategoryBudgets CRUD)
       // ══════════════════════════════════════════════════════════════════
       if (url.pathname === '/api/budgets' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const u = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -2394,7 +2419,7 @@ export default {
       }
 
       if (url.pathname === '/api/budgets' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const u = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -2427,7 +2452,7 @@ export default {
       }
 
       if (url.pathname.startsWith('/api/budgets/') && request.method === 'DELETE') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const u = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const budgetId = url.pathname.split('/').pop();
@@ -2439,7 +2464,7 @@ export default {
       // PLANNED EXPENSES — /api/planned-expenses  (แผนรายจ่ายล่วงหน้า)
       // ══════════════════════════════════════════════════════════════════
       if (url.pathname === '/api/planned-expenses' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const u = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -2458,7 +2483,7 @@ export default {
       }
 
       if (url.pathname === '/api/planned-expenses' && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const u = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -2480,7 +2505,7 @@ export default {
       }
 
       if (url.pathname.startsWith('/api/planned-expenses/') && url.pathname.endsWith('/done') && request.method === 'POST') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const u = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const planId = url.pathname.split('/')[3];
@@ -2514,7 +2539,7 @@ export default {
       }
 
       if (url.pathname.startsWith('/api/planned-expenses/') && request.method === 'PUT') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const u = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const planId = url.pathname.split('/').pop();
@@ -2533,7 +2558,7 @@ export default {
       }
 
       if (url.pathname.startsWith('/api/planned-expenses/') && request.method === 'DELETE') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const u = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const planId = url.pathname.split('/').pop();
@@ -2546,7 +2571,7 @@ export default {
       // รายละเอียดรายเดือน สำหรับหน้า drill-down + export
       // ══════════════════════════════════════════════════════════════════
       if (url.pathname === '/api/wht/detail' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         const u = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -2598,7 +2623,7 @@ export default {
       // คืนข้อมูลทุกการ์ดในคำขอเดียว
       // ══════════════════════════════════════════════════════════════════
       if (url.pathname === '/api/dashboard/summary' && request.method === 'GET') {
-        const userId = decodeURIComponent(request.headers.get('x-user-id') || '');
+        const userId = authUserId;
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
         const u = await env.DB.prepare(`SELECT family_id, role FROM Users WHERE user_id = ?`).bind(userId).first();

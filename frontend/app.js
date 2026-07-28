@@ -81,6 +81,30 @@ function selectIcon(icon) {
 // API Base URL - ชี้ไปยัง Cloudflare Worker ของคุณที่ deploy สำเร็จแล้ว
 const API_BASE = "https://record-revenue.9nimz.workers.dev";
 
+/* ── แนบ session token ให้ทุกคำขอที่ยิงไปที่ API ────────────────────────
+   ในไฟล์นี้มีจุดที่เรียก fetch พร้อม header x-user-id อยู่ 71 จุด การไล่แก้
+   ทีละจุดเสี่ยงตกหล่น และพลาดจุดเดียวก็กลับไปใช้ทางที่ไม่ปลอดภัยเงียบ ๆ
+   จึงห่อ fetch ที่เดียวแทน — เพิ่ม Authorization ให้อัตโนมัติ และไม่แตะ
+   คำขอที่ไปโดเมนอื่น (เช่น CDN) เพื่อไม่ให้ token รั่วออกนอกระบบ
+
+   header x-user-id เดิมยังส่งอยู่ ฝั่งเซิร์ฟเวอร์ยังรับไว้ช่วงเปลี่ยนผ่าน */
+const TOKEN_KEY = 'session_token';
+window.getSessionToken = () => {
+    try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
+};
+
+(function attachTokenToApiCalls() {
+    const original = window.fetch.bind(window);
+    window.fetch = (input, init = {}) => {
+        const url = typeof input === 'string' ? input : (input?.url || '');
+        const token = window.getSessionToken();
+        if (!token || !url.startsWith(API_BASE)) return original(input, init);
+        const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
+        if (!headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
+        return original(input, { ...init, headers });
+    };
+})();
+
 // Global showToast utility
 window.showToast = function(message, type = 'success') {
     const toast = document.createElement('div');
@@ -1125,6 +1149,10 @@ function bindNavigation() {
             AppState.allowedEntities = user.allowed_entities || [];
 
             sessionStorage.setItem("logged_in_user", JSON.stringify(user));
+            /* เก็บ token ไว้ที่ sessionStorage เหมือน user — ปิดแท็บแล้วหาย
+               ไม่เก็บใน localStorage เพราะ token ค้างอยู่ถาวรบนเครื่องที่ใช้ร่วมกัน
+               มีความเสี่ยงมากกว่าความสะดวกที่ได้ */
+            if (data.token) sessionStorage.setItem(TOKEN_KEY, data.token);
 
             document.getElementById("current-user-name").innerText = AppState.userName;
             document.querySelector(".user-role").innerText = AppState.userRole === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : 'สมาชิกครอบครัว';
@@ -1168,6 +1196,16 @@ function bindNavigation() {
 
     // Logout Action
     document.getElementById("btn-logout").addEventListener("click", () => {
+        /* บอกเซิร์ฟเวอร์ให้ลบ token ด้วย ไม่ใช่ลบแค่ในเบราว์เซอร์
+           ถ้าลบแค่ฝั่งนี้ token ที่หลุดไปแล้วจะยังใช้ได้จนหมดอายุ 30 วัน
+           ไม่รอผล เพราะการออกจากระบบไม่ควรค้างเพราะเน็ตช้า */
+        const token = window.getSessionToken();
+        if (token) {
+            fetch(`${API_BASE}/api/logout`, {
+                method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+            }).catch(() => {});
+        }
+        sessionStorage.removeItem(TOKEN_KEY);
         sessionStorage.removeItem("logged_in_user");
         document.getElementById("workspace").classList.add("hidden");
         document.querySelector(".bottom-nav").classList.add("hidden");

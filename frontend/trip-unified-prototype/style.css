@@ -528,7 +528,13 @@ body.trip-closed .mobile-fab{opacity:.4;pointer-events:none}
 .presence-mark.stale{opacity:.5}
 .presence-mark.stale circle{stroke:#e4e0da;stroke-dasharray:7 6}
 .presence-mark.me circle{stroke:var(--blue);stroke-width:6}
-.presence-mark .ping{stroke:#43bd7e;stroke-width:4;opacity:.85;transform-origin:center;
+/* ⚠️ transform-box ของ SVG ค่าเริ่มต้นคือ view-box ไม่ใช่ fill-box
+   แปลว่า transform-origin:center = จุดกึ่งกลางของ "แผนที่ทั้งใบ" (965.5, 407)
+   ไม่ใช่กึ่งกลางของวงกลมเอง · วงคลื่นจึงขยายโดยหมุนรอบกลางแผนที่ แล้ววิ่ง
+   ออกจากหมุดไปมุมบนซ้ายทุกครั้ง (วัดแล้ว: จาก 1196,457 ไป 690,244)
+   ต้องใส่ fill-box เพื่อให้ center หมายถึงกึ่งกลางของวงกลมจริง ๆ */
+.presence-mark .ping{stroke:#43bd7e;stroke-width:4;opacity:.85;
+  transform-box:fill-box;transform-origin:center;
   animation:presence-ping 2.4s ease-out infinite}
 @keyframes presence-ping{
   0%{transform:scale(1);opacity:.8}
@@ -536,3 +542,6 @@ body.trip-closed .mobile-fab{opacity:.4;pointer-events:none}
   100%{transform:scale(1.9);opacity:0}
 }
 @media(prefers-reduced-motion:reduce){.presence-mark .ping{animation:none;opacity:.35}}
+
+/* วันที่มาจากฐานจริงยังไม่มีพยากรณ์อากาศ — บอกว่าไม่มี ดีกว่าโชว์เลขที่ไม่จริง */
+.weather-empty{padding:14px 0;color:var(--muted);font-size:14px;line-height:1.6}

@@ -66,7 +66,15 @@ const PAYLOAD = {
     participants:[{ member_id:'TM-1', amount_foreign:2500 },{ member_id:'TM-2', amount_foreign:2500 }],
     rate:0.234, rate_source:'actual', amount_thb_computed:1170
   }],
-  stops: [], presence: [], closures: [],
+  stops: [
+    { stop_id:'S-1', stop_date:'2026-12-17', time:'10:20', sort_order:1, city:'Kushiro',
+      name_en:'Kushiro Airport', name_th:'สนามบินคุชิโระ', notes:'รับรถเช่า', icon_asset:'' },
+    { stop_id:'S-2', stop_date:'2026-12-17', time:'15:00', sort_order:2, city:'Kushiro',
+      name_en:'Hotel', name_th:'เช็กอินที่พัก', accommodation:'Kushiro Prince', icon_asset:'' },
+    { stop_id:'S-3', stop_date:'2026-12-18', time:'09:00', sort_order:1, city:'Lake Akan',
+      name_en:'Lake Akan', name_th:'ทะเลสาบอาคัง', notes:'มาริโมะ', icon_asset:'' }
+  ],
+  presence: [], closures: [],
   ledger: { net_thb: 0, net_trip_only_thb: 0 },
   meta: { viewer_is_admin:true, hidden_expense_count:2 }
 };
@@ -165,6 +173,29 @@ const server = http.createServer((req, res) => {
                            wallet_rate: wallet.rate });
     });
   }
+  if (url.pathname === '/api/unified-trip/stops' && req.method === 'POST') {
+    return readBody(req).then(body => {
+      posted.push({ kind:'stop', ...body });
+      if (failNextWrite) return sendJson(res, 400, { error: failNextWrite });
+      const at = PAYLOAD.stops.findIndex(s2 => s2.stop_id === body.stop_id);
+      const row = { stop_id: body.stop_id || 'S-NEW', stop_date: body.stop_date, time: body.time || '',
+                    sort_order: 99, city:'', name_th: body.name_th, name_en:'',
+                    notes: body.notes || '', accommodation: body.accommodation || '', icon_asset:'' };
+      if (at >= 0) PAYLOAD.stops[at] = { ...PAYLOAD.stops[at], ...row }; else PAYLOAD.stops.push(row);
+      sendJson(res, 200, { ok:true, stop_id: row.stop_id, created: at < 0 });
+    });
+  }
+  if (url.pathname === '/api/unified-trip/stops/order' && req.method === 'POST') {
+    return readBody(req).then(body => {
+      posted.push({ kind:'order', ...body });
+      if (failNextWrite) return sendJson(res, 400, { error: failNextWrite });
+      body.stops.forEach(item => {
+        const row = PAYLOAD.stops.find(s2 => s2.stop_id === item.stop_id);
+        if (row) { row.sort_order = item.sort_order; if (item.stop_date) row.stop_date = item.stop_date; }
+      });
+      sendJson(res, 200, { ok:true, updated: body.stops.length });
+    });
+  }
   if (url.pathname === '/api/unified-trip/closures' && req.method === 'POST') {
     return readBody(req).then(body => {
       posted.push({ kind:'close', ...body });
@@ -238,6 +269,33 @@ check('ยังเห็นบิลตัวอย่าง', (await page.loca
   || (await page.textContent('body')).includes('Hotel Sounkyo'));
 check('ปุ่มเพิ่มค่าใช้จ่ายยังกดได้', !(await page.locator('.add-expense').first().isDisabled()));
 
+/* วงคลื่นบนหมุดคนต้องขยายอยู่กับที่ ไม่ใช่ลอยข้ามแผนที่
+   บั๊กเดิม: transform-box ของ SVG ค่าเริ่มต้นคือ view-box ทำให้
+   transform-origin:center = กึ่งกลางแผนที่ทั้งใบ วงคลื่นจึงวิ่งไปมุมบนซ้าย */
+await page.evaluate(() => {
+  presence.north = { sharing:true, stopIndex:0, at: Date.now(), place:'Kushiro' };
+  renderPresenceMap();
+});
+await page.waitForTimeout(150);
+{
+  const centre = () => page.evaluate(() => {
+    const r = document.querySelector('.ping').getBoundingClientRect();
+    return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2), Math.round(r.width)];
+  });
+  const first = await centre();
+  await page.waitForTimeout(900);
+  const later = await centre();
+  const pin = await page.evaluate(() => {
+    const r = document.querySelector('.presence-mark circle').getBoundingClientRect();
+    return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)];
+  });
+  check('วงคลื่นอยู่กับที่ ไม่ลอยข้ามแผนที่',
+    first[0] === later[0] && first[1] === later[1], `${first} → ${later}`);
+  check('และอยู่ตรงกลางหมุดพอดี',
+    Math.abs(first[0] - pin[0]) <= 1 && Math.abs(first[1] - pin[1]) <= 1, `${first} vs ${pin}`);
+  check('แต่ยังขยายอยู่จริง (ไม่ได้หยุดนิ่งไปเลย)', later[2] > first[2], `${first[2]} → ${later[2]}`);
+}
+
 console.log('\n── โหมดข้อมูลจริง ──────────────────────────────');
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
@@ -258,10 +316,26 @@ check('ช่วงวันที่ใน header เป็นของจร�
   await page.textContent('#tripDates'));
 check('ไม่มีวันที่ของข้อมูลตัวอย่างหลงเหลือใน header',
   !(await page.textContent('#tripDates')).includes('2570'), await page.textContent('#tripDates'));
-check('ติดป้ายว่าพยากรณ์อากาศยังเป็นข้อมูลตัวอย่าง',
-  (await page.textContent('.weather-card .demo-flag')).includes('ข้อมูลตัวอย่าง'));
-check('ติดป้ายว่าแผนเที่ยวยังเป็นข้อมูลตัวอย่าง',
-  (await page.textContent('#screen-plan .demo-flag')).includes('ข้อมูลตัวอย่าง'));
+check('ติดป้ายว่ายังไม่ได้เชื่อมพยากรณ์อากาศ',
+  (await page.textContent('.weather-card .demo-flag')).includes('พยากรณ์อากาศ'),
+  await page.textContent('.weather-card .demo-flag'));
+check('ป้ายแผนเที่ยวบอกว่ามาจากฐานจริง',
+  (await page.textContent('#screen-plan .demo-flag')).includes('ฐานข้อมูลจริง'),
+  await page.textContent('#screen-plan .demo-flag'));
+check('แผนเที่ยวใช้จุดแวะจริง ไม่ใช่ของตัวอย่าง',
+  await page.evaluate(() => planDays.length === 2 && planDays[0].activities.length === 2),
+  await page.evaluate(() => JSON.stringify(planDays.map(d => [d.date, d.activities.length]))));
+check('เรียงตาม sort_order',
+  await page.evaluate(() => planDays[0].activities[0].name === 'สนามบินคุชิโระ'),
+  await page.evaluate(() => planDays[0].activities.map(a => a.name).join(' → ')));
+check('จุดแวะที่มีที่พักถูกติดป้าย "ที่พัก"',
+  await page.evaluate(() => planDays[0].activities[1].tag === 'ที่พัก'));
+check('ไม่แต่งพยากรณ์อากาศขึ้นมาเอง',
+  await page.evaluate(() => planDays.every(d => d.weather === undefined)));
+check('การ์ดอากาศบอกว่าไม่มีข้อมูล ไม่ใช่ค้างตัวเลขเดิม',
+  (await page.textContent('#weatherNow')).includes('ยังไม่มีข้อมูล'),
+  await page.textContent('#weatherNow'));
+check('ปุ่มเพิ่มสถานที่ปลดล็อกแล้ว', !(await page.locator('#addPlace').isDisabled()));
 
 const body = await page.textContent('body');
 check('เห็นบิลจากฐาน', body.includes('ราเมงซัปโปโร'));
@@ -271,9 +345,14 @@ check('เห็นสมาชิกจากฐาน', body.includes('Puii'))
 check('ไม่มีสมาชิกตัวอย่างหลงเหลือ', !body.includes('Ann') && !body.includes('Mew'));
 
 check('ปุ่มเพิ่มค่าใช้จ่ายเปิดให้เขียนแล้ว', !(await page.locator('.add-expense').first().isDisabled()));
-check('ทุกส่วนเปิดให้เขียนลงฐานจริงแล้ว',
+check('ทุกส่วนเขียนลงฐานจริงได้แล้ว',
   await page.evaluate(() => Object.values(LIVE_WRITABLE).every(Boolean)),
   await page.evaluate(() => JSON.stringify(LIVE_WRITABLE)));
+/* แผนเที่ยวเป็นข้อยกเว้นเดียวที่ไม่ถูกล็อกตอนปิดทริป — ต้องตรงกับฝั่งเซิร์ฟเวอร์
+   ที่ปล่อยผ่าน /stops เหมือนกัน ไม่งั้นสองฝั่งจะตัดสินคนละแบบ */
+check('ปิดทริปแล้วยังแก้แผนเที่ยวได้ (ตรงกับฝั่งเซิร์ฟเวอร์)',
+  await page.evaluate(() => { const was = tripClosed; tripClosed = true;
+    const locked = financeLocked('plan'); tripClosed = was; return locked === false; }));
 const note = await page.locator('.trip-locked-note').first().innerText();
 check('ทริปยังเปิดอยู่ → ป้ายต้องไม่บอกว่า "ทริปนี้ปิดแล้ว"',
   note.includes('โหมดข้อมูลจริง') && !note.includes('ทริปนี้ปิดแล้ว'), note);
@@ -487,6 +566,55 @@ await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${B
 await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
 check('ระบุตัวตนจาก URL ต้องมีคำเตือนบนแถบ',
   (await page.textContent('#liveBar')).includes('ไม่ใช่การล็อกอิน'), await page.textContent('#liveBar'));
+
+console.log('\n── แผนเที่ยว: เขียนลงฐานจริง ───────────────────');
+await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
+  { waitUntil:'domcontentloaded' });
+await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+posted.length = 0;
+
+await page.locator('[data-screen="plan"]:visible').first().click();
+await page.waitForTimeout(300);
+await page.locator('#addPlace:visible').first().click();
+await page.waitForTimeout(300);
+await page.fill('#activityName', 'ตลาดปลาคุชิโระ');
+await page.fill('#activityTime', '08:00');
+await page.fill('#activityDetail', 'คัตเตะโดง');
+await page.locator('#planEditorForm button[type=submit]').first().click();
+await page.waitForTimeout(700);
+
+const stopBody = posted.find(p => p.kind === 'stop') || {};
+check('ยิงเพิ่มจุดแวะขึ้นเซิร์ฟเวอร์', stopBody.name_th === 'ตลาดปลาคุชิโระ', JSON.stringify(posted));
+check('ส่งวันที่ของวันที่เลือก ไม่ใช่วันนี้', stopBody.stop_date === '2026-12-17', stopBody.stop_date);
+check('⚠️ ไม่ส่ง id ที่หน้าจอสร้างเอง (activity-…) ขึ้นไป',
+  stopBody.stop_id === undefined, String(stopBody.stop_id));
+check('จุดแวะใหม่ขึ้นบนจอ', (await page.textContent('body')).includes('ตลาดปลาคุชิโระ'));
+
+// สลับลำดับ → ต้องส่งลำดับ "ทุกวัน" ไม่ใช่แค่วันที่แก้
+posted.length = 0;
+await page.locator('.plan-item [data-move="down"]').first().click();
+await page.waitForTimeout(700);
+const orderBody = posted.find(p => p.kind === 'order') || {};
+check('สลับลำดับแล้วยิงขึ้นเซิร์ฟเวอร์', Array.isArray(orderBody.stops), JSON.stringify(posted));
+check('ส่งลำดับของทุกวัน ไม่ใช่แค่วันที่แก้',
+  new Set((orderBody.stops || []).map(x => x.stop_date)).size >= 2,
+  JSON.stringify((orderBody.stops || []).map(x => x.stop_date)));
+check('sort_order นับใหม่จาก 1 ทุกวัน ไม่มีช่องว่างสะสม',
+  (orderBody.stops || []).some(x => x.sort_order === 1), JSON.stringify(orderBody.stops));
+
+// เซิร์ฟเวอร์ปฏิเสธ → ต้องโชว์เหตุผลจริงและไม่ปิดฟอร์ม
+failNextWrite = 'เวลาสิ้นสุดอยู่ก่อนเวลาเริ่ม';
+await page.locator('#addPlace:visible').first().click();
+await page.waitForTimeout(300);
+await page.fill('#activityName', 'จุดที่จะถูกปฏิเสธ');
+await page.locator('#planEditorForm button[type=submit]').first().click();
+await page.waitForTimeout(600);
+check('แผนเที่ยวล้ม → โชว์เหตุผลจากเซิร์ฟเวอร์',
+  (await page.textContent('#planEditorError')).includes('เวลาสิ้นสุด'),
+  await page.textContent('#planEditorError'));
+check('แผนเที่ยวล้ม → ฟอร์มยังเปิดอยู่', await page.locator('#planEditor').isVisible());
+failNextWrite = null;
+await page.keyboard.press('Escape');
 
 console.log('\n── ปิดทริป · เปิดกลับ (ข้อมูลจริง) ─────────────');
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,

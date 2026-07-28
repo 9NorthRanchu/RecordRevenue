@@ -1215,11 +1215,17 @@ const LIVE_LOCK_REASON = 'โหมดข้อมูลจริง · อ่�
 /* เปิดการเขียนกลับทีละส่วน ไม่ใช่เปิดทีเดียวทั้งหน้า
    ส่วนที่ยังไม่เปิดจะถูกล็อกเหมือนเดิม จะได้ไม่มีปุ่มที่กดแล้วดูเหมือนสำเร็จ
    แต่ไม่ได้บันทึกลงฐานจริง */
-const LIVE_WRITABLE = { expenses: true, wallets: true, currencies: true, fundings: true, closing: true };
+// plan ยังไม่มี API ฝั่งเขียน จึงยังล็อกไว้ — ที่เหลือเขียนลงฐานจริงได้หมดแล้ว
+// ทุกส่วนเขียนลงฐานจริงได้แล้ว · plan ไม่ผูกกับการปิดทริป (ดู financeLocked)
+const LIVE_WRITABLE = { expenses: true, wallets: true, currencies: true, fundings: true, closing: true, plan: true };
 
 const lockReason = () => (liveMode ? LIVE_LOCK_REASON : TRIP_LOCK_REASON);
 /* area = ส่วนที่กำลังจะแก้ · ไม่ระบุ = ถือว่ายังไม่เปิดในโหมดข้อมูลจริง */
-const financeLocked = (area) => tripClosed || (liveMode && !LIVE_WRITABLE[area]);
+/* แผนเที่ยวเป็นข้อยกเว้นเดียวที่ไม่ถูกล็อกตอนปิดทริป — การปิดทริปล็อกตัวเลข
+   ที่รายงานเข้าบัญชีไปแล้ว ไม่ควรห้ามแก้บันทึกการเดินทางย้อนหลัง
+   (ฝั่งเซิร์ฟเวอร์ก็ปล่อยผ่าน /stops เหมือนกัน สองฝั่งจึงตรงกัน) */
+const financeLocked = (area) =>
+  (area === 'plan' ? false : tripClosed) || (liveMode && !LIVE_WRITABLE[area]);
 
 function blockedByClose(area) {
   if (!financeLocked(area)) return false;
@@ -1233,7 +1239,8 @@ function applyTripLock() {
   const byArea = [
     [$$('.add-expense'), 'expenses'],
     [[$('#addWallet')], 'wallets'],
-    [[$('#addCurrency')], 'currencies']
+    [[$('#addCurrency')], 'currencies'],
+    [[$('#addPlace')], 'plan']
   ];
   byArea.forEach(([buttons, area]) => {
     const off = financeLocked(area);
@@ -1743,6 +1750,17 @@ function renderTodayWeather(dayId) {
   if (!day) return;
   const { weather } = day;
   $('#weatherPlace').textContent = day.city;
+
+  /* วันที่มาจากฐานจริงยังไม่มีข้อมูลพยากรณ์ — ต้องบอกว่าไม่มี ไม่ใช่โชว์ตัวเลข
+     ของข้อมูลตัวอย่างค้างไว้ เพราะคนจะอ่านว่าเป็นพยากรณ์ของวันนั้นจริง ๆ */
+  if (!weather) {
+    $('#weatherNow').innerHTML = '<div class="weather-empty">ยังไม่มีข้อมูลพยากรณ์อากาศของวันนี้</div>';
+    $('#weatherPeriods').innerHTML = '';
+    $('#weatherTip').textContent = 'ระบบยังไม่ได้เชื่อมกับบริการพยากรณ์อากาศ';
+    $('#weatherStamp').textContent = day.date || '';
+    return;
+  }
+
   $('#weatherNow').innerHTML = `<span>${weather.icon}</span><strong>${weather.temp}</strong><div>${weather.feels}<br>${weather.note}</div>`;
   $('#weatherPeriods').innerHTML = weather.periods.map(period => `
     <div class="${period.active ? 'selected' : ''}"><span>${period.label}</span><b>${period.temp}</b><small>${period.detail}</small></div>`).join('');
@@ -1928,7 +1946,10 @@ function renderPlanWorkspace() {
 
   $('#planDayOverview').innerHTML = `
     <div><small>${activeDay.date}</small><h3>${activeDay.city}</h3><span>${activeDay.activities.length} กิจกรรม · ลากเรียงหรือเลือกเพื่อย้ายวัน</span></div>
-    <div class="plan-weather"><span>${activeDay.weather.icon}</span><div><b>${activeDay.weather.temp}</b><small>${activeDay.weather.note}</small></div></div>`;
+    ${activeDay.weather
+      ? `<div class="plan-weather"><span>${activeDay.weather.icon}</span><div><b>${activeDay.weather.temp}</b><small>${activeDay.weather.note}</small></div></div>`
+      // วันที่มาจากฐานจริงไม่มีพยากรณ์ — ซ่อนกล่องไปเลย ดีกว่าโชว์ช่องว่างที่ดูเหมือนข้อมูลหาย
+      : ''}`;
 
   $('#planList').innerHTML = activeDay.activities.length ? activeDay.activities.map(activity => `
     <article class="plan-item ${activity.id === selectedActivityId ? 'selected' : ''}" draggable="true" data-activity="${activity.id}">
@@ -1968,6 +1989,7 @@ function bindPlanInteractions() {
           [day.activities[index], day.activities[nextIndex]] = [day.activities[nextIndex], day.activities[index]];
           showPrototypeToast(`สลับลำดับ ${day.activities[nextIndex].name} แล้ว`);
           renderPlanWorkspace();
+          if (liveMode) pushPlanOrderLive();
         }
         return;
       }
@@ -2014,6 +2036,7 @@ function bindPlanInteractions() {
       draggedActivityId = null;
       showPrototypeToast(`ย้าย ${moved.name} แล้ว`);
       renderPlanWorkspace();
+      if (liveMode) pushPlanOrderLive();
     });
   });
 
@@ -2027,6 +2050,7 @@ function bindPlanInteractions() {
     selectedActivityId = null;
     showPrototypeToast(`ย้าย ${moved.name} ไป Day ${targetDay.day} แล้ว`);
     renderPlanWorkspace();
+    if (liveMode) pushPlanOrderLive();
   }));
 }
 
@@ -2066,8 +2090,41 @@ function openPlanEditor(activity = null) {
 $('#addPlace').addEventListener('click', () => openPlanEditor());
 $('#cancelPlanEditor').addEventListener('click', closeLayers);
 
+/* ── แผนเที่ยวในโหมดข้อมูลจริง ─────────────────────────────────────────
+   ส่งขึ้นเซิร์ฟเวอร์แล้วดึงใหม่ทั้งชุดเหมือนฝั่งการเงิน — ลำดับและการจัดกลุ่ม
+   ตามวันคำนวณที่เซิร์ฟเวอร์ ถ้าหน้าจอเดาเองจะเริ่มไม่ตรงกันทีละนิด */
+function savePlanItemLive() {
+  const targetDay = planDays.find(day => day.id === $('#activityDay').value);
+  const name = $('#activityName').value.trim();
+  if (!name) { $('#planEditorError') && ($('#planEditorError').textContent = 'ตั้งชื่อสถานที่ก่อน'); return; }
+
+  submitLive('#planEditorError', () => TripApi.saveStop({
+    id: editingActivityId || '',
+    dayDate: targetDay?.date || '',
+    time: $('#activityTime').value,
+    name,
+    detail: $('#activityDetail').value.trim(),
+    tag: $('#activityTag').value,
+    icon: activityIcon
+  }), `${editingActivityId ? 'อัปเดต' : 'เพิ่ม'} ${name} แล้ว`)
+    .then(() => showScreen('plan'));
+}
+
+/* ส่งลำดับของ "ทุกวัน" ไม่ใช่แค่วันที่แก้ — การย้ายข้ามวันเปลี่ยนทั้งสองฝั่ง
+   เลข sort_order นับใหม่จาก 1 ทุกครั้ง จะได้ไม่มีช่องว่างสะสมจนอ่านยาก */
+function pushPlanOrderLive() {
+  const stops = planDays.flatMap(day =>
+    day.activities.map((activity, index) => ({
+      stop_id: activity.id, stop_date: day.date, sort_order: index + 1
+    })));
+  if (!stops.length) return Promise.resolve(true);
+  return submitLive(null, () => TripApi.reorderStops(stops), 'บันทึกลำดับใหม่แล้ว')
+    .then(ok => { if (!ok) showPrototypeToast('บันทึกลำดับไม่สำเร็จ · กำลังโหลดของจริงกลับมา'); return ok; });
+}
+
 $('#planEditorForm').addEventListener('submit', event => {
   event.preventDefault();
+  if (liveMode) return savePlanItemLive();
   const targetDay = planDays.find(day => day.id === $('#activityDay').value);
   const sourceDay = editingActivityId
     ? planDays.find(day => day.activities.some(activity => activity.id === editingActivityId))
@@ -2440,6 +2497,13 @@ function applyLiveState(state) {
   tripClosed = state.tripClosed;
   postingDate = state.postingDate;
   liveTripEndDate = state.tripEndDate || '';
+  /* มีจุดแวะจริงถึงจะทับแผนตัวอย่าง — ทริปที่ยังไม่ได้วางแผนจะได้ไม่เห็นหน้าว่างเปล่า
+     planDays เป็น const จึงต้องเปลี่ยนของในอาร์เรย์เดิม */
+  if (state.planDays.length) {
+    planDays.length = 0;
+    planDays.push(...state.planDays);
+    activePlanDayId = planDays[0].id;
+  }
   if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
   if (state.viewerId) viewerId = state.viewerId;
   if (state.banner) {
@@ -2478,12 +2542,17 @@ function applyLiveState(state) {
     tag.textContent = text;
     host.prepend(tag);
   };
-  flag('.weather-card', '⚠️ สภาพอากาศเป็นข้อมูลตัวอย่าง ระบบยังไม่ได้ดึงพยากรณ์จริง');
-  flag('#screen-plan .plan-layout', '⚠️ แผนเที่ยวยังเป็นข้อมูลตัวอย่าง — ยังไม่ได้เชื่อมกับจุดแวะจริงในฐานข้อมูล');
+  flag('.weather-card', '⚠️ ระบบยังไม่ได้เชื่อมกับบริการพยากรณ์อากาศ');
+  flag('#screen-plan .plan-layout', state.planDays.length
+    ? '🔴 จุดแวะมาจากฐานข้อมูลจริง — แต่ยังแก้จากหน้านี้ไม่ได้ (ยังไม่มี API ฝั่งเขียน)'
+    : '⚠️ ทริปนี้ยังไม่มีจุดแวะในฐานข้อมูล — ที่เห็นเป็นแผนตัวอย่าง');
 
   applyTripLock();
   [renderBills, renderWallets, renderMoneyStrip, renderMembers, renderCurrencies,
-   renderPresence, refreshQuickAdd].forEach(render => render());
+   renderPresence, refreshQuickAdd, renderPlanWorkspace].forEach(render => render());
+  /* การ์ดอากาศผูกกับ dayId ของแผนตัวอย่าง พอเปลี่ยนเป็นวันจริงแล้ว id ไม่ตรงกัน
+     renderTodayWeather จะ return ทันทีและปล่อยตัวเลขเดิมค้างบนจอ ต้องสั่งใหม่เอง */
+  if (state.planDays.length) renderTodayWeather(planDays[0].id);
 
   const bits = [
     state.tripName || 'ข้อมูลจริง',

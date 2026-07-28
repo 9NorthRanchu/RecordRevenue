@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:api && npm run test:ui",
+    "test:api": "node backend/test/session.test.mjs && node backend/test/auth.test.mjs && node backend/test/unified-trip-write.test.mjs",
+    "test:ui": "node frontend/trip-unified-prototype/live-mode.test.mjs"
   },
   "keywords": [],
   "author": "",
