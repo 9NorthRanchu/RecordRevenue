@@ -11,11 +11,31 @@
 
 const TripApi = (() => {
   const params = new URLSearchParams(location.search);
+
+  /* ผู้ใช้ที่ล็อกอินอยู่ — แอปหลักเก็บไว้ที่ sessionStorage คีย์ logged_in_user
+     อยู่โดเมนเดียวกัน (record-revenue-web.pages.dev) จึงอ่านต่อได้เลย
+
+     ⚠️ sessionStorage แยกตามแท็บ ถ้าเปิดหน้านี้ในแท็บใหม่จะไม่เห็นการล็อกอิน
+        ต้องกดลิงก์จากในแอปในแท็บเดิม หรือใช้ ?userId= สำหรับทดสอบ */
+  const sessionUserId = () => {
+    try {
+      const raw = sessionStorage.getItem('logged_in_user');
+      return raw ? (JSON.parse(raw).user_id || '') : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const fromSession = sessionUserId();
+  const fromUrl = params.get('userId') || '';
+
   const config = {
     enabled: params.get('live') === '1',
     base: params.get('api') || 'https://record-revenue.9nimz.workers.dev',
     projectId: params.get('projectId') || '',
-    userId: params.get('userId') || ''
+    // session มาก่อน URL เสมอ — ใครใส่ ?userId= ของคนอื่นมาก็ไม่ทับของที่ล็อกอินจริง
+    userId: fromSession || fromUrl,
+    userSource: fromSession ? 'session' : (fromUrl ? 'url' : 'none')
   };
 
   /* ไอคอนในฐานเก็บได้ทั้งชื่อไฟล์เปล่าและ path เต็ม — ทำให้เป็น path เดียวกัน
@@ -118,7 +138,9 @@ const TripApi = (() => {
 
   async function fetchTrip() {
     if (!config.projectId) throw new Error('ต้องระบุ projectId ใน URL');
-    if (!config.userId) throw new Error('ต้องระบุ userId ใน URL');
+    if (!config.userId) {
+      throw new Error('ยังไม่ได้ล็อกอิน — เปิดแอปหลักแล้วล็อกอินก่อน จากนั้นเปิดหน้านี้ในแท็บเดิม');
+    }
     const url = `${config.base}/api/unified-trip?projectId=${encodeURIComponent(config.projectId)}`;
     const response = await fetch(url, { headers: { 'x-user-id': config.userId } });
     const payload = await response.json().catch(() => ({}));

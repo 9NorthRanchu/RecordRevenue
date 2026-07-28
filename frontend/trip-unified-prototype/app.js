@@ -2491,6 +2491,8 @@ function applyLiveState(state) {
     `สุทธิ ${thb(state.netLedgerThb)}`
   ];
   if (state.hiddenExpenseCount) bits.push(`ซ่อนจากคุณ ${state.hiddenExpenseCount} ใบ`);
+  // บอกด้วยว่ารู้ได้อย่างไรว่าเป็นใคร — ถ้ามาจาก URL แปลว่าไม่ได้ผ่านการล็อกอินจริง
+  if (TripApi.config.userSource === 'url') bits.push('⚠️ ระบุตัวตนจาก URL ไม่ใช่การล็อกอิน');
   markLiveBanner(`🔴 ${bits.join(' · ')} — ข้อมูลจริง`);
 }
 

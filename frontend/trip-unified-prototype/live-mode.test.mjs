@@ -452,6 +452,42 @@ check('เติมเงินล้ม → ฟอร์มยังเปิ�
 failNextWrite = null;
 await page.keyboard.press('Escape');
 
+console.log('\n── ระบุตัวตนจาก session ที่ล็อกอินแล้ว ──────────');
+// ไม่ใส่ userId ใน URL เลย แต่มี session อยู่ → ต้องใช้ของใน session
+await page.goto(`${BASE}/index.html`, { waitUntil:'domcontentloaded' });
+await page.evaluate(() => sessionStorage.setItem('logged_in_user',
+  JSON.stringify({ user_id:'9North', name:'North' })));
+await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&api=${BASE}`,
+  { waitUntil:'domcontentloaded' });
+await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+check('ไม่ต้องใส่ userId ใน URL ก็โหลดได้', await page.evaluate(() => TripApi.config.userId) === '9North');
+check('บอกว่ารู้ตัวตนจาก session', await page.evaluate(() => TripApi.config.userSource) === 'session');
+check('ไม่ขึ้นคำเตือนเรื่อง URL', !(await page.textContent('#liveBar')).includes('จาก URL'));
+
+// มี session อยู่ แต่มีคนยัด ?userId= ของคนอื่นมา → session ต้องชนะ
+await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=uOther&api=${BASE}`,
+  { waitUntil:'domcontentloaded' });
+await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+check('userId ใน URL ทับ session ไม่ได้',
+  await page.evaluate(() => TripApi.config.userId) === '9North',
+  await page.evaluate(() => TripApi.config.userId));
+
+// ไม่มีทั้ง session และ URL → ต้องบอกให้ล็อกอิน ไม่ใช่ error กำกวม
+await page.goto(`${BASE}/index.html`, { waitUntil:'domcontentloaded' });
+await page.evaluate(() => sessionStorage.clear());
+await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&api=${BASE}`,
+  { waitUntil:'domcontentloaded' });
+await page.waitForTimeout(700);
+check('ไม่มีทั้ง session และ URL → บอกให้ไปล็อกอิน',
+  (await page.textContent('#liveBar')).includes('ล็อกอิน'), await page.textContent('#liveBar'));
+
+// กลับมาโหมด URL เพื่อเทสส่วนที่เหลือ + ต้องเตือนว่าไม่ได้ผ่านการล็อกอิน
+await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
+  { waitUntil:'domcontentloaded' });
+await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+check('ระบุตัวตนจาก URL ต้องมีคำเตือนบนแถบ',
+  (await page.textContent('#liveBar')).includes('ไม่ใช่การล็อกอิน'), await page.textContent('#liveBar'));
+
 console.log('\n── ปิดทริป · เปิดกลับ (ข้อมูลจริง) ─────────────');
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
