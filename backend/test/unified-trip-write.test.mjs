@@ -69,9 +69,15 @@ CREATE TABLE Transactions (transaction_id TEXT PRIMARY KEY, account_id TEXT, ref
 CREATE TABLE TransactionDetails (detail_id TEXT PRIMARY KEY, transaction_id TEXT, amount REAL NOT NULL,
   fee REAL DEFAULT 0, wht REAL DEFAULT 0, category_id TEXT NOT NULL, entity_id TEXT, contact_id TEXT,
   project_id TEXT, note TEXT, type TEXT NOT NULL);
-CREATE TABLE TripStops (stop_id TEXT PRIMARY KEY, project_id TEXT, stop_date TEXT, time TEXT,
-  end_time TEXT, city TEXT, accommodation TEXT, restaurants TEXT, notes TEXT, icon_asset TEXT,
-  is_starred INTEGER DEFAULT 0, latitude REAL, longitude REAL, created_at DATETIME,
+-- ⚠️ ลอกจากฐาน production จริง (pragma_table_info) ไม่ใช่จาก backend/db/schema.sql
+--    คอลัมน์เรียงตามลำดับจริง: ของเดิม → hunsa (end_time/icon_asset) → naming (name_*/sort_order)
+CREATE TABLE TripStops (stop_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, stop_date TEXT, time TEXT,
+  city TEXT, accommodation TEXT, restaurants TEXT, notes TEXT, is_starred INTEGER DEFAULT 0,
+  latitude REAL, longitude REAL, created_at DATETIME,
+  location_type TEXT, parent_stop_id TEXT, icon TEXT, is_main_day INTEGER DEFAULT 0,
+  header_color TEXT, marker_color TEXT, font_size TEXT, text_color TEXT, time_color TEXT,
+  border_color TEXT, label_position TEXT,
+  end_time TEXT, icon_asset TEXT,
   name_en TEXT, name_th TEXT, sort_order INTEGER DEFAULT 0);
 
 INSERT INTO Users VALUES ('9North','FAM-1','North','admin'),('uPuii','FAM-1','Puii','member'),('uOther','FAM-2','Other','member');

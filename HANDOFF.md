@@ -1,6 +1,6 @@
 # RecordRevenue — Handoff (ส่งต่อ AI ตัวใหม่)
 
-อัปเดตล่าสุด: 2026-07-27 · โปรเจกต์ = แอปการเงินครอบครัว + ท่องเที่ยว (ไทย)
+อัปเดตล่าสุด: 2026-07-28 · โปรเจกต์ = แอปการเงินครอบครัว + ท่องเที่ยว (ไทย)
 Stack: Cloudflare Pages (frontend) + Cloudflare Worker (backend) + D1 (`record-revenue-db`, id `3112e08d-db8b-428c-925d-91fb50f50de4`)
 
 🔴 **`backend/db/schema.sql` เป็นแบบร่าง ไม่ตรงกับฐาน production — อย่าเชื่อ**
@@ -19,14 +19,235 @@ npx wrangler d1 execute record-revenue-db --remote --command \
 - Frontend: `frontend/index.html`, `frontend/app.js`, `frontend/style.css`
 - Backend: `backend/src/index.js` (deploy ที่ root — `main` อยู่ใน `wrangler.json`)
 - URL: https://record-revenue-web.pages.dev · API: https://record-revenue.9nimz.workers.dev
-- เวอร์ชัน cache-bust ใน `frontend/index.html` ล่าสุด: `style.css?v=127`, `app.js?v=171` (ตรวจอีกครั้งก่อน bump)
+- เวอร์ชัน cache-bust: `frontend/index.html` → `app.js?v=172` · `trip-unified-prototype/index.html` → `style.css?v=36` `api.js?v=10` `app.js?v=42` (ตรวจอีกครั้งก่อน bump)
+
+---
+
+# 📍 อ่านตรงนี้ก่อน — สรุปสำหรับ AI ตัวใหม่ (2026-07-28)
+
+## 1. โปรเจกต์นี้คืออะไร
+
+แอปการเงินครอบครัว (ภาษาไทย) ที่มีสองส่วนหลัก
+
+1. **สมุดบัญชีครอบครัว** — `frontend/index.html` + `frontend/app.js` (ไฟล์เดียว ~13,000 บรรทัด) ต่อกับ `backend/src/index.js` (~3,600 บรรทัด) · ของเดิมที่ใช้งานจริงมาตลอด
+2. **Unified Trip** — `frontend/trip-unified-prototype/` ระบบบันทึกค่าใช้จ่ายและแผนการท่องเที่ยว **นี่คืองานหลักของช่วงที่ผ่านมา และตอนนี้เชื่อมฐานข้อมูลจริงครบทุกส่วนแล้ว**
+
+ทริปจริงที่กำลังเตรียม: **Hokkaido 2026 · 17–27 ธ.ค. 2026 · `TRP-1783943254256`** สมาชิก North (admin) / Puii / XinXin
+
+## 2. สถานะจริง ณ ตอนนี้
+
+| ส่วน | สถานะ |
+|---|---|
+| สคีมา Unified Trip (7 ตาราง + 16 คอลัมน์) | ✅ รันบน production แล้ว |
+| ย้ายสมาชิกจาก `Projects.members` (JSON) → `TripMembers` | ✅ 8 แถว |
+| `GET /api/unified-trip` | ✅ deploy แล้ว |
+| endpoint ฝั่งเขียนทั้งหมด (บิล/กระเป๋า/สกุลเงิน/เติมเงิน/ปิดทริป/จุดแวะ) | ✅ เขียนเสร็จ ผ่านเทส |
+| prototype เชื่อมฐานจริงด้วย `?live=1` | ✅ ครบทุกหน้า |
+| hash รหัสผ่าน (PBKDF2) | ✅ deploy แล้ว · อัปเกรดอัตโนมัติตอนล็อกอิน |
+| session token แทน `x-user-id` | ✅ เขียนเสร็จ · **ยังไม่ deploy** |
+| โพสต์การปิดทริปเข้าบัญชีจริง | ✅ เขียนเสร็จ · **ยังไม่ deploy** |
+| หมวดท่องเที่ยวในผังบัญชี | ⏳ SQL พร้อม · **ยังไม่รัน** |
+
+**สิ่งที่ค้างอยู่ตอนส่งต่อ** (ดูรายละเอียดข้อ 8)
+
+```
+npx wrangler d1 execute record-revenue-db --remote --file=add_sessions_table.sql
+npx wrangler d1 execute record-revenue-db --remote --file=add_closure_ledger_link.sql
+npx wrangler d1 execute record-revenue-db --remote --file=add_trip_stop_naming.sql
+npx wrangler d1 execute record-revenue-db --remote --file=add_travel_categories_preview.sql
+npx wrangler d1 execute record-revenue-db --remote --file=add_travel_categories.sql
+npm test
+git add -- HANDOFF.md package.json add_*.sql backend/ frontend/
+git commit -m "..." && git push
+cd backend && npx wrangler deploy && cd ..
+npx wrangler pages deploy frontend --project-name record-revenue-web
+```
+
+## 3. แผนที่ไฟล์
+
+### Backend (Cloudflare Worker · deploy จาก root ด้วย `wrangler.json`)
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `backend/src/index.js` | route เดิมทั้งหมด · **ระบุตัวตนที่เดียว** ด้วย `const authUserId = await resolveUserId(...)` แล้วส่งต่อทุก route |
+| `backend/src/unified-trip.js` | Unified Trip ทั้งหมด (อ่าน + เขียน) · แยกไฟล์โดยตั้งใจเพราะ `index.js` ยาวและเสิร์ฟทั้งระบบ · คืน `null` เมื่อไม่ใช่ path ตัวเอง |
+| `backend/src/auth.js` | hash/ตรวจรหัสผ่าน + อัปเกรดของเก่า |
+| `backend/src/session.js` | ออก/ตรวจ/ยกเลิก session token · มีสวิตช์ `ALLOW_HEADER_FALLBACK` |
+
+### Frontend
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `frontend/app.js` | แอปหลัก · มี **fetch interceptor** ที่แนบ `Authorization` อัตโนมัติ (แทนการแก้ 71 จุด) |
+| `frontend/trip-unified-prototype/index.html` | โครงหน้า 5 จอ: วันนี้ · แผนเที่ยว · บิล · กระเป๋า · เพิ่มเติม |
+| `frontend/trip-unified-prototype/app.js` | ตรรกะทั้งหมดของ prototype |
+| `frontend/trip-unified-prototype/api.js` | **ตัวแปลงชั้นเดียว** ระหว่าง snake_case ของฐาน ↔ camelCase ของหน้าจอ · ที่เดียวที่รู้จักชื่อฟิลด์ฝั่งฐาน |
+| `frontend/trip-unified-prototype/art/icons/` | ไอคอนกระเป๋า 8 แบบ (256×256) + เหรียญ 12 สกุล (192×192) |
+
+⚠️ **แก้ frontend ต้อง bump `?v=` ใน `index.html` เสมอ** — Cloudflare Pages ไม่สนใจ query string แต่เบราว์เซอร์สน
+
+## 4. Unified Trip — โครงสร้างข้อมูลและกติกา
+
+### สามมิติของเงินในบิลใบเดียว (สำคัญที่สุด)
+
+```
+member_id        = คนจ่าย        (มือที่ควักเงิน)
+owner_member_id  = เจ้าของเงิน   ← ตัวนี้ตัดสินว่าลงบัญชีหลักไหม
+wallet_id        = กระเป๋าที่ตัด  (เงินออกจากไหนจริง)
+```
+
+ทั้งสามเป็นคนละอย่างได้ — North รูดบัตรตัวเอง จ่ายแทนบิลที่จริง ๆ เป็นค่าใช้จ่ายของ Ann
+**ยอดที่แต่ละคนรับผิดชอบมาจาก `TripExpenseParticipants` เท่านั้น ไม่ใช่จาก `member_id`**
+
+### `ledger_mode` ของสมาชิก
+
+- `MAIN` → ยอดของคนนี้เข้าบัญชีหลักตอนปิดทริป
+- `TRIP_ONLY` → เก็บในประวัติทริปอย่างเดียว ไม่แตะสมุดบัญชี
+
+### อัตราแลกเปลี่ยน — 4 สถานะ
+
+| สถานะ | ที่มา |
+|---|---|
+| `base` | สกุลหลักของทริป (THB = 1) |
+| `actual` | Σ THB ÷ Σ foreign ของทุกล็อตเติมเงิน |
+| `planned` | `plan_rate` ที่ตั้งไว้ตอนวางแผน (ยังไม่มีล็อตจริง) |
+| `locked` | ค่าที่แช่ไว้ตอนปิดทริป |
+
+🔑 **เรทเฉลี่ยไม่สนใจลำดับและวันที่โดยเจตนา** — บันทึกเติมเงินย้อนหลังให้ผลเดียวกับบันทึกตอนนั้น
+🔑 **ห้ามเดาเรทเด็ดขาด** — ไม่มีข้อมูลให้คืน `null` แล้วให้หน้าจอบอกว่ายังตีมูลค่าไม่ได้ ห้ามใส่ค่าคงที่แทน
+
+### การปิดทริป — จุดที่พังง่ายที่สุดทั้งระบบ
+
+```
+ปิดครั้งแรก   CLOSE   +585   posting_date 2027-01-10
+เปิดกลับ      REOPEN  −585   posting_date 2027-01-10  ← วันเดิม ไม่ใช่วันนี้
+ปิดอีกครั้ง   CLOSE   +819   posting_date 2027-01-15
+                     ─────
+สุทธิ                  819   ✅
+```
+
+**ยอดที่เข้าบัญชี = `SUM(ledger_total)` ของทุกแถว ไม่ใช่แถวล่าสุด** — ถ้าไม่มีแถวกลับจะกลายเป็น 1,404 คือโพสต์ซ้ำ
+
+- หา CLOSE ที่จะกลับด้วย `NOT EXISTS (SELECT 1 FROM TripClosures r WHERE r.reverses_id = c.closure_id)` ไม่ใช่แถวล่าสุดเฉย ๆ
+- `RETURN` (แลกกลับเป็นบาท) = **รับรู้กำไรขาดทุน** `fx = received_thb − thb_cost`
+- `CARRY` (ยกไปทริปหน้า) = **ยังไม่รับรู้** ต้นทุนย้ายไปทั้งก้อน · รับรู้ตรงนี้ = รับรู้กำไรที่ยังไม่เกิดจริง
+- ปิดทั้งที่มีเงินเหลือแล้วไม่บอกว่าจะเอาไปไหน → **400** ไม่งั้นเงินก้อนนั้นหายจากบัญชีเงียบ ๆ
+
+### การหารบิล
+
+- ทศนิยม 2 ตำแหน่ง · **เศษไปรวมที่คนเดียว ไม่กระจาย** (กระจายทีละสตางค์แล้วยอดไม่ตรงใบเสร็จ)
+- ลำดับผู้รับเศษ: **admin → เจ้าของบิล → คนแรกในรายการ** ต้องมีคนรับเสมอ
+- เศษ **ติดลบก็ได้** — ¥10.01 ÷ 2 ปัดขึ้นทั้งคู่เป็น 5.01 = 10.02 เกินมา 0.01 ต้องหักคืน
+- `EQUAL`/`PERCENT` เซิร์ฟเวอร์คำนวณเอง · `MANUAL` **ไม่เกลี่ยเศษให้** เพราะตัวเลขที่คนพิมพ์เองต้องบวกได้ตรงยอดบิล
+
+## 5. ความปลอดภัย — สถานะและสิ่งที่ค้าง
+
+| เรื่อง | สถานะ |
+|---|---|
+| รหัสผ่าน | ✅ PBKDF2-SHA256 100,000 รอบ · อัปเกรดของเก่าอัตโนมัติตอนล็อกอิน (~9 ms) |
+| session token | ✅ เขียนเสร็จ · 🔁 `ALLOW_HEADER_FALLBACK = true` **ช่องโหว่เดิมยังเปิดอยู่** |
+| กรอง visibility | ✅ ทำที่เซิร์ฟเวอร์ ไม่ใช่ที่ client |
+
+🔴 **ช่องที่ยังเปิดอยู่**: ตราบใดที่ `ALLOW_HEADER_FALLBACK = true` ใครรู้ `user_id` ก็ `curl` อ่านข้อมูลการเงินทั้งครอบครัวได้โดยไม่ต้องมีรหัสผ่าน
+
+**วิธีปิด** — หลัง deploy แล้วรอ 1–2 วันให้ทุกอุปกรณ์ล็อกอินใหม่:
+1. เปิด DevTools → Network ดูว่าคำขอมี `Authorization: Bearer` ครบ
+2. เปลี่ยนเป็น `false` ใน `backend/src/session.js` → deploy
+3. ยืนยัน `curl -H "x-user-id: 9North" .../api/unified-trip?projectId=...` ต้องได้ **401**
+
+## 6. เทส — 330 เคส · ไม่แตะฐานจริงเลยสักตัว
+
+```
+npm test            # ทุกชุด
+npm run test:api    # 225 เคส · ไม่ต้องลงอะไรเพิ่ม
+npm run test:ui     # 105 เคส · ต้องมี playwright
+```
+
+| ชุด | เคส |
+|---|---|
+| `backend/test/session.test.mjs` | 22 |
+| `backend/test/auth.test.mjs` | 27 |
+| `backend/test/unified-trip-write.test.mjs` | 176 |
+| `frontend/trip-unified-prototype/live-mode.test.mjs` | 105 |
+
+**รูปแบบที่ใช้**: sqlite ในหน่วยความจำ (`node:sqlite`) + shim ที่เลียน API ของ D1 · โหลดไฟล์ต้นทางผ่าน `data:` URL เพื่อให้ทดสอบ **ไฟล์จริง** เสมอ ไม่ใช่สำเนา · ชุด UI เสิร์ฟไฟล์เอง + API ปลอมที่คืนรูปเดียวกับของจริง
+
+⚠️ **schema จำลองในไฟล์เทสต้องลอกจากฐาน production** ไม่ใช่จาก `backend/db/schema.sql` — เคยพลาดจนเทสผ่านหมดแต่พังบนของจริง
+
+## 7. บั๊กที่เคยเจอ — อย่าให้กลับมา
+
+**ตัวเลข / บัญชี**
+
+- ปิด→เปิด→ปิด **โพสต์ซ้ำ ฿14,052** → ต้องมีแถวกลับ
+- `fundedForeign ? fundedThb/fundedForeign : exchangeRate` → เดาเรทเงียบ ๆ · ตอนนี้คืน `null`
+- `is_admin` ผูกกับ `j.key = 0` → ทริปที่ช่องแรกว่างจะไม่มี admin เลย · แก้ด้วย `ROW_NUMBER()`
+- ล็อกทริปตอนแรกปิดแค่ 2 ปุ่ม บิลยังเพิ่มได้และยอดยังขยับ
+
+**หน้าจอ**
+
+- `transform-box` ของ SVG ค่าเริ่มต้นคือ `view-box` → `transform-origin:center` = กลางแผนที่ทั้งใบ ทำให้วงคลื่นลอยข้ามจอ · ต้องใส่ `transform-box:fill-box`
+- `renderTodayWeather` ผูกกับ `dayId` ของข้อมูลตัวอย่าง พอเปลี่ยนเป็นวันจริง id ไม่ตรง ฟังก์ชัน `return` เงียบ ๆ แล้ว**ปล่อยตัวเลขเดิมค้าง** (อันตรายกว่าพังให้เห็น)
+- `refreshQuickAdd()` เขียนทับ `#saveWarning` → ต้องเขียนข้อความ error **หลัง** เรียกมัน
+- `openSheet()` เรียก `blockedByClose()` โดยไม่ระบุ area → ฟอร์มเปิดมาแต่ไม่มีแถวหมวดและรายชื่อคน
+- `let liveMode` ประกาศซ้ำ → ทั้งไฟล์พังเงียบ ๆ · และต้องประกาศ **บนสุด** เพราะ `applyTripLock()` ใช้ตั้งแต่ render แรก
+- `font:` shorthand ล้าง `font-family` → ภาษาไทยกลายเป็นสี่เหลี่ยม
+- `scrollIntoView` ไม่ทำงานกับ element ที่ `display:none`
+- ลากเรียงแล้วเรียก `renderPlanWorkspace()` ใน `dragover` → ทำลาย node ที่กำลังลาก
+
+**สคีมา / เครื่องมือ**
+
+- 🔴 **`backend/db/schema.sql` ไม่ตรงกับ production** — `Captions` ใช้ `type_id` ไม่ใช่ `caption_id`
+- 🔴 **ไฟล์ migration ในโปรเจกต์ไม่ได้ถูกรันทุกไฟล์** — `add_hunsa_trip_stop_fields.sql` เคยรัน แต่ `add_puppup_trip_fields.sql` **ไม่เคย** · `TripStops` จึงมี `end_time`/`icon_asset` แต่ไม่มี `name_th`/`name_en`/`sort_order` · **การมีไฟล์อยู่ในโปรเจกต์ไม่ได้แปลว่ามันถูกใช้แล้ว** ตรวจด้วย `pragma_table_info` ก่อนเสมอ
+- `wrangler --file` **ไม่พิมพ์ผล SELECT** ต้องใช้ `--command` ถ้าอยากเห็นผล
+- `ALTER TABLE ADD COLUMN` ไม่มี `IF NOT EXISTS` — รันซ้ำได้ `duplicate column name` ซึ่งแปลว่าเคยรันแล้ว
+- D1 **แก้ CHECK ไม่ได้** และ **DROP คอลัมน์ที่มี FK ไม่ได้** → migration ต้องเป็นแบบเพิ่มอย่างเดียว
+- `VALUES (...) AS n(col)` ไม่รองรับใน SQLite รุ่นเก่า → ใช้ `SELECT ... UNION ALL`
+- `new URL(import.meta.url).pathname` เก็บแบบ URL-encoded → path ที่มีช่องว่าง (`My Drive`) พัง ต้องใช้ `fileURLToPath`
+- ค่าใน HTTP header เป็น ByteString **ใส่ภาษาไทยไม่ได้**
+
+**git / สภาพแวดล้อม**
+
+- 🔴 **ห้ามใช้ `git add -A`** — root มี dump ฐานข้อมูลจริงหลายไฟล์ เคยกวาดไฟล์ที่มีรหัสผ่านขึ้น GitHub มาแล้ว (แก้ด้วยการเปลี่ยนรหัส ไม่ใช่ลบ commit)
+- `.git` อยู่ใน Google Drive → `HEAD.lock` / `index.lock` ค้างบ่อย · ลบทิ้งได้ถ้าไม่มี git process รันอยู่
+- `.gitignore` ใช้ `node_modules` (ไม่มี `/` ท้าย) เพราะ `node_modules/` จับ symlink ไม่ได้
+
+## 8. งานที่ยังไม่เสร็จ
+
+| งาน | ทำไมยังไม่ทำ |
+|---|---|
+| **รัน migration 3 ไฟล์ + deploy** | รอผู้ใช้ยืนยัน (ดูข้อ 2) |
+| **ปิด `ALLOW_HEADER_FALLBACK`** | รอให้ทุกอุปกรณ์ล็อกอินใหม่ก่อน |
+| **หน้าจอเลือกบัญชีปลายทางตอนปิดทริป** | API รับ `account_id` แล้ว แต่ยังไม่มี UI · ไม่ส่ง = ไม่โพสต์เข้าบัญชี |
+| **`CARRY` สร้างล็อตเติมเงินจริงในทริปถัดไป** | รอมีทริปปลายทาง · ตอนสร้างต้องใช้ `thb = thb_cost` **ห้ามคิดใหม่จาก `foreign × เรทปัจจุบัน`** |
+| **พยากรณ์อากาศจริง** | ยังไม่ได้เชื่อมบริการใด · ตอนนี้ขึ้นว่า "ยังไม่มีข้อมูล" อย่างซื่อสัตย์ |
+| **ระบบหลายทริป** | prototype ยังผูกกับทริปเดียวผ่าน `?projectId=` |
+| **ผูกบิลกับจุดแวะ** | `TripExpenses.stop_id` มีอยู่แล้วในฐาน · หน้าแผนเที่ยวยังขึ้น "ยังไม่ผูกบิล" ทุกจุด ทั้งที่ทำได้เลย |
+| **ลบไฟล์ที่ไม่ใช้แล้ว** | `map-compare.html` · `map-variants.css` · `map-variants.js` · `frontend/trip-unified-prototype/_probe.mjs` |
+| **ย้าย `.git` ออกจาก Google Drive** | ความเสี่ยงระยะยาว |
+
+## 9. กติกาที่ผู้ใช้ตั้งไว้ (ห้ามฝ่าฝืน)
+
+- **อย่าแก้หรือ replace หน้า `Trip`, `PupPup Trip`, `Prototype Trip` production เดิม**
+- **อย่ารัน migration หรือ deploy โดยไม่ได้รับคำสั่ง**
+- **รักษาโทนภาพ/ฟอนต์/แผนที่ที่ผู้ใช้เลือก**
+- **อย่าฝังชื่อ/หมุดใหม่ลง banner** — ให้ overlay ด้วยโค้ด
+- **อย่าอ้างว่าข้อมูลอากาศ/ตำแหน่งเป็นข้อมูลจริง** ถ้าระบบไม่ได้ไปดึงมาจริง
+- ตัวเลขหลักพันใส่ `,` · ตัวเลขติดลบใส่วงเล็บ `(1,234)` แบบบัญชี
+
+## 10. วิธีทำงานที่ได้ผลกับโปรเจกต์นี้
+
+1. **ตรวจของจริงก่อนเชื่อไฟล์** — schema, ผลลัพธ์ API, ตำแหน่ง element บนจอ · การเดาแล้วเขียนโค้ดตามทำให้เสียเวลาซ้ำหลายรอบ
+2. **เขียนเทสที่จับ "ความหมาย" ไม่ใช่แค่ "ไม่ error"** — เทสที่ดีที่สุดในชุดนี้คือตัวที่บังคับให้ยอดจากสองเส้นทางคำนวณตรงกัน
+3. **เปิดของทีละส่วน** — `LIVE_WRITABLE` ทำให้เปิดการเขียนทีละหน้าได้โดยไม่ต้องเสี่ยงทั้งระบบ
+4. **ล้มเหลวต้องดัง** — 400 พร้อมเหตุผลที่บอกทางแก้ ดีกว่าเดาค่าให้แล้วผ่านไปเงียบ ๆ
+5. **ข้อความบนจอต้องตรงกับข้อมูลที่แสดงอยู่จริง** — ป้าย "ข้อมูลจำลอง" ที่ค้างอยู่บนข้อมูลจริงอันตรายกว่าไม่มีป้าย
 
 ---
 
 ## ⭐ จุดส่งต่องานล่าสุดที่สุด — Unified Trip Static Prototype (2026-07-27)
 
-> อ่านส่วนนี้ก่อนส่วน Prototype/Hunsa/PupPup เดิมด้านล่าง เพราะนี่คือทิศทางล่าสุดที่ผู้ใช้ยืนยัน  
-> สถานะยังเป็น **static prototype เท่านั้น** ยังไม่เชื่อม API/D1 และยังไม่ควรย้ายเข้าหน้า production จนกว่าผู้ใช้จะอนุมัติ UX/UI
+> ⚠️ **หัวข้อนี้เป็นบันทึกช่วงที่ยังเป็น static prototype** เก็บไว้เพื่อดูเหตุผลเบื้องหลังการออกแบบ UI  
+> **สถานะปัจจุบันไม่ใช่แบบนี้แล้ว** — ตอนนี้เชื่อม API/D1 ครบทุกส่วนผ่าน `?live=1` (ดูสรุปด้านบน)
 
 ### เป้าหมาย
 
