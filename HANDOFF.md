@@ -80,6 +80,7 @@ npx wrangler pages deploy frontend --project-name record-revenue-web
 |---|---|
 | `frontend/app.js` | แอปหลัก · มี **fetch interceptor** ที่แนบ `Authorization` อัตโนมัติ (แทนการแก้ 71 จุด) |
 | `frontend/trip-unified-prototype/index.html` | โครงหน้า 5 จอ: วันนี้ · แผนเที่ยว · บิล · กระเป๋า · เพิ่มเติม |
+| เมนูเข้าหน้าทริป | อยู่ใน `frontend/index.html` ชื่อ **Unified Trip** ถัดจาก Hunsa Trip · ⚠️ ต้องเป็นลิงก์ธรรมดาที่เปิด**ในแท็บเดิม** ห้าม `target="_blank"` เพราะ `sessionStorage` ไม่ข้ามแท็บ · และไม่ใส่ `userId` ใน URL |
 | `frontend/trip-unified-prototype/app.js` | ตรรกะทั้งหมดของ prototype |
 | `frontend/trip-unified-prototype/api.js` | **ตัวแปลงชั้นเดียว** ระหว่าง snake_case ของฐาน ↔ camelCase ของหน้าจอ · ที่เดียวที่รู้จักชื่อฟิลด์ฝั่งฐาน |
 | `frontend/trip-unified-prototype/art/icons/` | ไอคอนกระเป๋า 8 แบบ (256×256) + เหรียญ 12 สกุล (192×192) |
@@ -855,14 +856,14 @@ index.html?live=1&projectId=TRP-1783943254256&userId=9North
 
 **ทดสอบแล้ว 22 เคส** — `node backend/test/session.test.mjs`
 
-**ทดสอบแล้ว 105 เคสด้วย Chromium จริง**
+**ทดสอบแล้ว 106 เคสด้วย Chromium จริง**
 
 ### รันเทสทั้งหมด
 
 ```
-npm test            # ทุกชุด (330 เคส)
+npm test            # ทุกชุด (331 เคส)
 npm run test:api    # 225 — ไม่ต้องลงอะไรเพิ่ม
-npm run test:ui     # 105 — ต้องมี playwright
+npm run test:ui     # 106 — ต้องมี playwright
 ```
 
 | ชุด | เคส | ครอบคลุม |
@@ -870,7 +871,7 @@ npm run test:ui     # 105 — ต้องมี playwright
 | `backend/test/session.test.mjs` | 22 | session token |
 | `backend/test/auth.test.mjs` | 27 | hash รหัสผ่าน |
 | `backend/test/unified-trip-write.test.mjs` | 176 | API ฝั่งเขียนทั้งหมด |
-| `frontend/trip-unified-prototype/live-mode.test.mjs` | 105 | หน้าจอจริงบน Chromium |
+| `frontend/trip-unified-prototype/live-mode.test.mjs` | 106 | หน้าจอจริงบน Chromium |
 
 **ทุกชุดไม่แตะฐานจริง** ทั้ง local และ remote
 

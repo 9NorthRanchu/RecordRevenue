@@ -280,6 +280,12 @@ const TripApi = (() => {
 
   const reopenTrip = reason => send('POST', '/closures/reopen', { body: { reason } });
 
+  /* ชื่อทริป/ช่วงวันที่ — ส่งเฉพาะช่องที่กรอกมา ช่องว่างแปลว่า "ไม่ระบุ"
+     ไม่ใช่ "ลบของเดิม" ฝั่งเซิร์ฟเวอร์คงค่าเดิมไว้ถ้าไม่ส่งคีย์นั้นมา */
+  const saveTripMeta = ({ name, startDate, endDate }) => send('POST', '/trip', {
+    body: { name, start_date: startDate || '', end_date: endDate || '' }
+  });
+
   /* จุดแวะ — id ที่ prototype สร้างเองขึ้นต้นด้วย activity- ไม่ใช่ของจริงในฐาน
      ต้องไม่ส่งขึ้นไป ไม่งั้นเซิร์ฟเวอร์จะหาไม่เจอแล้วตอบ 404 ทั้งที่เป็นการสร้างใหม่ */
   const saveStop = ({ id, dayDate, time, name, detail, tag, icon }) => send('POST', '/stops', {
@@ -303,6 +309,6 @@ const TripApi = (() => {
     config, fetchTrip, toPrototypeState, toExpenseBody,
     saveExpense, removeExpense, saveCurrency, removeCurrency,
     saveWallet, saveFunding, removeFunding, closeTrip, reopenTrip,
-    saveStop, removeStop, reorderStops
+    saveStop, removeStop, reorderStops, saveTripMeta
   };
 })();

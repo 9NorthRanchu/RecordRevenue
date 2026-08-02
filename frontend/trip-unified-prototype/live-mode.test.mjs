@@ -383,13 +383,9 @@ async function fillBill(amount, title) {
   await page.waitForTimeout(250);
   await page.fill('#expenseAmount', String(amount));
   await page.fill('#expenseDescription', title);
-  await page.locator('.sheet-step.active .next-step').click();      // → ขั้นหมวด
-  await page.waitForTimeout(200);
   // โหมดข้อมูลจริงบังคับผูกหมวดกับสมุดบัญชี ต้องเลือกก่อนถึงจะบันทึกได้
   const ledger = page.locator('#splitRows .split-row .category-ledger').first();
   if (await ledger.count()) await ledger.selectOption('CAT-FOOD');
-  await page.locator('#splitRows .split-row .category-amount').first().fill(String(amount));
-  await page.locator('.sheet-step.active .next-step').click();      // → ขั้นแบ่งจ่าย
   await page.waitForTimeout(250);
 }
 
@@ -580,14 +576,40 @@ check('ระบุตัวตนจาก URL ต้องมีคำเต�
 await page.locator('.add-expense:visible').first().click();
 await page.waitForTimeout(250);
 await page.fill('#expenseAmount', '500');
-await page.locator('.sheet-step.active .next-step').click();
-await page.waitForTimeout(200);
-await page.locator('#splitRows .split-row .category-amount').first().fill('500');
-await page.locator('.sheet-step.active .next-step').click();
 await page.waitForTimeout(300);
 check('ยังไม่ผูกสมุดบัญชี → กดบันทึกไม่ได้', await page.locator('#saveExpense').isDisabled());
 check('และบอกเหตุผลตั้งแต่ในฟอร์ม',
   (await page.textContent('#saveWarning')).includes('สมุดบัญชี'), await page.textContent('#saveWarning'));
+await page.keyboard.press('Escape');
+
+console.log('\n── ฟอร์มจดค่าใช้จ่ายแบบหน้าเดียว ───────────────');
+await page.locator('.add-expense:visible').first().click();
+await page.waitForTimeout(300);
+check('ไม่มีขั้นตอน 1/3 2/3 3/3 อีกแล้ว', await page.locator('.sheet-step').count() === 0);
+check('ทุกช่องอยู่ในหน้าเดียว เห็นพร้อมกัน',
+  await page.locator('#expenseAmount').isVisible() &&
+  await page.locator('#splitRows').isVisible() &&
+  await page.locator('#saveExpense').isVisible());
+check('วันที่ตั้งเป็นวันนี้ให้อัตโนมัติ',
+  /^\d{4}-\d{2}-\d{2}$/.test(await page.inputValue('#expenseDate')),
+  await page.inputValue('#expenseDate'));
+check('ตัวเลือกที่ไม่ค่อยใช้ถูกพับไว้',
+  await page.locator('.quick-advanced').count() === 1 &&
+  !(await page.locator('#expensePayer').isVisible()));
+
+// พิมพ์ยอดครั้งเดียว หมวดต้องเติมตามให้เอง
+await page.fill('#expenseAmount', '780');
+await page.waitForTimeout(300);
+check('🔑 พิมพ์ยอดครั้งเดียว หมวดเดียวเติมให้อัตโนมัติ',
+  (await page.locator('#splitRows .category-amount').first().inputValue()) === '780',
+  await page.locator('#splitRows .category-amount').first().inputValue());
+check('ปุ่มบันทึกบอกยอดที่กำลังจะบันทึก',
+  (await page.textContent('#saveExpense')).includes('780'), await page.textContent('#saveExpense'));
+
+await page.locator('.quick-advanced summary').click();
+await page.waitForTimeout(200);
+check('กางตัวเลือกเพิ่มเติมแล้วเห็นคนจ่าย/เจ้าของเงิน',
+  await page.locator('#expensePayer').isVisible() && await page.locator('#expenseOwner').isVisible());
 await page.keyboard.press('Escape');
 
 console.log('\n── แผนเที่ยว: เขียนลงฐานจริง ───────────────────');
@@ -690,6 +712,16 @@ check('สมุดปิดทริปมีทั้งแถวปิดแ�
   await page.evaluate(() => JSON.stringify(tripLog.map(e => e.type))));
 check('ยอดสุทธิกลับเป็น 0 หลังเปิดกลับ',
   await page.evaluate(() => tripLog.reduce((sum, e) => sum + e.ledgerTotal, 0) === 0));
+
+/* ปุ่มย้อนกลับ — ทดสอบท้ายสุดเพราะการกดจะพาออกจากหน้า
+   เดิมเป็นปุ่มเปล่าที่กดแล้วไม่เกิดอะไร เข้ามาแล้วออกไม่ได้ */
+console.log('\n── ปุ่มย้อนกลับ ────────────────────────────────');
+await page.goto(`${BASE}/index.html`, { waitUntil:'domcontentloaded' });
+await page.waitForTimeout(400);
+const startedAt = page.url();
+await page.locator('.back').click();
+await page.waitForTimeout(400);
+check('กดแล้วพาออกจากหน้านี้จริง ไม่ใช่ปุ่มเปล่า', page.url() !== startedAt, page.url());
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 await browser.close(); server.close();

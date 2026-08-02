@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Unified Trip — Hokkaido Prototype</title>
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
-  <link rel="stylesheet" href="style.css?v=36">
+  <link rel="stylesheet" href="style.css?v=38">
 </head>
 <body>
   <div class="prototype-note">UNIFIED TRIP · STATIC PROTOTYPE · ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง</div>
@@ -125,6 +125,18 @@
         <div class="page-head"><div><span>สิทธิ์และการเงิน</span><h1>จัดการทริป</h1><p>ตรวจสมาชิก การมองเห็น และผลลัพธ์ก่อนปิดทริป</p></div><div class="head-actions"><button class="soft-btn" id="openNewTrip">＋ ทริปใหม่</button><button class="soft-btn" id="editTripBanner">🖼️ เปลี่ยนแบนเนอร์</button></div></div>
         <div class="trip-locked-note" hidden>🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้</div>
         <div class="manage-grid">
+          <section class="paper-card"><h3>ชื่อทริปและวันเดินทาง</h3>
+            <p class="field-note">ชื่อทริปไปโผล่ในรายการที่ลงบัญชีจริงตอนปิดทริป · ช่วงวันที่ใช้เตือนเรื่องงวดบัญชี</p>
+            <form id="tripMetaForm">
+              <label class="field-wide">ชื่อทริป<input id="tripNameInput" required maxlength="80" placeholder="เช่น Hokkaido ฤดูหนาว 2026"></label>
+              <div class="date-pair">
+                <label>เริ่มเดินทาง<input id="tripStartInput" type="date"></label>
+                <label>กลับถึงบ้าน<input id="tripEndInput" type="date"></label>
+              </div>
+              <p class="form-error" id="tripMetaError"></p>
+              <button class="primary-btn" type="submit" id="saveTripMeta">บันทึกข้อมูลทริป</button>
+            </form>
+          </section>
           <section class="paper-card"><h3>สมาชิกและสิทธิ์</h3>
             <p class="field-note">กดชื่อเพื่อดูแอปในมุมมองของคนนั้น — ใช้ตรวจว่ากติกาการมองเห็นทำงานถูกต้อง</p>
             <div id="memberRows"></div>
@@ -151,46 +163,71 @@
   </nav>
 
   <div class="sheet-mask" id="sheetMask"></div>
-  <section class="bottom-sheet" id="expenseSheet" aria-hidden="true">
+  <!-- จดค่าใช้จ่าย — หน้าเดียว เลื่อนลงอ่านได้ ออกแบบให้ใช้มือเดียวบนมือถือ
+       ของเดิมเป็น 3 ขั้น ต้องกด "ต่อไป" สองครั้งกว่าจะบันทึกได้ ซึ่งช้าเกินไป
+       สำหรับการจดบิลตอนยืนอยู่หน้าเคาน์เตอร์
+       เรียงตามลำดับที่คนคิดจริง ๆ: จ่ายเท่าไร → จ่ายอะไร → หารกับใคร -->
+  <section class="bottom-sheet quick-add" id="expenseSheet" aria-hidden="true">
     <div class="sheet-handle"></div><button class="sheet-close">×</button>
-    <div class="sheet-step active" data-step="1">
-      <span class="eyebrow">QUICK ADD · 1/3</span><h2>จดค่าใช้จ่าย</h2>
-      <div class="segmented"><button class="active">จ่าย</button><button>ได้เงินคืน</button></div>
-      <label>กระเป๋าที่ตัดเงินจริง<select id="walletSelect"></select></label>
-      <label>จำนวนเงิน<div class="amount-input"><span id="amountSymbol">¥</span><input id="expenseAmount" inputmode="decimal" placeholder="0"></div></label>
+    <div class="quick-scroll">
+      <h2 class="quick-title">จดค่าใช้จ่าย</h2>
+
+      <!-- ยอดเงินตัวใหญ่สุดบนจอ เพราะเป็นสิ่งแรกที่คนพิมพ์ -->
+      <div class="amount-hero">
+        <span id="amountSymbol">¥</span>
+        <input id="expenseAmount" inputmode="decimal" placeholder="0" autocomplete="off">
+      </div>
       <p class="conversion" id="conversionLine"></p>
-      <label>รายละเอียด<input id="expenseDescription" placeholder="เช่น มื้อเย็นร้านปู"></label>
-      <button class="primary-btn next-step">ต่อไป</button>
-    </div>
-    <div class="sheet-step" data-step="2">
-      <span class="eyebrow">QUICK ADD · 2/3</span><h2>แบ่งหมวด</h2>
-      <div id="splitRows"></div>
-      <button class="add-line" type="button" id="addSplitRow">＋ เพิ่มหมวด</button>
-      <div class="icon-field">
-        <span>ไอคอนค่าใช้จ่าย</span>
-        <img id="expenseIconPreview" class="icon-preview circle" alt="ไอคอนที่เลือก">
-        <button type="button" class="soft-btn" id="pickExpenseIcon">เลือกไอคอน</button>
+
+      <div class="quick-row two">
+        <label>กระเป๋า<select id="walletSelect"></select></label>
+        <label>วันที่<input id="expenseDate" type="date"></label>
       </div>
-      <div class="allocated" id="allocatedLine"><span>จัดสรรแล้ว</span><b>—</b></div>
-      <div class="sheet-actions"><button class="soft-btn prev-step">ย้อนกลับ</button><button class="primary-btn next-step">ต่อไป</button></div>
-    </div>
-    <div class="sheet-step" data-step="3">
-      <span class="eyebrow">QUICK ADD · 3/3</span><h2>การแชร์และผู้เกี่ยวข้อง</h2>
-      <label>คนจ่าย<select id="expensePayer"></select></label>
-      <label>เจ้าของเงินที่ถูกใช้<select id="expenseOwner"></select></label>
-      <p class="field-note" id="ownerNote"></p>
-      <label>การมองเห็น<select id="visibility"><option value="trip">ทุกคนในทริป</option><option value="selected">เฉพาะผู้เกี่ยวข้อง</option><option value="private">ส่วนตัว</option></select></label>
-      <div class="toggle-row"><span><b>ค่าใช้จ่ายร่วม</b><small>แบ่งความรับผิดชอบให้เห็นร่วมกัน โดยเงินยังหักจากกระเป๋าเดียว</small></span><button class="toggle on" id="sharedToggle"></button></div>
-      <div class="segmented split-mode" id="splitMode">
-        <button type="button" class="active" data-split="equal">เท่ากัน</button>
-        <button type="button" data-split="manual">กำหนดเอง</button>
-        <button type="button" data-split="percent">เปอร์เซ็นต์</button>
+      <label class="quick-field">รายละเอียด<input id="expenseDescription" placeholder="เช่น มื้อเย็นร้านปู"></label>
+
+      <div class="quick-section">
+        <div class="quick-section-head"><b>หมวด</b><span id="allocatedLine"></span></div>
+        <div id="splitRows"></div>
+        <button class="add-line" type="button" id="addSplitRow">＋ แบ่งหลายหมวด</button>
       </div>
-      <div class="people-rows" id="peopleChecks"></div>
-      <div class="share-result" id="shareResult"></div>
-      <label>ผูกกับกิจกรรม<select id="expenseActivity"></select></label>
+
+      <div class="quick-section">
+        <div class="quick-section-head"><b>หารกับใคร</b></div>
+        <div class="segmented split-mode" id="splitMode">
+          <button type="button" class="active" data-split="equal">เท่ากัน</button>
+          <button type="button" data-split="manual">กำหนดเอง</button>
+          <button type="button" data-split="percent">เปอร์เซ็นต์</button>
+        </div>
+        <div class="people-rows" id="peopleChecks"></div>
+        <div class="share-result" id="shareResult"></div>
+      </div>
+
+      <!-- ตัวเลือกที่คนส่วนใหญ่ไม่ต้องแตะ ซ่อนไว้แต่เปิดได้ในคลิกเดียว
+           ค่าเริ่มต้น: ฉันจ่าย เงินฉัน ทุกคนในทริปเห็น หารเท่ากัน -->
+      <details class="quick-advanced">
+        <summary>ตัวเลือกเพิ่มเติม</summary>
+        <div class="quick-row two">
+          <label>คนจ่าย<select id="expensePayer"></select></label>
+          <label>เจ้าของเงิน<select id="expenseOwner"></select></label>
+        </div>
+        <p class="field-note" id="ownerNote"></p>
+        <div class="quick-row two">
+          <label>การมองเห็น<select id="visibility"><option value="trip">ทุกคนในทริป</option><option value="selected">เฉพาะผู้เกี่ยวข้อง</option><option value="private">ส่วนตัว</option></select></label>
+          <label>ผูกกับกิจกรรม<select id="expenseActivity"></select></label>
+        </div>
+        <div class="toggle-row"><span><b>ค่าใช้จ่ายร่วม</b><small>แบ่งความรับผิดชอบให้เห็นร่วมกัน โดยเงินยังหักจากกระเป๋าเดียว</small></span><button class="toggle on" id="sharedToggle"></button></div>
+        <div class="icon-field">
+          <span>ไอคอน</span>
+          <img id="expenseIconPreview" class="icon-preview circle" alt="ไอคอนที่เลือก">
+          <button type="button" class="soft-btn" id="pickExpenseIcon">เลือกไอคอน</button>
+        </div>
+      </details>
+    </div>
+
+    <!-- ปุ่มบันทึกติดขอบล่างเสมอ ไม่ต้องเลื่อนหาตอนกรอกเสร็จ -->
+    <div class="quick-footer">
       <p class="field-note" id="saveWarning"></p>
-      <div class="sheet-actions"><button class="soft-btn prev-step">ย้อนกลับ</button><button class="primary-btn" id="saveExpense">บันทึกบิล</button></div>
+      <button class="primary-btn" id="saveExpense">บันทึกบิล</button>
     </div>
   </section>
 
@@ -393,7 +430,7 @@
   </section>
   <div class="toast" id="toast"></div>
   <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
-  <script src="api.js?v=10"></script>
-  <script src="app.js?v=42"></script>
+  <script src="api.js?v=11"></script>
+  <script src="app.js?v=45"></script>
 </body>
 </html>

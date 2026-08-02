@@ -554,3 +554,59 @@ body.trip-closed .mobile-fab{opacity:.4;pointer-events:none}
   .split-row.with-ledger{grid-template-columns:1fr 90px 32px}
   .split-row.with-ledger .category-ledger{grid-column:1 / -1}
 }
+
+/* ── ฟอร์มแก้ชื่อทริป/วันเดินทาง ── */
+#tripMetaForm{display:grid;gap:12px}
+#tripMetaForm label{display:grid;gap:5px;font-size:13px;color:var(--muted)}
+#tripMetaForm input{padding:11px 12px;border:1px solid var(--line);border-radius:11px;
+  font:inherit;color:var(--ink);background:#fff}
+/* สองช่องวันที่เรียงคู่กัน · จอแคบวางซ้อนเพราะ input[type=date] บีบแล้วอ่านไม่ออก */
+.date-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:640px){.date-pair{grid-template-columns:1fr}}
+
+/* ── จดค่าใช้จ่าย: หน้าเดียว ใช้มือเดียวบนมือถือ ──────────────────────
+   โครง: หัวเรื่อง + พื้นที่เลื่อน + ปุ่มบันทึกติดล่าง
+   ปุ่มบันทึกต้องอยู่กับที่ ไม่งั้นกรอกเสร็จแล้วต้องเลื่อนหาปุ่ม */
+.quick-add{display:flex;flex-direction:column;max-height:92vh;padding-bottom:0}
+.quick-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px}
+.quick-title{margin:2px 0 14px;font-size:19px}
+
+/* ยอดเงินเป็นสิ่งแรกที่คนพิมพ์ จึงใหญ่ที่สุดและกดโดนง่ายที่สุด */
+.amount-hero{display:flex;align-items:baseline;gap:8px;padding:14px 16px;
+  background:var(--cream);border-radius:16px;border:1px solid var(--line)}
+.amount-hero span{font-size:24px;color:var(--muted)}
+.amount-hero input{flex:1;min-width:0;border:0;background:none;outline:none;
+  font:700 34px/1.1 Poppins,Anuphan,sans-serif;color:var(--ink)}
+.quick-add .conversion{margin:8px 2px 14px;font-size:13px;color:var(--muted)}
+
+.quick-row{display:grid;gap:12px;margin-bottom:12px}
+.quick-row.two{grid-template-columns:1fr 1fr}
+.quick-add label{display:grid;gap:5px;font-size:13px;color:var(--muted)}
+.quick-add label input,.quick-add label select{padding:11px 12px;border:1px solid var(--line);
+  border-radius:11px;font:inherit;color:var(--ink);background:#fff;min-width:0}
+.quick-field{margin-bottom:14px}
+
+.quick-section{padding:14px 0;border-top:1px solid var(--line)}
+.quick-section-head{display:flex;justify-content:space-between;align-items:baseline;
+  gap:10px;margin-bottom:10px;font-size:14px}
+.quick-section-head span{font-size:12px;color:var(--muted)}
+
+/* ตัวเลือกที่คนส่วนใหญ่ไม่แตะ — พับไว้แต่เปิดได้ในคลิกเดียว */
+.quick-advanced{border-top:1px solid var(--line);padding-top:12px}
+.quick-advanced summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--ink);
+  padding:6px 0;list-style:none}
+.quick-advanced summary::before{content:'⌄ ';color:var(--muted)}
+.quick-advanced[open] summary::before{content:'⌃ '}
+.quick-advanced > *:not(summary){margin-top:12px}
+
+.quick-footer{position:sticky;bottom:0;padding:12px 0 16px;background:var(--paper);
+  border-top:1px solid var(--line)}
+.quick-footer .primary-btn{width:100%;padding:15px;font-size:16px}
+.quick-footer .field-note{margin:0 0 8px}
+.quick-footer .field-note:empty{display:none}
+
+@media(max-width:640px){
+  .quick-add{max-height:94vh}
+  .quick-row.two{grid-template-columns:1fr}
+  .amount-hero input{font-size:30px}
+}

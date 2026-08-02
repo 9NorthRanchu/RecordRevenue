@@ -11,6 +11,7 @@
 //   DELETE /api/unified-trip/expenses?id=
 //   POST   /api/unified-trip/closures        — ปิดทริป (admin)
 //   POST   /api/unified-trip/closures/reopen — เปิดกลับพร้อมรายการกลับ (admin)
+//   POST   /api/unified-trip/trip            — แก้ชื่อทริป/ช่วงวันที่ (admin)
 //   POST   /api/unified-trip/stops           — เพิ่ม/แก้จุดแวะ (สมาชิกทุกคน)
 //   DELETE /api/unified-trip/stops?id=
 //   POST   /api/unified-trip/stops/order     — จัดลำดับ/ย้ายวัน ทั้งชุดในครั้งเดียว
@@ -531,6 +532,39 @@ async function deleteExpense(env, ctx, projectId, expenseId, corsHeaders) {
   return json({ ok: true, deleted: expenseId }, corsHeaders);
 }
 
+/* ── ข้อมูลทริป: ชื่อ · ช่วงวันที่ ─────────────────────────────────────
+   admin เท่านั้น เพราะวันเดินทางมีผลกับการเตือนเรื่องงวดบัญชีตอนปิดทริป
+   และชื่อทริปไปโผล่ใน statement ของรายการที่โพสต์เข้าบัญชีจริง */
+async function writeTripMeta(request, env, ctx, projectId, corsHeaders) {
+  if (!ctx.viewer?.is_admin) return json({ error: 'แก้ข้อมูลทริปได้เฉพาะผู้ดูแลทริป' }, corsHeaders, 403);
+  const body = await request.json().catch(() => ({}));
+
+  const name = String(body.name ?? ctx.trip.name ?? '').trim();
+  const start = String(body.start_date ?? ctx.trip.start_date ?? '').trim();
+  const end = String(body.end_date ?? ctx.trip.end_date ?? '').trim();
+
+  if (!name) return json({ error: 'ต้องตั้งชื่อทริป' }, corsHeaders, 400);
+  const dateOk = value => value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!dateOk(start) || !dateOk(end)) return json({ error: 'วันที่ต้องเป็นรูปแบบ YYYY-MM-DD' }, corsHeaders, 400);
+  // วันจบก่อนวันเริ่มมักเป็นการพิมพ์สลับ ไม่ใช่ทริปข้ามปีย้อนหลัง
+  if (start && end && end < start) return json({ error: 'วันสิ้นสุดอยู่ก่อนวันเริ่มทริป' }, corsHeaders, 400);
+
+  /* เตือนถ้าย่นช่วงวันจนมีบิลหลุดออกนอกทริป — ไม่ห้าม เพราะบางบิล
+     (ตั๋วเครื่องบิน มัดจำโรงแรม) จ่ายก่อนเดินทางจริง ๆ แต่ต้องบอกให้รู้ */
+  let outside = 0;
+  if (start && end) {
+    const row = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM TripExpenses WHERE project_id=? AND (expense_date < ? OR expense_date > ?)`
+    ).bind(projectId, start, end).first();
+    outside = row?.n || 0;
+  }
+
+  await env.DB.prepare(`UPDATE Projects SET name=?, start_date=?, end_date=? WHERE project_id=?`)
+    .bind(name, start || null, end || null, projectId).run();
+
+  return json({ ok: true, name, start_date: start, end_date: end, bills_outside_range: outside }, corsHeaders);
+}
+
 /* ── แผนเที่ยว: จุดแวะ ─────────────────────────────────────────────────
    ต่างจากทุก endpoint ข้างบนตรงที่ **ไม่ใช่เรื่องเงิน**
      · สมาชิกทุกคนแก้ได้ ไม่ต้องเป็น admin หรือเจ้าของ
@@ -994,6 +1028,8 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     }
     /* แผนเที่ยวก็อยู่ก่อนด่านเช่นกัน — ปิดทริปล็อกเฉพาะตัวเลขที่รายงานเข้าบัญชี
        ไม่ควรห้ามแก้บันทึกการเดินทางย้อนหลัง */
+    // แก้ข้อมูลทริปได้แม้ปิดทริปแล้ว เหมือนแผนเที่ยว — ชื่อกับวันที่ไม่ใช่ตัวเลขบัญชี
+    if (sub === '/trip' && request.method === 'POST') return writeTripMeta(request, env, ctx, projectId, corsHeaders);
     if (sub === '/stops' && request.method === 'POST') return writeStop(request, env, ctx, projectId, corsHeaders);
     if (sub === '/stops' && request.method === 'DELETE') {
       return deleteStop(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);

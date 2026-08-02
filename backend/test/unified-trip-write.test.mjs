@@ -708,6 +708,42 @@ check('ลงวันเดียวกับรายการเดิม ไ
 check('🔑 ยอดสุทธิในบัญชีจริงกลับเป็น 0',
   Math.abs(db.prepare(`SELECT SUM(total_amount) s FROM Transactions`).get().s) < 1e-9);
 
+console.log('\n── แก้ชื่อทริปและช่วงวันที่ ─────────────────────');
+r = await call('POST', '/api/unified-trip/trip', { user: 'uPuii', body: { name: 'แอบเปลี่ยนชื่อ' } });
+check('สมาชิกธรรมดาแก้ไม่ได้ → 403', r.status === 403, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: '   ' } });
+check('ชื่อว่าง → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'x', start_date: '17/12/2026' } });
+check('วันที่ผิดรูป → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'x', start_date: '2026-12-27', end_date: '2026-12-17' } });
+check('วันจบก่อนวันเริ่ม → 400', r.status === 400, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/trip', {
+  body: { name: 'Hokkaido ฤดูหนาว 2026', start_date: '2026-12-17', end_date: '2026-12-27' }
+});
+check('admin แก้ได้', r.status === 200, JSON.stringify(r));
+check('บันทึกลงฐานจริง', (() => {
+  const row = db.prepare(`SELECT name, start_date, end_date FROM Projects WHERE project_id='TRP-1'`).get();
+  return row.name === 'Hokkaido ฤดูหนาว 2026' && row.start_date === '2026-12-17' && row.end_date === '2026-12-27';
+})());
+
+// ย่นช่วงวันจนบิลหลุดออกนอก — ต้องเตือน แต่ไม่ห้าม (ตั๋วเครื่องบินจ่ายก่อนเดินทางได้)
+r = await call('POST', '/api/unified-trip/trip', {
+  body: { name: 'Hokkaido ฤดูหนาว 2026', start_date: '2026-12-25', end_date: '2026-12-27' }
+});
+check('ย่นช่วงวันแล้วยังบันทึกได้', r.status === 200);
+check('แต่บอกว่ามีบิลกี่ใบหลุดออกนอกช่วง', r.data.bills_outside_range > 0, String(r.data.bills_outside_range));
+
+// แก้แค่ชื่อ ไม่ส่งวันที่มา → วันเดิมต้องไม่หาย
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'ชื่อใหม่เฉย ๆ' } });
+check('ไม่ส่งวันที่มา = ไม่แตะวันเดิม',
+  db.prepare(`SELECT start_date d FROM Projects WHERE project_id='TRP-1'`).get().d === '2026-12-25',
+  JSON.stringify(r.data));
+
+r = await call('POST', '/api/unified-trip/trip', { project: 'TRP-CLOSED', body: { name: 'แก้ทริปที่ปิดแล้ว' } });
+check('ทริปที่ปิดแล้วยังแก้ชื่อได้ (ไม่ใช่ตัวเลขบัญชี)', r.status === 200, JSON.stringify(r));
+
 console.log('\n── แผนเที่ยว: จุดแวะ ────────────────────────────');
 const stop = (over = {}) => ({ stop_date:'2026-12-18', time:'09:00', name_th:'ทะเลสาบอาคัง',
   city:'Lake Akan', notes:'ดูมาริโมะ', sort_order:1, ...over });

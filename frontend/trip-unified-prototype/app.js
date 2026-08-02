@@ -17,6 +17,14 @@ function showScreen(name) {
 
 $$('[data-screen]').forEach(button => button.addEventListener('click', () => showScreen(button.dataset.screen)));
 
+/* ปุ่มย้อนกลับบนหัวจอ — เดิมเป็นปุ่มเปล่าที่กดแล้วไม่เกิดอะไร
+   ใช้ history.back() ก่อน เพื่อให้ session ของแท็บอยู่ครบเหมือนตอนเข้ามา
+   ถ้าเปิดหน้านี้เป็นหน้าแรกของแท็บ (ไม่มีประวัติ) ค่อยพากลับแอปหลัก */
+$('.back')?.addEventListener('click', () => {
+  if (history.length > 1) history.back();
+  else location.href = '../index.html';
+});
+
 const mask = $('#sheetMask');
 const sheet = $('#expenseSheet');
 const dialog = $('#closeDialog');
@@ -28,7 +36,8 @@ function openSheet() {
   sheet.classList.add('open');
   sheet.setAttribute('aria-hidden', 'false');
   resetQuickAdd();
-  showStep(1);
+  // ไม่มีขั้นตอนแล้ว — เลื่อนกลับบนสุดแทน เผื่อครั้งก่อนเลื่อนค้างไว้
+  $('.quick-scroll')?.scrollTo({ top: 0 });
 }
 
 function closeLayers() {
@@ -43,9 +52,6 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closeLayers();
 });
 
-function showStep(step) {
-  $$('.sheet-step').forEach(item => item.classList.toggle('active', Number(item.dataset.step) === step));
-}
 
 $$('.add-expense').forEach(button => button.addEventListener('click', openSheet));
 $('.sheet-close').addEventListener('click', closeLayers);
@@ -53,14 +59,6 @@ $('.sheet-close').addEventListener('click', closeLayers);
 // cancel button. Keeping them separate stops cancel inheriting × 's position.
 $$('.dialog-close, .close-layer').forEach(button => button.addEventListener('click', closeLayers));
 mask.addEventListener('click', closeLayers);
-$$('.next-step').forEach(button => button.addEventListener('click', () => {
-  const current = Number(button.closest('.sheet-step').dataset.step);
-  showStep(Math.min(3, current + 1));
-}));
-$$('.prev-step').forEach(button => button.addEventListener('click', () => {
-  const current = Number(button.closest('.sheet-step').dataset.step);
-  showStep(Math.max(1, current - 1));
-}));
 
 $('#sharedToggle').addEventListener('click', event => {
   event.currentTarget.classList.toggle('on');
@@ -547,6 +545,43 @@ $('#currencyRows').addEventListener('click', event => {
   showPrototypeToast(`ลบสกุลเงิน ${code} แล้ว`);
 });
 
+/* ── ชื่อทริปและช่วงวันที่ ──────────────────────────────────────────────
+   เติมค่าปัจจุบันลงฟอร์มทุกครั้งที่ดึงข้อมูลใหม่ ไม่งั้นคนแก้จะเห็นช่องว่าง
+   แล้วเผลอบันทึกทับของเดิมด้วยค่าว่าง */
+function fillTripMetaForm(state) {
+  const name = $('#tripNameInput');
+  if (!name) return;
+  name.value = state?.tripName || '';
+  $('#tripStartInput').value = state?.tripStartDate || '';
+  $('#tripEndInput').value = state?.tripEndDate || '';
+  // แก้ได้เฉพาะ admin — ฝั่งเซิร์ฟเวอร์ก็ตรวจซ้ำอีกชั้น
+  const canEdit = !liveMode || Boolean(memberById(viewerId)?.admin);
+  $('#saveTripMeta').disabled = !canEdit;
+  $('#tripMetaError').textContent = canEdit ? '' : 'แก้ข้อมูลทริปได้เฉพาะผู้ดูแลทริป';
+}
+
+$('#tripMetaForm')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const name = $('#tripNameInput').value.trim();
+  if (!name) { $('#tripMetaError').textContent = 'ตั้งชื่อทริปก่อน'; return; }
+  if (!liveMode) {
+    $('#tripMetaError').textContent = 'โหมดข้อมูลตัวอย่างยังแก้ชื่อทริปไม่ได้ — เปิดด้วย ?live=1';
+    return;
+  }
+  submitLive('#tripMetaError', async () => {
+    const result = await TripApi.saveTripMeta({
+      name, startDate: $('#tripStartInput').value, endDate: $('#tripEndInput').value
+    });
+    /* เตือนถ้าย่นช่วงวันจนบิลหลุดออกนอก — ไม่ห้าม เพราะตั๋วเครื่องบินหรือ
+       มัดจำโรงแรมจ่ายก่อนเดินทางจริง ๆ แต่ต้องรู้ว่าเกิดขึ้น */
+    if (result.bills_outside_range) {
+      setTimeout(() => showPrototypeToast(
+        `⚠️ มีบิล ${result.bills_outside_range} ใบอยู่นอกช่วงวันที่ตั้งใหม่`), 1200);
+    }
+    return result;
+  }, `บันทึกข้อมูลทริปแล้ว`);
+});
+
 /* ── ส่งขึ้นเซิร์ฟเวอร์แล้วดึงข้อมูลใหม่ทั้งชุด ─────────────────────────
    ใช้ร่วมกันทุกฟอร์มในโหมดข้อมูลจริง
 
@@ -861,7 +896,6 @@ $('#pickExpenseIcon').addEventListener('click', () => openAssetPicker('expense',
   mask.classList.add('open');
   sheet.classList.add('open');
   sheet.setAttribute('aria-hidden', 'false');
-  showStep(2);
 }));
 
 const readAmount = () => Number($('#expenseAmount').value.replace(/[^\d.]/g, '')) || 0;
@@ -892,6 +926,18 @@ function splitRowMarkup(name = 'อาหาร', amount = '', categoryId = '') 
   </div>`;
 }
 
+/* แถวหมวดเดียว = ยอดต้องเท่ากับยอดบิลอยู่แล้ว เติมให้เลยไม่ต้องพิมพ์ซ้ำ
+   นี่คือขั้นตอนที่เสียเวลาที่สุดของฟอร์มเดิม — พิมพ์เลขเดียวกันสองครั้ง
+   แบ่งหลายหมวดเมื่อไหร่ค่อยปล่อยให้กรอกเอง */
+function autofillSingleCategory() {
+  const rows = $$('#splitRows .split-row');
+  if (rows.length !== 1) return;
+  const input = $('.category-amount', rows[0]);
+  const total = readAmount();
+  if (document.activeElement === input) return;   // กำลังพิมพ์อยู่ อย่าไปแทรก
+  input.value = total ? String(total) : '';
+}
+
 function allocationState() {
   const total = readAmount();
   const allocated = $$('#splitRows .split-row').reduce((sum, row) =>
@@ -900,6 +946,7 @@ function allocationState() {
 }
 
 function refreshQuickAdd() {
+  autofillSingleCategory();
   const currency = currentCurrency();
   const symbol = symbolFor(currency);
   const amount = readAmount();
@@ -969,6 +1016,9 @@ function refreshQuickAdd() {
   }
   $('#saveWarning').textContent = problems.length ? `บันทึกไม่ได้: ${problems.join(' · ')}` : '';
   $('#saveExpense').disabled = problems.length > 0;
+  // บอกยอดบนปุ่มเลย จะได้ไม่ต้องเลื่อนขึ้นไปดูก่อนกด
+  $('#saveExpense').textContent = amount > 0
+    ? `บันทึก ${fmtAmount(amount, symbol)}` : 'บันทึกบิล';
 }
 
 function resetQuickAdd() {
@@ -988,6 +1038,7 @@ function resetQuickAdd() {
 
   $('#expenseAmount').value = '';
   $('#expenseDescription').value = '';
+  $('#expenseDate').value = new Date().toISOString().slice(0, 10);
   $('#visibility').value = 'trip';
   $('#sharedToggle').classList.add('on');
   $('#splitRows').innerHTML = splitRowMarkup();
@@ -1058,7 +1109,7 @@ $('#saveExpense').addEventListener('click', async () => {
     payerId: $('#expensePayer').value,
     ownerId,
     walletId: $('#walletSelect').value,
-    date: new Date().toISOString().slice(0, 10),
+    date: $('#expenseDate').value || new Date().toISOString().slice(0, 10),
     categories,
     visibility: $('#visibility').value,
     shared,
@@ -2530,6 +2581,7 @@ function applyLiveState(state) {
   }
   if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
   ledgerCategories = state.ledgerCategories || [];
+  fillTripMetaForm(state);
   if (state.viewerId) viewerId = state.viewerId;
   if (state.banner) {
     tripBanner = state.banner;
