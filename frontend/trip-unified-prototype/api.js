@@ -52,6 +52,17 @@ const TripApi = (() => {
 
   const lower = value => String(value || '').toLowerCase();
 
+  /* ⚠️ theme_banner ในฐานเก็บ path แบบสัมพัทธ์ที่อิงจากโฟลเดอร์ frontend/
+        (เช่น 'assets/images/banner_japan.jpg') แต่หน้านี้อยู่ลึกลงไปอีกชั้น
+        ถ้าใช้ตรง ๆ จะชี้ไป trip-unified-prototype/assets/... ซึ่งไม่มี → รูปแตก
+     ปล่อยผ่านเฉพาะ URL เต็ม · data: · path จาก root · และของที่ถอยขึ้นไปแล้ว */
+  const bannerPath = value => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^(https?:|data:|blob:|\/|\.\.\/)/.test(raw)) return raw;
+    return `../${raw}`;
+  };
+
   /* แปลงเป็นรูปของ prototype ทีละก้อน
      ชื่อฟิลด์ต่างกันคนละแบบ (snake_case ↔ camelCase) จึงแมปตรง ๆ ที่เดียว
      แทนที่จะให้แต่ละหน้าจอไปรู้จักชื่อฝั่งฐานเอง */
@@ -165,7 +176,7 @@ const TripApi = (() => {
       tripName: payload.trip?.name || '',
       tripStartDate: payload.trip?.start_date || '',
       tripEndDate: payload.trip?.end_date || '',
-      banner: payload.trip?.banner_url || payload.trip?.theme_banner || '',
+      banner: bannerPath(payload.trip?.banner_url || payload.trip?.theme_banner),
       ledgerCategories: payload.ledger_categories || [],
       netLedgerThb: payload.ledger?.net_thb ?? 0,
       hiddenExpenseCount: payload.meta?.hidden_expense_count ?? 0
@@ -286,6 +297,11 @@ const TripApi = (() => {
     body: { name, start_date: startDate || '', end_date: endDate || '' }
   });
 
+  /* แบนเนอร์เก็บที่ Projects.theme_banner ตัวเดียวกับที่แอปหลักใช้
+     จะได้ไม่มีสองที่เก็บรูปคนละอันแล้วขัดกัน · ส่ง path ตามที่เห็นบนจอ
+     ฝั่งเซิร์ฟเวอร์ตัด ../ นำหน้าออกก่อนเก็บ เพราะแอปหลักอ่านจากอีกระดับ */
+  const saveBanner = url => send('POST', '/trip', { body: { theme_banner: url } });
+
   /* จุดแวะ — id ที่ prototype สร้างเองขึ้นต้นด้วย activity- ไม่ใช่ของจริงในฐาน
      ต้องไม่ส่งขึ้นไป ไม่งั้นเซิร์ฟเวอร์จะหาไม่เจอแล้วตอบ 404 ทั้งที่เป็นการสร้างใหม่ */
   const saveStop = ({ id, dayDate, time, name, detail, tag, icon }) => send('POST', '/stops', {
@@ -309,6 +325,6 @@ const TripApi = (() => {
     config, fetchTrip, toPrototypeState, toExpenseBody,
     saveExpense, removeExpense, saveCurrency, removeCurrency,
     saveWallet, saveFunding, removeFunding, closeTrip, reopenTrip,
-    saveStop, removeStop, reorderStops, saveTripMeta
+    saveStop, removeStop, reorderStops, saveTripMeta, saveBanner
   };
 })();

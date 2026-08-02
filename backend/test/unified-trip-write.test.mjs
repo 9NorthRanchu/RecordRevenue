@@ -744,6 +744,21 @@ check('ไม่ส่งวันที่มา = ไม่แตะวัน�
 r = await call('POST', '/api/unified-trip/trip', { project: 'TRP-CLOSED', body: { name: 'แก้ทริปที่ปิดแล้ว' } });
 check('ทริปที่ปิดแล้วยังแก้ชื่อได้ (ไม่ใช่ตัวเลขบัญชี)', r.status === 200, JSON.stringify(r));
 
+console.log('\n── แบนเนอร์ทริป ────────────────────────────────');
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'ทริป', theme_banner: '../assets/images/banner_japan.jpg' } });
+check('ตัด ../ ออกก่อนเก็บ (แอปหลักอ่านจากอีกระดับ)',
+  db.prepare(`SELECT theme_banner b FROM Projects WHERE project_id='TRP-1'`).get().b === 'assets/images/banner_japan.jpg',
+  db.prepare(`SELECT theme_banner b FROM Projects WHERE project_id='TRP-1'`).get().b);
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'ทริป', theme_banner: 'data:image/png;base64,AAAA' } });
+check('รูปอัปโหลดเอง (data:) → 400 ไม่ยอมให้แถวบวม', r.status === 400, JSON.stringify(r));
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'ทริป', theme_banner: 'x'.repeat(400) } });
+check('ที่อยู่รูปยาวเกิน → 400', r.status === 400);
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'เปลี่ยนแค่ชื่อ' } });
+check('ไม่ส่ง theme_banner มา = ไม่แตะรูปเดิม',
+  db.prepare(`SELECT theme_banner b FROM Projects WHERE project_id='TRP-1'`).get().b === 'assets/images/banner_japan.jpg');
+
 console.log('\n── แผนเที่ยว: จุดแวะ ────────────────────────────');
 const stop = (over = {}) => ({ stop_date:'2026-12-18', time:'09:00', name_th:'ทะเลสาบอาคัง',
   city:'Lake Akan', notes:'ดูมาริโมะ', sort_order:1, ...over });

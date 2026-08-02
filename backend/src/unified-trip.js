@@ -559,10 +559,27 @@ async function writeTripMeta(request, env, ctx, projectId, corsHeaders) {
     outside = row?.n || 0;
   }
 
-  await env.DB.prepare(`UPDATE Projects SET name=?, start_date=?, end_date=? WHERE project_id=?`)
-    .bind(name, start || null, end || null, projectId).run();
+  /* แบนเนอร์เก็บที่ theme_banner ตัวเดียวกับที่แอปหลักใช้ ไม่สร้างช่องใหม่
+     จะได้ไม่มีสองที่เก็บรูปคนละอันแล้วขัดกันเวลาเปิดคนละหน้า
 
-  return json({ ok: true, name, start_date: start, end_date: end, bills_outside_range: outside }, corsHeaders);
+     ⚠️ ตัด ../ นำหน้าออกก่อนเก็บ — หน้าทริปอยู่ลึกกว่าแอปหลักหนึ่งชั้น
+        ค่าที่เก็บต้องอิงจากโฟลเดอร์ frontend/ เสมอ ไม่งั้นแอปหลักจะหารูปไม่เจอ
+     รูปที่อัปโหลดเองเป็น data: ยาวมาก ไม่รับเพราะจะทำให้แถวใน Projects บวม */
+  let banner = ctx.trip.theme_banner ?? null;
+  if (body.theme_banner !== undefined) {
+    const raw = String(body.theme_banner || '').trim().replace(/^\.\.\//, '');
+    if (raw.startsWith('data:')) {
+      return json({ error: 'ยังไม่รองรับรูปที่อัปโหลดเอง — เลือกจากรูปที่มีอยู่' }, corsHeaders, 400);
+    }
+    if (raw.length > 300) return json({ error: 'ที่อยู่รูปยาวเกินไป' }, corsHeaders, 400);
+    banner = raw || null;
+  }
+
+  await env.DB.prepare(`UPDATE Projects SET name=?, start_date=?, end_date=?, theme_banner=? WHERE project_id=?`)
+    .bind(name, start || null, end || null, banner, projectId).run();
+
+  return json({ ok: true, name, start_date: start, end_date: end,
+                theme_banner: banner, bills_outside_range: outside }, corsHeaders);
 }
 
 /* ── แผนเที่ยว: จุดแวะ ─────────────────────────────────────────────────

@@ -2426,12 +2426,26 @@ let newTripBanner = 'art/hokkaido-illustrated-clean.png';
 function applyTripBanner(src) {
   tripBanner = src;
   $('.map-hero img').src = src;
-  saveState();
+  saveState();   // โหมดข้อมูลจริงจะไม่ทำอะไร — บันทึกผ่าน API แทน
 }
+
+/* รูปที่ผู้ใช้อัปโหลดเองเป็น data: URL ยาวเป็นแสนตัวอักษร เก็บลงคอลัมน์
+   theme_banner ไม่ไหวและจะทำให้แถวใน Projects บวมจนดึงทริปช้าทั้งระบบ
+   จึงรับเฉพาะรูปที่มีอยู่ในโปรเจกต์ · เก็บ data: ไว้ในเบราว์เซอร์เหมือนเดิม */
+const isUploadedImage = src => String(src || '').startsWith('data:');
 
 const openBannerPicker = () => openAssetPicker('banner', tripBanner, src => {
   applyTripBanner(src);
-  showPrototypeToast('เปลี่ยนภาพแบนเนอร์แล้ว');
+  if (!liveMode) { showPrototypeToast('เปลี่ยนภาพแบนเนอร์แล้ว'); return; }
+  if (isUploadedImage(src)) {
+    showPrototypeToast('รูปที่อัปโหลดเองยังบันทึกถาวรไม่ได้ · เห็นเฉพาะเบราว์เซอร์นี้');
+    return;
+  }
+  /* ไม่ดึงข้อมูลใหม่ทั้งชุดหลังบันทึก เพราะรูปบนจอถูกเปลี่ยนไปแล้วและการ
+     re-render ทั้งหน้าเพื่อรูปเดียวทำให้จอกระพริบโดยไม่จำเป็น */
+  TripApi.saveBanner(src)
+    .then(() => showPrototypeToast('เปลี่ยนภาพแบนเนอร์แล้ว · บันทึกถาวร'))
+    .catch(error => showPrototypeToast(`บันทึกแบนเนอร์ไม่สำเร็จ: ${error.message}`));
 });
 $('#changeBanner').addEventListener('click', openBannerPicker);
 $('#editTripBanner').addEventListener('click', openBannerPicker);
