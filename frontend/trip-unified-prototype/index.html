@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Unified Trip — Hokkaido Prototype</title>
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
-  <link rel="stylesheet" href="style.css?v=38">
+  <link rel="stylesheet" href="style.css?v=40">
 </head>
 <body>
   <div class="prototype-note">UNIFIED TRIP · STATIC PROTOTYPE · ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง</div>
@@ -24,7 +24,7 @@
 
     <main class="workspace">
       <header class="topbar">
-        <button class="back">‹</button>
+        <button class="back"><span aria-hidden="true">‹</span> เมนูหลัก</button>
         <div><b id="tripTitle">Hokkaido Family Trip</b><small id="tripDates">8–19 ก.พ. 2027 · กำลังเดินทาง</small></div>
         <div class="top-actions"><button class="icon-btn" id="shareLocation">⌖</button><button class="avatar">N</button></div>
       </header>
@@ -133,9 +133,27 @@
                 <label>เริ่มเดินทาง<input id="tripStartInput" type="date"></label>
                 <label>กลับถึงบ้าน<input id="tripEndInput" type="date"></label>
               </div>
+              <label class="field-wide">ประเภททริป
+                <select id="tripStageInput">
+                  <option value="ONGOING">🧭 Ongoing — จะเกิดแน่ ๆ</option>
+                  <option value="DREAM">💭 Dream — ยังไม่แน่นอน</option>
+                  <option value="MEMORY">📸 Memory — จบไปแล้ว</option>
+                </select>
+              </label>
               <p class="form-error" id="tripMetaError"></p>
               <button class="primary-btn" type="submit" id="saveTripMeta">บันทึกข้อมูลทริป</button>
             </form>
+            <div class="trip-direct-link">
+              <p class="field-note">ลิงก์เข้าทริปนี้โดยตรง — ใช้ส่งให้ผู้ร่วมทริปเปิดบนมือถือได้เลย ไม่ต้องผ่านหน้ารวมทริป</p>
+              <div class="direct-link-row">
+                <input id="directTripLink" readonly>
+                <button type="button" class="soft-btn" id="copyDirectLink">คัดลอก</button>
+              </div>
+            </div>
+            <div class="danger-zone">
+              <button type="button" class="soft-btn danger-btn" id="deleteTripBtn">🗑️ ลบทริปนี้</button>
+              <p class="field-note" id="deleteTripNote"></p>
+            </div>
           </section>
           <section class="paper-card"><h3>สมาชิกและสิทธิ์</h3>
             <p class="field-note">กดชื่อเพื่อดูแอปในมุมมองของคนนั้น — ใช้ตรวจว่ากติกาการมองเห็นทำงานถูกต้อง</p>
@@ -430,7 +448,7 @@
   </section>
   <div class="toast" id="toast"></div>
   <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
-  <script src="api.js?v=12"></script>
-  <script src="app.js?v=46"></script>
+  <script src="api.js?v=13"></script>
+  <script src="app.js?v=47"></script>
 </body>
 </html>

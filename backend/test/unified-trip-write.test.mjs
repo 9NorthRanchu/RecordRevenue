@@ -21,7 +21,8 @@ db.exec(`
 CREATE TABLE Users (user_id TEXT PRIMARY KEY, family_id TEXT, name TEXT, role TEXT);
 CREATE TABLE Projects (project_id TEXT PRIMARY KEY, family_id TEXT, name TEXT, status TEXT,
   start_date TEXT, end_date TEXT, total_budget REAL, members TEXT, banner_url TEXT,
-  theme_banner TEXT, posting_date TEXT, closed_at DATETIME);
+  theme_banner TEXT, posting_date TEXT, closed_at DATETIME, trip_stage TEXT DEFAULT 'ONGOING',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE TripMembers (member_id TEXT PRIMARY KEY, project_id TEXT, user_id TEXT,
   display_name TEXT, role TEXT, ledger_mode TEXT DEFAULT 'MAIN', is_admin INTEGER DEFAULT 0,
   avatar_color TEXT, created_at DATETIME);
@@ -744,6 +745,21 @@ check('ไม่ส่งวันที่มา = ไม่แตะวัน�
 r = await call('POST', '/api/unified-trip/trip', { project: 'TRP-CLOSED', body: { name: 'แก้ทริปที่ปิดแล้ว' } });
 check('ทริปที่ปิดแล้วยังแก้ชื่อได้ (ไม่ใช่ตัวเลขบัญชี)', r.status === 200, JSON.stringify(r));
 
+console.log('\n── ประเภททริป (Ongoing/Dream/Memory) ───────────');
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'ทริป', trip_stage: 'dream' } });
+check('รับค่าตัวพิมพ์เล็กแล้วเก็บเป็นตัวใหญ่', r.status === 200 && r.data.trip_stage === 'DREAM', JSON.stringify(r));
+check('บันทึกลงฐานจริง', db.prepare(`SELECT trip_stage s FROM Projects WHERE project_id='TRP-1'`).get().s === 'DREAM');
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'ทริป', trip_stage: 'ONGOING' } });
+check('เปลี่ยนกลับได้', r.status === 200 && r.data.trip_stage === 'ONGOING');
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'ทริป', trip_stage: 'สนุกมาก' } });
+check('ค่าที่ไม่รู้จัก → 400', r.status === 400, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'ไม่แตะประเภท' } });
+check('ไม่ส่ง trip_stage มา = ไม่เปลี่ยนของเดิม',
+  db.prepare(`SELECT trip_stage s FROM Projects WHERE project_id='TRP-1'`).get().s === 'ONGOING');
+
 console.log('\n── แบนเนอร์ทริป ────────────────────────────────');
 r = await call('POST', '/api/unified-trip/trip', { body: { name: 'ทริป', theme_banner: '../assets/images/banner_japan.jpg' } });
 check('ตัด ../ ออกก่อนเก็บ (แอปหลักอ่านจากอีกระดับ)',
@@ -821,6 +837,105 @@ r = await call('DELETE', '/api/unified-trip/stops', { query: '&id=TS-ไม่�
 check('ลบจุดแวะที่ไม่มี → 404', r.status === 404);
 r = await call('DELETE', '/api/unified-trip/stops', { query: `&id=${stopB}` });
 check('ลบจุดแวะได้', r.status === 200 && db.prepare(`SELECT COUNT(*) n FROM TripStops WHERE stop_id=?`).get(stopB).n === 0);
+
+console.log('\n── รายการทริปทั้งหมดของครอบครัว (หน้ารวม) ─────');
+r = await call('GET', '/api/unified-trip/trips', {});
+check('ได้รายการทริปกลับมา', r.status === 200 && Array.isArray(r.data.trips), JSON.stringify(r));
+check('เห็นทริปของครอบครัวตัวเอง', r.data.trips.some(t => t.project_id === 'TRP-1'));
+check('ไม่เห็นทริปครอบครัวอื่น', !r.data.trips.some(t => t.project_id === 'TRP-OTHERFAM'));
+check('บอกด้วยว่าโพสต์บัญชีจริงไปหรือยัง (field posted_to_ledger)',
+  r.data.trips.every(t => typeof t.posted_to_ledger === 'boolean'));
+
+r = await call('GET', '/api/unified-trip/trips', { user: 'uOther' });
+check('ครอบครัวอื่นเห็นแต่ทริปของตัวเอง', r.status === 200 && r.data.trips.length === 0, JSON.stringify(r));
+
+console.log('\n── สร้างทริปใหม่ ────────────────────────────────');
+r = await call('POST', '/api/unified-trip/trips', { body: { name: 'ทริปเกาะหลีเป๊ะ', trip_stage: 'dream' } });
+check('สมาชิกธรรมดาก็สร้างได้ ไม่ต้อง admin', r.status === 201, JSON.stringify(r));
+const newTripId = r.data.project_id;
+check('ได้ project_id ใหม่กลับมา', Boolean(newTripId));
+check('ไม่ส่ง trip_stage → เป็น DREAM โดย default (ทดสอบด้วยอีกทริป)', true); // ดูเคสถัดไป
+
+check('บันทึกลงฐานจริง ผูก family ของผู้สร้าง', (() => {
+  const row = db.prepare(`SELECT family_id, trip_stage, status FROM Projects WHERE project_id=?`).get(newTripId);
+  return row?.family_id === 'FAM-1' && row?.trip_stage === 'DREAM' && row?.status === 'active';
+})());
+check('ผู้สร้างกลายเป็น admin ของทริปใหม่ทันที', (() => {
+  const row = db.prepare(`SELECT is_admin FROM TripMembers WHERE project_id=? AND user_id='9North'`).get(newTripId);
+  return row?.is_admin === 1;
+})());
+
+r = await call('POST', '/api/unified-trip/trips', { body: { name: 'ไม่ระบุประเภท' } });
+check('ไม่ส่ง trip_stage มา = DREAM โดย default', r.status === 201 && r.data.trip_stage === 'DREAM', JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/trips', { body: { name: '   ' } });
+check('ชื่อว่าง → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/trips', { body: { name: 'x', start_date: 'พรุ่งนี้' } });
+check('วันที่ผิดรูป → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/trips', { body: { name: 'x', start_date: '2026-12-27', end_date: '2026-12-17' } });
+check('วันจบก่อนวันเริ่ม → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/trips', { body: { name: 'x', trip_stage: 'สนุกมาก' } });
+check('ประเภทที่ไม่รู้จัก → 400', r.status === 400);
+
+r = await call('POST', '/api/unified-trip/trips', { user: 'uOther', body: { name: 'ทริปของครอบครัวอื่น' } });
+check('ครอบครัวอื่นสร้างได้ ผูกกับ family ของตัวเอง ไม่ใช่ FAM-1', (() => {
+  const row = db.prepare(`SELECT family_id FROM Projects WHERE project_id=?`).get(r.data.project_id);
+  return row?.family_id === 'FAM-2';
+})());
+
+console.log('\n── ลบทริป ────────────────────────────────────────');
+// ทริปที่ยังไม่เคยโพสต์บัญชีเลย — ลบได้จริง พร้อมข้อมูลลูกทั้งหมด
+db.exec(`
+  INSERT INTO Projects (project_id,family_id,name,status,start_date,end_date) VALUES ('TRP-DEL1','FAM-1','ทริปจะลบ','active','2026-01-01','2026-01-05');
+  INSERT INTO TripMembers (member_id,project_id,user_id,display_name,role,ledger_mode,is_admin) VALUES
+    ('TM-D1','TRP-DEL1','9North','North','ผู้ดูแล','MAIN',1),
+    ('TM-D2','TRP-DEL1','uPuii','Puii','สมาชิก','MAIN',0);
+  INSERT INTO TripCurrencies (project_id,code,symbol,label,plan_rate,is_base) VALUES ('TRP-DEL1','THB','฿','บาท',1,1);
+  INSERT INTO TripWallets (wallet_id,project_id,name,currency,owner_member_id) VALUES ('W-DEL1','TRP-DEL1','เงินสด','THB','TM-D1');
+  INSERT INTO TripExpenses (trip_expense_id,project_id,member_id,owner_member_id,wallet_id,amount_foreign,amount_thb,expense_date,currency_code,visibility)
+    VALUES ('TE-DEL1','TRP-DEL1','TM-D1','TM-D1','W-DEL1',100,100,'2026-01-02','THB','TRIP');
+  INSERT INTO TripStops (stop_id,project_id,stop_date,name_th) VALUES ('TS-DEL1','TRP-DEL1','2026-01-02','จุดแวะ');
+`);
+
+r = await call('DELETE', '/api/unified-trip/trip', { user: 'uPuii', project: 'TRP-DEL1' });
+check('สมาชิกธรรมดาลบไม่ได้ → 403', r.status === 403, JSON.stringify(r));
+check('ทริปยังอยู่ครบ ไม่มีอะไรหาย', db.prepare(`SELECT COUNT(*) n FROM Projects WHERE project_id='TRP-DEL1'`).get().n === 1);
+
+r = await call('DELETE', '/api/unified-trip/trip', { project: 'TRP-DEL1' });
+check('admin ลบทริปที่ไม่เคยโพสต์บัญชีได้', r.status === 200 && r.data.deleted === 'TRP-DEL1', JSON.stringify(r));
+check('Projects หายไปจริง', db.prepare(`SELECT COUNT(*) n FROM Projects WHERE project_id='TRP-DEL1'`).get().n === 0);
+check('ลูกทุกตารางถูกลบตาม (ไม่เหลือข้อมูลลอย)', (() => {
+  const counts = [
+    db.prepare(`SELECT COUNT(*) n FROM TripMembers WHERE project_id='TRP-DEL1'`).get().n,
+    db.prepare(`SELECT COUNT(*) n FROM TripWallets WHERE project_id='TRP-DEL1'`).get().n,
+    db.prepare(`SELECT COUNT(*) n FROM TripExpenses WHERE project_id='TRP-DEL1'`).get().n,
+    db.prepare(`SELECT COUNT(*) n FROM TripStops WHERE project_id='TRP-DEL1'`).get().n,
+    db.prepare(`SELECT COUNT(*) n FROM TripCurrencies WHERE project_id='TRP-DEL1'`).get().n
+  ];
+  return counts.every(n => n === 0);
+})());
+
+// ทริปที่เคยโพสต์เข้าบัญชีจริงแล้ว — ห้ามลบเด็ดขาด แม้จะเป็น admin
+db.exec(`
+  INSERT INTO Projects (project_id,family_id,name,status,start_date,end_date) VALUES ('TRP-DEL2','FAM-1','ทริปโพสต์บัญชีแล้ว','closed','2026-01-01','2026-01-05');
+  INSERT INTO TripMembers (member_id,project_id,user_id,display_name,role,ledger_mode,is_admin) VALUES
+    ('TM-D3','TRP-DEL2','9North','North','ผู้ดูแล','MAIN',1);
+  INSERT INTO TripClosures (closure_id,project_id,entry_type,posting_date,ledger_total,linked_transaction_id)
+    VALUES ('TC-DEL2','TRP-DEL2','CLOSE','2026-01-05',500,'TX-REAL-1');
+`);
+
+r = await call('DELETE', '/api/unified-trip/trip', { project: 'TRP-DEL2' });
+check('🔑 โพสต์บัญชีจริงแล้ว → ลบไม่ได้เด็ดขาด แม้เป็น admin', r.status === 409, JSON.stringify(r));
+check('ทริปยังอยู่ครบ ไม่มีอะไรถูกลบไปแม้แต่แถวเดียว', (() => {
+  const counts = [
+    db.prepare(`SELECT COUNT(*) n FROM Projects WHERE project_id='TRP-DEL2'`).get().n,
+    db.prepare(`SELECT COUNT(*) n FROM TripMembers WHERE project_id='TRP-DEL2'`).get().n,
+    db.prepare(`SELECT COUNT(*) n FROM TripClosures WHERE project_id='TRP-DEL2'`).get().n
+  ];
+  return counts.every(n => n === 1);
+})());
+check('ยังเปลี่ยนเป็น Memory แทนได้ตามปกติ (ไม่ได้ถูกล็อกทั้งทริป)',
+  (await call('POST', '/api/unified-trip/trip', { project: 'TRP-DEL2', body: { name: 'ทริปโพสต์บัญชีแล้ว', trip_stage: 'memory' } })).status === 200);
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 process.exit(fail ? 1 : 0);

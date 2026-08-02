@@ -1,0 +1,35 @@
+/* หน้ารวมทริป (trips.html) — ไฟล์แยกจาก style.css ตั้งใจ เพื่อไม่ให้แก้อะไร
+   ที่นี่กระทบหน้าทริปเดี่ยว (index.html) ซึ่งมีเทสครอบคลุมอยู่แล้ว */
+
+.trips-shell{grid-template-columns:1fr}
+#tripStageTabs{margin-top:18px}
+#tripStageTabs button{min-width:140px;text-align:left;display:grid;gap:2px;line-height:1.3}
+#tripStageTabs button span{font-size:14px}
+#tripStageTabs button small{font-weight:400}
+
+.trip-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:18px}
+
+.trip-pick-card{background:var(--paper);border:1px solid var(--line);border-radius:22px;overflow:hidden;
+  box-shadow:0 6px 18px rgba(78,73,72,.06);cursor:pointer;display:flex;flex-direction:column;transition:.15s transform}
+.trip-pick-card:hover{transform:translateY(-2px)}
+.trip-pick-banner{height:110px;background:linear-gradient(140deg,#eaf6f8,#fde8ee);background-size:cover;background-position:center}
+.trip-pick-body{padding:14px 16px 16px;display:grid;gap:6px}
+.trip-pick-body h3{margin:0;font:800 18px Loop}
+.trip-pick-body small{color:var(--muted)}
+.trip-pick-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.trip-pick-tags span{font-size:10px;padding:3px 8px;border-radius:99px;background:#f1efec;color:var(--muted)}
+.trip-pick-tags span.posted{background:var(--sage-soft);color:#3a7a52}
+.trip-pick-tags span.closed{background:#fff0e3;color:#a5652c}
+
+.trip-pick-empty{margin-top:40px;text-align:center;color:var(--muted);padding:30px 10px}
+
+@media(max-width:640px){
+  .trip-pick-grid{grid-template-columns:1fr 1fr;gap:10px}
+  .trip-pick-body{padding:10px 12px 12px}
+  .trip-pick-body h3{font-size:15px}
+  #tripStageTabs{overflow-x:auto;flex-wrap:nowrap}
+  #tripStageTabs button{min-width:110px}
+}
+@media(max-width:420px){
+  .trip-pick-grid{grid-template-columns:1fr}
+}

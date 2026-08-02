@@ -1,6 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // Unified Trip API
 //
+//   GET    /api/unified-trip/trips           — รายการทริปทั้งหมดของครอบครัว (ไม่ต้อง projectId)
+//   POST   /api/unified-trip/trips           — สร้างทริปใหม่ (ไม่ต้อง projectId, ไม่ต้อง admin)
+//   DELETE /api/unified-trip/trip            — ลบทริป (admin, ห้ามถ้าเคยโพสต์บัญชีจริงแล้ว)
 //   GET    /api/unified-trip                — อ่านทั้งทริป (เฟส 1)
 //   POST   /api/unified-trip/currencies     — เพิ่ม/แก้สกุลเงิน  (admin เท่านั้น)
 //   DELETE /api/unified-trip/currencies?code=
@@ -36,6 +39,11 @@ const json = (data, corsHeaders, status = 200) =>
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
+
+/* ประเภททริป — ตรวจที่โค้ดนี้ ไม่ใช้ CHECK constraint ระดับฐานข้อมูล
+   เพราะ D1 แก้ CHECK ทีหลังไม่ได้เลย (เจอปัญหานี้มาแล้วกับ Captions.behavior)
+   ONGOING จะเกิดแน่ ๆ · DREAM ยังไม่แน่นอน · MEMORY จบไปแล้ว */
+const TRIP_STAGES = ['ONGOING', 'DREAM', 'MEMORY'];
 
 /* เรทเฉลี่ยถ่วงน้ำหนักของกระเป๋า = Σ thb ÷ Σ foreign ของทุกล็อต
    ไม่สนใจวันที่และลำดับการบันทึกโดยเจตนา — บันทึกย้อนหลังให้ผลเดียวกัน
@@ -80,7 +88,7 @@ function canSee(expense, participantIds, viewerMemberId) {
 async function loadContext(env, userId, projectId) {
   const trip = await env.DB.prepare(`
       SELECT p.project_id, p.family_id, p.name, p.status, p.start_date, p.end_date,
-             p.total_budget, p.banner_url, p.theme_banner, p.posting_date, p.closed_at
+             p.total_budget, p.banner_url, p.theme_banner, p.posting_date, p.closed_at, p.trip_stage
       FROM Projects p JOIN Users u ON u.user_id = ?
       WHERE p.project_id = ? AND p.family_id = u.family_id
     `).bind(userId, projectId).first();
@@ -575,11 +583,127 @@ async function writeTripMeta(request, env, ctx, projectId, corsHeaders) {
     banner = raw || null;
   }
 
-  await env.DB.prepare(`UPDATE Projects SET name=?, start_date=?, end_date=?, theme_banner=? WHERE project_id=?`)
-    .bind(name, start || null, end || null, banner, projectId).run();
+  /* Ongoing/Dream/Memory — จัดกลุ่มหน้ารวมทริป ไม่เกี่ยวกับ status (active/closed)
+     ซึ่งเป็นสถานะทางบัญชี ทริปหนึ่งเปลี่ยนกลุ่มไปมาได้อิสระ ไม่ผูกกับการปิดทริป */
+  let stage = ctx.trip.trip_stage || 'ONGOING';
+  if (body.trip_stage !== undefined) {
+    const s = String(body.trip_stage || '').trim().toUpperCase();
+    if (!TRIP_STAGES.includes(s)) {
+      return json({ error: `ประเภททริปต้องเป็นหนึ่งใน ${TRIP_STAGES.join(', ')}` }, corsHeaders, 400);
+    }
+    stage = s;
+  }
+
+  await env.DB.prepare(`UPDATE Projects SET name=?, start_date=?, end_date=?, theme_banner=?, trip_stage=? WHERE project_id=?`)
+    .bind(name, start || null, end || null, banner, stage, projectId).run();
 
   return json({ ok: true, name, start_date: start, end_date: end,
-                theme_banner: banner, bills_outside_range: outside }, corsHeaders);
+                theme_banner: banner, trip_stage: stage, bills_outside_range: outside }, corsHeaders);
+}
+
+/* ── รายการทริปทั้งหมดของครอบครัว ──────────────────────────────────────
+   สำหรับหน้ารวม (trip picker) แยกตามประเภท Ongoing/Dream/Memory
+   เห็นได้ทุกทริปของครอบครัว ไม่ต้องเป็นสมาชิกของทริปนั้นก่อน (เหมือน
+   พฤติกรรมเดิมของหน้า TRIPS ที่พักไว้) — เข้าไปดูรายละเอียดจึงค่อยกรอง
+   ด้วย TripMembers/visibility อีกชั้นตามปกติ */
+async function listTrips(env, userId, corsHeaders) {
+  const user = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id=?`).bind(userId).first();
+  if (!user) return json({ error: 'ไม่พบผู้ใช้นี้' }, corsHeaders, 401);
+
+  const trips = await env.DB.prepare(`
+    SELECT p.project_id, p.name, p.status, p.start_date, p.end_date, p.theme_banner, p.trip_stage,
+           (SELECT COUNT(*) FROM TripClosures c
+             WHERE c.project_id = p.project_id AND c.linked_transaction_id IS NOT NULL) AS posted_count
+      FROM Projects p
+     WHERE p.family_id = ?
+     ORDER BY p.start_date DESC, p.created_at DESC
+  `).bind(user.family_id).all();
+
+  return json({
+    trips: (trips.results || []).map(row => ({
+      ...row,
+      trip_stage: row.trip_stage || 'ONGOING',
+      posted_to_ledger: (row.posted_count || 0) > 0
+    }))
+  }, corsHeaders);
+}
+
+/* ── สร้างทริปใหม่ ──────────────────────────────────────────────────────
+   ใครในครอบครัวก็สร้างได้ ไม่ต้อง admin เพราะทริป Dream มักเป็นไอเดียที่
+   ใครก็เสนอได้ ผู้สร้างจะกลายเป็น admin ของทริปนี้เองโดยอัตโนมัติ เพื่อให้
+   แก้ไข/ปิด/ลบทริปที่ตัวเองเริ่มไว้ได้ทันทีโดยไม่ต้องให้คนอื่นตั้งสิทธิ์ให้ */
+async function createTrip(request, env, userId, corsHeaders) {
+  const user = await env.DB.prepare(`SELECT family_id, name FROM Users WHERE user_id=?`).bind(userId).first();
+  if (!user) return json({ error: 'ไม่พบผู้ใช้นี้' }, corsHeaders, 401);
+
+  const body = await request.json().catch(() => ({}));
+  const name = String(body.name || '').trim();
+  const start = String(body.start_date || '').trim();
+  const end = String(body.end_date || '').trim();
+  const stage = String(body.trip_stage || 'DREAM').trim().toUpperCase();
+
+  if (!name) return json({ error: 'ต้องตั้งชื่อทริป' }, corsHeaders, 400);
+  const dateOk = value => value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!dateOk(start) || !dateOk(end)) return json({ error: 'วันที่ต้องเป็นรูปแบบ YYYY-MM-DD' }, corsHeaders, 400);
+  if (start && end && end < start) return json({ error: 'วันสิ้นสุดอยู่ก่อนวันเริ่มทริป' }, corsHeaders, 400);
+  if (!TRIP_STAGES.includes(stage)) {
+    return json({ error: `ประเภททริปต้องเป็นหนึ่งใน ${TRIP_STAGES.join(', ')}` }, corsHeaders, 400);
+  }
+
+  const projectId = `TRP-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const memberId = `TM-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  await env.DB.batch([
+    env.DB.prepare(`
+      INSERT INTO Projects (project_id, family_id, name, status, start_date, end_date, trip_stage)
+      VALUES (?, ?, ?, 'active', ?, ?, ?)
+    `).bind(projectId, user.family_id, name, start || null, end || null, stage),
+    env.DB.prepare(`
+      INSERT INTO TripMembers (member_id, project_id, user_id, display_name, role, ledger_mode, is_admin)
+      VALUES (?, ?, ?, ?, 'ผู้ดูแล', 'MAIN', 1)
+    `).bind(memberId, projectId, userId, user.name || 'ผู้ดูแล')
+  ]);
+
+  return json({ ok: true, project_id: projectId, name, trip_stage: stage }, corsHeaders, 201);
+}
+
+/* ── ลบทริป ────────────────────────────────────────────────────────────
+   admin ของทริปเท่านั้น · ห้ามลบเด็ดขาดถ้าทริปนี้เคยโพสต์เข้าบัญชีจริงแล้ว
+   สักครั้ง (มีแถวใน TripClosures ที่ linked_transaction_id ไม่ว่าง) เพราะ
+   การลบ Projects จะทำให้ Transaction/TransactionDetails ในสมุดบัญชีหลัก
+   กลายเป็นรายการลอย ไม่เหลือทริปอ้างอิงกลับมา — ให้เปลี่ยนเป็น
+   trip_stage = MEMORY แทนการลบจริง (แก้ผ่าน POST /trip ตามปกติ) */
+async function deleteTrip(env, ctx, projectId, corsHeaders) {
+  if (!ctx.viewer?.is_admin) return json({ error: 'ลบทริปได้เฉพาะผู้ดูแลทริปเท่านั้น' }, corsHeaders, 403);
+
+  const posted = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM TripClosures WHERE project_id=? AND linked_transaction_id IS NOT NULL`
+  ).bind(projectId).first();
+  if ((posted?.n || 0) > 0) {
+    return json({
+      error: 'ทริปนี้เคยโพสต์เข้าบัญชีจริงแล้ว ลบไม่ได้เพื่อรักษาความถูกต้องของสมุดบัญชี · เปลี่ยนเป็น Memory แทนได้'
+    }, corsHeaders, 409);
+  }
+
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM TripExpenseParticipants WHERE trip_expense_id IN
+      (SELECT trip_expense_id FROM TripExpenses WHERE project_id=?)`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripExpenseCategories WHERE trip_expense_id IN
+      (SELECT trip_expense_id FROM TripExpenses WHERE project_id=?)`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripExpenses WHERE project_id=?`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripClosureLines WHERE closure_id IN
+      (SELECT closure_id FROM TripClosures WHERE project_id=?)`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripClosures WHERE project_id=?`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripWalletFundings WHERE project_id=?`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripWallets WHERE project_id=?`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripCurrencies WHERE project_id=?`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripStops WHERE project_id=?`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripPresence WHERE project_id=?`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripMembers WHERE project_id=?`).bind(projectId),
+    env.DB.prepare(`DELETE FROM Projects WHERE project_id=?`).bind(projectId)
+  ]);
+
+  return json({ ok: true, deleted: projectId }, corsHeaders);
 }
 
 /* ── แผนเที่ยว: จุดแวะ ─────────────────────────────────────────────────
@@ -1027,16 +1151,20 @@ async function reopenTrip(request, env, ctx, projectId, corsHeaders) {
    โมดูลนี้ไม่อ่าน header เอง จะได้ไม่มีสองที่ตัดสินว่าใครเป็นใครคนละแบบ */
 export async function handleUnifiedTrip(request, env, url, corsHeaders, userId = '') {
   if (!url.pathname.startsWith('/api/unified-trip')) return null;
+  if (!userId) return json({ error: 'ยังไม่ได้ล็อกอิน หรือ token หมดอายุ' }, corsHeaders, 401);
+
+  const sub = url.pathname.replace('/api/unified-trip', '').replace(/\/$/, '');
+
+  // สองเส้นทางนี้ไม่ผูกกับทริปใดทริปหนึ่ง — ไม่ต้องมี projectId ต้องเช็คก่อนด่านข้างล่าง
+  if (sub === '/trips' && request.method === 'GET') return listTrips(env, userId, corsHeaders);
+  if (sub === '/trips' && request.method === 'POST') return createTrip(request, env, userId, corsHeaders);
 
   const projectId = url.searchParams.get('projectId');
   if (!projectId) return json({ error: 'ต้องระบุ projectId' }, corsHeaders, 400);
-  if (!userId) return json({ error: 'ยังไม่ได้ล็อกอิน หรือ token หมดอายุ' }, corsHeaders, 401);
 
   const ctx = await loadContext(env, userId, projectId);
   if (!ctx) return json({ error: 'ไม่พบทริปนี้ หรือไม่มีสิทธิ์เข้าถึง' }, corsHeaders, 404);
   const { trip } = ctx;
-
-  const sub = url.pathname.replace('/api/unified-trip', '').replace(/\/$/, '');
 
   if (request.method !== 'GET') {
     // เปิดทริปกลับต้องอยู่ *ก่อน* ด่านทริปปิด ไม่งั้นจะไม่มีทางเปิดกลับได้เลย
@@ -1047,6 +1175,8 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
        ไม่ควรห้ามแก้บันทึกการเดินทางย้อนหลัง */
     // แก้ข้อมูลทริปได้แม้ปิดทริปแล้ว เหมือนแผนเที่ยว — ชื่อกับวันที่ไม่ใช่ตัวเลขบัญชี
     if (sub === '/trip' && request.method === 'POST') return writeTripMeta(request, env, ctx, projectId, corsHeaders);
+    // ลบทริป — ตรวจเงื่อนไข "เคยโพสต์บัญชีจริงหรือยัง" ในตัวเอง ไม่ผ่านด่านทริปปิดข้างล่าง
+    if (sub === '/trip' && request.method === 'DELETE') return deleteTrip(env, ctx, projectId, corsHeaders);
     if (sub === '/stops' && request.method === 'POST') return writeStop(request, env, ctx, projectId, corsHeaders);
     if (sub === '/stops' && request.method === 'DELETE') {
       return deleteStop(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);

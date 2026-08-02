@@ -176,6 +176,11 @@ const TripApi = (() => {
       tripName: payload.trip?.name || '',
       tripStartDate: payload.trip?.start_date || '',
       tripEndDate: payload.trip?.end_date || '',
+      tripStage: payload.trip?.trip_stage || 'ONGOING',
+      // เคยโพสต์เข้าบัญชีจริงหรือยัง — ใช้ตัดสินว่าปุ่มลบทริปกดได้ไหม
+      // (เซิร์ฟเวอร์ตรวจซ้ำอีกชั้นตอนลบจริงอยู่ดี ไม่ได้พึ่งแค่ตัวนี้)
+      postedToLedger: (payload.closures || []).some(c => Boolean(c.linked_transaction_id)),
+      projectId: payload.trip?.project_id || '',
       banner: bannerPath(payload.trip?.banner_url || payload.trip?.theme_banner),
       ledgerCategories: payload.ledger_categories || [],
       netLedgerThb: payload.ledger?.net_thb ?? 0,
@@ -291,11 +296,28 @@ const TripApi = (() => {
 
   const reopenTrip = reason => send('POST', '/closures/reopen', { body: { reason } });
 
-  /* ชื่อทริป/ช่วงวันที่ — ส่งเฉพาะช่องที่กรอกมา ช่องว่างแปลว่า "ไม่ระบุ"
-     ไม่ใช่ "ลบของเดิม" ฝั่งเซิร์ฟเวอร์คงค่าเดิมไว้ถ้าไม่ส่งคีย์นั้นมา */
-  const saveTripMeta = ({ name, startDate, endDate }) => send('POST', '/trip', {
-    body: { name, start_date: startDate || '', end_date: endDate || '' }
+  /* ชื่อทริป/ช่วงวันที่/ประเภท — ส่งเฉพาะช่องที่กรอกมา ช่องว่างแปลว่า "ไม่ระบุ"
+     ไม่ใช่ "ลบของเดิม" ฝั่งเซิร์ฟเวอร์คงค่าเดิมไว้ถ้าไม่ส่งคีย์นั้นมา
+     tripStage ไม่ส่งมา = ไม่แตะประเภทเดิม (ตัวเลือก Ongoing/Dream/Memory) */
+  const saveTripMeta = ({ name, startDate, endDate, tripStage }) => send('POST', '/trip', {
+    body: {
+      name, start_date: startDate || '', end_date: endDate || '',
+      ...(tripStage !== undefined ? { trip_stage: tripStage } : {})
+    }
   });
+
+  /* ── หน้ารวมทริป (Ongoing/Dream/Memory) ─────────────────────────────
+     สามอันนี้ไม่ผูกกับทริปใดทริปหนึ่ง ไม่ต้องมี projectId ใน URL
+     ใช้ได้แม้เปิดหน้านี้แบบไม่มี ?projectId= เลย (เช่นหน้ารวมทริป) */
+  const listTrips = () => send('GET', '/trips', {});
+
+  const createTrip = ({ name, startDate, endDate, tripStage }) => send('POST', '/trips', {
+    body: { name, start_date: startDate || '', end_date: endDate || '', trip_stage: tripStage || 'DREAM' }
+  });
+
+  /* ลบทริปนี้ — เซิร์ฟเวอร์เองจะปฏิเสธถ้าทริปนี้เคยโพสต์เข้าบัญชีจริงแล้ว
+     (409 พร้อมข้อความอธิบาย) หน้าจอไม่ต้องเดาเงื่อนไขเอง ส่งต่อ error ตรง ๆ */
+  const deleteTrip = () => send('DELETE', '/trip', {});
 
   /* แบนเนอร์เก็บที่ Projects.theme_banner ตัวเดียวกับที่แอปหลักใช้
      จะได้ไม่มีสองที่เก็บรูปคนละอันแล้วขัดกัน · ส่ง path ตามที่เห็นบนจอ
@@ -325,6 +347,7 @@ const TripApi = (() => {
     config, fetchTrip, toPrototypeState, toExpenseBody,
     saveExpense, removeExpense, saveCurrency, removeCurrency,
     saveWallet, saveFunding, removeFunding, closeTrip, reopenTrip,
-    saveStop, removeStop, reorderStops, saveTripMeta, saveBanner
+    saveStop, removeStop, reorderStops, saveTripMeta, saveBanner,
+    listTrips, createTrip, deleteTrip, authHeaders, sessionToken, bannerPath
   };
 })();

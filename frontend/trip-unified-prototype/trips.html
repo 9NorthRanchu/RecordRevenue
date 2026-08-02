@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ทริปทั้งหมด — Unified Trip</title>
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
+  <link rel="stylesheet" href="style.css?v=40">
+  <link rel="stylesheet" href="trips.css?v=1">
+</head>
+<body>
+  <div class="app-shell trips-shell">
+    <main class="workspace" style="grid-column:1/-1">
+      <header class="topbar">
+        <button class="back" id="tripsBack"><span aria-hidden="true">‹</span> เมนูหลัก</button>
+        <div><b>ทริปทั้งหมด</b><small>เลือกทริปที่จะเข้า หรือเริ่มทริปใหม่</small></div>
+        <div class="top-actions"></div>
+      </header>
+
+      <section class="screen active" style="padding:20px 20px 100px">
+        <div id="tripsLoginNotice" class="privacy-note" hidden>
+          ยังไม่ได้ล็อกอิน — เปิดแอปหลักแล้วล็อกอินก่อน จากนั้นกดเมนู "Unified Trip" ใหม่อีกครั้งในแท็บเดิม
+        </div>
+
+        <div id="tripsError" class="privacy-note" style="background:#fde8ee;border-color:#e86f91" hidden></div>
+
+        <div class="day-tabs" id="tripStageTabs">
+          <button class="active" data-stage="ONGOING">🧭 <span>Ongoing</span><small>จะเกิดแน่ ๆ</small></button>
+          <button data-stage="DREAM">💭 <span>Dream</span><small>ยังไม่แน่นอน</small></button>
+          <button data-stage="MEMORY">📸 <span>Memory</span><small>จบไปแล้ว</small></button>
+        </div>
+
+        <div id="tripsLoading" class="trip-pick-empty">กำลังโหลดรายการทริป…</div>
+        <div id="tripsGrid" class="trip-pick-grid" hidden></div>
+        <div id="tripsEmpty" class="trip-pick-empty" hidden></div>
+      </section>
+    </main>
+  </div>
+
+  <button class="mobile-fab" id="newTripFab" style="display:block">＋ เพิ่มทริป</button>
+
+  <!-- ===== สร้างทริปใหม่ ===== -->
+  <div class="sheet-mask" id="newTripMask"></div>
+  <div class="dialog" id="newTripDialog">
+    <button class="dialog-close" id="newTripClose">✕</button>
+    <h2 style="font:800 22px Loop;margin:0 0 14px">เพิ่มทริปใหม่</h2>
+    <form id="newTripForm" style="display:grid;gap:12px">
+      <label style="display:grid;gap:5px;font-weight:700">
+        ชื่อทริป
+        <input type="text" id="newTripName" placeholder="เช่น ทริปเกาะหลีเป๊ะ" required
+          style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Loop">
+      </label>
+      <div class="date-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="display:grid;gap:5px;font-weight:700">
+          วันเริ่ม (ถ้ารู้แล้ว)
+          <input type="date" id="newTripStart" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Loop">
+        </label>
+        <label style="display:grid;gap:5px;font-weight:700">
+          วันจบ
+          <input type="date" id="newTripEnd" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Loop">
+        </label>
+      </div>
+      <label style="display:grid;gap:5px;font-weight:700">
+        ประเภททริป
+        <select id="newTripStage" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Loop">
+          <option value="DREAM" selected>💭 Dream — ยังไม่แน่นอน</option>
+          <option value="ONGOING">🧭 Ongoing — จะเกิดแน่ ๆ</option>
+        </select>
+      </label>
+      <p id="newTripError" style="color:#d65b69;font-size:13px;margin:0" hidden></p>
+      <div class="sheet-actions" style="justify-content:flex-end;margin-top:4px">
+        <button type="button" class="soft-btn" id="newTripCancel">ยกเลิก</button>
+        <button type="submit" class="primary-btn" id="newTripSubmit">สร้างทริป</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="api.js?v=13"></script>
+  <script src="trips.js?v=1"></script>
+</body>
+</html>

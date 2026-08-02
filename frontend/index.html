@@ -7,7 +7,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=127">
-    <link rel="stylesheet" href="puppup-trip.css?v=1">
     <!-- pdf-lib -->
     <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
     <!-- pdf.js (Mozilla) for AES-256 fallback -->
@@ -88,14 +87,16 @@
                     <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-file-invoice-dollar"></i> <span>ประวัติธุรกรรม</span></a>
                     <!-- grid-input merged into pending -->
                     <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i> <span>ทะเบียนลูกหนี้/เจ้าหนี้</span></a>
-                    <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i> <span>TRIPS</span></a>
-                    <a href="#" class="nav-item" data-target="puppup"><i class="fa-solid fa-map-location-dot"></i> <span>Prototype Trip</span><small>ใหม่</small></a>
-                    <a href="hunsa/index.html" onclick="this.href='hunsa/index.html?user='+encodeURIComponent(AppState.userId || '')" class="hunsa-menu-link"><i class="fa-solid fa-suitcase-rolling"></i> <span>Hunsa Trip</span><small>ใหม่</small></a>
+                    <!-- TRIPS (ระบบทริปเดิม) — พักใช้ 2026-08-02 เพราะ Unified Trip เข้ามาแทนที่
+                         ยังไม่ลบโค้ด/ข้อมูล/endpoint ใด ๆ เอาลิงก์กลับมาได้ทันทีถ้าต้องใช้อีก -->
+                    <!-- <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i> <span>TRIPS</span></a> -->
                     <!-- Unified Trip · เชื่อมฐานข้อมูลจริงแล้ว
+                         พาไปหน้ารวมทริป (trips.html) ก่อนเสมอ ไม่ผูก projectId เดียวอีกต่อไป
+                         เพราะตอนนี้สร้าง/ลบ/มีหลายทริปได้แล้ว — เลือกจากหน้ารวมแทน
                          ⚠️ ไม่ใส่ userId ใน URL โดยตั้งใจ — หน้านั้นอ่านจาก sessionStorage
                             ของแท็บนี้เอง (ปลอดภัยกว่า และ session ไม่ข้ามแท็บอยู่แล้ว)
                             จึงต้องเป็นลิงก์ธรรมดาที่เปิดในแท็บเดิม ห้ามใส่ target="_blank" -->
-                    <a href="trip-unified-prototype/index.html?live=1&projectId=TRP-1783943254256" class="hunsa-menu-link"><i class="fa-solid fa-mountain-sun"></i> <span>Unified Trip</span><small>ข้อมูลจริง</small></a>
+                    <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link"><i class="fa-solid fa-mountain-sun"></i> <span>Unified Trip</span><small>ข้อมูลจริง</small></a>
                     <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-pie"></i> <span>รายงานทางการเงิน</span></a>
                     <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i> <span>ตั้งค่าระบบ</span></a>
                 </nav>
@@ -490,11 +491,6 @@
                         <p>จัดแผน จุดแวะ กระเป๋าเงิน และบิลไว้ในที่เดียว</p>
                         <button onclick="openNewTripModal()">+ สร้างทริปใหม่</button>
                     </div>
-                </section>
-
-                <!-- Prototype Trip: หน้าใหม่ตาม mockup PupPup Trip เชื่อมข้อมูลจริงแล้ว (เฟส 1 = แผนที่/itinerary) -->
-                <section id="view-puppup" class="content-view hidden">
-                    <div id="ppRoot"></div>
                 </section>
 
                 <!-- ===== MODAL: New Trip ===== -->
@@ -1145,9 +1141,8 @@
             <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-file-invoice-dollar"></i><span>ประวัติ</span></a>
             <a href="#" class="nav-item" data-target="pending"><i class="fa-solid fa-plus"></i><span>เพิ่มรายการ</span></a>
             <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i><span>ลูกหนี้</span></a>
-            <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i><span>ทริป</span></a>
-            <a href="#" class="nav-item" data-target="puppup"><i class="fa-solid fa-map-location-dot"></i><span>Prototype</span></a>
-            <a href="hunsa/index.html" onclick="this.href='hunsa/index.html?user='+encodeURIComponent(AppState.userId || '')" class="hunsa-menu-link"><i class="fa-solid fa-suitcase-rolling"></i><span>Hunsa</span></a>
+            <!-- <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i><span>ทริป</span></a> -->
+            <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link"><i class="fa-solid fa-mountain-sun"></i><span>ทริป</span></a>
             <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-bar"></i><span>รายงาน</span></a>
             <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i><span>ตั้งค่า</span></a>
         </nav>
@@ -1467,7 +1462,6 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="travel.js?v=105"></script>
     <script src="app.js?v=172"></script>
-    <script src="puppup-trip.js?v=1"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">

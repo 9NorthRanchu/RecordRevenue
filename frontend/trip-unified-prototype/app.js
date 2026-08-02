@@ -554,10 +554,41 @@ function fillTripMetaForm(state) {
   name.value = state?.tripName || '';
   $('#tripStartInput').value = state?.tripStartDate || '';
   $('#tripEndInput').value = state?.tripEndDate || '';
+  $('#tripStageInput').value = state?.tripStage || 'ONGOING';
   // แก้ได้เฉพาะ admin — ฝั่งเซิร์ฟเวอร์ก็ตรวจซ้ำอีกชั้น
   const canEdit = !liveMode || Boolean(memberById(viewerId)?.admin);
   $('#saveTripMeta').disabled = !canEdit;
   $('#tripMetaError').textContent = canEdit ? '' : 'แก้ข้อมูลทริปได้เฉพาะผู้ดูแลทริป';
+
+  // ลิงก์ตรงเข้าทริปนี้ — ใช้ path/query เดียวกับที่เมนูหลักลิงก์มา ใครกด
+  // ลิงก์นี้ก็เข้าทริปเดียวกันได้ทันทีโดยไม่ผ่านหน้ารวมทริป
+  const linkBox = $('#directTripLink');
+  if (linkBox) {
+    const projectId = state?.projectId || TripApi.config.projectId || '';
+    linkBox.value = projectId
+      ? `${location.origin}${location.pathname}?live=1&projectId=${encodeURIComponent(projectId)}`
+      : '';
+  }
+
+  // ลบทริปได้เฉพาะ admin และห้ามเด็ดขาดถ้าเคยโพสต์เข้าบัญชีจริงแล้ว
+  // (เซิร์ฟเวอร์ตรวจซ้ำอีกชั้นตอนกดจริง ปุ่มนี้แค่กันไม่ให้กดแล้วเจอ error เปล่า ๆ)
+  const deleteBtn = $('#deleteTripBtn');
+  const deleteNote = $('#deleteTripNote');
+  if (deleteBtn) {
+    if (!liveMode) {
+      deleteBtn.disabled = true;
+      deleteNote.textContent = 'โหมดข้อมูลตัวอย่างยังลบทริปไม่ได้';
+    } else if (!canEdit) {
+      deleteBtn.disabled = true;
+      deleteNote.textContent = 'ลบทริปได้เฉพาะผู้ดูแลทริป';
+    } else if (state?.postedToLedger) {
+      deleteBtn.disabled = true;
+      deleteNote.textContent = 'ทริปนี้โพสต์เข้าบัญชีจริงแล้ว ลบไม่ได้ — เปลี่ยนประเภทเป็น 📸 Memory ด้านบนแทนได้';
+    } else {
+      deleteBtn.disabled = false;
+      deleteNote.textContent = 'ลบแล้วกู้คืนไม่ได้ ข้อมูลบิล กระเป๋า และแผนเที่ยวทั้งหมดของทริปนี้จะหายไป';
+    }
+  }
 }
 
 $('#tripMetaForm')?.addEventListener('submit', event => {
@@ -570,7 +601,8 @@ $('#tripMetaForm')?.addEventListener('submit', event => {
   }
   submitLive('#tripMetaError', async () => {
     const result = await TripApi.saveTripMeta({
-      name, startDate: $('#tripStartInput').value, endDate: $('#tripEndInput').value
+      name, startDate: $('#tripStartInput').value, endDate: $('#tripEndInput').value,
+      tripStage: $('#tripStageInput').value
     });
     /* เตือนถ้าย่นช่วงวันจนบิลหลุดออกนอก — ไม่ห้าม เพราะตั๋วเครื่องบินหรือ
        มัดจำโรงแรมจ่ายก่อนเดินทางจริง ๆ แต่ต้องรู้ว่าเกิดขึ้น */
@@ -580,6 +612,40 @@ $('#tripMetaForm')?.addEventListener('submit', event => {
     }
     return result;
   }, `บันทึกข้อมูลทริปแล้ว`);
+});
+
+$('#copyDirectLink')?.addEventListener('click', async () => {
+  const linkBox = $('#directTripLink');
+  if (!linkBox?.value) return;
+  try {
+    await navigator.clipboard.writeText(linkBox.value);
+    showPrototypeToast('คัดลอกลิงก์แล้ว');
+  } catch {
+    // เบราว์เซอร์บางตัว/หน้าที่ไม่ใช่ HTTPS ไม่ให้ใช้ clipboard API — เลือกข้อความให้แทน
+    linkBox.select();
+    showPrototypeToast('คัดลอกอัตโนมัติไม่ได้ — เลือกข้อความไว้ให้แล้ว กด Ctrl/Cmd+C');
+  }
+});
+
+/* ── ลบทริป ────────────────────────────────────────────────────────────
+   ยืนยันสองชั้น (confirm ธรรมดา) เพราะกู้คืนไม่ได้ · เซิร์ฟเวอร์ตรวจเงื่อนไข
+   "เคยโพสต์บัญชีจริงหรือยัง" ซ้ำอีกทีอยู่ดี ปุ่มฝั่งนี้แค่กันกดพลาดเบื้องต้น */
+$('#deleteTripBtn')?.addEventListener('click', async () => {
+  if (!liveMode) return;
+  const name = $('#tripNameInput').value.trim() || 'ทริปนี้';
+  if (!confirm(`ลบ "${name}" ถาวร? ข้อมูลบิล กระเป๋า และแผนเที่ยวทั้งหมดจะหายไป กู้คืนไม่ได้`)) return;
+
+  const btn = $('#deleteTripBtn');
+  const note = $('#deleteTripNote');
+  btn.disabled = true;
+  note.textContent = 'กำลังลบ…';
+  try {
+    await TripApi.deleteTrip();
+    location.href = 'trips.html';
+  } catch (error) {
+    btn.disabled = false;
+    note.textContent = error.message;
+  }
 });
 
 /* ── ส่งขึ้นเซิร์ฟเวอร์แล้วดึงข้อมูลใหม่ทั้งชุด ─────────────────────────
@@ -2459,6 +2525,10 @@ $('#pickNewTripBanner').addEventListener('click', () => openAssetPicker('banner'
 }));
 
 $('#openNewTrip').addEventListener('click', () => {
+  /* โหมดข้อมูลจริง: ปุ่มนี้เดิมเป็นของ demo ล้วน ๆ — เปลี่ยนแค่ข้อความบนจอ
+     ไม่ได้สร้างทริปจริงหรือบันทึกอะไรเลย ถ้าปล่อยไว้ในโหมดจริงจะหลอกผู้ใช้
+     ว่าสร้างทริปสำเร็จทั้งที่ไม่มีอะไรถูกบันทึก จึงพาไปหน้าสร้างทริปจริงแทน */
+  if (liveMode) { location.href = 'trips.html'; return; }
   newTripBanner = 'art/hokkaido-illustrated-clean.png';
   $('#newTripBannerPreview').src = newTripBanner;
   $('#newTripName').value = '';
