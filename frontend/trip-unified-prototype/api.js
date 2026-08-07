@@ -345,11 +345,34 @@ const TripApi = (() => {
      ขาดกลางคัน ลำดับในฐานจะค้างครึ่ง ๆ ไม่ตรงกับที่เห็นบนจอ */
   const reorderStops = stops => send('POST', '/stops/order', { body: { stops } });
 
+  /* ── ไอคอนที่ครอบครัวอัปโหลดเอง ───────────────────────────────────────
+     อัปโหลดไฟล์จริงขึ้น R2 บนเซิร์ฟเวอร์ คืน URL ถาวรที่ทุกคนในครอบครัว
+     เห็นเหมือนกัน ต่างจาก data: URL เดิมที่เห็นเฉพาะเบราว์เซอร์ที่อัปโหลด
+     ไม่ผ่าน send() เพราะต้องส่ง multipart ไม่ใช่ JSON */
+  const uploadIcon = async (blob, filename) => {
+    const form = new FormData();
+    form.append('file', blob, filename || 'icon.webp');
+    const response = await fetch(`${config.base}/api/unified-trip/icon-upload`, {
+      method: 'POST', headers: authHeaders(), body: form
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `อัปโหลดไม่สำเร็จ (${response.status})`);
+    return payload.url;
+  };
+
+  /* ไอคอนประจำหมวดค่าใช้จ่าย — ผูกกับ Categories.icon_asset ของครอบครัว
+     ไม่ใช่ของทริปใดทริปหนึ่ง ทุกทริปในครอบครัวเห็นชุดเดียวกัน */
+  const loadCategoryIcons = () => send('GET', '/category-icons', {});
+  const saveCategoryIcon = (categoryId, iconUrl) => send('POST', '/category-icons', {
+    body: { category_id: categoryId, icon_url: iconUrl }
+  });
+
   return {
     config, fetchTrip, toPrototypeState, toExpenseBody,
     saveExpense, removeExpense, saveCurrency, removeCurrency,
     saveWallet, saveFunding, removeFunding, closeTrip, reopenTrip,
     saveStop, removeStop, reorderStops, saveTripMeta, saveBanner,
-    listTrips, createTrip, deleteTrip, authHeaders, sessionToken, bannerPath
+    listTrips, createTrip, deleteTrip, authHeaders, sessionToken, bannerPath,
+    uploadIcon, loadCategoryIcons, saveCategoryIcon
   };
 })();

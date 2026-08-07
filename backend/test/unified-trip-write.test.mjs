@@ -63,7 +63,7 @@ CREATE TABLE Captions (type_id TEXT PRIMARY KEY, family_id TEXT, name TEXT, beha
   created_at DATETIME, default_entity_id TEXT, default_contact_id TEXT, default_type TEXT, sub_behavior TEXT);
 CREATE TABLE Categories (category_id TEXT PRIMARY KEY, family_id TEXT, name TEXT,
   created_at DATETIME, default_entity_id TEXT, default_contact_id TEXT, default_type TEXT,
-  caption_id TEXT REFERENCES Captions(type_id));
+  caption_id TEXT REFERENCES Captions(type_id), icon_asset TEXT);
 CREATE TABLE Transactions (transaction_id TEXT PRIMARY KEY, account_id TEXT, ref_code TEXT,
   date TEXT NOT NULL, time TEXT, total_amount REAL NOT NULL, statement_desc TEXT,
   status TEXT, source TEXT, slip_image_url TEXT, created_by_user_id TEXT NOT NULL, created_at DATETIME);
@@ -137,7 +137,19 @@ const DB = {
     catch (err) { db.exec('ROLLBACK'); throw err; }
   }
 };
-const env = { DB };
+// ── R2 shim (จำลอง binding "ICONS") — เก็บในหน่วยความจำ ไม่แตะไฟล์จริง ──────
+const iconStore = new Map();
+const ICONS = {
+  async put(key, data, opts) {
+    iconStore.set(key, { buf: data, contentType: opts?.httpMetadata?.contentType || 'application/octet-stream' });
+  },
+  async get(key) {
+    const row = iconStore.get(key);
+    if (!row) return null;
+    return { httpMetadata: { contentType: row.contentType }, body: row.buf };
+  }
+};
+const env = { DB, ICONS };
 const cors = { 'Access-Control-Allow-Origin': '*' };
 
 // ── helper ─────────────────────────────────────────────────────────────────
@@ -976,5 +988,86 @@ r = await call('DELETE', '/api/unified-trip/trip', { user: 'uOther', project: 'T
 check('⚠️ admin ของครอบครัวอื่นลบทริปเราไม่ได้ → 404', r.status === 404, JSON.stringify(r.status));
 db.exec(`DELETE FROM Projects WHERE project_id='TRP-ORPHAN2'; UPDATE Users SET role='member' WHERE user_id='uOther'`);
 
+console.log('\n── ไอคอนที่ครอบครัวอัปโหลดเอง (2026-08-07) ──────');
+/* /category-icons และ /icon-upload ไม่ผูกกับทริปใดทริปหนึ่ง เรียกตรงด้วย
+   handleUnifiedTrip แทน call() เพราะ call() ผูก ?projectId= เสมอ */
+
+r = { status: 0, data: null };
+{
+  const url = new URL('https://x/api/unified-trip/category-icons');
+  const req = new Request(url, { method: 'GET', headers: { 'x-user-id': '9North' } });
+  const res = await handleUnifiedTrip(req, env, url, cors, '9North');
+  const data = await res.json();
+  check('GET /category-icons คืนเฉพาะหมวด EXPENSE ของครอบครัวตัวเอง', res.status === 200 &&
+    data.categories.some(c => c.category_id === 'CAT-FOOD') &&
+    !data.categories.some(c => c.category_id === 'CAT-SALE') &&
+    !data.categories.some(c => c.category_id === 'CAT-OTHER'), JSON.stringify(data));
+}
+
+{
+  const url = new URL('https://x/api/unified-trip/category-icons');
+  const req = new Request(url, {
+    method: 'POST', headers: { 'x-user-id': '9North', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category_id: 'CAT-FOOD', icon_url: 'https://x/api/unified-trip/icon/icons/FAM-1/abc.png' })
+  });
+  const res = await handleUnifiedTrip(req, env, url, cors, '9North');
+  check('POST /category-icons บันทึกสำเร็จ', res.status === 200, JSON.stringify(await res.clone().json()));
+  check('ไอคอนถูกเขียนลง Categories.icon_asset จริง',
+    db.prepare(`SELECT icon_asset FROM Categories WHERE category_id='CAT-FOOD'`).get().icon_asset
+      === 'https://x/api/unified-trip/icon/icons/FAM-1/abc.png');
+}
+
+{
+  const url = new URL('https://x/api/unified-trip/category-icons');
+  const req = new Request(url, {
+    method: 'POST', headers: { 'x-user-id': '9North', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category_id: 'CAT-OTHER', icon_url: 'https://x/evil.png' })
+  });
+  const res = await handleUnifiedTrip(req, env, url, cors, '9North');
+  check('⚠️ ตั้งไอคอนหมวดของครอบครัวอื่นไม่ได้ → 404', res.status === 404);
+}
+
+let uploadedUrl = '';
+{
+  const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' });
+  const form = new FormData();
+  form.append('file', blob, 'test.png');
+  const url = new URL('https://x/api/unified-trip/icon-upload');
+  const req = new Request(url, { method: 'POST', headers: { 'x-user-id': '9North' }, body: form });
+  const res = await handleUnifiedTrip(req, env, url, cors, '9North');
+  const data = await res.json();
+  uploadedUrl = data.url || '';
+  check('POST /icon-upload คืน url ที่ชี้ไปโฟลเดอร์ของครอบครัวตัวเอง', res.status === 201 &&
+    uploadedUrl.includes('/api/unified-trip/icon/icons/FAM-1/'), JSON.stringify(data));
+}
+
+{
+  const key = uploadedUrl.split('/api/unified-trip/icon/')[1] || '';
+  const url = new URL(`https://x/api/unified-trip/icon/${key}`);
+  const req = new Request(url, { method: 'GET' });
+  // userId ว่าง = จำลอง <img src> ที่ไม่มี Authorization header แนบมาด้วย
+  const res = await handleUnifiedTrip(req, env, url, cors, '');
+  check('🔑 GET /icon/{key} ดึงได้แม้ไม่ได้ล็อกอิน (สำหรับ <img src>)', res.status === 200);
+  check('content-type ตรงกับตอนอัปโหลด', res.headers.get('content-type') === 'image/png');
+}
+
+{
+  const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/gif' });
+  const form = new FormData();
+  form.append('file', blob, 'bad.gif');
+  const url = new URL('https://x/api/unified-trip/icon-upload');
+  const req = new Request(url, { method: 'POST', headers: { 'x-user-id': '9North' }, body: form });
+  const res = await handleUnifiedTrip(req, env, url, cors, '9North');
+  check('⚠️ ไฟล์ชนิดที่ไม่รองรับ (gif) → 400', res.status === 400);
+}
+
+{
+  const url = new URL('https://x/api/unified-trip/icon-upload');
+  const req = new Request(url, { method: 'POST', body: new FormData() });
+  const res = await handleUnifiedTrip(req, env, url, cors, '');
+  check('⚠️ อัปโหลดไอคอนโดยไม่ล็อกอิน → 401', res.status === 401);
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
+if (fail > 0) process.exit(1);
 process.exit(fail ? 1 : 0);

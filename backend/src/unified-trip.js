@@ -18,6 +18,10 @@
 //   POST   /api/unified-trip/stops           — เพิ่ม/แก้จุดแวะ (สมาชิกทุกคน)
 //   DELETE /api/unified-trip/stops?id=
 //   POST   /api/unified-trip/stops/order     — จัดลำดับ/ย้ายวัน ทั้งชุดในครั้งเดียว
+//   GET    /api/unified-trip/category-icons  — ไอคอนประจำหมวดค่าใช้จ่ายของครอบครัว (ไม่ต้อง projectId)
+//   POST   /api/unified-trip/category-icons  — ตั้งไอคอนของหมวด {category_id, icon_url}
+//   POST   /api/unified-trip/icon-upload     — อัปโหลดไฟล์รูป (multipart, field "file") ขึ้น R2 คืน URL
+//   GET    /api/unified-trip/icon/{key}      — เสิร์ฟไฟล์ไอคอนกลับจาก R2 (ไม่ต้องล็อกอิน)
 //
 //   ทั้งหมดต้องมี ?projectId= และต้องล็อกอินแล้ว (Bearer token)
 //   ทดสอบด้วย: node backend/test/unified-trip-write.test.mjs  (133 เคส)
@@ -681,6 +685,92 @@ async function createTrip(request, env, userId, corsHeaders) {
   return json({ ok: true, project_id: projectId, name, trip_stage: stage }, corsHeaders, 201);
 }
 
+/* ── ไอคอนที่ครอบครัวอัปโหลดเอง (2026-08-07) ─────────────────────────────
+   ผูกกับ "ครอบครัว" ไม่ใช่ทริปใดทริปหนึ่ง — เหมือน /trips เพราะหมวดค่าใช้จ่าย
+   (Categories) เป็นผังบัญชีระดับครอบครัว ใช้ร่วมกันทุกทริป
+
+   ไฟล์จริงเก็บที่ R2 (binding "ICONS") คีย์เป็น icons/{family_id}/{uuid}.ext
+   ตาราง Categories เก็บแค่ URL ที่ /api/unified-trip/icon/{key} ชี้กลับมา */
+
+const ICON_MIME_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+const MAX_ICON_BYTES = 3 * 1024 * 1024;
+
+async function familyIdFor(env, userId) {
+  const row = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id=?`).bind(userId).first();
+  return row?.family_id || null;
+}
+
+/* เสิร์ฟไฟล์กลับจาก R2 — เรียกจาก handleUnifiedTrip ก่อนด่านล็อกอิน เพราะ
+   <img src> แนบ Authorization header ไม่ได้ คีย์เป็น UUID เดายากและเนื้อหา
+   เป็นแค่ไอคอนตกแต่ง ไม่ใช่ข้อมูลอ่อนไหว จึงเปิดให้ดึงตรงได้โดยไม่ต้องล็อกอิน */
+async function serveIcon(env, key, corsHeaders) {
+  if (!env.ICONS) return json({ error: 'เซิร์ฟเวอร์ยังไม่ได้ตั้งค่าที่เก็บไฟล์ (R2)' }, corsHeaders, 500);
+  if (!key || key.includes('..')) return new Response('not found', { status: 404 });
+  const object = await env.ICONS.get(key);
+  if (!object) return new Response('not found', { status: 404 });
+  const headers = new Headers(corsHeaders);
+  headers.set('Content-Type', object.httpMetadata?.contentType || 'application/octet-stream');
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  return new Response(object.body, { headers });
+}
+
+/* อัปโหลดไฟล์รูป (multipart, field name "file") ขึ้น R2 คืน URL ถาวร
+   ใครในครอบครัวก็อัปโหลดได้ — นี่แค่รูปตกแต่ง ไม่ใช่ข้อมูลการเงิน */
+async function uploadIconRoute(request, env, userId, corsHeaders) {
+  const familyId = await familyIdFor(env, userId);
+  if (!familyId) return json({ error: 'ไม่พบผู้ใช้นี้' }, corsHeaders, 401);
+  if (!env.ICONS) return json({ error: 'เซิร์ฟเวอร์ยังไม่ได้ตั้งค่าที่เก็บไฟล์ (R2)' }, corsHeaders, 500);
+
+  let form;
+  try { form = await request.formData(); } catch { return json({ error: 'อ่านไฟล์ที่อัปโหลดไม่สำเร็จ' }, corsHeaders, 400); }
+  const file = form.get('file');
+  if (!file || typeof file === 'string') return json({ error: 'ไม่พบไฟล์รูปที่อัปโหลด (field "file")' }, corsHeaders, 400);
+
+  const ext = ICON_MIME_EXT[file.type];
+  if (!ext) return json({ error: 'รองรับเฉพาะไฟล์ PNG · JPEG · WEBP' }, corsHeaders, 400);
+  if (file.size > MAX_ICON_BYTES) return json({ error: 'ไฟล์ใหญ่เกิน 3 MB' }, corsHeaders, 400);
+
+  const key = `icons/${familyId}/${crypto.randomUUID()}.${ext}`;
+  await env.ICONS.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+
+  const url = `${new URL(request.url).origin}/api/unified-trip/icon/${key}`;
+  return json({ url }, corsHeaders, 201);
+}
+
+/* ไอคอนประจำหมวดค่าใช้จ่าย — อ่าน/แก้ Categories.icon_asset ของครอบครัวผู้ใช้
+   เอาเฉพาะหมวด behavior='EXPENSE' เพราะเป็นหมวดเดียวที่ฟอร์มบิลทริปใช้เลือก */
+async function listCategoryIcons(env, userId, corsHeaders) {
+  const familyId = await familyIdFor(env, userId);
+  if (!familyId) return json({ error: 'ไม่พบผู้ใช้นี้' }, corsHeaders, 401);
+
+  const rows = await env.DB.prepare(`
+    SELECT c.category_id, c.name, c.icon_asset, cap.name AS caption_name
+      FROM Categories c JOIN Captions cap ON cap.type_id = c.caption_id
+     WHERE c.family_id = ? AND cap.behavior = 'EXPENSE'
+     ORDER BY cap.name, c.name
+  `).bind(familyId).all();
+
+  return json({ categories: rows.results || [] }, corsHeaders);
+}
+
+async function saveCategoryIcon(request, env, userId, corsHeaders) {
+  const familyId = await familyIdFor(env, userId);
+  if (!familyId) return json({ error: 'ไม่พบผู้ใช้นี้' }, corsHeaders, 401);
+
+  const body = await request.json().catch(() => ({}));
+  const categoryId = String(body.category_id || '').trim();
+  const iconUrl = String(body.icon_url || '').trim();
+  if (!categoryId || !iconUrl) return json({ error: 'ต้องระบุ category_id และ icon_url' }, corsHeaders, 400);
+
+  // ต้องเป็นหมวดของครอบครัวตัวเองเท่านั้น — กัน category_id ของครอบครัวอื่น
+  const owned = await env.DB.prepare(`SELECT category_id FROM Categories WHERE category_id=? AND family_id=?`)
+    .bind(categoryId, familyId).first();
+  if (!owned) return json({ error: 'ไม่พบหมวดนี้ในครอบครัวของคุณ' }, corsHeaders, 404);
+
+  await env.DB.prepare(`UPDATE Categories SET icon_asset=? WHERE category_id=?`).bind(iconUrl, categoryId).run();
+  return json({ ok: true }, corsHeaders);
+}
+
 /* ── ลบทริป ────────────────────────────────────────────────────────────
    admin ของทริปเท่านั้น · ห้ามลบเด็ดขาดถ้าทริปนี้เคยโพสต์เข้าบัญชีจริงแล้ว
    สักครั้ง (มีแถวใน TripClosures ที่ linked_transaction_id ไม่ว่าง) เพราะ
@@ -1168,13 +1258,23 @@ async function reopenTrip(request, env, ctx, projectId, corsHeaders) {
    โมดูลนี้ไม่อ่าน header เอง จะได้ไม่มีสองที่ตัดสินว่าใครเป็นใครคนละแบบ */
 export async function handleUnifiedTrip(request, env, url, corsHeaders, userId = '') {
   if (!url.pathname.startsWith('/api/unified-trip')) return null;
-  if (!userId) return json({ error: 'ยังไม่ได้ล็อกอิน หรือ token หมดอายุ' }, corsHeaders, 401);
 
   const sub = url.pathname.replace('/api/unified-trip', '').replace(/\/$/, '');
 
-  // สองเส้นทางนี้ไม่ผูกกับทริปใดทริปหนึ่ง — ไม่ต้องมี projectId ต้องเช็คก่อนด่านข้างล่าง
+  // เสิร์ฟไฟล์ไอคอนต้องอยู่ *ก่อน* ด่านล็อกอิน — <img src> แนบ Authorization
+  // header ไม่ได้ คีย์เป็น UUID เดายากและเป็นแค่ไอคอนตกแต่ง ไม่ใช่ข้อมูลอ่อนไหว
+  if (sub.startsWith('/icon/') && request.method === 'GET') {
+    return serveIcon(env, sub.slice('/icon/'.length), corsHeaders);
+  }
+
+  if (!userId) return json({ error: 'ยังไม่ได้ล็อกอิน หรือ token หมดอายุ' }, corsHeaders, 401);
+
+  // เส้นทางเหล่านี้ผูกกับ "ครอบครัว" ไม่ใช่ทริปใดทริปหนึ่ง — ไม่ต้องมี projectId ต้องเช็คก่อนด่านข้างล่าง
   if (sub === '/trips' && request.method === 'GET') return listTrips(env, userId, corsHeaders);
   if (sub === '/trips' && request.method === 'POST') return createTrip(request, env, userId, corsHeaders);
+  if (sub === '/category-icons' && request.method === 'GET') return listCategoryIcons(env, userId, corsHeaders);
+  if (sub === '/category-icons' && request.method === 'POST') return saveCategoryIcon(request, env, userId, corsHeaders);
+  if (sub === '/icon-upload' && request.method === 'POST') return uploadIconRoute(request, env, userId, corsHeaders);
 
   const projectId = url.searchParams.get('projectId');
   if (!projectId) return json({ error: 'ต้องระบุ projectId' }, corsHeaders, 400);

@@ -270,9 +270,11 @@ function billCategoryLabel(bill) {
   return bill.categories.map(row => `${row.name} ${fmtAmount(row.amount, symbolFor(bill.currency))}`).join(' · ');
 }
 
-/* An explicitly chosen icon wins; otherwise fall back to the first category. */
+/* An explicitly chosen icon wins; otherwise fall back to the category's own
+   icon (ครอบครัวตั้งเองผ่านหน้า "เพิ่มเติม" ถ้ามี) แล้วค่อยตกไปที่ชุดไอคอนเดิม */
 function billIcon(bill) {
-  return bill.image || `${ART}${categoryIcons[bill.categories[0]?.name] || 'st_camera2.png'}`;
+  const name = bill.categories[0]?.name;
+  return bill.image || categoryIconOverride(name) || `${ART}${categoryIcons[name] || 'st_camera2.png'}`;
 }
 
 /* Visibility gate — the prototype only ever renders what the signed-in member
@@ -329,6 +331,7 @@ function renderBills() {
   renderMoneyStrip();
   renderMembers();
   renderCurrencies();
+  renderCategoryIconManager();
   renderCloseLines();
   renderPresence();
   applyTripLock();
@@ -500,6 +503,64 @@ function renderCurrencies() {
     </div>`;
   }).join('');
 }
+
+/* ── ไอคอนประจำหมวดค่าใช้จ่าย (2026-08-07) ────────────────────────────
+   ผูกกับผังบัญชีของ "ครอบครัว" (Categories.icon_asset) ไม่ใช่ของทริปนี้
+   ทริปเดียว — ตั้งครั้งเดียวแล้วทุกทริปในครอบครัวเห็นไอคอนเดียวกัน
+   โหลดครั้งเดียวตอนเข้าโหมดข้อมูลจริง ไม่มีในโหมดตัวอย่าง (prototype) */
+let categoryIconRows = [];
+
+function categoryIconOverride(name) {
+  return categoryIconRows.find(row => row.name === name)?.icon_asset || null;
+}
+
+function renderCategoryIconManager() {
+  const host = $('#categoryIconRows');
+  if (!host) return;
+  if (!liveMode) {
+    host.innerHTML = '<p class="field-note">เข้าทริปโหมดข้อมูลจริงก่อนถึงจะตั้งไอคอนหมวดได้ — ในโหมดตัวอย่างใช้ชุดไอคอนเริ่มต้นเสมอ</p>';
+    return;
+  }
+  if (!categoryIconRows.length) {
+    host.innerHTML = '<p class="field-note">ครอบครัวนี้ยังไม่มีหมวดค่าใช้จ่ายในผังบัญชี</p>';
+    return;
+  }
+  host.innerHTML = categoryIconRows.map(row => `
+    <div class="currency-row" data-category-row="${row.category_id}">
+      <span class="currency-mark"><img src="${row.icon_asset || `${ART}${categoryIcons[row.name] || 'st_camera2.png'}`}" alt=""></span>
+      <span class="currency-main"><b>${row.name}</b><small>${row.caption_name || ''}</small></span>
+      <span class="currency-actions"><button type="button" data-swap-category="${row.category_id}">เปลี่ยนไอคอน</button></span>
+    </div>`).join('');
+}
+
+async function loadCategoryIconsLive() {
+  try {
+    const payload = await TripApi.loadCategoryIcons();
+    categoryIconRows = payload.categories || [];
+  } catch (error) {
+    console.error(error);
+    categoryIconRows = [];
+  }
+  renderCategoryIconManager();
+}
+
+$('#categoryIconRows')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-swap-category]');
+  if (!button) return;
+  const row = categoryIconRows.find(item => item.category_id === button.dataset.swapCategory);
+  if (!row) return;
+  openAssetPicker('expense', row.icon_asset || `${ART}${categoryIcons[row.name] || 'st_camera2.png'}`, src => {
+    TripApi.saveCategoryIcon(row.category_id, src)
+      .then(() => {
+        row.icon_asset = src;
+        renderCategoryIconManager();
+        renderBills();
+        showScreen('more');
+        showPrototypeToast(`เปลี่ยนไอคอนหมวด ${row.name} แล้ว`);
+      })
+      .catch(error => showPrototypeToast(`บันทึกไม่สำเร็จ: ${error.message}`));
+  });
+});
 
 function openCurrencyDialog(code = null) {
   if (blockedByClose('currencies')) return;
@@ -2456,7 +2517,9 @@ $('#assetGrid').addEventListener('click', event => {
   renderAssetGrid();
 });
 
-/* Redraw an upload to the kind's exact dimensions with a centre cover-crop. */
+/* Redraw an upload to the kind's exact dimensions with a centre cover-crop.
+   คืนทั้ง data: URL (พรีวิวทันที/ทางสำรองถ้าอัปโหลดขึ้นเซิร์ฟเวอร์ไม่สำเร็จ)
+   และ blob (ไฟล์จริงสำหรับส่งขึ้น R2 ตอน liveMode) จากภาพเดียวกัน */
 function normaliseUpload(file, spec) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -2473,7 +2536,9 @@ function normaliseUpload(file, spec) {
         const drawWidth = image.width * scale;
         const drawHeight = image.height * scale;
         context.drawImage(image, (spec.width - drawWidth) / 2, (spec.height - drawHeight) / 2, drawWidth, drawHeight);
-        resolve(canvas.toDataURL('image/webp', 0.86));
+        canvas.toBlob(blob => {
+          resolve({ dataUrl: canvas.toDataURL('image/webp', 0.86), blob });
+        }, 'image/webp', 0.86);
       };
       image.src = reader.result;
     };
@@ -2481,6 +2546,9 @@ function normaliseUpload(file, spec) {
   });
 }
 
+/* โหมดข้อมูลจริง: อัปโหลดรูปที่ย่อแล้วขึ้น R2 บนเซิร์ฟเวอร์จริง ทุกคนใน
+   ครอบครัวจึงเห็นรูปเดียวกัน — ถ้าอัปโหลดไม่สำเร็จ (เช่นเน็ตหลุด) ยังเก็บ
+   เป็น data: URL ไว้ใช้ในเบราว์เซอร์นี้ต่อได้ ไม่เสียงานที่ทำไปแล้ว */
 $('#assetUpload').addEventListener('change', async event => {
   const file = event.target.files?.[0];
   if (!file) return;
@@ -2491,10 +2559,20 @@ $('#assetUpload').addEventListener('change', async event => {
     return;
   }
   try {
-    const src = await normaliseUpload(file, spec);
+    const { dataUrl, blob } = await normaliseUpload(file, spec);
     const label = file.name.replace(/\.[^.]+$/, '').slice(0, 18) || 'รูปที่อัปโหลด';
-    assetLibrary[assetKind].unshift({ id:`up-${Date.now()}`, label, src, uploaded:true });
-    assetChoice = src;
+    let finalSrc = dataUrl;
+    if (liveMode) {
+      $('#assetError').textContent = 'กำลังอัปโหลด…';
+      try {
+        finalSrc = await TripApi.uploadIcon(blob, `${label}.webp`);
+        $('#assetError').textContent = '';
+      } catch (uploadError) {
+        $('#assetError').textContent = `อัปโหลดขึ้นเซิร์ฟเวอร์ไม่สำเร็จ: ${uploadError.message} · ใช้รูปนี้ได้เฉพาะเบราว์เซอร์นี้`;
+      }
+    }
+    assetLibrary[assetKind].unshift({ id:`up-${Date.now()}`, label, src: finalSrc, uploaded:true });
+    assetChoice = finalSrc;
     renderAssetGrid();
     saveState();
   } catch (error) {
@@ -2776,6 +2854,8 @@ async function enterLiveMode() {
      ทันทีในครั้งถัดไป (trips.html เด้งมาเอง) · จำเฉพาะตอนโหลดสำเร็จเท่านั้น
      ทริปที่เข้าไม่ได้/ถูกลบไปแล้วจะได้ไม่ถูกจำจนเด้งวนเข้า error ซ้ำ ๆ */
   try { localStorage.setItem('unified-trip-last', TripApi.config.projectId); } catch {}
+  // ไอคอนหมวดเป็นของครอบครัว ไม่ใช่ของทริปนี้ — โหลดแยกต่างหาก ไม่บล็อกจอหลัก
+  loadCategoryIconsLive();
 }
 
 loadState();

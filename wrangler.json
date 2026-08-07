@@ -8,5 +8,11 @@
       "database_name": "record-revenue-db",
       "database_id": "3112e08d-db8b-428c-925d-91fb50f50de4"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ICONS",
+      "bucket_name": "record-revenue-icons"
+    }
   ]
 }

@@ -90,6 +90,7 @@ CREATE TABLE Categories (
     default_entity_id TEXT,
     default_contact_id TEXT,
     default_type TEXT,
+    icon_asset TEXT, -- URL ไอคอนที่ครอบครัวอัปโหลดเอง (R2) — เพิ่มด้วย add_category_icon_upload.sql
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (family_id) REFERENCES Families(family_id),
     FOREIGN KEY (caption_id) REFERENCES Captions(caption_id),

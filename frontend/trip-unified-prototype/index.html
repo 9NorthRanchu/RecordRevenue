@@ -6,7 +6,7 @@
   <title>Unified Trip — Hokkaido Prototype</title>
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=43">
+  <link rel="stylesheet" href="style.css?v=44">
 </head>
 <body>
   <div class="prototype-note">UNIFIED TRIP · STATIC PROTOTYPE · ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง</div>
@@ -166,6 +166,10 @@
             <p class="field-note">ตั้งเรทประมาณการไว้ล่วงหน้าได้ ระบบจะใช้จนกว่ากระเป๋านั้นมีการเติมเงินจริง แล้วสลับไปใช้เรทเฉลี่ยจริงเอง</p>
             <div id="currencyRows"></div>
             <button class="soft-btn" id="addCurrency">＋ เพิ่มสกุลเงิน</button>
+          </section>
+          <section class="paper-card"><h3>ไอคอนหมวดค่าใช้จ่าย</h3>
+            <p class="field-note">ตั้งไอคอนของครอบครัวเอง — ใช้ร่วมกันทุกทริป ทุกคนในครอบครัวเห็นเหมือนกัน (อัปโหลดเป็น PNG พื้นโปร่งใส ขนาด 192×192 px)</p>
+            <div id="categoryIconRows"></div>
           </section>
           <section class="paper-card"><h3>ข้อมูล prototype</h3><p>รายการและแผนที่คุณแก้จะถูกเก็บไว้ในเบราว์เซอร์นี้ ไม่ส่งขึ้นเซิร์ฟเวอร์และไม่แตะบัญชีจริง</p><div class="close-lines"><span>บิลที่บันทึกไว้<b id="storageCount">—</b></span></div><button class="soft-btn" id="resetDemo">คืนค่าข้อมูลตัวอย่าง</button></section>
           <section class="paper-card"><h3>ปิดทริป</h3><p>ตรวจยอดที่ลงบัญชีหลักและยอดที่เก็บเฉพาะประวัติทริปก่อนยืนยัน</p><div class="close-lines" id="closeLines"></div><div class="close-actions"><button class="primary-btn" id="closePreview">ดูพรีวิวปิดทริป</button><button class="soft-btn" id="reopenTrip" hidden>เปิดทริปกลับ</button></div><div id="tripLog"></div></section>
@@ -451,7 +455,7 @@
   </section>
   <div class="toast" id="toast"></div>
   <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
-  <script src="api.js?v=15"></script>
-  <script src="app.js?v=51"></script>
+  <script src="api.js?v=16"></script>
+  <script src="app.js?v=52"></script>
 </body>
 </html>
