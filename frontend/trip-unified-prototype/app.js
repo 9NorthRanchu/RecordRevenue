@@ -25,6 +25,9 @@ $('.back')?.addEventListener('click', () => {
   else location.href = '../index.html';
 });
 
+// หน้ารวมทริป — ?all=1 บอก trips.html ว่าตั้งใจมาดูรายการ ไม่ต้องเด้งกลับทริปล่าสุด
+$('#allTripsBtn')?.addEventListener('click', () => { location.href = 'trips.html?all=1'; });
+
 const mask = $('#sheetMask');
 const sheet = $('#expenseSheet');
 const dialog = $('#closeDialog');
@@ -641,7 +644,9 @@ $('#deleteTripBtn')?.addEventListener('click', async () => {
   note.textContent = 'กำลังลบ…';
   try {
     await TripApi.deleteTrip();
-    location.href = 'trips.html';
+    // เลิกจำทริปนี้ก่อนออก ไม่งั้นหน้ารวมจะเด้งกลับเข้าทริปที่เพิ่งลบ
+    try { localStorage.removeItem('unified-trip-last'); } catch {}
+    location.href = 'trips.html?all=1';
   } catch (error) {
     btn.disabled = false;
     note.textContent = error.message;
@@ -2528,7 +2533,7 @@ $('#openNewTrip').addEventListener('click', () => {
   /* โหมดข้อมูลจริง: ปุ่มนี้เดิมเป็นของ demo ล้วน ๆ — เปลี่ยนแค่ข้อความบนจอ
      ไม่ได้สร้างทริปจริงหรือบันทึกอะไรเลย ถ้าปล่อยไว้ในโหมดจริงจะหลอกผู้ใช้
      ว่าสร้างทริปสำเร็จทั้งที่ไม่มีอะไรถูกบันทึก จึงพาไปหน้าสร้างทริปจริงแทน */
-  if (liveMode) { location.href = 'trips.html'; return; }
+  if (liveMode) { location.href = 'trips.html?all=1'; return; }
   newTripBanner = 'art/hokkaido-illustrated-clean.png';
   $('#newTripBannerPreview').src = newTripBanner;
   $('#newTripName').value = '';
@@ -2736,6 +2741,10 @@ async function refreshFromServer() {
 async function enterLiveMode() {
   markLiveBanner('กำลังโหลดข้อมูลจริง…', 'loading');
   applyLiveState(await TripApi.fetchTrip());
+  /* จำทริปที่เปิดล่าสุดไว้ในเครื่อง — เมนู Unified Trip จะพากลับเข้าทริปนี้
+     ทันทีในครั้งถัดไป (trips.html เด้งมาเอง) · จำเฉพาะตอนโหลดสำเร็จเท่านั้น
+     ทริปที่เข้าไม่ได้/ถูกลบไปแล้วจะได้ไม่ถูกจำจนเด้งวนเข้า error ซ้ำ ๆ */
+  try { localStorage.setItem('unified-trip-last', TripApi.config.projectId); } catch {}
 }
 
 loadState();
@@ -2745,6 +2754,13 @@ if (TripApi.config.enabled) {
     // ให้เข้าใจผิดว่าตัวเลขบนจอมาจากฐานจริง
     console.error(error);
     markLiveBanner(`โหลดข้อมูลจริงไม่สำเร็จ: ${error.message} · ตัวเลขที่เห็นเป็นข้อมูลตัวอย่าง`, 'error');
+    /* ถ้าทริปที่จำไว้คือทริปนี้เอง ให้เลิกจำ — ไม่งั้นเมนูจะเด้งกลับเข้า
+       ทริปที่เปิดไม่ได้ (เช่นถูกลบจากเครื่องอื่น) วนไปเรื่อย ๆ */
+    try {
+      if (localStorage.getItem('unified-trip-last') === TripApi.config.projectId) {
+        localStorage.removeItem('unified-trip-last');
+      }
+    } catch {}
   });
 }
 renderPlanWorkspace();

@@ -11,14 +11,13 @@
 const TripApi = (() => {
   const params = new URLSearchParams(location.search);
 
-  /* ผู้ใช้ที่ล็อกอินอยู่ — แอปหลักเก็บไว้ที่ sessionStorage คีย์ logged_in_user
+  /* ผู้ใช้ที่ล็อกอินอยู่ — แอปหลักเก็บไว้ที่ localStorage คีย์ logged_in_user
+     (จำในเครื่องตามอายุ token 30 วัน เพื่อให้ลิงก์ตรงใช้บนมือถือได้เลย)
      อยู่โดเมนเดียวกัน (record-revenue-web.pages.dev) จึงอ่านต่อได้เลย
-
-     ⚠️ sessionStorage แยกตามแท็บ ถ้าเปิดหน้านี้ในแท็บใหม่จะไม่เห็นการล็อกอิน
-        ต้องกดลิงก์จากในแอปในแท็บเดิม หรือใช้ ?userId= สำหรับทดสอบ */
+     ยังอ่าน sessionStorage เป็นทางสำรองสำหรับแท็บที่ล็อกอินค้างแบบเก่า */
   const sessionUserId = () => {
     try {
-      const raw = sessionStorage.getItem('logged_in_user');
+      const raw = localStorage.getItem('logged_in_user') || sessionStorage.getItem('logged_in_user');
       return raw ? (JSON.parse(raw).user_id || '') : '';
     } catch {
       return '';
@@ -28,7 +27,7 @@ const TripApi = (() => {
   /* token ที่แอปหลักเก็บไว้ตอนล็อกอิน — โดเมนเดียวกันจึงอ่านต่อได้
      ถ้ามี token เซิร์ฟเวอร์จะเชื่อ token ไม่ใช่ x-user-id ที่ปลอมได้ */
   const sessionToken = () => {
-    try { return sessionStorage.getItem('session_token') || ''; } catch { return ''; }
+    try { return localStorage.getItem('session_token') || sessionStorage.getItem('session_token') || ''; } catch { return ''; }
   };
 
   const fromSession = sessionUserId();

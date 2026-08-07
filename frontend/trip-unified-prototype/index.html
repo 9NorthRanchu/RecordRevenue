@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Unified Trip — Hokkaido Prototype</title>
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
-  <link rel="stylesheet" href="style.css?v=40">
+  <link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
   <div class="prototype-note">UNIFIED TRIP · STATIC PROTOTYPE · ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง</div>
@@ -25,6 +25,8 @@
     <main class="workspace">
       <header class="topbar">
         <button class="back"><span aria-hidden="true">‹</span> เมนูหลัก</button>
+        <!-- หน้ารวมทริปยังเข้าถึงได้เสมอ แม้เมนูหลักจะเด้งเข้าทริปล่าสุดโดยตรง -->
+        <button class="back" id="allTripsBtn" title="ทริปทั้งหมด">🗂️ ทริปทั้งหมด</button>
         <div><b id="tripTitle">Hokkaido Family Trip</b><small id="tripDates">8–19 ก.พ. 2027 · กำลังเดินทาง</small></div>
         <div class="top-actions"><button class="icon-btn" id="shareLocation">⌖</button><button class="avatar">N</button></div>
       </header>
@@ -448,7 +450,7 @@
   </section>
   <div class="toast" id="toast"></div>
   <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
-  <script src="api.js?v=13"></script>
-  <script src="app.js?v=47"></script>
+  <script src="api.js?v=14"></script>
+  <script src="app.js?v=48"></script>
 </body>
 </html>

@@ -1,6 +1,19 @@
 /* ── หน้ารวมทริป (trips.html) ──────────────────────────────────────────
-   เมนู "Unified Trip" ในแอปหลักพามาที่นี่ก่อนเสมอ แล้วค่อยกดเข้าทริปทีละอัน
-   ทริปที่มีลิงก์ตรง (จากหน้าตั้งค่าของแต่ละทริป) จะข้ามหน้านี้ไปเลย ไม่ผ่านที่นี่ */
+   เมนู "Unified Trip" ในแอปหลักชี้มาที่นี่ แต่ถ้าเครื่องนี้เคยเปิดทริปไหน
+   ล่าสุดจะเด้งเข้าทริปนั้นทันที (ตามที่ North เลือก — พฤติกรรมเหมือนตอนที่
+   เมนูพาเข้าทริปตรง ๆ) · อยากดูหน้ารวมจริง ๆ ให้เข้าด้วย ?all=1 ซึ่งเป็น
+   ลิงก์ที่ปุ่ม "ทริปทั้งหมด" ในหน้าทริปใช้ */
+
+const LAST_TRIP_KEY = 'unified-trip-last';
+
+(() => {
+  const params = new URLSearchParams(location.search);
+  if (params.get('all') === '1') return;             // ตั้งใจมาดูหน้ารวม
+  let last = '';
+  try { last = localStorage.getItem(LAST_TRIP_KEY) || ''; } catch {}
+  if (!last) return;                                  // ครั้งแรกของเครื่องนี้ — แสดงหน้ารวม
+  location.replace(`index.html?live=1&projectId=${encodeURIComponent(last)}`);
+})();
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];

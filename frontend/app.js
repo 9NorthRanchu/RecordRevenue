@@ -89,8 +89,12 @@ const API_BASE = "https://record-revenue.9nimz.workers.dev";
 
    header x-user-id เดิมยังส่งอยู่ ฝั่งเซิร์ฟเวอร์ยังรับไว้ช่วงเปลี่ยนผ่าน */
 const TOKEN_KEY = 'session_token';
+/* เก็บใน localStorage เพื่อให้ล็อกอินค้างในเครื่อง (ตามอายุ token ฝั่งเซิร์ฟเวอร์ 30 วัน)
+   — จำเป็นสำหรับเปิดลิงก์ทริปตรง ๆ บนมือถือโดยไม่ต้องผ่านหน้าล็อกอินทุกครั้ง
+   (North ยืนยันเลือกแบบนี้ 2026-08-02 · แลกกับความเสี่ยงบนเครื่องที่ใช้ร่วมกัน)
+   ยังอ่าน sessionStorage เป็นทางสำรอง เพื่อไม่เตะแท็บที่ล็อกอินค้างแบบเก่าออก */
 window.getSessionToken = () => {
-    try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
+    try { return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
 };
 
 (function attachTokenToApiCalls() {
@@ -1037,8 +1041,8 @@ function downloadTemplateFlat() {
 }
 
 async function initApp() {
-    // Restore session if exists
-    const storedUser = sessionStorage.getItem("logged_in_user");
+    // Restore session if exists — localStorage ก่อน (จำข้ามการปิดเบราว์เซอร์) แล้วค่อย sessionStorage (ของเก่า)
+    const storedUser = localStorage.getItem("logged_in_user") || sessionStorage.getItem("logged_in_user");
     if (storedUser) {
         const user = JSON.parse(storedUser);
         AppState.userId = user.user_id;
@@ -1148,11 +1152,11 @@ function bindNavigation() {
             AppState.familyId = user.family_id;
             AppState.allowedEntities = user.allowed_entities || [];
 
-            sessionStorage.setItem("logged_in_user", JSON.stringify(user));
-            /* เก็บ token ไว้ที่ sessionStorage เหมือน user — ปิดแท็บแล้วหาย
-               ไม่เก็บใน localStorage เพราะ token ค้างอยู่ถาวรบนเครื่องที่ใช้ร่วมกัน
-               มีความเสี่ยงมากกว่าความสะดวกที่ได้ */
-            if (data.token) sessionStorage.setItem(TOKEN_KEY, data.token);
+            /* เก็บใน localStorage — ล็อกอินค้างในเครื่องจนกด logout หรือ token
+               หมดอายุ (30 วันฝั่งเซิร์ฟเวอร์) เพื่อให้ลิงก์ทริปตรง ๆ ใช้บนมือถือได้
+               token หมดอายุแล้วเซิร์ฟเวอร์ปฏิเสธเองอยู่ดี ไม่ใช่เข้าได้ตลอดไป */
+            localStorage.setItem("logged_in_user", JSON.stringify(user));
+            if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
 
             document.getElementById("current-user-name").innerText = AppState.userName;
             document.querySelector(".user-role").innerText = AppState.userRole === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : 'สมาชิกครอบครัว';
@@ -1205,6 +1209,10 @@ function bindNavigation() {
                 method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
             }).catch(() => {});
         }
+        // ลบทั้งสองที่ — localStorage (ของใหม่) และ sessionStorage (ของเก่าที่อาจค้าง)
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem("logged_in_user");
+        localStorage.removeItem("unified-trip-last");
         sessionStorage.removeItem(TOKEN_KEY);
         sessionStorage.removeItem("logged_in_user");
         document.getElementById("workspace").classList.add("hidden");
