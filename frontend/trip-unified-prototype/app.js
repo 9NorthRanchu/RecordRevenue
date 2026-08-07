@@ -350,7 +350,17 @@ function walletSummary(wallet) {
 }
 
 function renderWallets() {
+  /* viewer หาไม่เจอได้จริง — ทริปเก่าที่สมาชิกยังไม่ถูกผูกกับบัญชีล็อกอิน
+     (TripMembers.user_id เป็น NULL) เซิร์ฟเวอร์จะตอบ viewer = null
+     ห้ามพังทั้งหน้า ให้บอกตรง ๆ ว่ายังไม่รู้ว่าเราเป็นสมาชิกคนไหน */
   const viewer = memberById(viewerId);
+  if (!viewer) {
+    $('#walletHeading').textContent = 'กระเป๋า';
+    $('#walletPrivacy').innerHTML = '⚠️ ระบบยังไม่รู้ว่าคุณเป็นสมาชิกคนไหนของทริปนี้ จึงแสดงกระเป๋าไม่ได้ · ให้ผู้ดูแลทริปผูกบัญชีของคุณก่อน';
+    $('#walletGrid').innerHTML = '';
+    $('#walletActivity').innerHTML = '';
+    return;
+  }
   const owned = wallets.filter(wallet => wallet.ownerId === viewerId);
   $('#walletHeading').textContent = `กระเป๋าของ ${viewer.name}`;
   $('#walletPrivacy').innerHTML = owned.length
@@ -559,9 +569,15 @@ function fillTripMetaForm(state) {
   $('#tripEndInput').value = state?.tripEndDate || '';
   $('#tripStageInput').value = state?.tripStage || 'ONGOING';
   // แก้ได้เฉพาะ admin — ฝั่งเซิร์ฟเวอร์ก็ตรวจซ้ำอีกชั้น
+  // viewer หาไม่เจอ (สมาชิกทริปเก่ายังไม่ผูกบัญชี) ต้องบอกสาเหตุจริง
+  // ไม่ใช่โทษคนใช้ว่าไม่ใช่ผู้ดูแล ทั้งที่จริง ๆ ระบบแค่จับคู่คนไม่ได้
+  const unknownViewer = liveMode && !memberById(viewerId);
   const canEdit = !liveMode || Boolean(memberById(viewerId)?.admin);
   $('#saveTripMeta').disabled = !canEdit;
-  $('#tripMetaError').textContent = canEdit ? '' : 'แก้ข้อมูลทริปได้เฉพาะผู้ดูแลทริป';
+  $('#tripMetaError').textContent = canEdit ? ''
+    : (unknownViewer
+        ? 'ระบบยังไม่รู้ว่าคุณเป็นสมาชิกคนไหนของทริปนี้ (ทริปเก่าที่สมาชิกยังไม่ผูกบัญชี) — รัน link_trip_members.sql เพื่อผูก'
+        : 'แก้ข้อมูลทริปได้เฉพาะผู้ดูแลทริป');
 
   // ลิงก์ตรงเข้าทริปนี้ — ใช้ path/query เดียวกับที่เมนูหลักลิงก์มา ใครกด
   // ลิงก์นี้ก็เข้าทริปเดียวกันได้ทันทีโดยไม่ผ่านหน้ารวมทริป
@@ -2678,8 +2694,10 @@ function applyLiveState(state) {
   ledgerCategories = state.ledgerCategories || [];
   /* ⚠️ ต้องตั้ง viewerId ก่อนเรียก fillTripMetaForm — ฟอร์มเช็คสิทธิ์ admin
      จาก viewerId ถ้าเรียกสลับกัน มันจะเช็คด้วยตัวตนของข้อมูลตัวอย่างเก่า
-     แล้วปิดปุ่มบันทึก/ลบใส่ทุกคน แม้แต่ผู้ดูแลจริง (เคยพังมาแล้ว 2026-08-02) */
-  if (state.viewerId) viewerId = state.viewerId;
+     แล้วปิดปุ่มบันทึกใส่ทุกคน แม้แต่ผู้ดูแลจริง (เคยพังมาแล้ว 2026-08-02)
+     เซิร์ฟเวอร์ตอบ viewer = null ได้จริง (สมาชิกทริปเก่ายังไม่ผูก user_id)
+     — ตั้งเป็น null ตรง ๆ อย่าปล่อยให้ค้างเป็น id ของข้อมูลตัวอย่าง */
+  viewerId = state.viewerId || null;
   fillTripMetaForm(state);
   if (state.banner) {
     tripBanner = state.banner;
