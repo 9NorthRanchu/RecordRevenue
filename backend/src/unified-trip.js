@@ -84,11 +84,18 @@ function canSee(expense, participantIds, viewerMemberId) {
 }
 
 /* ทุก endpoint ต้องผ่านด่านนี้ก่อน: ผู้ใช้ต้องอยู่ครอบครัวเดียวกับทริป
-   และต้องเป็นสมาชิกของทริปจึงจะเห็น/แก้อะไรได้ */
+   และต้องเป็นสมาชิกของทริปจึงจะเห็น/แก้อะไรได้
+
+   familyAdmin = ผู้ดูแลระบบของครอบครัว (Users.role = 'admin') มีสิทธิ์
+   จัดการข้อมูลทริป (แก้ชื่อ/วันที่/ประเภท และลบ) ของทุกทริปในครอบครัว
+   แม้ไม่ได้เป็นสมาชิกทริปนั้น — จำเป็นเพราะทริปเก่า/ทริปทดสอบบางอันมี
+   สมาชิกเป็นแค่ชื่อที่ไม่ผูกกับบัญชีใครเลย ถ้าไม่มีกติกานี้จะไม่มีมนุษย์
+   คนไหนลบทริปพวกนั้นได้อีกเลย (ต้องไปไล่ลบใน SQL แทน ซึ่งอันตรายกว่ามาก) */
 async function loadContext(env, userId, projectId) {
   const trip = await env.DB.prepare(`
       SELECT p.project_id, p.family_id, p.name, p.status, p.start_date, p.end_date,
-             p.total_budget, p.banner_url, p.theme_banner, p.posting_date, p.closed_at, p.trip_stage
+             p.total_budget, p.banner_url, p.theme_banner, p.posting_date, p.closed_at, p.trip_stage,
+             u.role AS viewer_user_role
       FROM Projects p JOIN Users u ON u.user_id = ?
       WHERE p.project_id = ? AND p.family_id = u.family_id
     `).bind(userId, projectId).first();
@@ -96,7 +103,11 @@ async function loadContext(env, userId, projectId) {
   const viewer = await env.DB.prepare(
     `SELECT * FROM TripMembers WHERE project_id=? AND user_id=?`
   ).bind(projectId, userId).first();
-  return { trip, viewer, closed: trip.status === 'closed' || Boolean(trip.closed_at) };
+  return {
+    trip, viewer,
+    familyAdmin: trip.viewer_user_role === 'admin',
+    closed: trip.status === 'closed' || Boolean(trip.closed_at)
+  };
 }
 
 /* ── เขียนข้อมูล: สกุลเงิน ─────────────────────────────────────────────
@@ -544,7 +555,10 @@ async function deleteExpense(env, ctx, projectId, expenseId, corsHeaders) {
    admin เท่านั้น เพราะวันเดินทางมีผลกับการเตือนเรื่องงวดบัญชีตอนปิดทริป
    และชื่อทริปไปโผล่ใน statement ของรายการที่โพสต์เข้าบัญชีจริง */
 async function writeTripMeta(request, env, ctx, projectId, corsHeaders) {
-  if (!ctx.viewer?.is_admin) return json({ error: 'แก้ข้อมูลทริปได้เฉพาะผู้ดูแลทริป' }, corsHeaders, 403);
+  // ผู้ดูแลทริป หรือผู้ดูแลระบบของครอบครัว (จัดการทริปที่สมาชิกไม่ผูกบัญชีได้)
+  if (!ctx.viewer?.is_admin && !ctx.familyAdmin) {
+    return json({ error: 'แก้ข้อมูลทริปได้เฉพาะผู้ดูแลทริป' }, corsHeaders, 403);
+  }
   const body = await request.json().catch(() => ({}));
 
   const name = String(body.name ?? ctx.trip.name ?? '').trim();
@@ -674,7 +688,10 @@ async function createTrip(request, env, userId, corsHeaders) {
    กลายเป็นรายการลอย ไม่เหลือทริปอ้างอิงกลับมา — ให้เปลี่ยนเป็น
    trip_stage = MEMORY แทนการลบจริง (แก้ผ่าน POST /trip ตามปกติ) */
 async function deleteTrip(env, ctx, projectId, corsHeaders) {
-  if (!ctx.viewer?.is_admin) return json({ error: 'ลบทริปได้เฉพาะผู้ดูแลทริปเท่านั้น' }, corsHeaders, 403);
+  // ผู้ดูแลทริป หรือผู้ดูแลระบบของครอบครัว (ทริปเก่าที่ไม่มีสมาชิกผูกบัญชีจะไม่มีใครลบได้เลยถ้าไม่มีข้อนี้)
+  if (!ctx.viewer?.is_admin && !ctx.familyAdmin) {
+    return json({ error: 'ลบทริปได้เฉพาะผู้ดูแลทริปเท่านั้น' }, corsHeaders, 403);
+  }
 
   const posted = await env.DB.prepare(
     `SELECT COUNT(*) AS n FROM TripClosures WHERE project_id=? AND linked_transaction_id IS NOT NULL`
@@ -1320,6 +1337,9 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     meta: {
       phase: 'read-only',
       viewer_is_admin: Boolean(viewer?.is_admin),
+      // สิทธิ์จัดการข้อมูลทริป (แก้ชื่อ/วันที่/ประเภท/ลบ) — รวมผู้ดูแลระบบครอบครัว
+      // ที่ไม่ได้เป็นสมาชิกทริปด้วย หน้าจอใช้ตัวนี้ตัดสินปุ่ม ไม่ต้องเดาเอง
+      can_manage_trip: Boolean(viewer?.is_admin) || ctx.familyAdmin,
       hidden_expense_count: (expenses.results || []).length - visibleExpenses.length
     }
   }, corsHeaders);

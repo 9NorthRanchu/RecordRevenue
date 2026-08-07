@@ -183,7 +183,10 @@ const TripApi = (() => {
       banner: bannerPath(payload.trip?.banner_url || payload.trip?.theme_banner),
       ledgerCategories: payload.ledger_categories || [],
       netLedgerThb: payload.ledger?.net_thb ?? 0,
-      hiddenExpenseCount: payload.meta?.hidden_expense_count ?? 0
+      hiddenExpenseCount: payload.meta?.hidden_expense_count ?? 0,
+      /* สิทธิ์จัดการทริป — เซิร์ฟเวอร์คิดให้แล้ว (รวมผู้ดูแลระบบครอบครัว
+         ที่ไม่ได้เป็นสมาชิกทริป) หน้าจอห้ามเดาซ้ำจากรายชื่อสมาชิกอย่างเดียว */
+      canManageTrip: Boolean(payload.meta?.can_manage_trip)
     };
   }
 

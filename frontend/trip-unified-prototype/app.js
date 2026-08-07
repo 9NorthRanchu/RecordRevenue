@@ -204,6 +204,8 @@ let liveMode = false;
 /* วันจบทริปจริงจาก Projects.end_date — TRIP_END_DATE เป็นค่าสมมติของข้อมูล
    ตัวอย่าง (ก.พ. 2027) ถ้าเผลอใช้ตัวนั้นตอนปิดทริปจริงจะลงบัญชีผิดงวดทั้งทริป */
 let liveTripEndDate = '';
+// สิทธิ์จัดการทริปจากเซิร์ฟเวอร์ — รวมผู้ดูแลระบบครอบครัวที่ไม่ได้เป็นสมาชิกทริป
+let liveCanManage = false;
 
 const currencyByCode = code => tripCurrencies.find(row => row.code === code);
 
@@ -568,11 +570,11 @@ function fillTripMetaForm(state) {
   $('#tripStartInput').value = state?.tripStartDate || '';
   $('#tripEndInput').value = state?.tripEndDate || '';
   $('#tripStageInput').value = state?.tripStage || 'ONGOING';
-  // แก้ได้เฉพาะ admin — ฝั่งเซิร์ฟเวอร์ก็ตรวจซ้ำอีกชั้น
-  // viewer หาไม่เจอ (สมาชิกทริปเก่ายังไม่ผูกบัญชี) ต้องบอกสาเหตุจริง
-  // ไม่ใช่โทษคนใช้ว่าไม่ใช่ผู้ดูแล ทั้งที่จริง ๆ ระบบแค่จับคู่คนไม่ได้
+  /* สิทธิ์มาจากเซิร์ฟเวอร์ (canManageTrip รวมผู้ดูแลระบบครอบครัวที่ไม่ได้
+     เป็นสมาชิกทริปด้วย) — ถ้าไม่มีสิทธิ์และ viewer หาไม่เจอ ให้บอกสาเหตุจริง
+     ไม่ใช่โทษคนใช้ว่าไม่ใช่ผู้ดูแล ทั้งที่จริง ๆ ระบบแค่จับคู่คนไม่ได้ */
   const unknownViewer = liveMode && !memberById(viewerId);
-  const canEdit = !liveMode || Boolean(memberById(viewerId)?.admin);
+  const canEdit = !liveMode || Boolean(state?.canManageTrip) || Boolean(memberById(viewerId)?.admin);
   $('#saveTripMeta').disabled = !canEdit;
   $('#tripMetaError').textContent = canEdit ? ''
     : (unknownViewer
@@ -895,8 +897,9 @@ $('#memberRows').addEventListener('click', event => {
   renderBills();
   renderMembers();   // ป้าย "กำลังดูอยู่" ต้องย้ายตามคนที่เลือก
   // สิทธิ์ปุ่มบันทึก/ลบทริปผูกกับคนที่กำลังดู — สลับมุมมองแล้วต้องประเมินใหม่
+  // (liveCanManage มาจากเซิร์ฟเวอร์ ครอบคลุมผู้ดูแลระบบครอบครัวด้วย)
   const isAdmin = Boolean(memberById(viewerId)?.admin);
-  const canEdit = !liveMode || isAdmin;
+  const canEdit = !liveMode || isAdmin || liveCanManage;
   $('#saveTripMeta').disabled = !canEdit;
   $('#tripMetaError').textContent = canEdit ? '' : 'แก้ข้อมูลทริปได้เฉพาะผู้ดูแลทริป';
   showPrototypeToast(`กำลังดูในมุมมองของ ${memberName(viewerId)}`);
@@ -2683,6 +2686,7 @@ function applyLiveState(state) {
   tripClosed = state.tripClosed;
   postingDate = state.postingDate;
   liveTripEndDate = state.tripEndDate || '';
+  liveCanManage = Boolean(state.canManageTrip);
   /* มีจุดแวะจริงถึงจะทับแผนตัวอย่าง — ทริปที่ยังไม่ได้วางแผนจะได้ไม่เห็นหน้าว่างเปล่า
      planDays เป็น const จึงต้องเปลี่ยนของในอาร์เรย์เดิม */
   if (state.planDays.length) {

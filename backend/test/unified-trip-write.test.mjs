@@ -937,5 +937,44 @@ check('ทริปยังอยู่ครบ ไม่มีอะไรถ
 check('ยังเปลี่ยนเป็น Memory แทนได้ตามปกติ (ไม่ได้ถูกล็อกทั้งทริป)',
   (await call('POST', '/api/unified-trip/trip', { project: 'TRP-DEL2', body: { name: 'ทริปโพสต์บัญชีแล้ว', trip_stage: 'memory' } })).status === 200);
 
+console.log('\n── ผู้ดูแลระบบครอบครัวจัดการทริปกำพร้าได้ ──────');
+/* ทริปเก่า/ทริปทดสอบที่สมาชิกเป็นแค่ชื่อ ไม่ผูกกับบัญชีใครเลย —
+   ถ้าไม่มีกติกา familyAdmin จะไม่มีใครแก้/ลบทริปแบบนี้ได้อีกเลย */
+db.exec(`
+  INSERT INTO Projects (project_id,family_id,name,status) VALUES ('TRP-ORPHAN','FAM-1','ทริปกำพร้า','active');
+  INSERT INTO TripMembers (member_id,project_id,user_id,display_name,role,ledger_mode,is_admin) VALUES
+    ('TM-OR1','TRP-ORPHAN',NULL,'ดำดำดำด','ผู้ดูแล','MAIN',1);
+`);
+
+r = await call('GET', '/api/unified-trip', { project: 'TRP-ORPHAN' });
+check('เข้าดูได้แม้ไม่เป็นสมาชิก (ครอบครัวเดียวกัน)', r.status === 200, JSON.stringify(r.status));
+check('viewer เป็น null ไม่ใช่ error', r.data.viewer === null);
+check('🔑 meta.can_manage_trip = true สำหรับผู้ดูแลระบบครอบครัว', r.data.meta.can_manage_trip === true);
+
+r = await call('GET', '/api/unified-trip', { user: 'uPuii', project: 'TRP-ORPHAN' });
+check('สมาชิกธรรมดาของครอบครัว: can_manage_trip = false', r.data.meta.can_manage_trip === false, JSON.stringify(r.data.meta));
+
+r = await call('POST', '/api/unified-trip/trip', { user: 'uPuii', project: 'TRP-ORPHAN', body: { name: 'แอบแก้' } });
+check('สมาชิกธรรมดา (ไม่ใช่ผู้ดูแลระบบ) แก้ไม่ได้ → 403', r.status === 403);
+
+r = await call('POST', '/api/unified-trip/trip', { project: 'TRP-ORPHAN', body: { name: 'ทริปกำพร้า (แก้โดยผู้ดูแลระบบ)', trip_stage: 'memory' } });
+check('ผู้ดูแลระบบครอบครัวแก้ได้แม้ไม่เป็นสมาชิกทริป', r.status === 200, JSON.stringify(r));
+
+r = await call('DELETE', '/api/unified-trip/trip', { user: 'uPuii', project: 'TRP-ORPHAN' });
+check('สมาชิกธรรมดาลบไม่ได้ → 403', r.status === 403);
+r = await call('DELETE', '/api/unified-trip/trip', { project: 'TRP-ORPHAN' });
+check('🔑 ผู้ดูแลระบบครอบครัวลบทริปกำพร้าได้', r.status === 200, JSON.stringify(r));
+check('ลบจริง รวมสมาชิกที่ไม่ผูกบัญชี', (() => {
+  return db.prepare(`SELECT COUNT(*) n FROM Projects WHERE project_id='TRP-ORPHAN'`).get().n === 0
+      && db.prepare(`SELECT COUNT(*) n FROM TripMembers WHERE project_id='TRP-ORPHAN'`).get().n === 0;
+})());
+
+// ครอบครัวอื่นยังมองไม่เห็น/ทำอะไรไม่ได้เหมือนเดิม แม้เป็น role admin ของครอบครัวตัวเอง
+db.exec(`UPDATE Users SET role='admin' WHERE user_id='uOther'`);
+db.exec(`INSERT INTO Projects (project_id,family_id,name,status) VALUES ('TRP-ORPHAN2','FAM-1','ทริปกำพร้า 2','active')`);
+r = await call('DELETE', '/api/unified-trip/trip', { user: 'uOther', project: 'TRP-ORPHAN2' });
+check('⚠️ admin ของครอบครัวอื่นลบทริปเราไม่ได้ → 404', r.status === 404, JSON.stringify(r.status));
+db.exec(`DELETE FROM Projects WHERE project_id='TRP-ORPHAN2'; UPDATE Users SET role='member' WHERE user_id='uOther'`);
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 process.exit(fail ? 1 : 0);
