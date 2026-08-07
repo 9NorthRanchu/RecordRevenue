@@ -2568,7 +2568,10 @@ $('#assetUpload').addEventListener('change', async event => {
         finalSrc = await TripApi.uploadIcon(blob, `${label}.webp`);
         $('#assetError').textContent = '';
       } catch (uploadError) {
-        $('#assetError').textContent = `อัปโหลดขึ้นเซิร์ฟเวอร์ไม่สำเร็จ: ${uploadError.message} · ใช้รูปนี้ได้เฉพาะเบราว์เซอร์นี้`;
+        // อัปโหลดแยกไฟล์ไม่ได้ (เช่นยังไม่ได้เปิด R2) ไม่ใช่ตัวบล็อก — รูปที่ย่อ
+        // แล้วยังถูกฝังไปกับข้อมูลตามปกติ (data:) ทุกคนในครอบครัวยังเห็นเหมือนกัน
+        // เพราะเก็บอยู่ในฐานเดียวกัน แค่ไม่ได้แยกเป็นไฟล์ต่างหากบน R2
+        $('#assetError').textContent = `อัปโหลดแยกไฟล์ไม่สำเร็จ (${uploadError.message}) · จะฝังรูปนี้ไปกับข้อมูลแทน`;
       }
     }
     assetLibrary[assetKind].unshift({ id:`up-${Date.now()}`, label, src: finalSrc, uploaded:true });
