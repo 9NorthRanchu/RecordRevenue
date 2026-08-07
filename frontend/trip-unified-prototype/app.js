@@ -877,6 +877,12 @@ $('#memberRows').addEventListener('click', event => {
   if (!row || row.dataset.viewAs === viewerId) return;
   viewerId = row.dataset.viewAs;
   renderBills();
+  renderMembers();   // ป้าย "กำลังดูอยู่" ต้องย้ายตามคนที่เลือก
+  // สิทธิ์ปุ่มบันทึก/ลบทริปผูกกับคนที่กำลังดู — สลับมุมมองแล้วต้องประเมินใหม่
+  const isAdmin = Boolean(memberById(viewerId)?.admin);
+  const canEdit = !liveMode || isAdmin;
+  $('#saveTripMeta').disabled = !canEdit;
+  $('#tripMetaError').textContent = canEdit ? '' : 'แก้ข้อมูลทริปได้เฉพาะผู้ดูแลทริป';
   showPrototypeToast(`กำลังดูในมุมมองของ ${memberName(viewerId)}`);
 });
 
@@ -2670,8 +2676,11 @@ function applyLiveState(state) {
   }
   if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
   ledgerCategories = state.ledgerCategories || [];
-  fillTripMetaForm(state);
+  /* ⚠️ ต้องตั้ง viewerId ก่อนเรียก fillTripMetaForm — ฟอร์มเช็คสิทธิ์ admin
+     จาก viewerId ถ้าเรียกสลับกัน มันจะเช็คด้วยตัวตนของข้อมูลตัวอย่างเก่า
+     แล้วปิดปุ่มบันทึก/ลบใส่ทุกคน แม้แต่ผู้ดูแลจริง (เคยพังมาแล้ว 2026-08-02) */
   if (state.viewerId) viewerId = state.viewerId;
+  fillTripMetaForm(state);
   if (state.banner) {
     tripBanner = state.banner;
     $('.map-hero img').src = tripBanner;

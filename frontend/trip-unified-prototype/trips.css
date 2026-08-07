@@ -14,7 +14,7 @@
 .trip-pick-card:hover{transform:translateY(-2px)}
 .trip-pick-banner{height:110px;background:linear-gradient(140deg,#eaf6f8,#fde8ee);background-size:cover;background-position:center}
 .trip-pick-body{padding:14px 16px 16px;display:grid;gap:6px}
-.trip-pick-body h3{margin:0;font:800 18px Loop}
+.trip-pick-body h3{margin:0;font:800 18px Sarabun}
 .trip-pick-body small{color:var(--muted)}
 .trip-pick-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .trip-pick-tags span{font-size:10px;padding:3px 8px;border-radius:99px;background:#f1efec;color:var(--muted)}

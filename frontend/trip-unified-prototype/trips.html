@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>ทริปทั้งหมด — Unified Trip</title>
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
-  <link rel="stylesheet" href="style.css?v=41">
-  <link rel="stylesheet" href="trips.css?v=1">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=43">
+  <link rel="stylesheet" href="trips.css?v=2">
 </head>
 <body>
   <div class="app-shell trips-shell">
@@ -43,26 +44,26 @@
   <div class="sheet-mask" id="newTripMask"></div>
   <div class="dialog" id="newTripDialog">
     <button class="dialog-close" id="newTripClose">✕</button>
-    <h2 style="font:800 22px Loop;margin:0 0 14px">เพิ่มทริปใหม่</h2>
+    <h2 style="font:800 22px Sarabun;margin:0 0 14px">เพิ่มทริปใหม่</h2>
     <form id="newTripForm" style="display:grid;gap:12px">
       <label style="display:grid;gap:5px;font-weight:700">
         ชื่อทริป
         <input type="text" id="newTripName" placeholder="เช่น ทริปเกาะหลีเป๊ะ" required
-          style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Loop">
+          style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Sarabun">
       </label>
       <div class="date-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <label style="display:grid;gap:5px;font-weight:700">
           วันเริ่ม (ถ้ารู้แล้ว)
-          <input type="date" id="newTripStart" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Loop">
+          <input type="date" id="newTripStart" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Sarabun">
         </label>
         <label style="display:grid;gap:5px;font-weight:700">
           วันจบ
-          <input type="date" id="newTripEnd" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Loop">
+          <input type="date" id="newTripEnd" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Sarabun">
         </label>
       </div>
       <label style="display:grid;gap:5px;font-weight:700">
         ประเภททริป
-        <select id="newTripStage" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Loop">
+        <select id="newTripStage" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Sarabun">
           <option value="DREAM" selected>💭 Dream — ยังไม่แน่นอน</option>
           <option value="ONGOING">🧭 Ongoing — จะเกิดแน่ ๆ</option>
         </select>
