@@ -112,8 +112,14 @@ const TripApi = (() => {
       ownerId: row.owner_member_id,
       walletId: row.wallet_id,
       date: row.expense_date,
+      /* ชื่อกับไอคอนของบรรทัดหมวดถูกเซิร์ฟเวอร์เติมสดจาก preset ปัจจุบันมาแล้ว
+         หน้าจอจึงใช้ค่าที่ได้ตรง ๆ ไม่ต้องไปจับคู่กับรายการย่อยเองอีกรอบ */
       categories: (row.categories || []).map(line => ({
-        name: line.label || 'อื่น ๆ', categoryId: line.category_id || '', amount: line.amount_foreign || 0
+        name: line.label || 'อื่น ๆ',
+        categoryId: line.category_id || '',
+        presetId: line.preset_id || '',
+        icon: line.icon_url || '',
+        amount: line.amount_foreign || 0
       })),
       visibility: lower(row.visibility) || 'trip',
       shared: Boolean(row.is_shared),
@@ -182,6 +188,16 @@ const TripApi = (() => {
       projectId: payload.trip?.project_id || '',
       banner: bannerPath(payload.trip?.banner_url || payload.trip?.theme_banner),
       ledgerCategories: payload.ledger_categories || [],
+      /* รายการค่าใช้จ่ายย่อยของทริปนี้ — ปุ่มที่ฟอร์มจดบิลใช้เลือก
+         แต่ละอันมีชื่อ+ไอคอนของตัวเอง แล้วชี้ไปหมวดบัญชีหนึ่งหมวด */
+      presets: (payload.presets || []).map(row => ({
+        id: row.preset_id,
+        label: row.label,
+        icon: row.icon_url || '',
+        categoryId: row.category_id || '',
+        categoryName: row.category_name || '',
+        sortOrder: row.sort_order ?? 0
+      })),
       netLedgerThb: payload.ledger?.net_thb ?? 0,
       hiddenExpenseCount: payload.meta?.hidden_expense_count ?? 0,
       /* สิทธิ์จัดการทริป — เซิร์ฟเวอร์คิดให้แล้ว (รวมผู้ดูแลระบบครอบครัว
@@ -245,7 +261,11 @@ const TripApi = (() => {
     is_shared: Boolean(bill.shared),
     split_mode: String(bill.splitMode || 'equal').toUpperCase(),
     categories: (bill.categories || []).map(row => ({
-      label: row.name, category_id: row.categoryId || undefined, amount_foreign: row.amount
+      label: row.name,
+      category_id: row.categoryId || undefined,
+      // ผูกกลับไปที่รายการย่อยของทริป เพื่อให้แก้ชื่อ/ไอคอนทีหลังแล้วบิลนี้เปลี่ยนตาม
+      preset_id: row.presetId || undefined,
+      amount_foreign: row.amount
     })),
     participants: (bill.participants || []).map(row =>
       String(bill.splitMode).toLowerCase() === 'equal'
@@ -345,6 +365,19 @@ const TripApi = (() => {
      ขาดกลางคัน ลำดับในฐานจะค้างครึ่ง ๆ ไม่ตรงกับที่เห็นบนจอ */
   const reorderStops = stops => send('POST', '/stops/order', { body: { stops } });
 
+  /* ── รายการค่าใช้จ่ายย่อยของทริป ─────────────────────────────────────
+     ชื่อ+ไอคอน+หมวดบัญชีที่ผูก · id ที่หน้าจอสร้างเองขึ้นต้นด้วย new- ไม่ใช่ของจริง
+     ในฐาน ต้องไม่ส่งขึ้นไป ไม่งั้นเซิร์ฟเวอร์จะหาไม่เจอแล้วตอบ 404 ตอนสร้างใหม่ */
+  const savePreset = ({ id, label, icon, categoryId, sortOrder }) => send('POST', '/presets', {
+    body: {
+      preset_id: id && !id.startsWith('new-') ? id : undefined,
+      label, icon_url: icon || null,
+      category_id: categoryId || null,
+      sort_order: sortOrder ?? 0
+    }
+  });
+  const removePreset = id => send('DELETE', '/presets', { query: `&id=${encodeURIComponent(id)}` });
+
   /* ── ไอคอนที่ครอบครัวอัปโหลดเอง ───────────────────────────────────────
      อัปโหลดไฟล์จริงขึ้น R2 บนเซิร์ฟเวอร์ คืน URL ถาวรที่ทุกคนในครอบครัว
      เห็นเหมือนกัน ต่างจาก data: URL เดิมที่เห็นเฉพาะเบราว์เซอร์ที่อัปโหลด
@@ -373,6 +406,6 @@ const TripApi = (() => {
     saveWallet, saveFunding, removeFunding, closeTrip, reopenTrip,
     saveStop, removeStop, reorderStops, saveTripMeta, saveBanner,
     listTrips, createTrip, deleteTrip, authHeaders, sessionToken, bannerPath,
-    uploadIcon, loadCategoryIcons, saveCategoryIcon
+    uploadIcon, loadCategoryIcons, saveCategoryIcon, savePreset, removePreset
   };
 })();

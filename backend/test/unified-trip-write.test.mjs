@@ -44,7 +44,9 @@ CREATE TABLE TripExpenses (trip_expense_id TEXT PRIMARY KEY, project_id TEXT, me
   expense_date TEXT NOT NULL, note TEXT, created_at DATETIME,
   owner_member_id TEXT, visibility TEXT, is_shared INTEGER, split_mode TEXT,
   currency_code TEXT, icon_url TEXT, settled_amount_thb REAL, settled_rate REAL);
-CREATE TABLE TripExpenseCategories (line_id TEXT PRIMARY KEY, trip_expense_id TEXT, category_id TEXT, label TEXT, amount_foreign REAL);
+CREATE TABLE TripExpenseCategories (line_id TEXT PRIMARY KEY, trip_expense_id TEXT, category_id TEXT, label TEXT, amount_foreign REAL, preset_id TEXT);
+CREATE TABLE TripExpensePresets (preset_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, label TEXT NOT NULL,
+  icon_url TEXT, category_id TEXT, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE TripExpenseParticipants (participant_id TEXT PRIMARY KEY, trip_expense_id TEXT, member_id TEXT, amount_foreign REAL, percent REAL);
 CREATE TABLE TripClosures (closure_id TEXT PRIMARY KEY, project_id TEXT, entry_type TEXT,
   posting_date TEXT, ledger_total REAL, trip_only_total REAL, fx_result REAL, carried_thb REAL,
@@ -654,7 +656,8 @@ db.prepare(`INSERT INTO TripExpenses (trip_expense_id,project_id,member_id,owner
   amount_foreign,amount_thb,expense_date,currency_code,visibility,split_mode)
   VALUES ('TE-NOCAT','TRP-2','TM-X1','TM-X1','W-X',1000,234,'2026-12-21','JPY','TRIP','EQUAL')`).run();
 db.prepare(`INSERT INTO TripExpenseParticipants VALUES ('P-NOCAT','TE-NOCAT','TM-X1',1000,NULL)`).run();
-db.prepare(`INSERT INTO TripExpenseCategories VALUES ('L-NOCAT','TE-NOCAT',NULL,'ของฝาก',1000)`).run();
+db.prepare(`INSERT INTO TripExpenseCategories (line_id, trip_expense_id, category_id, label, amount_foreign)
+  VALUES ('L-NOCAT','TE-NOCAT',NULL,'ของฝาก',1000)`).run();
 
 r = await call('POST', '/api/unified-trip/closures', {
   ...T2, body: { posting_date:'2027-02-01', account_id:'ACC-1',
@@ -1067,6 +1070,86 @@ let uploadedUrl = '';
   const res = await handleUnifiedTrip(req, env, url, cors, '');
   check('⚠️ อัปโหลดไอคอนโดยไม่ล็อกอิน → 401', res.status === 401);
 }
+
+console.log('\n── รายการค่าใช้จ่ายย่อยประจำทริป (2026-08-10) ──────');
+/* หัวใจของฟีเจอร์นี้: แก้ชื่อ/ไอคอนของรายการทีเดียว บิลเก่าทุกใบต้องเปลี่ยนตาม
+   ถ้าเทสนี้ผ่าน แปลว่าบิลอ้าง preset_id จริง ไม่ได้ก๊อปค่าไปเก็บตอนสร้าง */
+
+r = await call('POST', '/api/unified-trip/presets', { body: { label: 'ราเมง', icon_url: 'ramen.png', category_id: 'CAT-FOOD' } });
+check('เพิ่มรายการย่อยได้', r.status === 201, JSON.stringify(r));
+const presetRamen = r.data.preset_id;
+
+r = await call('POST', '/api/unified-trip/presets', { body: { label: 'ขนม', icon_url: 'snack.png', category_id: 'CAT-FOOD' } });
+check('🔑 หลายรายการผูกหมวดบัญชีเดียวกันได้ (ราเมง + ขนม → CAT-FOOD)', r.status === 201);
+const presetSnack = r.data.preset_id;
+
+r = await call('POST', '/api/unified-trip/presets', { body: { label: 'ไม่มีชื่อ', category_id: 'CAT-FOOD' } });
+check('ไอคอนเว้นว่างได้ ไม่บังคับ', r.status === 201);
+
+r = await call('POST', '/api/unified-trip/presets', { body: { label: '', category_id: 'CAT-FOOD' } });
+check('ชื่อว่าง → 400', r.status === 400);
+
+r = await call('POST', '/api/unified-trip/presets', { body: { label: 'แอบผูกข้ามครอบครัว', category_id: 'CAT-OTHER' } });
+check('⚠️ ผูกหมวดบัญชีของครอบครัวอื่นไม่ได้ → 400', r.status === 400, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/presets', { user: 'uOther', body: { label: 'คนนอก' } });
+check('⚠️ คนนอกครอบครัวเพิ่มรายการในทริปเราไม่ได้ → 404', r.status === 404);
+
+// บิลที่ใช้ preset — ต้องอ่านชื่อ/ไอคอนกลับมาจาก preset ปัจจุบัน ไม่ใช่ label ที่ส่งไป
+r = await call('POST', '/api/unified-trip/expenses', {
+  body: {
+    expense_date: '2026-12-18', amount_foreign: 1000, currency_code: 'THB',
+    member_id: 'TM-1', owner_member_id: 'TM-1', note: 'มื้อเที่ยง',
+    categories: [{ label: 'ชื่อเก่าตอนจด', preset_id: presetRamen, amount_foreign: 1000 }],
+    participants: [{ member_id: 'TM-1' }]
+  }
+});
+check('บันทึกบิลที่ผูกรายการย่อยได้', r.status === 200, JSON.stringify(r));
+const presetBillId = r.data.trip_expense_id;
+
+r = await call('GET', '/api/unified-trip');
+let line = r.data.expenses.find(e => e.trip_expense_id === presetBillId)?.categories[0];
+check('🔑 อ่านกลับได้ชื่อจาก preset ไม่ใช่ label ที่ส่งตอนจด', line?.label === 'ราเมง', JSON.stringify(line));
+check('🔑 ได้ไอคอนของ preset มาด้วย', line?.icon_url === 'ramen.png');
+check('🔑 หมวดบัญชีมาจาก preset (CAT-FOOD)', line?.category_id === 'CAT-FOOD');
+
+// ── หัวใจของฟีเจอร์: แก้ preset แล้วบิลเก่าเปลี่ยนตาม ──
+r = await call('POST', '/api/unified-trip/presets', {
+  body: { preset_id: presetRamen, label: 'ราเมงต้นตำรับ', icon_url: 'ramen2.png', category_id: 'CAT-STAY' }
+});
+check('แก้ไขรายการย่อยได้', r.status === 200, JSON.stringify(r));
+
+r = await call('GET', '/api/unified-trip');
+line = r.data.expenses.find(e => e.trip_expense_id === presetBillId)?.categories[0];
+check('🔑 แก้ชื่อ preset → บิลเก่าเปลี่ยนตามทันที', line?.label === 'ราเมงต้นตำรับ', JSON.stringify(line));
+check('🔑 แก้ไอคอน preset → บิลเก่าเปลี่ยนตาม', line?.icon_url === 'ramen2.png');
+check('🔑 เปลี่ยนหมวดบัญชีที่ผูก → บิลเก่าเปลี่ยนตาม', line?.category_id === 'CAT-STAY');
+
+r = await call('POST', '/api/unified-trip/presets', { body: { preset_id: 'TXP-ไม่มีจริง', label: 'x' } });
+check('แก้รายการที่ไม่มี → 404', r.status === 404);
+
+// ── ลบ preset: บิลเก่าต้องไม่ไร้ชื่อ ──
+r = await call('DELETE', '/api/unified-trip/presets', { query: `&id=${encodeURIComponent(presetRamen)}` });
+check('ลบรายการย่อยได้', r.status === 200, JSON.stringify(r));
+
+r = await call('GET', '/api/unified-trip');
+line = r.data.expenses.find(e => e.trip_expense_id === presetBillId)?.categories[0];
+check('🔑 ลบ preset แล้วบิลเก่ายังอยู่ ไม่ไร้ชื่อ', Boolean(line?.label), JSON.stringify(line));
+check('บิลไม่ถูกลบตาม preset', r.data.expenses.some(e => e.trip_expense_id === presetBillId));
+
+r = await call('DELETE', '/api/unified-trip/presets', { query: '&id=TXP-ไม่มีจริง' });
+check('ลบรายการที่ไม่มี → 404', r.status === 404);
+
+// รายการของทริปหนึ่งต้องไม่ไปโผล่ในอีกทริป แม้อยู่ครอบครัวเดียวกัน
+r = await call('GET', '/api/unified-trip', { project: 'TRP-2' });
+check('⚠️ รายการย่อยเป็นของทริปใครทริปมัน ไม่ปนกัน',
+  !(r.data.presets || []).some(p => p.preset_id === presetSnack), JSON.stringify(r.data.presets));
+
+r = await call('GET', '/api/unified-trip');
+check('ทริปเดิมยังเห็นรายการของตัวเองครบ',
+  (r.data.presets || []).some(p => p.preset_id === presetSnack));
+check('payload คืนชื่อหมวดบัญชีมาด้วย (ไม่ต้องจับคู่เอง)',
+  r.data.presets.find(p => p.preset_id === presetSnack)?.category_name === 'ค่าอาหาร');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 if (fail > 0) process.exit(1);

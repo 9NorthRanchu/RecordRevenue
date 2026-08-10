@@ -46,7 +46,7 @@ function openSheet() {
 function closeLayers() {
   mask.classList.remove('open');
   [sheet, dialog, planEditor, $('#assetPicker'), $('#newTripDialog'), $('#currencyDialog'),
-   $('#fundDialog'), $('#walletDialog'), $('#reopenDialog')].forEach(layer => {
+   $('#fundDialog'), $('#walletDialog'), $('#reopenDialog'), $('#presetDialog')].forEach(layer => {
     layer.classList.remove('open');
     layer.setAttribute('aria-hidden', 'true');
   });
@@ -273,8 +273,9 @@ function billCategoryLabel(bill) {
 /* An explicitly chosen icon wins; otherwise fall back to the category's own
    icon (ครอบครัวตั้งเองผ่านหน้า "เพิ่มเติม" ถ้ามี) แล้วค่อยตกไปที่ชุดไอคอนเดิม */
 function billIcon(bill) {
-  const name = bill.categories[0]?.name;
-  return bill.image || categoryIconOverride(name) || `${ART}${categoryIcons[name] || 'st_camera2.png'}`;
+  const line = bill.categories[0];
+  return bill.image || line?.icon || categoryIconOverride(line?.presetId)
+    || `${ART}${categoryIcons[line?.name] || 'st_camera2.png'}`;
 }
 
 /* Visibility gate — the prototype only ever renders what the signed-in member
@@ -331,7 +332,7 @@ function renderBills() {
   renderMoneyStrip();
   renderMembers();
   renderCurrencies();
-  renderCategoryIconManager();
+  renderTripPresets();
   renderCloseLines();
   renderPresence();
   applyTripLock();
@@ -504,62 +505,119 @@ function renderCurrencies() {
   }).join('');
 }
 
-/* ── ไอคอนประจำหมวดค่าใช้จ่าย (2026-08-07) ────────────────────────────
-   ผูกกับผังบัญชีของ "ครอบครัว" (Categories.icon_asset) ไม่ใช่ของทริปนี้
-   ทริปเดียว — ตั้งครั้งเดียวแล้วทุกทริปในครอบครัวเห็นไอคอนเดียวกัน
-   โหลดครั้งเดียวตอนเข้าโหมดข้อมูลจริง ไม่มีในโหมดตัวอย่าง (prototype) */
-let categoryIconRows = [];
+/* ── รายการค่าใช้จ่ายย่อยประจำทริป (2026-08-10) ────────────────────────
+   หนึ่งรายการ = ปุ่มหนึ่งปุ่มในฟอร์มจดบิล มีชื่อและไอคอนของตัวเอง แล้วชี้ไป
+   หมวดบัญชี (Categories) หนึ่งหมวดสำหรับตอนปิดทริป
 
-function categoryIconOverride(name) {
-  return categoryIconRows.find(row => row.name === name)?.icon_asset || null;
+   ทำไมไม่ตั้งไอคอนที่ Categories ตรง ๆ: Categories เป็นผังบัญชีระดับครอบครัว
+   1 หมวด = 1 ไอคอน ซึ่งหยาบเกินไป — ทริปญี่ปุ่นอยากได้ ราเมง/ขนม/เครื่องดื่ม
+   แยกไอคอนกัน ทั้งที่ทั้งสามลงบัญชีหมวด "อาหาร" เหมือนกันหมด
+
+   ⚠️ บิลอ้าง preset_id ไม่ใช่ก๊อปชื่อ/ไอคอนไปเก็บ แก้ที่นี่ทีเดียวบิลเก่าเปลี่ยนตาม */
+let tripPresets = [];
+
+function presetById(id) {
+  return tripPresets.find(row => row.id === id) || null;
 }
 
-function renderCategoryIconManager() {
+/* ไอคอนของบรรทัดหมวดในบิล — เซิร์ฟเวอร์เติมมาให้แล้วจาก preset ปัจจุบัน
+   ตัวนี้จึงเป็นแค่ทางสำรองสำหรับโหมดตัวอย่างที่ไม่มีข้อมูลจากเซิร์ฟเวอร์ */
+function categoryIconOverride(presetId) {
+  return presetById(presetId)?.icon || null;
+}
+
+function renderTripPresets() {
   const host = $('#categoryIconRows');
   if (!host) return;
   if (!liveMode) {
-    host.innerHTML = '<p class="field-note">เข้าทริปโหมดข้อมูลจริงก่อนถึงจะตั้งไอคอนหมวดได้ — ในโหมดตัวอย่างใช้ชุดไอคอนเริ่มต้นเสมอ</p>';
+    host.innerHTML = '<p class="field-note">เข้าทริปโหมดข้อมูลจริงก่อนถึงจะตั้งรายการค่าใช้จ่ายได้ — ในโหมดตัวอย่างใช้ชุดหมวดเริ่มต้นเสมอ</p>';
     return;
   }
-  if (!categoryIconRows.length) {
-    host.innerHTML = '<p class="field-note">ครอบครัวนี้ยังไม่มีหมวดค่าใช้จ่ายในผังบัญชี</p>';
-    return;
-  }
-  host.innerHTML = categoryIconRows.map(row => `
-    <div class="currency-row" data-category-row="${row.category_id}">
-      <span class="currency-mark"><img src="${row.icon_asset || `${ART}${categoryIcons[row.name] || 'st_camera2.png'}`}" alt=""></span>
-      <span class="currency-main"><b>${row.name}</b><small>${row.caption_name || ''}</small></span>
-      <span class="currency-actions"><button type="button" data-swap-category="${row.category_id}">เปลี่ยนไอคอน</button></span>
-    </div>`).join('');
+  const rows = tripPresets.length
+    ? tripPresets.map(row => `
+      <div class="currency-row" data-preset-row="${row.id}">
+        <span class="currency-mark"><img src="${row.icon || `${ART}st_camera2.png`}" alt=""></span>
+        <span class="currency-main"><b>${row.label}</b><small>${row.categoryName || '⚠️ ยังไม่ได้ผูกบัญชี'}</small></span>
+        <span class="currency-actions">
+          <button type="button" data-edit-preset="${row.id}">แก้ไข</button>
+          <button type="button" data-remove-preset="${row.id}">ลบ</button>
+        </span>
+      </div>`).join('')
+    : '<p class="field-note">ทริปนี้ยังไม่มีรายการค่าใช้จ่าย — กดเพิ่มรายการแรกได้เลย</p>';
+  host.innerHTML = `${rows}<button type="button" class="soft-btn" id="addPresetBtn">＋ เพิ่มรายการ</button>`;
 }
 
-async function loadCategoryIconsLive() {
-  try {
-    const payload = await TripApi.loadCategoryIcons();
-    categoryIconRows = payload.categories || [];
-  } catch (error) {
-    console.error(error);
-    categoryIconRows = [];
-  }
-  renderCategoryIconManager();
+/* ฟอร์มเพิ่ม/แก้รายการ — ใช้ dialog เดียวกันทั้งสองกรณี
+   editingPresetId ว่าง = สร้างใหม่ */
+let editingPresetId = null;
+let presetIcon = '';
+
+function openPresetDialog(preset = null) {
+  if (!liveMode) { showPrototypeToast('ตั้งรายการค่าใช้จ่ายได้เฉพาะโหมดข้อมูลจริง'); return; }
+  closeLayers();
+  editingPresetId = preset?.id || null;
+  presetIcon = preset?.icon || `${ART}st_camera2.png`;
+  $('#presetDialogTitle').textContent = preset ? 'แก้ไขรายการค่าใช้จ่าย' : 'เพิ่มรายการค่าใช้จ่าย';
+  $('#presetLabel').value = preset?.label || '';
+  $('#presetIconPreview').src = presetIcon;
+  /* หมวดบัญชีมาจากผังบัญชีของครอบครัว (behavior = EXPENSE) — ตัวเลือกเดียวกับ
+     ที่ฟอร์มจดบิลเคยใช้ ปล่อยว่างได้ แต่จะเตือนว่ายังไม่ผูกบัญชี */
+  $('#presetCategory').innerHTML = '<option value="">— ยังไม่ผูกบัญชี —</option>'
+    + ledgerCategories.map(row =>
+        `<option value="${row.category_id}">${row.caption_name} · ${row.category_name}</option>`).join('');
+  $('#presetCategory').value = preset?.categoryId || '';
+  $('#presetError').textContent = '';
+  mask.classList.add('open');
+  $('#presetDialog').classList.add('open');
+  $('#presetDialog').setAttribute('aria-hidden', 'false');
+  setTimeout(() => $('#presetLabel').focus(), 80);
 }
 
 $('#categoryIconRows')?.addEventListener('click', event => {
-  const button = event.target.closest('[data-swap-category]');
-  if (!button) return;
-  const row = categoryIconRows.find(item => item.category_id === button.dataset.swapCategory);
-  if (!row) return;
-  openAssetPicker('expense', row.icon_asset || `${ART}${categoryIcons[row.name] || 'st_camera2.png'}`, src => {
-    TripApi.saveCategoryIcon(row.category_id, src)
-      .then(() => {
-        row.icon_asset = src;
-        renderCategoryIconManager();
-        renderBills();
-        showScreen('more');
-        showPrototypeToast(`เปลี่ยนไอคอนหมวด ${row.name} แล้ว`);
-      })
-      .catch(error => showPrototypeToast(`บันทึกไม่สำเร็จ: ${error.message}`));
-  });
+  if (event.target.closest('#addPresetBtn')) return openPresetDialog();
+
+  const edit = event.target.closest('[data-edit-preset]');
+  if (edit) return openPresetDialog(presetById(edit.dataset.editPreset));
+
+  const remove = event.target.closest('[data-remove-preset]');
+  if (remove) {
+    const preset = presetById(remove.dataset.removePreset);
+    if (!preset) return;
+    if (!confirm(`ลบรายการ "${preset.label}" ?\nบิลเก่าที่ใช้รายการนี้จะยังอยู่ครบ แต่จะไม่เปลี่ยนตามอีก`)) return;
+    TripApi.removePreset(preset.id)
+      .then(() => refreshFromServer())
+      .then(() => { showScreen('more'); showPrototypeToast(`ลบ ${preset.label} แล้ว`); })
+      .catch(error => showPrototypeToast(`ลบไม่สำเร็จ: ${error.message}`));
+  }
+});
+
+/* เลือกไอคอนจากคลังเดียวกับที่อื่น แล้วเปิด dialog กลับมา ไม่ให้เสียของที่พิมพ์ไว้ */
+$('#pickPresetIcon')?.addEventListener('click', () => openAssetPicker('expense', presetIcon, src => {
+  presetIcon = src;
+  $('#presetIconPreview').src = src;
+  mask.classList.add('open');
+  $('#presetDialog').classList.add('open');
+  $('#presetDialog').setAttribute('aria-hidden', 'false');
+}));
+
+$('#presetForm')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const label = $('#presetLabel').value.trim();
+  if (!label) { $('#presetError').textContent = 'ต้องตั้งชื่อรายการ'; return; }
+  TripApi.savePreset({
+    id: editingPresetId || '',
+    label,
+    icon: presetIcon,
+    categoryId: $('#presetCategory').value,
+    sortOrder: editingPresetId ? (presetById(editingPresetId)?.sortOrder ?? 0) : tripPresets.length
+  })
+    .then(() => refreshFromServer())
+    .then(() => {
+      closeLayers();
+      showScreen('more');
+      showPrototypeToast(`${editingPresetId ? 'อัปเดต' : 'เพิ่ม'} ${label} แล้ว`);
+    })
+    .catch(error => { $('#presetError').textContent = error.message; });
 });
 
 function openCurrencyDialog(code = null) {
@@ -1074,7 +1132,21 @@ function ledgerOptions(selected = '') {
   return `<select class="category-ledger"><option value="">— ผูกกับสมุดบัญชี —</option>${groups}</select>`;
 }
 
-function splitRowMarkup(name = 'อาหาร', amount = '', categoryId = '') {
+/* โหมดข้อมูลจริง: เลือกจาก "รายการค่าใช้จ่ายของทริป" ที่ตั้งไว้เอง (มีไอคอน
+   และผูกหมวดบัญชีไว้แล้วในตัว) จึงไม่ต้องเลือกหมวดบัญชีซ้ำอีกช่อง
+   โหมดตัวอย่าง: ยังใช้รายชื่อหมวดตายตัวเหมือนเดิม เพราะไม่มีข้อมูลจากเซิร์ฟเวอร์ */
+function splitRowMarkup(name = 'อาหาร', amount = '', categoryId = '', presetId = '') {
+  if (liveMode) {
+    const options = tripPresets.map(preset =>
+      `<option value="${preset.id}"${preset.id === presetId ? ' selected' : ''}>${preset.label}${preset.categoryName ? ` · ${preset.categoryName}` : ' · ⚠️ ยังไม่ผูกบัญชี'}</option>`).join('');
+    return `<div class="split-row">
+      <select class="category-preset">${tripPresets.length
+        ? options
+        : '<option value="">— ยังไม่มีรายการ ไปตั้งที่ "เพิ่มเติม" ก่อน —</option>'}</select>
+      <input class="category-amount" inputmode="numeric" value="${amount}" placeholder="0">
+      <button type="button" class="remove-split" aria-label="ลบหมวดนี้">×</button>
+    </div>`;
+  }
   return `<div class="split-row${ledgerCategories.length ? ' with-ledger' : ''}">
     <select class="category-name">${categoryNames.map(item => `<option${item === name ? ' selected' : ''}>${item}</option>`).join('')}</select>
     ${ledgerOptions(categoryId)}
@@ -1166,9 +1238,19 @@ function refreshQuickAdd() {
   if (!balanced) problems.push('ยอดรวมของหมวดยังไม่เท่ากับยอดบิล');
   if (shared && !picked.length) problems.push('ยังไม่ได้เลือกผู้เกี่ยวข้อง');
   if (shared && picked.length && !split.valid) problems.push(split.problem);
-  /* บังคับผูกสมุดบัญชีเฉพาะโหมดข้อมูลจริง — เตือนตั้งแต่ตอนกรอก ไม่ใช่ไปโผล่
-     ตอนปิดทริป ซึ่งคนแก้จะเป็นคนปิด ไม่ใช่คนที่รู้ว่าบิลนี้คือค่าอะไร */
-  if (ledgerCategories.length && $$('#splitRows .split-row').some(row => !$('.category-ledger', row)?.value)) {
+  /* โหมดข้อมูลจริง: ต้องเลือกรายการค่าใช้จ่ายของทริปให้ครบทุกแถว และรายการนั้น
+     ต้องผูกหมวดบัญชีไว้แล้ว ไม่งั้นตอนปิดทริปจะไม่รู้ว่ายอดนี้ลงบัญชีหมวดไหน
+     เตือนตั้งแต่ตอนกรอก ไม่ใช่ไปโผล่ตอนปิดทริป ซึ่งคนแก้จะเป็นคนปิด ไม่ใช่คนจด */
+  if (liveMode) {
+    const rows = $$('#splitRows .split-row');
+    if (!tripPresets.length) {
+      problems.push('ทริปนี้ยังไม่มีรายการค่าใช้จ่าย — ไปเพิ่มที่หน้า "เพิ่มเติม" ก่อน');
+    } else if (rows.some(row => !$('.category-preset', row)?.value)) {
+      problems.push('ยังเลือกรายการค่าใช้จ่ายไม่ครบทุกแถว');
+    } else if (rows.some(row => !presetById($('.category-preset', row).value)?.categoryId)) {
+      problems.push('มีรายการที่ยังไม่ได้ผูกหมวดบัญชี — แก้ที่หน้า "เพิ่มเติม"');
+    }
+  } else if (ledgerCategories.length && $$('#splitRows .split-row').some(row => !$('.category-ledger', row)?.value)) {
     problems.push('ยังไม่ได้ผูกหมวดกับสมุดบัญชีครบทุกแถว');
   }
   $('#saveWarning').textContent = problems.length ? `บันทึกไม่ได้: ${problems.join(' · ')}` : '';
@@ -1251,12 +1333,27 @@ $('#saveExpense').addEventListener('click', async () => {
   if (!balanced || amount <= 0 || (shared && (!split.participants.length || !split.valid))) return;
 
   const ownerId = $('#expenseOwner').value;
-  const categories = $$('#splitRows .split-row').map(row => ({
-    name: $('.category-name', row).value,
-    // ช่องผูกสมุดบัญชีมีเฉพาะโหมดข้อมูลจริง — โหมดตัวอย่างไม่มีผังบัญชีให้เลือก
-    categoryId: $('.category-ledger', row)?.value || '',
-    amount: Number($('.category-amount', row).value.replace(/[^\d.]/g, '')) || 0
-  }));
+  /* โหมดข้อมูลจริงเลือกจากรายการของทริป — ชื่อและหมวดบัญชีมาจากรายการนั้น
+     ไม่ใช่พิมพ์เอง จึงไม่มีทางที่ชื่อบนบิลกับที่ตั้งไว้จะไม่ตรงกัน */
+  const categories = $$('#splitRows .split-row').map(row => {
+    const amount = Number($('.category-amount', row).value.replace(/[^\d.]/g, '')) || 0;
+    if (liveMode) {
+      const preset = presetById($('.category-preset', row)?.value);
+      return {
+        name: preset?.label || 'อื่น ๆ',
+        categoryId: preset?.categoryId || '',
+        presetId: preset?.id || '',
+        icon: preset?.icon || '',
+        amount
+      };
+    }
+    return {
+      name: $('.category-name', row).value,
+      // ช่องผูกสมุดบัญชีมีเฉพาะโหมดข้อมูลจริง — โหมดตัวอย่างไม่มีผังบัญชีให้เลือก
+      categoryId: $('.category-ledger', row)?.value || '',
+      amount
+    };
+  });
 
   const bill = {
     id: `bill-${Date.now()}`,
@@ -2777,6 +2874,7 @@ function applyLiveState(state) {
   }
   if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
   ledgerCategories = state.ledgerCategories || [];
+  tripPresets = state.presets || [];
   /* ⚠️ ต้องตั้ง viewerId ก่อนเรียก fillTripMetaForm — ฟอร์มเช็คสิทธิ์ admin
      จาก viewerId ถ้าเรียกสลับกัน มันจะเช็คด้วยตัวตนของข้อมูลตัวอย่างเก่า
      แล้วปิดปุ่มบันทึกใส่ทุกคน แม้แต่ผู้ดูแลจริง (เคยพังมาแล้ว 2026-08-02)
@@ -2827,7 +2925,7 @@ function applyLiveState(state) {
 
   applyTripLock();
   [renderBills, renderWallets, renderMoneyStrip, renderMembers, renderCurrencies,
-   renderPresence, refreshQuickAdd, renderPlanWorkspace].forEach(render => render());
+   renderTripPresets, renderPresence, refreshQuickAdd, renderPlanWorkspace].forEach(render => render());
   /* การ์ดอากาศผูกกับ dayId ของแผนตัวอย่าง พอเปลี่ยนเป็นวันจริงแล้ว id ไม่ตรงกัน
      renderTodayWeather จะ return ทันทีและปล่อยตัวเลขเดิมค้างบนจอ ต้องสั่งใหม่เอง */
   if (state.planDays.length) renderTodayWeather(planDays[0].id);
@@ -2857,8 +2955,6 @@ async function enterLiveMode() {
      ทันทีในครั้งถัดไป (trips.html เด้งมาเอง) · จำเฉพาะตอนโหลดสำเร็จเท่านั้น
      ทริปที่เข้าไม่ได้/ถูกลบไปแล้วจะได้ไม่ถูกจำจนเด้งวนเข้า error ซ้ำ ๆ */
   try { localStorage.setItem('unified-trip-last', TripApi.config.projectId); } catch {}
-  // ไอคอนหมวดเป็นของครอบครัว ไม่ใช่ของทริปนี้ — โหลดแยกต่างหาก ไม่บล็อกจอหลัก
-  loadCategoryIconsLive();
 }
 
 loadState();

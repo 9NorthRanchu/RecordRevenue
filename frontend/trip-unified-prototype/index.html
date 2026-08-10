@@ -6,7 +6,7 @@
   <title>Unified Trip — Hokkaido Prototype</title>
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=44">
+  <link rel="stylesheet" href="style.css?v=45">
 </head>
 <body>
   <div class="prototype-note">UNIFIED TRIP · STATIC PROTOTYPE · ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง</div>
@@ -167,8 +167,8 @@
             <div id="currencyRows"></div>
             <button class="soft-btn" id="addCurrency">＋ เพิ่มสกุลเงิน</button>
           </section>
-          <section class="paper-card"><h3>ไอคอนหมวดค่าใช้จ่าย</h3>
-            <p class="field-note">ตั้งไอคอนของครอบครัวเอง — ใช้ร่วมกันทุกทริป ทุกคนในครอบครัวเห็นเหมือนกัน (อัปโหลดเป็น PNG พื้นโปร่งใส ขนาด 192×192 px)</p>
+          <section class="paper-card"><h3>รายการค่าใช้จ่ายในทริปนี้</h3>
+            <p class="field-note">ตั้งชื่อและไอคอนของแต่ละรายการเอง แล้วผูกไปหมวดบัญชีสำหรับตอนปิดทริป · หลายรายการผูกหมวดเดียวกันได้ (เช่น ราเมง/ขนม/เครื่องดื่ม → หมวดอาหาร) · แก้ชื่อหรือไอคอนทีหลัง บิลเก่าในทริปนี้จะเปลี่ยนตามทันที</p>
             <div id="categoryIconRows"></div>
           </section>
           <section class="paper-card"><h3>ข้อมูล prototype</h3><p>รายการและแผนที่คุณแก้จะถูกเก็บไว้ในเบราว์เซอร์นี้ ไม่ส่งขึ้นเซิร์ฟเวอร์และไม่แตะบัญชีจริง</p><div class="close-lines"><span>บิลที่บันทึกไว้<b id="storageCount">—</b></span></div><button class="soft-btn" id="resetDemo">คืนค่าข้อมูลตัวอย่าง</button></section>
@@ -297,6 +297,31 @@
       <div class="sheet-actions">
         <button type="button" class="soft-btn" id="cancelPlanEditor">ยกเลิก</button>
         <button type="submit" class="primary-btn">บันทึกในแผน</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- รายการค่าใช้จ่ายย่อยของทริป — ชื่อ+ไอคอนของตัวเอง ชี้ไปหมวดบัญชีหนึ่งหมวด -->
+  <section class="dialog" id="presetDialog" aria-hidden="true" role="dialog" aria-labelledby="presetDialogTitle">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">รายการค่าใช้จ่าย</span>
+    <h2 id="presetDialogTitle">เพิ่มรายการค่าใช้จ่าย</h2>
+    <form id="presetForm" style="display:grid;gap:12px">
+      <label class="field-wide">ชื่อรายการ
+        <input id="presetLabel" required maxlength="60" placeholder="เช่น ราเมง · เป็ดปักกิ่ง · ค่ารถไฟ">
+      </label>
+      <label class="field-wide">ผูกหมวดบัญชี (ใช้ตอนปิดทริป)
+        <select id="presetCategory"></select>
+      </label>
+      <div class="icon-field field-wide">
+        <span>ไอคอน</span>
+        <img id="presetIconPreview" class="icon-preview circle" alt="ไอคอนที่เลือก">
+        <button type="button" class="soft-btn" id="pickPresetIcon">เลือกไอคอน</button>
+      </div>
+      <p class="form-error" id="presetError"></p>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+        <button type="submit" class="primary-btn">บันทึกรายการ</button>
       </div>
     </form>
   </section>
@@ -455,7 +480,7 @@
   </section>
   <div class="toast" id="toast"></div>
   <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
-  <script src="api.js?v=16"></script>
-  <script src="app.js?v=53"></script>
+  <script src="api.js?v=17"></script>
+  <script src="app.js?v=55"></script>
 </body>
 </html>

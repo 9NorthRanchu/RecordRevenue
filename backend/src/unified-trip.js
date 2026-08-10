@@ -18,6 +18,8 @@
 //   POST   /api/unified-trip/stops           — เพิ่ม/แก้จุดแวะ (สมาชิกทุกคน)
 //   DELETE /api/unified-trip/stops?id=
 //   POST   /api/unified-trip/stops/order     — จัดลำดับ/ย้ายวัน ทั้งชุดในครั้งเดียว
+//   POST   /api/unified-trip/presets          — เพิ่ม/แก้รายการค่าใช้จ่ายย่อยของทริป (ชื่อ+ไอคอน+หมวดบัญชี)
+//   DELETE /api/unified-trip/presets?id=
 //   GET    /api/unified-trip/category-icons  — ไอคอนประจำหมวดค่าใช้จ่ายของครอบครัว (ไม่ต้อง projectId)
 //   POST   /api/unified-trip/category-icons  — ตั้งไอคอนของหมวด {category_id, icon_url}
 //   POST   /api/unified-trip/icon-upload     — อัปโหลดไฟล์รูป (multipart, field "file") ขึ้น R2 คืน URL
@@ -522,11 +524,15 @@ async function writeExpense(request, env, ctx, projectId, corsHeaders) {
       VALUES (?,?,?,?,?)
     `).bind(`${expenseId}-P${i}`, expenseId, p.member_id, p.amount_foreign, p.percent ?? null));
   });
+  /* เก็บ preset_id ไว้ด้วยเมื่อบรรทัดนี้มาจากรายการย่อยของทริป — ตอนอ่านกลับ
+     ชื่อกับไอคอนจะถูกดึงสดจาก preset ปัจจุบัน ไม่ใช่จาก label ที่เก็บไว้ตรงนี้
+     (label ยังเก็บไว้เป็นภาพนิ่ง เผื่อวันหนึ่ง preset ถูกลบ บิลเก่าจะได้ไม่ไร้ชื่อ) */
   categories.forEach((c, i) => {
     statements.push(env.DB.prepare(`
-      INSERT INTO TripExpenseCategories (line_id, trip_expense_id, category_id, label, amount_foreign)
-      VALUES (?,?,?,?,?)
-    `).bind(`${expenseId}-C${i}`, expenseId, c.category_id || null, c.label || null, Number(c.amount_foreign)));
+      INSERT INTO TripExpenseCategories (line_id, trip_expense_id, category_id, label, amount_foreign, preset_id)
+      VALUES (?,?,?,?,?,?)
+    `).bind(`${expenseId}-C${i}`, expenseId, c.category_id || null, c.label || null,
+            Number(c.amount_foreign), c.preset_id || null));
   });
 
   await env.DB.batch(statements);
@@ -879,6 +885,69 @@ async function deleteStop(env, ctx, projectId, stopId, corsHeaders) {
   await env.DB.prepare(`DELETE FROM TripStops WHERE stop_id=? AND project_id=?`)
     .bind(stopId, projectId).run();
   return json({ ok: true, deleted: stopId }, corsHeaders);
+}
+
+/* ── รายการค่าใช้จ่ายย่อยประจำทริป (2026-08-10) ──────────────────────────
+   หนึ่งแถว = ปุ่มหนึ่งปุ่มในฟอร์มจดบิล มีชื่อและไอคอนของตัวเอง แล้วชี้กลับไป
+   หมวดบัญชี (Categories) หนึ่งหมวดสำหรับตอนปิดทริป — หลายแถวชี้หมวดเดียวกันได้
+   เช่น ราเมง/ขนม/เครื่องดื่ม ทั้งสามผูกหมวด "อาหาร" เหมือนกัน
+
+   ⚠️ บิลอ้าง preset_id ไม่ใช่ก๊อปชื่อ/ไอคอนไปเก็บ แก้ที่นี่ทีเดียวบิลเก่าเปลี่ยนตาม */
+async function writePreset(request, env, ctx, projectId, corsHeaders) {
+  if (!ctx.viewer && !ctx.familyAdmin) return json({ error: 'ต้องเป็นสมาชิกของทริปนี้' }, corsHeaders, 403);
+
+  const body = await request.json().catch(() => ({}));
+  const label = String(body.label || '').trim();
+  const categoryId = String(body.category_id || '').trim();
+  if (!label) return json({ error: 'ต้องตั้งชื่อรายการ' }, corsHeaders, 400);
+
+  /* หมวดบัญชีต้องเป็นของครอบครัวเดียวกับทริป ไม่งั้นตอนปิดทริปจะโพสต์เข้า
+     ผังบัญชีของครอบครัวอื่น ซึ่งเป็นข้อมูลรั่วและตัวเลขผิดพร้อมกัน */
+  if (categoryId) {
+    const owned = await env.DB.prepare(`SELECT category_id FROM Categories WHERE category_id=? AND family_id=?`)
+      .bind(categoryId, ctx.trip.family_id).first();
+    if (!owned) return json({ error: 'ไม่พบหมวดบัญชีนี้ในครอบครัวของทริป' }, corsHeaders, 400);
+  }
+
+  const sortOrder = Number.isFinite(Number(body.sort_order)) ? Number(body.sort_order) : 0;
+  const iconUrl = body.icon_url ? String(body.icon_url) : null;
+
+  if (body.preset_id) {
+    const existing = await env.DB.prepare(`SELECT preset_id FROM TripExpensePresets WHERE preset_id=? AND project_id=?`)
+      .bind(body.preset_id, projectId).first();
+    if (!existing) return json({ error: 'ไม่พบรายการที่จะแก้ไข' }, corsHeaders, 404);
+    await env.DB.prepare(`
+      UPDATE TripExpensePresets SET label=?, icon_url=?, category_id=?, sort_order=?
+      WHERE preset_id=? AND project_id=?
+    `).bind(label, iconUrl, categoryId || null, sortOrder, body.preset_id, projectId).run();
+    return json({ ok: true, preset_id: body.preset_id, created: false }, corsHeaders);
+  }
+
+  const presetId = `TXP-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await env.DB.prepare(`
+    INSERT INTO TripExpensePresets (preset_id, project_id, label, icon_url, category_id, sort_order)
+    VALUES (?,?,?,?,?,?)
+  `).bind(presetId, projectId, label, iconUrl, categoryId || null, sortOrder).run();
+  return json({ ok: true, preset_id: presetId, created: true }, corsHeaders, 201);
+}
+
+/* ลบรายการย่อย — บิลเก่าที่เคยใช้ยังอยู่ครบ แค่ preset_id ชี้ไปที่ที่ไม่มีแล้ว
+   จึงต้องคลาย preset_id ของบิลออกก่อน แล้วเก็บ label ตอนนั้นไว้เป็นข้อความ
+   ไม่งั้นบิลเก่าจะกลายเป็นรายการไม่มีชื่อ ซึ่งอ่านย้อนหลังไม่ออก */
+async function deletePreset(env, ctx, projectId, presetId, corsHeaders) {
+  if (!ctx.viewer && !ctx.familyAdmin) return json({ error: 'ต้องเป็นสมาชิกของทริปนี้' }, corsHeaders, 403);
+  if (!presetId) return json({ error: 'ต้องระบุ id' }, corsHeaders, 400);
+
+  const existing = await env.DB.prepare(`SELECT * FROM TripExpensePresets WHERE preset_id=? AND project_id=?`)
+    .bind(presetId, projectId).first();
+  if (!existing) return json({ error: 'ไม่พบรายการนี้' }, corsHeaders, 404);
+
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE TripExpenseCategories SET preset_id=NULL, label=COALESCE(label, ?) WHERE preset_id=?`)
+      .bind(existing.label, presetId),
+    env.DB.prepare(`DELETE FROM TripExpensePresets WHERE preset_id=? AND project_id=?`).bind(presetId, projectId)
+  ]);
+  return json({ ok: true, deleted: presetId }, corsHeaders);
 }
 
 /* จัดลำดับใหม่ทั้งชุดในคำสั่งเดียว
@@ -1299,6 +1368,12 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
       return deleteStop(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);
     }
     if (sub === '/stops/order' && request.method === 'POST') return reorderStops(request, env, ctx, projectId, corsHeaders);
+    /* รายการค่าใช้จ่ายย่อย — อยู่ก่อนด่านทริปปิดเช่นกัน เพราะเป็นแค่ชื่อกับไอคอน
+       ไม่ใช่ตัวเลขบัญชี · แก้ชื่อ/ไอคอนย้อนหลังหลังปิดทริปได้เหมือนแผนเที่ยว */
+    if (sub === '/presets' && request.method === 'POST') return writePreset(request, env, ctx, projectId, corsHeaders);
+    if (sub === '/presets' && request.method === 'DELETE') {
+      return deletePreset(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);
+    }
     // ปิดทริปแล้ว = ตัวเลขถูกรายงานเข้าบัญชีไปแล้ว ห้ามขยับ
     if (ctx.closed) {
       return json({ error: 'ทริปนี้ปิดแล้ว · แก้ข้อมูลการเงินไม่ได้ ต้องเปิดทริปกลับก่อน' }, corsHeaders, 409);
@@ -1320,7 +1395,7 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     return json({ error: `ยังไม่รองรับ ${request.method} ${sub || '/'} ในเฟสนี้` }, corsHeaders, 405);
   }
 
-  const [members, currencies, wallets, fundings, expenses, categories, participants, closures, closureLines, presence, stops, ledgerCategories] =
+  const [members, currencies, wallets, fundings, expenses, categories, participants, closures, closureLines, presence, stops, ledgerCategories, presets] =
     await Promise.all([
       env.DB.prepare(`SELECT * FROM TripMembers WHERE project_id=? ORDER BY is_admin DESC, display_name`).bind(projectId).all(),
       env.DB.prepare(`SELECT * FROM TripCurrencies WHERE project_id=? ORDER BY is_base DESC, code`).bind(projectId).all(),
@@ -1346,7 +1421,16 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
           FROM Categories c JOIN Captions cap ON cap.type_id = c.caption_id
          WHERE c.family_id = ? AND cap.behavior = 'EXPENSE'
          ORDER BY cap.name, c.name
-      `).bind(trip.family_id).all()
+      `).bind(trip.family_id).all(),
+      /* รายการค่าใช้จ่ายย่อยของทริปนี้ พร้อมชื่อหมวดบัญชีที่ผูกไว้ — หน้าจอจะได้
+         โชว์ได้เลยว่าปุ่มนี้ลงบัญชีหมวดไหน โดยไม่ต้องไปจับคู่เองอีกรอบ */
+      env.DB.prepare(`
+        SELECT p.*, c.name AS category_name
+          FROM TripExpensePresets p
+          LEFT JOIN Categories c ON c.category_id = p.category_id
+         WHERE p.project_id = ?
+         ORDER BY p.sort_order, p.created_at
+      `).bind(projectId).all()
     ]);
 
   const memberRows = members.results || [];
@@ -1369,9 +1453,18 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
   (participants.results || []).forEach(row => {
     (partsByExpense[row.trip_expense_id] ||= []).push(row);
   });
+  /* ⚠️ ชื่อและไอคอนของบรรทัดหมวดอ่านสดจาก preset ปัจจุบันเสมอ ไม่ใช่ค่าที่
+     ก๊อปไว้ตอนสร้างบิล — นี่คือเหตุผลทั้งหมดที่บิลเก็บ preset_id ไว้:
+     แก้ชื่อ/ไอคอนของรายการย่อยทีเดียว บิลเก่าทุกใบในทริปเปลี่ยนตามทันที
+     บิลที่ไม่ได้ผูก preset (ของเก่า/ลบ preset ไปแล้ว) ใช้ label ที่เก็บไว้ตามเดิม */
+  const presetRows = presets.results || [];
+  const presetById = id => presetRows.find(row => row.preset_id === id);
   const catsByExpense = {};
   (categories.results || []).forEach(row => {
-    (catsByExpense[row.trip_expense_id] ||= []).push(row);
+    const preset = row.preset_id ? presetById(row.preset_id) : null;
+    (catsByExpense[row.trip_expense_id] ||= []).push(preset
+      ? { ...row, label: preset.label, icon_url: preset.icon_url, category_id: preset.category_id }
+      : row);
   });
 
   const visibleExpenses = (expenses.results || [])
@@ -1427,6 +1520,7 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     wallets: walletSummaries,
     expenses: visibleExpenses,
     stops: stops.results || [],
+    presets: presetRows,
     ledger_categories: ledgerCategories.results || [],
     presence: presence.results || [],
     closures: closureRows.map(row => ({

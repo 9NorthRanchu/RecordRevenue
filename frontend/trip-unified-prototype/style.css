@@ -553,6 +553,8 @@ body.trip-closed .mobile-fab{opacity:.4;pointer-events:none}
    บนจอแคบวางซ้อนกันแทน เพราะ select สองอันเรียงกันจะแคบจนอ่านไม่ออก */
 .split-row.with-ledger{grid-template-columns:1fr 1fr 110px 32px}
 .split-row .category-ledger{min-width:0}
+/* โหมดข้อมูลจริงใช้ช่องเดียว (รายการของทริป) เพราะหมวดบัญชีผูกมาในตัวรายการแล้ว */
+.split-row .category-preset{min-width:0}
 @media(max-width:640px){
   .split-row.with-ledger{grid-template-columns:1fr 90px 32px}
   .split-row.with-ledger .category-ledger{grid-column:1 / -1}
