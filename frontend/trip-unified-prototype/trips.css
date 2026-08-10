@@ -10,16 +10,19 @@
 .trip-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:18px}
 
 .trip-pick-card{background:var(--paper);border:1px solid var(--line);border-radius:22px;overflow:hidden;
-  box-shadow:0 6px 18px rgba(78,73,72,.06);cursor:pointer;display:flex;flex-direction:column;transition:.15s transform}
-.trip-pick-card:hover{transform:translateY(-2px)}
-.trip-pick-banner{height:110px;background:linear-gradient(140deg,#eaf6f8,#fde8ee);background-size:cover;background-position:center}
+  box-shadow:var(--shadow,0 6px 18px rgba(78,73,72,.06));cursor:pointer;display:flex;flex-direction:column;
+  transition:transform .16s ease,box-shadow .16s ease}
+.trip-pick-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lift,0 14px 30px rgba(78,73,72,.16))}
+/* แบนเนอร์ทริปที่ยังไม่ได้ตั้งรูป — ไล่สีสดใสแทนพื้นเทา จะได้ไม่ดูเหมือนช่องว่าง */
+.trip-pick-banner{height:110px;background:linear-gradient(135deg,#ffd9e4,#ffe9c9 45%,#d6f2ff);
+  background-size:cover;background-position:center}
 .trip-pick-body{padding:14px 16px 16px;display:grid;gap:6px}
 .trip-pick-body h3{margin:0;font:800 18px Sarabun}
 .trip-pick-body small{color:var(--muted)}
 .trip-pick-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
-.trip-pick-tags span{font-size:10px;padding:3px 8px;border-radius:99px;background:#f1efec;color:var(--muted)}
-.trip-pick-tags span.posted{background:var(--sage-soft);color:#3a7a52}
-.trip-pick-tags span.closed{background:#fff0e3;color:#a5652c}
+.trip-pick-tags span{font-size:10px;padding:3px 8px;border-radius:99px;background:#f1efec;color:var(--muted);font-weight:600}
+.trip-pick-tags span.posted{background:var(--sage-soft);color:var(--sage-ink,#3a7a52)}
+.trip-pick-tags span.closed{background:var(--sun-soft,#fff0e3);color:var(--sun-ink,#a5652c)}
 
 .trip-pick-empty{margin-top:40px;text-align:center;color:var(--muted);padding:30px 10px}
 

@@ -1,0 +1,196 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   ธีม "สดใส สนุก รื่นเริง" (2026-08-10)
+
+   แยกเป็นไฟล์ต่างหากโดยตั้งใจ · โหลดหลัง style.css จึงทับได้โดยไม่ต้องแก้
+   ไฟล์เดิมเลย ถ้าไม่ชอบให้ลบบรรทัด <link> ออกบรรทัดเดียว ทุกอย่างกลับเป็นเดิม
+   ห้ามย้ายกฎเหล่านี้กลับเข้า style.css เพราะจะเสียคุณสมบัติข้อนั้นไป
+
+   หลักการ:
+   1. สีมีความหมายเสมอ — หมวดค่าใช้จ่ายใช้สีเดียวกันทุกที่ (ชิป ไอคอน แถวบิล)
+   2. สดใสได้ แต่ตัวหนังสือต้องอ่านออก — ตัวอักษรบนพื้นสีใช้เฉดเข้มของสีเดียวกัน
+      ไม่ใช่ดำล้วน (ซึ่งจะดูสกปรก) และไม่ใช่สีอ่อนบนพื้นอ่อน
+   3. ความสนุกมาจากมิติและจังหวะ ไม่ใช่จากสีแสบตา — เงานุ่ม ขอบมน เด้งเล็กน้อย
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* จานสีหลัก — สดขึ้นจากเดิมแต่ยังอยู่ในโทนพาสเทลอบอุ่น */
+  --ink:#2c3446;
+  --muted:#7b8598;
+  --line:#ecdfd4;
+  --paper:#fffdfa;
+  --cream:#fff8ee;
+
+  /* --*-strong = เฉดที่เข้มพอให้ตัวหนังสือขาวอ่านออก (contrast ≥ 4.5:1)
+     ใช้เฉพาะตอนที่พื้นเป็นสีเต็มและตัวอักษรเป็นสีขาว — สีสดอย่างเดียวไม่พอ
+     เพราะชมพู/เขียวสดกับขาวได้ contrast แค่ ~2-3:1 ซึ่งอ่านไม่ออกจริง */
+  --pink:#f4547f;      --pink-soft:#ffe3ec;   --pink-ink:#a82a51;   --pink-strong:#d92a5c;
+  --blue:#3aa5d9;      --blue-soft:#dcf1fb;   --blue-ink:#1a6b93;   --blue-strong:#17739e;
+  --sage:#5fbf88;      --sage-soft:#dcf6e6;   --sage-ink:#25784b;   --sage-strong:#297f51;
+  --lav:#9b7fe0;       --lav-soft:#ece4ff;    --lav-ink:#5b3fa8;    --lav-strong:#6f4fc4;
+  --sun:#f5a623;       --sun-soft:#fff0d4;    --sun-ink:#9a5f05;    --sun-strong:#a06305;
+  --danger:#e8455b;
+
+  --shadow:0 14px 38px rgba(84,64,74,.13);
+  --shadow-lift:0 20px 46px rgba(84,64,74,.19);
+}
+
+/* พื้นหลังไล่สีอุ่น ๆ — ให้ความรู้สึกเช้าวันเดินทาง ไม่ใช่หน้าจอบัญชี */
+body{background:linear-gradient(168deg,#ffeef2 0%,#fff6ea 42%,#e8f7f4 100%) fixed}
+.app-shell{background:transparent}
+.prototype-note{background:linear-gradient(90deg,#d92a5c,#6f4fc4 55%,#1a7fae);letter-spacing:.1em}
+
+/* ── การ์ด: ยกตัวขึ้น ขอบมนขึ้น ตอบสนองตอนชี้ ─────────────────────────── */
+.paper-card,.next-card,.weather-card,.wallet-card,.day-summary,.bill-notice{
+  border-radius:22px;
+}
+.paper-card{
+  background:var(--paper);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
+  transition:transform .16s ease,box-shadow .16s ease;
+}
+.paper-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
+
+/* หัวข้อการ์ดมีขีดสีนำสายตา — แทนที่จะเป็นตัวหนาเปล่า ๆ */
+.paper-card>h3{
+  display:flex;align-items:center;gap:9px;
+}
+.paper-card>h3::before{
+  content:"";width:5px;height:19px;border-radius:99px;flex:none;
+  background:linear-gradient(180deg,var(--pink),var(--lav));
+}
+
+/* ── แถบข้าง / เมนู ───────────────────────────────────────────────────── */
+.side-rail{background:rgba(255,255,255,.72);backdrop-filter:blur(14px);border-right:1px solid rgba(236,223,212,.8)}
+.brand>span{
+  background:linear-gradient(140deg,var(--pink-strong),var(--lav-strong));color:#fff;
+  box-shadow:0 8px 18px rgba(217,42,92,.32);
+}
+.main-nav button{border-radius:14px;transition:.15s}
+.main-nav button:hover{background:var(--sun-soft)}
+.main-nav button.active{
+  background:linear-gradient(120deg,var(--pink-soft),var(--lav-soft));
+  color:var(--pink-ink);font-weight:700;
+}
+.avatar{background:linear-gradient(140deg,var(--sun-strong),var(--pink-strong));color:#fff;font-weight:700}
+
+.topbar{background:rgba(255,255,255,.82);backdrop-filter:blur(12px)}
+.back,.icon-btn{background:var(--blue-soft);color:var(--blue-ink);border-radius:13px;transition:.15s}
+.back:hover,.icon-btn:hover{background:var(--blue-strong);color:#fff}
+
+/* ── ปุ่ม: มีน้ำหนักและเด้งเวลากด ───────────────────────────────────── */
+.primary-btn{
+  background:linear-gradient(120deg,var(--pink-strong),#cf4526);
+  box-shadow:0 10px 22px rgba(217,42,92,.34);
+  border-radius:15px;transition:transform .13s ease,box-shadow .13s ease;
+}
+.primary-btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 14px 28px rgba(244,84,127,.42)}
+.primary-btn:active:not(:disabled){transform:translateY(1px)}
+.soft-btn{background:var(--sun-soft);color:var(--sun-ink);border-radius:13px;font-weight:600;transition:.15s}
+.soft-btn:hover:not(:disabled){background:var(--sun-strong);color:#fff}
+.mobile-fab{
+  background:linear-gradient(120deg,var(--pink-strong),#cf4526)!important;
+  box-shadow:0 14px 30px rgba(244,84,127,.42)!important;border-radius:99px!important;
+}
+
+/* แท็บ/ตัวกรอง — active เป็นสีเต็ม ไม่ต้องเดาว่าอันไหนถูกเลือก */
+.day-tabs button,.filters button,.segmented button{border-radius:13px;transition:.15s}
+.day-tabs button.active,.filters button.active,.segmented button.active{
+  background:linear-gradient(120deg,var(--lav-strong),var(--blue-strong));border-color:transparent;color:#fff;
+  box-shadow:0 7px 16px rgba(155,127,224,.32);
+}
+.day-tabs button:not(.active):hover,.filters button:not(.active):hover{background:var(--lav-soft)}
+
+/* ── หน้า "วันนี้" ───────────────────────────────────────────────────── */
+.map-hero{border-radius:26px;box-shadow:var(--shadow);overflow:hidden}
+.page-head span,.eyebrow,.section-kicker{
+  color:var(--pink-ink);font-weight:700;letter-spacing:.07em;
+}
+
+.day-summary{
+  background:linear-gradient(115deg,var(--pink-soft),var(--sun-soft) 60%,var(--lav-soft));
+  border:1px solid rgba(244,84,127,.2);box-shadow:var(--shadow);
+}
+.day-summary .day-number{
+  background:linear-gradient(140deg,var(--pink-strong),var(--lav-strong));color:#fff;
+  box-shadow:0 8px 18px rgba(217,42,92,.3);
+}
+.day-summary .day-number span{color:rgba(255,255,255,.86)}
+.day-summary .day-number strong{color:#fff}
+
+.next-card{border:1px solid var(--line);box-shadow:var(--shadow)}
+.next-time{color:var(--pink-ink);font-weight:700}
+.next-main img{border-radius:16px;box-shadow:0 6px 14px rgba(84,64,74,.16)}
+
+.weather-card{background:linear-gradient(150deg,var(--blue-soft),#fff);border:1px solid rgba(58,165,217,.22)}
+
+/* แถบเงิน — "ใช้ไปแล้ว" กับ "เหลืองบ" คนละสี อ่านปราดเดียวรู้ว่าอันไหนคืออะไร
+   (ในแถบนี้มีสองช่องกับปุ่มหนึ่งปุ่ม ไม่ใช่สามช่อง) */
+.money-strip>div{border-radius:18px;border:1px solid transparent;padding:12px 14px}
+.money-strip>div:nth-of-type(1){background:var(--sun-soft);border-color:rgba(245,166,35,.32)}
+.money-strip>div:nth-of-type(2){background:var(--sage-soft);border-color:rgba(95,191,136,.32)}
+.money-strip strong{color:var(--ink)}
+.money-strip strong.over{color:var(--danger)}
+
+/* ── บิล ─────────────────────────────────────────────────────────────── */
+.bill-row{transition:background .14s}
+.bill-row:hover{background:var(--sun-soft)}
+.bill-row img{border-radius:50%;box-shadow:0 4px 10px rgba(84,64,74,.16)}
+.tag.shared{background:var(--sage-soft);color:var(--sage-ink);font-weight:600}
+.tag.private{background:var(--lav-soft);color:var(--lav-ink);font-weight:600}
+.bill-notice{background:var(--blue-soft);border:1px solid rgba(58,165,217,.25)}
+.bill-notice.calm{background:var(--sage-soft);border-color:rgba(95,191,136,.3)}
+.bill-notice.danger{background:#ffe6e9;border-color:rgba(232,69,91,.32)}
+
+/* ── กระเป๋าเงิน ─────────────────────────────────────────────────────── */
+.wallet-card{box-shadow:var(--shadow);border:1px solid rgba(255,255,255,.7)}
+.wallet-card.jpy{background:linear-gradient(140deg,#ffe0ea,#f0e6ff 70%,#e4f4ff)}
+.wallet-card.thb{background:linear-gradient(140deg,#dcf6e6,#e6f7ff 70%,#fff2d9)}
+.wallet-card.short{outline:2px solid rgba(232,69,91,.45)}
+
+/* ── รายการค่าใช้จ่ายของทริป / สกุลเงิน ─────────────────────────────── */
+.currency-mark{background:var(--sun-soft);border-radius:14px}
+.currency-row{transition:background .14s;border-radius:12px}
+.currency-row:hover{background:var(--cream)}
+.currency-actions button{border-radius:11px;transition:.14s}
+.currency-actions button:hover:not(:disabled){background:var(--lav-soft);border-color:var(--lav);color:var(--lav-ink)}
+
+/* ── สมาชิก ─────────────────────────────────────────────────────────── */
+.member-row{border-radius:14px;transition:.14s}
+.member-row:hover{background:var(--sun-soft)}
+.member-row.viewing{background:linear-gradient(110deg,var(--sage-soft),var(--blue-soft))}
+.member-row.viewing em{background:var(--sage-strong);color:#fff}
+.face.pink{background:linear-gradient(140deg,var(--pink-strong),#e0703f);color:#fff}
+.face.blue{background:linear-gradient(140deg,var(--blue-strong),var(--lav-strong));color:#fff}
+.face.cream{background:linear-gradient(140deg,var(--sun-strong),var(--pink-strong));color:#fff}
+.face.sage{background:linear-gradient(140deg,var(--sage-strong),var(--blue-strong));color:#fff}
+
+/* ── แผ่นจดค่าใช้จ่าย ────────────────────────────────────────────────── */
+.bottom-sheet,.dialog{border-radius:26px 26px 0 0}
+.dialog{border-radius:26px}
+.quick-title{color:var(--ink)}
+.amount-hero{
+  background:linear-gradient(120deg,var(--pink-soft),var(--sun-soft));
+  border-radius:20px;border:1px solid rgba(244,84,127,.22);
+}
+.amount-hero input{color:var(--pink-ink)}
+.add-line{color:var(--lav-ink);border-color:var(--lav);border-radius:12px;transition:.14s}
+.add-line:hover{background:var(--lav-soft)}
+.toggle.on{background:var(--sage-strong)}
+.sheet-close,.dialog-close{background:var(--pink-soft);color:var(--pink-ink);border-radius:13px;transition:.14s}
+.sheet-close:hover,.dialog-close:hover{background:var(--pink-strong);color:#fff}
+
+/* ── มือถือ ─────────────────────────────────────────────────────────── */
+.mobile-nav{background:rgba(255,253,250,.96)}
+.mobile-nav button.active{color:var(--pink-ink);font-weight:700}
+.mobile-nav button.active i{
+  background:linear-gradient(120deg,var(--pink-soft),var(--lav-soft));
+  border-radius:11px;padding:2px 9px;
+}
+
+/* ── ลดการเคลื่อนไหวสำหรับคนที่ตั้งค่าไว้ ────────────────────────────
+   เอฟเฟกต์เด้ง/เลื่อนทั้งหมดข้างบนต้องหยุดเมื่อผู้ใช้ขอ ไม่ใช่ทางเลือก */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important}
+  .paper-card:hover,.primary-btn:hover:not(:disabled){transform:none}
+}
