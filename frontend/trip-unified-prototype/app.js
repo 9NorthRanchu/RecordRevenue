@@ -2690,9 +2690,14 @@ function normaliseUpload(file, spec) {
         const drawWidth = image.width * scale;
         const drawHeight = image.height * scale;
         context.drawImage(image, (spec.width - drawWidth) / 2, (spec.height - drawHeight) / 2, drawWidth, drawHeight);
+        /* คุณภาพต่างกันตามขนาดภาพ: ไอคอนเล็กใช้ 0.86 ได้สบาย แต่แบนเนอร์
+           1920×810 ที่ 0.86 อาจโตเกิน 700 KB ซึ่งเกินเพดานที่เซิร์ฟเวอร์
+           เก็บลง D1 ได้ ลดเหลือ 0.72 สำหรับภาพใหญ่ — ตาแทบแยกไม่ออกบนแบนเนอร์
+           แต่ทำให้ไฟล์เล็กลงเกือบครึ่ง */
+        const quality = spec.width >= 1000 ? 0.72 : 0.86;
         canvas.toBlob(blob => {
-          resolve({ dataUrl: canvas.toDataURL('image/webp', 0.86), blob });
-        }, 'image/webp', 0.86);
+          resolve({ dataUrl: canvas.toDataURL('image/webp', quality), blob });
+        }, 'image/webp', quality);
       };
       image.src = reader.result;
     };
@@ -2768,8 +2773,12 @@ const isUploadedImage = src => String(src || '').startsWith('data:');
 const openBannerPicker = () => openAssetPicker('banner', tripBanner, src => {
   applyTripBanner(src);
   if (!liveMode) { showPrototypeToast('เปลี่ยนภาพแบนเนอร์แล้ว'); return; }
+  /* รูปที่อัปโหลดเองจะถูกส่งขึ้นเซิร์ฟเวอร์ตั้งแต่ตอนเลือกไฟล์แล้ว (ดู #assetUpload)
+     ค่าที่ได้มาตรงนี้จึงเป็น URL สั้น ๆ ไม่ใช่ data: — เก็บลงฐานได้ตามปกติ
+     ถ้ายังเป็น data: แปลว่าอัปโหลดล้มเหลว ต้องบอกตรง ๆ ว่ารีเฟรชแล้วจะหาย
+     ไม่ใช่ปล่อยให้คิดว่าบันทึกแล้ว (เคยเป็นแบบนั้นจนรูปหายจริง 2026-08-11) */
   if (isUploadedImage(src)) {
-    showPrototypeToast('รูปที่อัปโหลดเองยังบันทึกถาวรไม่ได้ · เห็นเฉพาะเบราว์เซอร์นี้');
+    showPrototypeToast('อัปโหลดรูปไม่สำเร็จ · รูปนี้จะหายเมื่อรีเฟรช');
     return;
   }
   /* ไม่ดึงข้อมูลใหม่ทั้งชุดหลังบันทึก เพราะรูปบนจอถูกเปลี่ยนไปแล้วและการ

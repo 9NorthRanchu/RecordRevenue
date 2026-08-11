@@ -47,6 +47,8 @@ CREATE TABLE TripExpenses (trip_expense_id TEXT PRIMARY KEY, project_id TEXT, me
 CREATE TABLE TripExpenseCategories (line_id TEXT PRIMARY KEY, trip_expense_id TEXT, category_id TEXT, label TEXT, amount_foreign REAL, preset_id TEXT);
 CREATE TABLE TripExpensePresets (preset_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, label TEXT NOT NULL,
   icon_url TEXT, category_id TEXT, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE TripAssets (asset_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, content_type TEXT NOT NULL,
+  bytes BLOB NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE TripExpenseParticipants (participant_id TEXT PRIMARY KEY, trip_expense_id TEXT, member_id TEXT, amount_foreign REAL, percent REAL);
 CREATE TABLE TripClosures (closure_id TEXT PRIMARY KEY, project_id TEXT, entry_type TEXT,
   posting_date TEXT, ledger_total REAL, trip_only_total REAL, fx_result REAL, carried_thb REAL,
@@ -1182,6 +1184,67 @@ check('ส่งค่าว่าง = ล้างธีม กลับไป
 
 r = await call('POST', '/api/unified-trip/trip', { user: 'uPuii', body: { name: 'แอบเปลี่ยน', theme_id: 'sakura' } });
 check('⚠️ สมาชิกธรรมดาเปลี่ยนธีมไม่ได้ → 403', r.status === 403);
+
+console.log('\n── อัปโหลดรูปตอนที่ยังไม่มี R2 (เก็บลง D1) 2026-08-11 ──────');
+/* บั๊กจริงที่เจอ: บัญชียังไม่ได้เปิด R2 → upload ตอบ 500 → หน้าจอถอยไปเก็บรูป
+   เป็น data: URL ในเบราว์เซอร์ → รีเฟรชแล้วแบนเนอร์หาย และคนอื่นไม่เห็น
+   เทสชุดนี้ยืนยันว่า "ไม่มี R2 ก็ต้องอัปโหลดได้" ไม่ใช่ตอบ error */
+const envNoR2 = { DB };   // จงใจไม่มี ICONS
+
+let dbAssetUrl = '';
+{
+  const blob = new Blob([new Uint8Array([9, 8, 7, 6, 5])], { type: 'image/webp' });
+  const form = new FormData();
+  form.append('file', blob, 'banner.webp');
+  const url = new URL('https://x/api/unified-trip/icon-upload');
+  const req = new Request(url, { method: 'POST', headers: { 'x-user-id': '9North' }, body: form });
+  const res = await handleUnifiedTrip(req, envNoR2, url, cors, '9North');
+  const data = await res.json();
+  dbAssetUrl = data.url || '';
+  check('🔑 ไม่มี R2 ก็อัปโหลดได้ (ไม่ใช่ 500)', res.status === 201, JSON.stringify(data));
+  check('คืน URL ที่ชี้ไปที่เก็บใน D1', dbAssetUrl.includes('/api/unified-trip/icon/db/'), dbAssetUrl);
+  check('บันทึกไบต์ลงตาราง TripAssets จริง',
+    db.prepare(`SELECT COUNT(*) n FROM TripAssets WHERE family_id='FAM-1'`).get().n === 1);
+}
+
+{
+  const key = dbAssetUrl.split('/api/unified-trip/icon/')[1] || '';
+  const url = new URL(`https://x/api/unified-trip/icon/${key}`);
+  const res = await handleUnifiedTrip(new Request(url), envNoR2, url, cors, '');
+  check('🔑 ดึงรูปกลับมาได้โดยไม่ต้องล็อกอิน', res.status === 200);
+  check('content-type ตรงกับตอนอัปโหลด', res.headers.get('content-type') === 'image/webp');
+  const got = new Uint8Array(await res.arrayBuffer());
+  check('ไบต์ที่ได้ตรงกับที่อัปโหลดไปเป๊ะ', got.length === 5 && got[0] === 9 && got[4] === 5, JSON.stringify([...got]));
+}
+
+{
+  // ไฟล์ใหญ่เกินเพดาน D1 — ต้องปฏิเสธพร้อมบอกวิธีแก้ ไม่ใช่ยัดลงฐานจนช้าทั้งระบบ
+  const big = new Blob([new Uint8Array(800 * 1024)], { type: 'image/webp' });
+  const form = new FormData();
+  form.append('file', big, 'big.webp');
+  const url = new URL('https://x/api/unified-trip/icon-upload');
+  const req = new Request(url, { method: 'POST', headers: { 'x-user-id': '9North' }, body: form });
+  const res = await handleUnifiedTrip(req, envNoR2, url, cors, '9North');
+  check('⚠️ ไฟล์เกิน 700 KB → 400', res.status === 400);
+}
+
+{
+  const url = new URL('https://x/api/unified-trip/icon/db/ไม่มีจริง');
+  const res = await handleUnifiedTrip(new Request(url), envNoR2, url, cors, '');
+  check('ขอรูปที่ไม่มี → 404', res.status === 404);
+}
+
+// แบนเนอร์: URL สั้นจากการอัปโหลดต้องบันทึกได้ · data: ยังต้องถูกปฏิเสธเหมือนเดิม
+{
+  const key = dbAssetUrl.split('https://x')[1] || '';
+  r = await call('POST', '/api/unified-trip/trip', { body: { name: 'Hokkaido 2026', theme_banner: key } });
+  check('🔑 บันทึกแบนเนอร์ที่อัปโหลดเองได้ (รีเฟรชแล้วไม่หาย)', r.status === 200 && r.data.theme_banner === key, JSON.stringify(r));
+  r = await call('GET', '/api/unified-trip');
+  check('อ่านแบนเนอร์กลับมาได้', r.data.trip.theme_banner === key);
+}
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'Hokkaido 2026', theme_banner: 'data:image/webp;base64,AAAA' } });
+check('⚠️ data: URL ยังถูกปฏิเสธ (กัน Projects บวม)', r.status === 400);
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 if (fail > 0) process.exit(1);

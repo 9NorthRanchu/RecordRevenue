@@ -110,6 +110,16 @@ body{
   border:3px solid var(--frame);box-shadow:0 3px 0 var(--drop);
 }
 .topbar{background:rgba(255,255,255,.86);backdrop-filter:blur(12px)}
+
+/* ชื่อทริปกับวันที่ต้องคนละบรรทัด (2026-08-10)
+   style.css ตั้งใจให้เป็นแบบนี้อยู่แล้ว แต่เขียน selector ผิดเป็น
+   `.topbar>div:nth-child(2)` ทั้งที่ลูกคนที่ 2 ของ .topbar คือ <button>
+   ไม่ใช่ <div> กฎเดิมจึงไม่เคยทำงานเลย <b> กับ <small> เลยไหลต่อกันเป็น
+   "Hokkaido 202617 ธ.ค. 2569" โดยไม่มีช่องว่างคั่น
+   แก้ด้วยการอ้างคลาสตรง ๆ แทนการนับลำดับลูก ซึ่งพังทันทีที่มีใครเพิ่มปุ่ม */
+.trip-heading{display:grid;gap:1px;min-width:0}
+.trip-heading b{line-height:1.25}
+.trip-heading small{line-height:1.25;color:var(--muted)}
 .back,.icon-btn{
   background:var(--accent-soft);color:var(--accent-ink);border:2px solid var(--frame);
   border-radius:99px;transition:.15s;
@@ -324,9 +334,23 @@ body{
 .current-day-route .future-route{
   filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 3px #fff) drop-shadow(0 1px 2px rgba(0,0,0,.35));
 }
-/* เส้นทางที่ยังไม่ถึง เดิมจาง 22% ซึ่งหายไปเลยบนภาพถ่าย — ยกขึ้นให้ยังเห็นเค้าโครง
-   แต่ยังจางกว่าเส้นที่กำลังเดินทางอยู่ชัดเจน */
-.current-day-route .future-route{opacity:.45;stroke-width:6}
+
+/* สามเส้นนี้ต้องแยกออกจากกัน "ตั้งแต่ชำเลืองมอง" ไม่ใช่ต้องเพ่ง
+   แผนที่พื้นหลังเป็นสีเขียว-ฟ้าอ่อนทั้งใบ เส้นสีอ่อนจึงจมหายไปกับพื้น
+   จึงแยกด้วยสามอย่างพร้อมกัน ไม่ใช่สีอย่างเดียว: สี + ความหนา + ลายเส้น */
+
+/* ไปมาแล้ว — เขียวเข้มทึบ ไม่ประ เพราะเป็นเรื่องที่จบแล้ว แน่นอนแล้ว */
+.current-day-route .completed-route{
+  stroke:#0f7a44;stroke-width:11;stroke-dasharray:none;opacity:1;
+}
+/* กำลังไป — สีหลักของธีม หนาที่สุด ประถี่ ๆ ให้รู้สึกว่ากำลังเคลื่อนที่ */
+.current-day-route .active-route{
+  stroke:var(--accent-deep);stroke-width:13;stroke-dasharray:22 14;opacity:1;
+}
+/* ยังไม่ถึง — จางและบางกว่าเพื่อน แต่ไม่จางจนหาย (เดิม 22% ซึ่งมองไม่เห็นเลย) */
+.current-day-route .future-route{
+  stroke:#3f5d80;stroke-width:6;stroke-dasharray:10 16;opacity:.5;
+}
 
 .journey-pin circle{
   filter:drop-shadow(0 0 2px #fff) drop-shadow(0 2px 3px rgba(0,0,0,.4));

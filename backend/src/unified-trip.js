@@ -605,8 +605,11 @@ async function writeTripMeta(request, env, ctx, projectId, corsHeaders) {
   let banner = ctx.trip.theme_banner ?? null;
   if (body.theme_banner !== undefined) {
     const raw = String(body.theme_banner || '').trim().replace(/^\.\.\//, '');
+    /* ยังไม่รับ data: URL เหมือนเดิม — ยาวเป็นแสนตัวอักษร ทำให้แถวใน Projects
+       บวมจนดึงทริปช้าทั้งระบบ · รูปที่อัปโหลดเองต้องผ่าน /icon-upload ก่อน
+       แล้วส่ง URL สั้น ๆ ที่ได้กลับมาเก็บตรงนี้แทน */
     if (raw.startsWith('data:')) {
-      return json({ error: 'ยังไม่รองรับรูปที่อัปโหลดเอง — เลือกจากรูปที่มีอยู่' }, corsHeaders, 400);
+      return json({ error: 'ต้องอัปโหลดรูปผ่านระบบก่อน แล้วค่อยบันทึกที่อยู่รูป' }, corsHeaders, 400);
     }
     if (raw.length > 300) return json({ error: 'ที่อยู่รูปยาวเกินไป' }, corsHeaders, 400);
     banner = raw || null;
@@ -718,6 +721,9 @@ async function createTrip(request, env, userId, corsHeaders) {
 
 const ICON_MIME_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
 const MAX_ICON_BYTES = 3 * 1024 * 1024;
+/* เพดานสำหรับรูปที่เก็บลง D1 (กรณีไม่มี R2) — ต่ำกว่า R2 มากโดยตั้งใจ
+   เพราะ D1 เป็นฐานข้อมูล ไม่ใช่ที่เก็บไฟล์ แถวใหญ่ ๆ ทำให้ทั้งฐานช้าลง */
+const MAX_D1_ASSET_BYTES = 700 * 1024;
 
 async function familyIdFor(env, userId) {
   const row = await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id=?`).bind(userId).first();
@@ -728,13 +734,27 @@ async function familyIdFor(env, userId) {
    <img src> แนบ Authorization header ไม่ได้ คีย์เป็น UUID เดายากและเนื้อหา
    เป็นแค่ไอคอนตกแต่ง ไม่ใช่ข้อมูลอ่อนไหว จึงเปิดให้ดึงตรงได้โดยไม่ต้องล็อกอิน */
 async function serveIcon(env, key, corsHeaders) {
-  if (!env.ICONS) return json({ error: 'เซิร์ฟเวอร์ยังไม่ได้ตั้งค่าที่เก็บไฟล์ (R2)' }, corsHeaders, 500);
   if (!key || key.includes('..')) return new Response('not found', { status: 404 });
+
+  const headers = new Headers(corsHeaders);
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+
+  /* คีย์ที่ขึ้นต้นด้วย db/ = รูปที่เก็บไว้ใน D1 (ตอนที่ยังไม่มี R2)
+     ต้องเช็คก่อน R2 เสมอ เพื่อให้รูปเก่ายังเปิดได้แม้ภายหลังจะเปิด R2 แล้ว */
+  if (key.startsWith('db/')) {
+    const row = await env.DB.prepare(`SELECT content_type, bytes FROM TripAssets WHERE asset_id=?`)
+      .bind(key.slice(3)).first();
+    if (!row) return new Response('not found', { status: 404 });
+    headers.set('Content-Type', row.content_type || 'application/octet-stream');
+    // D1 คืน BLOB มาเป็น array ของตัวเลขในบาง runtime — แปลงให้เป็นไบต์เสมอ
+    const bytes = row.bytes instanceof ArrayBuffer ? new Uint8Array(row.bytes) : Uint8Array.from(row.bytes);
+    return new Response(bytes, { headers });
+  }
+
+  if (!env.ICONS) return new Response('not found', { status: 404 });
   const object = await env.ICONS.get(key);
   if (!object) return new Response('not found', { status: 404 });
-  const headers = new Headers(corsHeaders);
   headers.set('Content-Type', object.httpMetadata?.contentType || 'application/octet-stream');
-  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
   return new Response(object.body, { headers });
 }
 
@@ -743,7 +763,6 @@ async function serveIcon(env, key, corsHeaders) {
 async function uploadIconRoute(request, env, userId, corsHeaders) {
   const familyId = await familyIdFor(env, userId);
   if (!familyId) return json({ error: 'ไม่พบผู้ใช้นี้' }, corsHeaders, 401);
-  if (!env.ICONS) return json({ error: 'เซิร์ฟเวอร์ยังไม่ได้ตั้งค่าที่เก็บไฟล์ (R2)' }, corsHeaders, 500);
 
   let form;
   try { form = await request.formData(); } catch { return json({ error: 'อ่านไฟล์ที่อัปโหลดไม่สำเร็จ' }, corsHeaders, 400); }
@@ -752,13 +771,27 @@ async function uploadIconRoute(request, env, userId, corsHeaders) {
 
   const ext = ICON_MIME_EXT[file.type];
   if (!ext) return json({ error: 'รองรับเฉพาะไฟล์ PNG · JPEG · WEBP' }, corsHeaders, 400);
-  if (file.size > MAX_ICON_BYTES) return json({ error: 'ไฟล์ใหญ่เกิน 3 MB' }, corsHeaders, 400);
 
-  const key = `icons/${familyId}/${crypto.randomUUID()}.${ext}`;
-  await env.ICONS.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  const origin = new URL(request.url).origin;
 
-  const url = `${new URL(request.url).origin}/api/unified-trip/icon/${key}`;
-  return json({ url }, corsHeaders, 201);
+  /* มี R2 ก็ใช้ R2 (เหมาะกับไฟล์มากกว่า) — ไม่มีก็เก็บลง D1 แทน
+     สำคัญที่ต้อง "ทำงานได้ทั้งสองแบบ" ไม่ใช่ตอบ error เมื่อไม่มี R2 เพราะ
+     ฝั่งหน้าจอจะถอยไปเก็บรูปเป็น data: URL ในเบราว์เซอร์ ซึ่งรีเฟรชแล้วหาย
+     และคนอื่นในทริปไม่เห็น (เจอปัญหานี้จริงกับภาพแบนเนอร์ 2026-08-11) */
+  if (env.ICONS) {
+    if (file.size > MAX_ICON_BYTES) return json({ error: 'ไฟล์ใหญ่เกิน 3 MB' }, corsHeaders, 400);
+    const key = `icons/${familyId}/${crypto.randomUUID()}.${ext}`;
+    await env.ICONS.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+    return json({ url: `${origin}/api/unified-trip/icon/${key}` }, corsHeaders, 201);
+  }
+
+  if (file.size > MAX_D1_ASSET_BYTES) {
+    return json({ error: 'ไฟล์ใหญ่เกิน 700 KB · ลองย่อรูปให้เล็กลงก่อน' }, corsHeaders, 400);
+  }
+  const assetId = crypto.randomUUID();
+  await env.DB.prepare(`INSERT INTO TripAssets (asset_id, family_id, content_type, bytes) VALUES (?,?,?,?)`)
+    .bind(assetId, familyId, file.type, new Uint8Array(await file.arrayBuffer())).run();
+  return json({ url: `${origin}/api/unified-trip/icon/db/${assetId}` }, corsHeaders, 201);
 }
 
 /* ไอคอนประจำหมวดค่าใช้จ่าย — อ่าน/แก้ Categories.icon_asset ของครอบครัวผู้ใช้
