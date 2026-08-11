@@ -362,7 +362,7 @@ function renderWallets() {
   const viewer = memberById(viewerId);
   if (!viewer) {
     $('#walletHeading').textContent = 'กระเป๋า';
-    $('#walletPrivacy').innerHTML = '⚠️ ระบบยังไม่รู้ว่าคุณเป็นสมาชิกคนไหนของทริปนี้ จึงแสดงกระเป๋าไม่ได้ · ให้ผู้ดูแลทริปผูกบัญชีของคุณก่อน';
+    $('#walletPrivacy').innerHTML = '⚠️ ยังไม่ได้ผูกบัญชีคุณกับทริปนี้ — ให้ผู้ดูแลทริปผูกให้ก่อน';
     $('#walletGrid').innerHTML = '';
     $('#walletActivity').innerHTML = '';
     return;
@@ -370,8 +370,8 @@ function renderWallets() {
   const owned = wallets.filter(wallet => wallet.ownerId === viewerId);
   $('#walletHeading').textContent = `กระเป๋าของ ${viewer.name}`;
   $('#walletPrivacy').innerHTML = owned.length
-    ? `🔒 ยอดคงเหลือและประวัติการเติมเงินนี้เห็นเฉพาะ ${viewer.name} และผู้ดูแลที่ได้รับสิทธิ์ · สมาชิกอื่นเห็นได้แค่บิลที่แชร์`
-    : `🔒 ${viewer.name} ยังไม่มีกระเป๋าของตัวเอง · ยอดของสมาชิกคนอื่นถูกซ่อนไว้ตามสิทธิ์`;
+    ? `🔒 ยอดนี้เห็นเฉพาะคุณ · คนอื่นเห็นแค่บิลที่แชร์`
+    : `🔒 ยังไม่มีกระเป๋า · ยอดของคนอื่นถูกซ่อนไว้`;
 
   $('#walletGrid').innerHTML = owned.map(wallet => {
     const s = walletSummary(wallet);
@@ -504,6 +504,64 @@ function renderCurrencies() {
     </div>`;
   }).join('');
 }
+
+/* ── ธีมสีของทริป (2026-08-10) ─────────────────────────────────────────
+   ค่าสีจริงอยู่ใน themes.css ทั้งหมด ที่นี่เก็บแค่ "รหัสธีม + ชื่อที่คนอ่าน"
+   เพิ่มธีมใหม่ต้องแก้สามที่: TRIP_THEMES (backend) · บล็อกใน themes.css ·
+   และรายการนี้ — ไม่ต้องแตะฐานข้อมูลเลยเพราะเก็บเป็นข้อความรหัสธีมอยู่แล้ว */
+const TRIP_THEMES = [
+  { id:'hokkaido', name:'Hokkaido ฤดูหนาว', note:'ฟ้าน้ำแข็ง ขาวหิมะ ทองอุ่น',
+    swatch:['#1f6fa8', '#3aa5d9', '#dff2fb', '#f0b429'] },
+  { id:'sakura', name:'Fuji ซากุระ', note:'ชมพูซากุระ ม่วงพลบค่ำ เขียวใบอ่อน',
+    swatch:['#c72c6e', '#e8629c', '#e4d6ff', '#2f9e6b'] }
+];
+const DEFAULT_THEME = 'hokkaido';
+let tripTheme = DEFAULT_THEME;
+
+/* ตั้งที่ <html> ไม่ใช่ <body> — พื้นหลังไล่สีของธีมกินเต็มจอได้จริง
+   แม้เนื้อหาสั้นกว่าความสูงหน้าจอ */
+function applyTheme(id) {
+  tripTheme = TRIP_THEMES.some(t => t.id === id) ? id : DEFAULT_THEME;
+  document.documentElement.dataset.theme = tripTheme;
+  renderThemePicker();
+}
+
+function renderThemePicker() {
+  const host = $('#themePicker');
+  if (!host) return;
+  host.innerHTML = TRIP_THEMES.map(theme => `
+    <button type="button" class="theme-option" data-theme-id="${theme.id}"
+            aria-pressed="${theme.id === tripTheme}">
+      <span class="swatch">${theme.swatch.map(color => `<i style="background:${color}"></i>`).join('')}</span>
+      <b>${theme.name}</b>
+      <small>${theme.note}</small>
+    </button>`).join('');
+}
+
+$('#themePicker')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-theme-id]');
+  if (!button) return;
+  const chosen = button.dataset.themeId;
+  if (chosen === tripTheme) return;
+
+  /* เปลี่ยนสีบนจอทันทีก่อนรอเซิร์ฟเวอร์ — การเลือกธีมต้องรู้สึกทันใจ
+     ถ้าบันทึกไม่สำเร็จค่อยย้อนกลับ ไม่ปล่อยให้จอโชว์ธีมที่ไม่ได้ถูกบันทึกจริง */
+  const previous = tripTheme;
+  applyTheme(chosen);
+  if (!liveMode) { showPrototypeToast('โหมดตัวอย่าง — ธีมยังไม่ถูกบันทึก'); return; }
+
+  TripApi.saveTripMeta({
+    name: $('#tripNameInput').value.trim(),
+    startDate: $('#tripStartInput').value,
+    endDate: $('#tripEndInput').value,
+    themeId: chosen
+  })
+    .then(() => showPrototypeToast(`เปลี่ยนเป็นธีม ${TRIP_THEMES.find(t => t.id === chosen).name} แล้ว`))
+    .catch(error => {
+      applyTheme(previous);
+      showPrototypeToast(`เปลี่ยนธีมไม่สำเร็จ: ${error.message}`);
+    });
+});
 
 /* ── รายการค่าใช้จ่ายย่อยประจำทริป (2026-08-10) ────────────────────────
    หนึ่งรายการ = ปุ่มหนึ่งปุ่มในฟอร์มจดบิล มีชื่อและไอคอนของตัวเอง แล้วชี้ไป
@@ -1580,15 +1638,14 @@ function applyTripLock() {
   });
   const locked = financeLocked();
   $$('.trip-locked-note').forEach(note => {
-    note.hidden = !locked;
-    // ข้อความในป้ายต้องตรงกับเหตุผลที่ล็อกจริง ไม่ใช่บอกว่าทริปปิดทั้งที่ยังเปิดอยู่
-    // สามสถานะ ไม่ใช่สอง: ปิดแล้ว(จริง) · ปิดแล้ว(ตัวอย่าง) · เปิดอยู่แต่เป็นข้อมูลจริง
-    // ถ้ารวบเหลือสอง จะมีกรณีที่ป้ายบอกว่า "ทริปปิดแล้ว" ทั้งที่ทริปยังเปิดอยู่
-    note.innerHTML = tripClosed
-      ? (liveMode
-          ? '🔒🔴 <b>ทริปนี้ปิดแล้ว (ข้อมูลจริง)</b> — ยอดถูกรายงานเข้าบัญชีไปแล้ว ต้องเปิดทริปกลับก่อนจึงจะแก้ได้'
-          : '🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้')
-      : '🔴 <b>โหมดข้อมูลจริง</b> — ทุกอย่างที่บันทึกจากหน้านี้ลงฐานจริงทั้งหมด รวมถึงการปิดทริป';
+    /* โชว์เฉพาะตอนทริปปิดจริง ๆ เท่านั้น (2026-08-10)
+       เดิมโชว์ป้าย "โหมดข้อมูลจริง" ค้างไว้ทุกหน้าแม้ทริปยังเปิดปกติ ซึ่งเป็น
+       ข่าวดีที่ไม่ต้องบอกซ้ำ และกินพื้นที่จอมือถือทุกหน้า — ป้ายควรบอกเฉพาะ
+       เรื่องที่ทำให้ผู้ใช้ "ทำอะไรไม่ได้" ไม่ใช่รายงานสถานะปกติ */
+    note.hidden = !tripClosed;
+    note.innerHTML = liveMode
+      ? '🔒 <b>ทริปนี้ปิดแล้ว</b> — ยอดเข้าบัญชีไปแล้ว ต้องเปิดทริปกลับก่อนถึงจะแก้ได้'
+      : '🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อก แต่แผนเที่ยวและรูปยังแก้ได้';
   });
   document.body.classList.toggle('trip-closed', locked);
 }
@@ -2840,15 +2897,20 @@ $('#resetDemo').addEventListener('click', () => {
    ทุกปุ่มที่แก้เงินถูกล็อกด้วย applyTripLock() ตัวเดียวกับตอนปิดทริป
    (ตัวแปร liveMode ประกาศไว้บนสุดของไฟล์ เพราะ applyTripLock ใช้ตั้งแต่ render แรก) */
 
+/* แถบแจ้งสถานะบนสุด — โชว์ "เฉพาะตอนมีปัญหา" เท่านั้น (2026-08-10)
+   เดิมมีแถบบอกว่า "นี่คือข้อมูลจริง" ค้างอยู่ตลอดเวลา รวมกับแถบ prototype-note
+   และกล่องในหน้าอีก เท่ากับพูดเรื่องเดียวกันสามที่ กินพื้นที่จอมือถือไป ~4 แถว
+   ทั้งที่เป็นข่าวดีที่ไม่ต้องบอกซ้ำ — ถ้าทุกอย่างปกติก็ไม่ต้องมีแถบ
+
+   แต่ตอน "โหลดข้อมูลจริงไม่สำเร็จ" ยังต้องมีแถบเสมอ เพราะจอจะโชว์ข้อมูล
+   ตัวอย่างแทน ถ้าเงียบไว้ผู้ใช้จะเข้าใจผิดว่าตัวเลขบนจอเป็นของจริง */
 function markLiveBanner(text, tone = 'live') {
-  let bar = document.querySelector('#liveBar');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'liveBar';
-    document.body.prepend(bar);
-  }
-  bar.className = `live-bar live-bar--${tone}`;
-  bar.textContent = text;
+  const bar = document.querySelector('#liveBar');
+  if (tone === 'live') { bar?.remove(); return; }
+  const el = bar || Object.assign(document.createElement('div'), { id: 'liveBar' });
+  if (!bar) document.body.prepend(el);
+  el.className = `live-bar live-bar--${tone}`;
+  el.textContent = text;
 }
 
 function applyLiveState(state) {
@@ -2875,6 +2937,7 @@ function applyLiveState(state) {
   if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
   ledgerCategories = state.ledgerCategories || [];
   tripPresets = state.presets || [];
+  applyTheme(state.themeId || DEFAULT_THEME);
   /* ⚠️ ต้องตั้ง viewerId ก่อนเรียก fillTripMetaForm — ฟอร์มเช็คสิทธิ์ admin
      จาก viewerId ถ้าเรียกสลับกัน มันจะเช็คด้วยตัวตนของข้อมูลตัวอย่างเก่า
      แล้วปิดปุ่มบันทึกใส่ทุกคน แม้แต่ผู้ดูแลจริง (เคยพังมาแล้ว 2026-08-02)
@@ -2887,11 +2950,6 @@ function applyLiveState(state) {
     $('.map-hero img').src = tripBanner;
   }
   restoring = false;
-
-  // แถบบนสุดของหน้าเขียนไว้ว่า "ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง" ซึ่งกลายเป็น
-  // ข้อความที่ผิดทันทีในโหมดนี้ — ต้องแก้ ไม่ใช่ปล่อยให้ขัดกับความจริง
-  const note = document.querySelector('.prototype-note');
-  if (note) note.textContent = 'UNIFIED TRIP · เชื่อมฐานข้อมูลจริง · บิลที่บันทึกจะถูกเก็บถาวร';
 
   /* ชื่อทริปและช่วงวันที่ใน header เป็นข้อความคงที่ในไฟล์ HTML — ในโหมดข้อมูลจริง
      มันจะโชว์ "8–19 ก.พ. 2027" ทั้งที่ทริปจริงคือ 17–27 ธ.ค. 2026 ซึ่งขัดกับ
@@ -2907,21 +2965,10 @@ function applyLiveState(state) {
   $('#tripDates').textContent = [range, status].filter(Boolean).join(' · ');
   $('#brandSub').textContent = range || status;
 
-  /* แผนเที่ยวกับสภาพอากาศยังไม่มี API — ยังเป็นข้อมูลตัวอย่างอยู่
-     ต้องติดป้ายบอกให้ชัด ไม่งั้นพอตัวเลขการเงินข้าง ๆ เป็นของจริง คนจะเหมาเอาว่า
-     ทั้งหน้าเป็นของจริงหมด แล้วเชื่อพยากรณ์อากาศที่ระบบไม่ได้ไปดึงมาจริง */
-  const flag = (selector, text) => {
-    const host = document.querySelector(selector);
-    if (!host || host.querySelector('.demo-flag')) return;
-    const tag = document.createElement('p');
-    tag.className = 'demo-flag';
-    tag.textContent = text;
-    host.prepend(tag);
-  };
-  flag('.weather-card', '⚠️ ระบบยังไม่ได้เชื่อมกับบริการพยากรณ์อากาศ');
-  flag('#screen-plan .plan-layout', state.planDays.length
-    ? '🔴 จุดแวะมาจากฐานข้อมูลจริง — แต่ยังแก้จากหน้านี้ไม่ได้ (ยังไม่มี API ฝั่งเขียน)'
-    : '⚠️ ทริปนี้ยังไม่มีจุดแวะในฐานข้อมูล — ที่เห็นเป็นแผนตัวอย่าง');
+  /* ป้าย demo-flag ถูกถอดออกแล้ว (2026-08-10)
+     - การ์ดอากาศ: #weatherTip เขียนข้อความเดียวกันอยู่แล้ว ป้ายนี้จึงซ้ำเปล่า ๆ
+     - หน้าแผนเที่ยว: ข้อความเดิมบอกว่า "แก้จากหน้านี้ไม่ได้" ซึ่งไม่จริงแล้ว
+       ตั้งแต่มี API ฝั่งเขียนจุดแวะ (savePlanItemLive) — ป้ายที่ผิดแย่กว่าไม่มีป้าย */
 
   applyTripLock();
   [renderBills, renderWallets, renderMoneyStrip, renderMembers, renderCurrencies,
@@ -2930,15 +2977,14 @@ function applyLiveState(state) {
      renderTodayWeather จะ return ทันทีและปล่อยตัวเลขเดิมค้างบนจอ ต้องสั่งใหม่เอง */
   if (state.planDays.length) renderTodayWeather(planDays[0].id);
 
-  const bits = [
-    state.tripName || 'ข้อมูลจริง',
-    `${bills.length} บิล`,
-    `สุทธิ ${thb(state.netLedgerThb)}`
-  ];
-  if (state.hiddenExpenseCount) bits.push(`ซ่อนจากคุณ ${state.hiddenExpenseCount} ใบ`);
-  // บอกด้วยว่ารู้ได้อย่างไรว่าเป็นใคร — ถ้ามาจาก URL แปลว่าไม่ได้ผ่านการล็อกอินจริง
-  if (TripApi.config.userSource === 'url') bits.push('⚠️ ระบุตัวตนจาก URL ไม่ใช่การล็อกอิน');
-  markLiveBanner(`🔴 ${bits.join(' · ')} — ข้อมูลจริง`);
+  /* ปกติไม่มีแถบสถานะ — ชื่อทริป จำนวนบิล และยอดสุทธิ อยู่บนจอให้เห็นอยู่แล้ว
+     ยกเว้นกรณีเดียวที่ต้องเตือน: ตัวตนมาจาก ?userId= ใน URL ไม่ใช่การล็อกอินจริง
+     ซึ่งแปลว่ากำลังดูในนามคนอื่นได้ — อันนี้เงียบไม่ได้ */
+  if (TripApi.config.userSource === 'url') {
+    markLiveBanner('⚠️ ระบุตัวตนจาก URL ไม่ใช่การล็อกอิน — ข้อมูลที่เห็นอาจไม่ใช่ของคุณ', 'error');
+  } else {
+    markLiveBanner('', 'live');
+  }
 }
 
 /* ดึงใหม่ทั้งชุดหลังเขียนสำเร็จ แทนที่จะแก้อาร์เรย์ฝั่งหน้าจอเอง
@@ -2957,6 +3003,12 @@ async function enterLiveMode() {
   try { localStorage.setItem('unified-trip-last', TripApi.config.projectId); } catch {}
 }
 
+/* แถบ .prototype-note ถูกถอดออกจาก HTML แล้ว (2026-08-10) — ลบซ้ำตรงนี้เผื่อ
+   เบราว์เซอร์ผู้ใช้ยังแคช HTML เวอร์ชันเก่าไว้ ไม่งั้นเขาจะเห็นข้อความ
+   "ข้อมูลจำลอง ไม่เชื่อมบัญชีจริง" ค้างอยู่ ทั้งที่กำลังดูข้อมูลจริง */
+document.querySelector('.prototype-note')?.remove();
+
+applyTheme(DEFAULT_THEME);   // ตั้งธีมเริ่มต้นก่อน เดี๋ยวโหมดข้อมูลจริงจะทับด้วยของทริป
 loadState();
 if (TripApi.config.enabled) {
   enterLiveMode().catch(error => {

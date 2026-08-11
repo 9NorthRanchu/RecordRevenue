@@ -14,7 +14,7 @@
 //   DELETE /api/unified-trip/expenses?id=
 //   POST   /api/unified-trip/closures        — ปิดทริป (admin)
 //   POST   /api/unified-trip/closures/reopen — เปิดกลับพร้อมรายการกลับ (admin)
-//   POST   /api/unified-trip/trip            — แก้ชื่อทริป/ช่วงวันที่ (admin)
+//   POST   /api/unified-trip/trip            — แก้ชื่อทริป/ช่วงวันที่/ธีมสี (admin)
 //   POST   /api/unified-trip/stops           — เพิ่ม/แก้จุดแวะ (สมาชิกทุกคน)
 //   DELETE /api/unified-trip/stops?id=
 //   POST   /api/unified-trip/stops/order     — จัดลำดับ/ย้ายวัน ทั้งชุดในครั้งเดียว
@@ -50,6 +50,11 @@ const json = (data, corsHeaders, status = 200) =>
    เพราะ D1 แก้ CHECK ทีหลังไม่ได้เลย (เจอปัญหานี้มาแล้วกับ Captions.behavior)
    ONGOING จะเกิดแน่ ๆ · DREAM ยังไม่แน่นอน · MEMORY จบไปแล้ว */
 const TRIP_STAGES = ['ONGOING', 'DREAM', 'MEMORY'];
+
+/* ธีมสีที่เลือกได้ — จุดเดียวที่ตัดสินว่าค่าไหนถูกต้อง
+   เพิ่มธีมใหม่: เติมชื่อที่นี่ + เพิ่มบล็อก [data-theme="ชื่อ"] ใน themes.css
+   ไม่ต้อง migrate ฐานข้อมูลเลย เพราะเก็บเป็นข้อความรหัสธีมอยู่แล้ว */
+const TRIP_THEMES = ['hokkaido', 'sakura'];
 
 /* เรทเฉลี่ยถ่วงน้ำหนักของกระเป๋า = Σ thb ÷ Σ foreign ของทุกล็อต
    ไม่สนใจวันที่และลำดับการบันทึกโดยเจตนา — บันทึกย้อนหลังให้ผลเดียวกัน
@@ -101,7 +106,7 @@ async function loadContext(env, userId, projectId) {
   const trip = await env.DB.prepare(`
       SELECT p.project_id, p.family_id, p.name, p.status, p.start_date, p.end_date,
              p.total_budget, p.banner_url, p.theme_banner, p.posting_date, p.closed_at, p.trip_stage,
-             u.role AS viewer_user_role
+             p.theme_id, u.role AS viewer_user_role
       FROM Projects p JOIN Users u ON u.user_id = ?
       WHERE p.project_id = ? AND p.family_id = u.family_id
     `).bind(userId, projectId).first();
@@ -618,11 +623,24 @@ async function writeTripMeta(request, env, ctx, projectId, corsHeaders) {
     stage = s;
   }
 
-  await env.DB.prepare(`UPDATE Projects SET name=?, start_date=?, end_date=?, theme_banner=?, trip_stage=? WHERE project_id=?`)
-    .bind(name, start || null, end || null, banner, stage, projectId).run();
+  /* ธีมสี — เก็บเป็นรหัส ไม่ใช่ค่าสีจริง (สีจริงอยู่ใน themes.css)
+     รายชื่อธีมที่ใช้ได้อยู่ที่ TRIP_THEMES ตัวเดียว เพิ่มธีมใหม่ = เติมชื่อตรงนั้น
+     กับเพิ่มบล็อกตัวแปรใน themes.css ไม่ต้องแตะฐานข้อมูล */
+  let theme = ctx.trip.theme_id || null;
+  if (body.theme_id !== undefined) {
+    const t = String(body.theme_id || '').trim().toLowerCase();
+    if (t && !TRIP_THEMES.includes(t)) {
+      return json({ error: `ธีมต้องเป็นหนึ่งใน ${TRIP_THEMES.join(', ')}` }, corsHeaders, 400);
+    }
+    theme = t || null;
+  }
+
+  await env.DB.prepare(`UPDATE Projects SET name=?, start_date=?, end_date=?, theme_banner=?, trip_stage=?, theme_id=? WHERE project_id=?`)
+    .bind(name, start || null, end || null, banner, stage, theme, projectId).run();
 
   return json({ ok: true, name, start_date: start, end_date: end,
-                theme_banner: banner, trip_stage: stage, bills_outside_range: outside }, corsHeaders);
+                theme_banner: banner, trip_stage: stage, theme_id: theme,
+                bills_outside_range: outside }, corsHeaders);
 }
 
 /* ── รายการทริปทั้งหมดของครอบครัว ──────────────────────────────────────

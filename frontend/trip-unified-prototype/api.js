@@ -182,6 +182,8 @@ const TripApi = (() => {
       tripStartDate: payload.trip?.start_date || '',
       tripEndDate: payload.trip?.end_date || '',
       tripStage: payload.trip?.trip_stage || 'ONGOING',
+      // ว่าง = ให้หน้าจอเลือกธีมเริ่มต้นเอง ฐานไม่ตัดสินแทน
+      themeId: payload.trip?.theme_id || '',
       // เคยโพสต์เข้าบัญชีจริงหรือยัง — ใช้ตัดสินว่าปุ่มลบทริปกดได้ไหม
       // (เซิร์ฟเวอร์ตรวจซ้ำอีกชั้นตอนลบจริงอยู่ดี ไม่ได้พึ่งแค่ตัวนี้)
       postedToLedger: (payload.closures || []).some(c => Boolean(c.linked_transaction_id)),
@@ -321,10 +323,12 @@ const TripApi = (() => {
   /* ชื่อทริป/ช่วงวันที่/ประเภท — ส่งเฉพาะช่องที่กรอกมา ช่องว่างแปลว่า "ไม่ระบุ"
      ไม่ใช่ "ลบของเดิม" ฝั่งเซิร์ฟเวอร์คงค่าเดิมไว้ถ้าไม่ส่งคีย์นั้นมา
      tripStage ไม่ส่งมา = ไม่แตะประเภทเดิม (ตัวเลือก Ongoing/Dream/Memory) */
-  const saveTripMeta = ({ name, startDate, endDate, tripStage }) => send('POST', '/trip', {
+  const saveTripMeta = ({ name, startDate, endDate, tripStage, themeId }) => send('POST', '/trip', {
     body: {
       name, start_date: startDate || '', end_date: endDate || '',
-      ...(tripStage !== undefined ? { trip_stage: tripStage } : {})
+      ...(tripStage !== undefined ? { trip_stage: tripStage } : {}),
+      // themeId ไม่ส่งมา = ไม่แตะธีมเดิม (เหมือน tripStage)
+      ...(themeId !== undefined ? { theme_id: themeId } : {})
     }
   });
 

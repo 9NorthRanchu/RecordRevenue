@@ -1,0 +1,355 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   ธีมสี kawaii — เลือกได้ต่อทริป (2026-08-10)
+
+   โครงสร้างของไฟล์นี้แบ่งเป็นสองส่วนคนละหน้าที่ ห้ามปนกัน:
+
+     ส่วนที่ 1  บล็อก [data-theme="..."] — มีแต่ตัวแปรสี ไม่มีกฎ layout เลย
+     ส่วนที่ 2  กฎหน้าตาแบบ kawaii — เขียนครั้งเดียว อ้างตัวแปรล้วน ๆ
+
+   ผลคือ "เพิ่มธีมใหม่ = เพิ่มบล็อกตัวแปรอันเดียว" ไม่ต้องก๊อปกฎทั้งชุด
+   และไม่ต้องแก้ฐานข้อมูล (Projects.theme_id เก็บแค่ชื่อธีมเป็นข้อความ)
+   อย่าลืมเติมชื่อธีมใหม่ใน TRIP_THEMES ที่ backend/src/unified-trip.js ด้วย
+   ไม่งั้นเซิร์ฟเวอร์จะปฏิเสธค่านั้นตอนบันทึก
+
+   ⚠️ ทุกคู่สีในนี้ผ่าน WCAG AA (4.5:1) แล้ว — ถ้าจะเพิ่มธีมใหม่ต้องเช็กด้วย
+      โดยเฉพาะ --on-accent ที่เป็นตัวอักษรวางบน --accent (พื้นสีเต็ม)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── ส่วนที่ 1 · จานสีของแต่ละธีม ─────────────────────────────────────── */
+
+/* ❄ Hokkaido ฤดูหนาว — ฟ้าน้ำแข็ง ขาวหิมะ ทองอุ่น */
+:root,
+[data-theme="hokkaido"]{
+  --bg-1:#c8e9ff;  --bg-2:#e8f6ff;  --bg-3:#f6fcff;
+  --speck:#ffffff;                       /* จุดหิมะบนพื้นหลัง */
+  --mark:"❄";                            /* สัญลักษณ์หน้าหัวข้อการ์ด */
+
+  --accent:#1f6fa8;      --accent-2:#3aa5d9;   --accent-deep:#164f78;
+  --accent-soft:#dff2fb; --accent-ink:#12496e;
+
+  --warm:#f0b429;        --warm-soft:#fff0cf;  --warm-edge:#e8c983;  --warm-ink:#6b5a2a;
+  --fresh:#2f9e6b;       --fresh-soft:#cfeee0; --fresh-edge:#93cfb4; --fresh-ink:#0f5a3e;
+  --calm:#4f63c4;        --calm-soft:#dfe4ff;  --calm-edge:#b3bcf0;  --calm-ink:#2f3d8a;
+  /* เฉดเข้มเฉพาะกรณี "พื้นสีเต็ม + ตัวอักษรขาว" — สีสดเฉย ๆ ได้ contrast ไม่ถึง */
+  --warm-deep:#8a6300;   --fresh-deep:#1c7a4f;
+
+  --ink:#12324d;   --muted:#4e6d84;   --card:rgba(255,255,255,.96);
+  --frame:#ffffff; --drop:rgba(31,111,168,.18);
+}
+
+/* 🌸 Fuji ซากุระ — ชมพูซากุระ ม่วงพลบค่ำ เขียวใบอ่อน */
+[data-theme="sakura"]{
+  --bg-1:#ffd9e8;  --bg-2:#ffeaf2;  --bg-3:#f3e8ff;
+  --speck:#ffffff;
+  --mark:"🌸";
+
+  --accent:#c72c6e;      --accent-2:#e8629c;   --accent-deep:#9b1f53;
+  --accent-soft:#ffe4f0; --accent-ink:#8f2f57;
+
+  --warm:#e8629c;        --warm-soft:#ffe4ef;  --warm-edge:#f0a5c4;  --warm-ink:#8f2f57;
+  --fresh:#2f9e6b;       --fresh-soft:#e0f7e6; --fresh-edge:#9ad9b0; --fresh-ink:#1f6b45;
+  --calm:#8b4fd4;        --calm-soft:#e4d6ff;  --calm-edge:#c2a5f0;  --calm-ink:#5b2fb5;
+  /* เฉดเข้มเฉพาะกรณี "พื้นสีเต็ม + ตัวอักษรขาว" */
+  --warm-deep:#b03a70;   --fresh-deep:#1c7a4f;
+
+  --ink:#4a2340;   --muted:#8a6b85;   --card:rgba(255,255,255,.96);
+  --frame:#ffffff; --drop:rgba(199,44,110,.16);
+}
+
+/* ── ส่วนที่ 2 · หน้าตาแบบ kawaii (ใช้ร่วมกันทุกธีม) ──────────────────
+   ลายเซ็นของสไตล์นี้มีสามอย่าง ใช้ซ้ำทุกชิ้นส่วนเพื่อให้ดูเป็นชุดเดียวกัน:
+     1. กรอบขาวหนา   → ตัดชิ้นส่วนออกจากพื้นเหมือนสติกเกอร์ไดคัท
+     2. เงาทึบใต้ตัว  → ทำให้ดูนูน กดได้ (ไม่ใช่เงาเบลอแบบ material)
+     3. ขอบมนมาก      → ความน่ารักมาจากทรง ไม่ใช่จากสีแสบตาอย่างเดียว */
+
+body{
+  background:linear-gradient(170deg,var(--bg-1) 0%,var(--bg-2) 40%,var(--bg-3) 100%) fixed;
+  color:var(--ink);
+}
+.app-shell{background:transparent;position:relative}
+
+/* เกล็ดหิมะ/กลีบดอกบนพื้นหลัง — วาดด้วย CSS ล้วน ไม่ต้องโหลดรูปเพิ่ม
+   pointer-events:none สำคัญมาก ไม่งั้นชั้นนี้จะบังการคลิกทั้งหน้า */
+.app-shell::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.6;
+  background-image:radial-gradient(var(--speck) 2.5px,transparent 2.5px),
+                   radial-gradient(var(--speck) 1.5px,transparent 1.5px);
+  background-size:52px 52px,30px 30px;
+  background-position:0 0,16px 22px;
+}
+.workspace,.side-rail{position:relative;z-index:1}
+
+
+/* ── การ์ด ───────────────────────────────────────────────────────────── */
+.paper-card,.next-card,.weather-card,.day-summary,.bill-notice,.wallet-card{border-radius:26px}
+.paper-card{
+  background:var(--card);border:3px solid var(--frame);
+  box-shadow:0 7px 0 var(--drop),0 16px 30px rgba(0,0,0,.07);
+  transition:transform .16s ease,box-shadow .16s ease;
+}
+.paper-card:hover{transform:translateY(-2px);box-shadow:0 9px 0 var(--drop),0 20px 36px rgba(0,0,0,.1)}
+
+/* หัวข้อการ์ดมีสัญลักษณ์ประจำธีมนำ (เกล็ดหิมะ / ดอกซากุระ) */
+.paper-card>h3{display:flex;align-items:center;gap:9px}
+.paper-card>h3::before{content:var(--mark);font-size:15px;line-height:1;flex:none}
+
+/* ── แถบข้าง / หัวจอ ─────────────────────────────────────────────────── */
+.side-rail{background:rgba(255,255,255,.74);backdrop-filter:blur(14px);border-right:2px solid var(--frame)}
+.brand>span{
+  background:linear-gradient(140deg,var(--accent-deep),var(--accent));color:#fff;
+  border:3px solid var(--frame);box-shadow:0 4px 0 var(--drop);
+}
+.main-nav button{border-radius:99px;transition:.15s}
+.main-nav button:hover{background:var(--accent-soft)}
+.main-nav button.active{
+  background:linear-gradient(110deg,var(--accent-deep),var(--accent));color:#fff;font-weight:700;
+  box-shadow:0 4px 0 var(--drop);
+}
+.avatar{
+  background:linear-gradient(140deg,var(--accent-deep),var(--accent));color:#fff;font-weight:700;
+  border:3px solid var(--frame);box-shadow:0 3px 0 var(--drop);
+}
+.topbar{background:rgba(255,255,255,.86);backdrop-filter:blur(12px)}
+.back,.icon-btn{
+  background:var(--accent-soft);color:var(--accent-ink);border:2px solid var(--frame);
+  border-radius:99px;transition:.15s;
+}
+.back:hover,.icon-btn:hover{background:var(--accent-deep);color:#fff}
+
+/* ── ปุ่ม ────────────────────────────────────────────────────────────── */
+.primary-btn{
+  background:linear-gradient(120deg,var(--accent-deep),var(--accent));color:#fff;
+  border:3px solid var(--frame);border-radius:99px;
+  box-shadow:0 5px 0 var(--drop);transition:transform .12s ease,box-shadow .12s ease;
+}
+.primary-btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 7px 0 var(--drop)}
+/* กดแล้วยุบลงไปทับเงา — ให้ความรู้สึกเหมือนปุ่มจริง ไม่ใช่ภาพนิ่ง */
+.primary-btn:active:not(:disabled){transform:translateY(4px);box-shadow:0 1px 0 var(--drop)}
+.soft-btn{
+  background:var(--warm-soft);color:var(--warm-ink);border:2px solid var(--frame);
+  border-radius:99px;font-weight:600;box-shadow:0 4px 0 var(--warm-edge);transition:.14s;
+}
+.soft-btn:hover:not(:disabled){transform:translateY(-1px)}
+.soft-btn:active:not(:disabled){transform:translateY(3px);box-shadow:0 1px 0 var(--warm-edge)}
+.mobile-fab{
+  background:linear-gradient(120deg,var(--accent-deep),var(--accent))!important;
+  border:3px solid var(--frame)!important;border-radius:99px!important;
+  box-shadow:0 6px 0 var(--drop)!important;
+}
+
+/* แท็บ/ตัวกรอง */
+.day-tabs button,.filters button,.segmented button{
+  border-radius:99px;border:2px solid var(--frame);background:var(--accent-soft);
+  /* ไม่ใช้ --muted เพราะสีเทาอ่อนบนพื้นสีอ่อนของธีมได้ contrast ไม่ถึง
+     ใช้ --accent-ink ซึ่งเป็นเฉดเข้มของสีเดียวกับพื้น อ่านออกและยังกลมกลืน */
+  color:var(--accent-ink);transition:.15s;
+}
+.day-tabs button.active,.filters button.active,.segmented button.active{
+  background:linear-gradient(110deg,var(--accent-deep),var(--accent));
+  color:#fff;border-color:var(--frame);box-shadow:0 4px 0 var(--drop);
+}
+
+/* ── หน้า "วันนี้" ───────────────────────────────────────────────────── */
+.map-hero{border-radius:28px;border:4px solid var(--frame);box-shadow:0 7px 0 var(--drop);overflow:hidden}
+.page-head span,.eyebrow,.section-kicker{color:var(--accent-ink);font-weight:700;letter-spacing:.09em}
+
+.day-summary{
+  position:relative;overflow:hidden;color:#fff;
+  background:linear-gradient(120deg,var(--accent-deep) 0%,var(--accent) 70%,var(--accent-2) 145%);
+  border:4px solid var(--frame);box-shadow:0 7px 0 var(--drop),0 16px 30px rgba(0,0,0,.1);
+}
+.day-summary::after{
+  content:"";position:absolute;right:-34px;bottom:-46px;width:130px;height:130px;
+  border-radius:50%;background:rgba(255,255,255,.2);pointer-events:none;
+}
+.day-summary>*{position:relative;z-index:1}
+.day-summary h1,.day-summary p,.day-summary span{color:#fff}
+.day-summary .day-number{
+  background:rgba(255,255,255,.95);color:var(--accent-deep);
+  border:4px solid var(--frame);border-radius:22px;box-shadow:0 4px 0 var(--drop);
+}
+.day-summary .day-number span,.day-summary .day-number strong{color:var(--accent-deep)}
+
+.next-card{border:3px solid var(--frame);box-shadow:0 7px 0 var(--drop)}
+.next-time{color:var(--accent-ink);font-weight:700}
+.next-main img{border-radius:17px;border:3px solid var(--frame);box-shadow:0 4px 0 var(--drop)}
+.weather-card{background:var(--accent-soft);border:3px solid var(--frame);box-shadow:0 6px 0 var(--drop)}
+
+/* แถบเงิน — "ใช้ไปแล้ว" ใช้สีอุ่น · "เหลืองบ" ใช้สีสดชื่น สื่อความหมายตรงตัว */
+.money-strip>div{border-radius:22px;border:3px solid var(--frame);padding:13px 15px}
+.money-strip>div:nth-of-type(1){background:var(--warm-soft);box-shadow:0 5px 0 var(--warm-edge)}
+.money-strip>div:nth-of-type(2){background:var(--fresh-soft);box-shadow:0 5px 0 var(--fresh-edge)}
+.money-strip>div:nth-of-type(1) span{color:var(--warm-ink)}
+.money-strip>div:nth-of-type(2) span{color:var(--fresh-ink)}
+.money-strip strong{color:var(--ink)}
+.money-strip strong.over{color:#c62828}
+
+/* ── บิล ─────────────────────────────────────────────────────────────── */
+.bill-row{border-radius:20px;transition:background .14s}
+.bill-row:hover{background:var(--accent-soft)}
+.bill-row img{border-radius:17px;border:3px solid var(--frame);box-shadow:0 4px 0 var(--drop)}
+.tag{border:2px solid var(--frame);border-radius:99px;font-weight:600}
+.tag.shared{background:var(--fresh-soft);color:var(--fresh-ink)}
+.tag.private{background:var(--calm-soft);color:var(--calm-ink)}
+.bill-notice{background:var(--accent-soft);border:3px solid var(--frame)}
+.bill-notice.calm{background:var(--fresh-soft)}
+.bill-notice.danger{background:#ffe0e3}
+
+/* ── กระเป๋าเงิน ─────────────────────────────────────────────────────── */
+.wallet-card{border:4px solid var(--frame);box-shadow:0 6px 0 var(--drop)}
+.wallet-card.jpy{background:var(--warm-soft)}
+.wallet-card.thb{background:var(--fresh-soft)}
+.wallet-card.short{outline:3px solid #e8455b}
+
+/* ── แถวรายการ (รายการค่าใช้จ่าย / สกุลเงิน / สมาชิก) ────────────────── */
+.currency-row,.member-row{border-radius:20px;transition:background .14s}
+.currency-row:hover,.member-row:hover{background:var(--accent-soft)}
+.currency-mark{background:var(--warm-soft);border:3px solid var(--frame);border-radius:17px}
+.currency-mark img{border-radius:12px}
+.currency-actions button{
+  border-radius:99px;border:2px solid var(--frame);background:var(--warm-soft);
+  color:var(--warm-ink);font-weight:600;box-shadow:0 3px 0 var(--warm-edge);transition:.14s;
+}
+.currency-actions button:hover:not(:disabled){transform:translateY(-1px)}
+.member-row.viewing{background:var(--fresh-soft)}
+.member-row.viewing em{background:var(--fresh-deep);color:#fff;border:2px solid var(--frame)}
+.face{border:3px solid var(--frame);box-shadow:0 3px 0 var(--drop);color:#fff}
+.face.pink{background:var(--accent)}
+.face.blue{background:var(--calm)}
+.face.cream{background:var(--warm-deep)}
+.face.sage{background:var(--fresh-deep)}
+
+/* ── แผ่นจดค่าใช้จ่าย / dialog ───────────────────────────────────────── */
+.bottom-sheet{border-radius:30px 30px 0 0;border-top:4px solid var(--frame)}
+.dialog{border-radius:28px;border:4px solid var(--frame)}
+.amount-hero{
+  background:var(--warm-soft);border:3px solid var(--frame);border-radius:22px;
+  box-shadow:0 5px 0 var(--warm-edge);
+}
+.amount-hero input{color:var(--accent-ink)}
+.add-line{
+  color:var(--calm-ink);background:var(--calm-soft);border:2px solid var(--frame);
+  border-radius:99px;box-shadow:0 3px 0 var(--calm-edge);transition:.14s;
+}
+.add-line:hover{transform:translateY(-1px)}
+.toggle.on{background:var(--fresh)}
+.sheet-close,.dialog-close{
+  background:var(--accent-soft);color:var(--accent-ink);border:2px solid var(--frame);
+  border-radius:99px;transition:.14s;
+}
+.sheet-close:hover,.dialog-close:hover{background:var(--accent-deep);color:#fff}
+
+/* ── ตัวเลือกธีมในหน้า "เพิ่มเติม" ───────────────────────────────────── */
+.theme-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:4px}
+.theme-option{
+  border:3px solid var(--frame);border-radius:22px;padding:0;overflow:hidden;cursor:pointer;
+  background:var(--card);box-shadow:0 5px 0 var(--drop);transition:transform .15s ease;
+  font-family:inherit;text-align:left;display:grid;
+}
+.theme-option:hover{transform:translateY(-2px)}
+.theme-option .swatch{height:56px;display:flex}
+.theme-option .swatch i{flex:1}
+.theme-option b{display:block;padding:9px 12px 3px;font-size:14px;color:var(--ink)}
+.theme-option small{display:block;padding:0 12px 11px;font-size:11px;color:var(--muted)}
+/* ธีมที่ใช้อยู่ — ต้องดูออกโดยไม่ต้องอ่าน จึงใช้ทั้งกรอบและป้าย ไม่ใช่สีอย่างเดียว */
+.theme-option[aria-pressed="true"]{outline:3px solid var(--accent);outline-offset:2px}
+.theme-option[aria-pressed="true"] b::after{
+  content:"ใช้อยู่";float:right;font-size:10px;font-weight:600;padding:2px 9px;border-radius:99px;
+  background:var(--accent);color:#fff;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   แก้ปัญหาการใช้งานบนมือถือ (2026-08-10)
+   จากการดูหน้าจอจริง — ทุกข้อข้างล่างคือปัญหาที่เห็นด้วยตา ไม่ใช่การเดา
+   ═══════════════════════════════════════════════════════════════════════ */
+@media(max-width:900px){
+
+  /* ปัญหา: ปุ่มลอย "จดค่าใช้จ่าย" ทับข้อความบรรทัดล่างสุดของทุกหน้า
+     เดิมเผื่อพื้นที่ล่างไว้ 100px ซึ่งพอสำหรับแถบเมนู (68px) แต่ไม่พอสำหรับ
+     ปุ่มลอยที่ลอยสูงกว่านั้นอีก (bottom:78px + สูงราว 46px = 124px)
+     เผื่อ 150px จึงพ้นทั้งสองอย่างจริง ๆ */
+  .screen{padding-bottom:150px}
+
+  /* ปัญหา: ปุ่ม "จดค่าใช้จ่าย" ปรากฏสองที่พร้อมกัน — ปุ่มลอย กับปุ่มในการ์ด
+     บนจอเล็กปุ่มซ้ำกันสองอันในสายตาเดียวทำให้ลังเลว่าอันไหนคืออันจริง
+     เก็บปุ่มลอยไว้อันเดียว เพราะกดถึงง่ายที่สุดด้วยนิ้วโป้งและอยู่ที่เดิมทุกหน้า */
+  .money-strip .add-expense,
+  .page-head .add-expense{display:none}
+  /* การ์ดเงินเหลือสองช่องพอดี ไม่ต้องเว้นที่ให้ปุ่มที่ซ่อนไปแล้ว */
+  .money-strip{grid-template-columns:1fr 1fr}
+
+  /* ปัญหา: ชื่อทริปกับวันที่ชนกันจนตัดบรรทัดกลางคำ กินหัวจอไป 3 บรรทัด
+     บังคับให้แต่ละอันอยู่บรรทัดเดียวแล้วตัดด้วย … เมื่อยาวเกิน */
+  .topbar{height:auto;min-height:58px;padding:8px 14px;gap:8px}
+  .trip-heading{min-width:0;flex:1}
+  .trip-heading b{font-size:15px;line-height:1.25}
+  .trip-heading small{font-size:11px;line-height:1.25}
+  .trip-heading b,.trip-heading small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* ปัญหา: การ์ดสรุปบิลสามใบกินครึ่งจอเพื่อบอกเลขสามตัว
+     ย่อ padding และขนาดตัวเลข แล้วให้ "รวมทั้งทริป" เต็มแถวเพราะสำคัญกว่า */
+  .bill-summary{gap:8px}
+  .bill-summary .paper-card{padding:11px 13px;border-radius:18px}
+  .bill-summary strong{font-size:19px;margin:1px 0}
+  .bill-summary small{font-size:10.5px;line-height:1.3}
+
+  /* การ์ดทั่วไปบีบขึ้นเล็กน้อย — เนื้อหาเท่าเดิมแต่เห็นได้มากขึ้นต่อหนึ่งจอ */
+  .paper-card{padding:14px 15px}
+  .day-summary{padding:13px;gap:11px}
+  .day-summary .day-number{width:52px;height:52px;border-radius:17px}
+
+  /* ปุ่มลอยเลี่ยงขอบล่างของเครื่องที่มีแถบ home indicator */
+  .mobile-fab{bottom:calc(78px + env(safe-area-inset-bottom,0px))}
+  .mobile-nav{padding-bottom:env(safe-area-inset-bottom,0px);height:auto;min-height:68px}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   เส้นทางและหมุดบนแผนที่ — ต้องอ่านออกบนพื้นหลังทุกแบบ (2026-08-10)
+
+   แบนเนอร์เปลี่ยนได้: ตอนนี้เป็นภาพวาดสีอ่อน แต่ผู้ใช้อัปโหลดภาพถ่ายจริงได้
+   ซึ่งอาจมืด สว่าง หรือรกก็ได้ — จะเลือกสีเส้นให้เข้ากับ "ภาพที่ยังไม่รู้ว่าคือ
+   ภาพอะไร" ไม่ได้เลย
+
+   ทางออกคือไม่พึ่งสีพื้นหลัง: ล้อมทุกอย่างด้วยรัศมีขาว (drop-shadow ซ้อนกัน
+   แบบเบลอ 0) เส้นและหมุดจึงมีขอบขาวของตัวเองเสมอ อ่านออกทั้งบนพื้นดำและพื้นขาว
+   ใช้ drop-shadow แทน stroke ซ้อนสองชั้น เพราะไม่ต้องเพิ่ม path ใน HTML
+   ═══════════════════════════════════════════════════════════════════════ */
+/* แผนที่ตั้งต้นเป็นภาพวาดที่ต้องเห็นครบทั้งใบ (object-fit:contain) เพราะพิกัด
+   ของหมุดอิงกับสัดส่วนภาพนั้นเป๊ะ ๆ — ครอปเมื่อไหร่หมุดจะเลื่อนไปคนละที่
+   จึงคง contain ไว้ตามเดิม ไม่เปลี่ยนเป็น cover */
+.map-hero{background:var(--accent-soft)}
+
+.current-day-route .completed-route,
+.current-day-route .active-route,
+.current-day-route .future-route{
+  filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 3px #fff) drop-shadow(0 1px 2px rgba(0,0,0,.35));
+}
+/* เส้นทางที่ยังไม่ถึง เดิมจาง 22% ซึ่งหายไปเลยบนภาพถ่าย — ยกขึ้นให้ยังเห็นเค้าโครง
+   แต่ยังจางกว่าเส้นที่กำลังเดินทางอยู่ชัดเจน */
+.current-day-route .future-route{opacity:.45;stroke-width:6}
+
+.journey-pin circle{
+  filter:drop-shadow(0 0 2px #fff) drop-shadow(0 2px 3px rgba(0,0,0,.4));
+}
+/* ชื่อเมืองมีขอบขาวหนาอยู่แล้ว (paint-order) เพิ่มเงาดำบาง ๆ ให้ตัวขอบขาวเอง
+   ไม่งั้นบนภาพถ่ายที่สว่าง ขอบขาวจะกลืนไปกับพื้นจนตัวหนังสือลอยไม่มีขอบ */
+.journey-pin text{
+  stroke-width:10px;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));
+}
+.journey-pin.future{opacity:.6}
+.journey-pin.future text{fill:#2c4a6e}
+
+/* แถบเตือนบนสุด — เหลือไว้เฉพาะตอนมีปัญหาจริง จึงใช้สีแดงได้เต็มที่
+   ไม่ต้องกลัวว่าจะเห็นบ่อยจนชิน เพราะปกติจะไม่มีแถบนี้เลย */
+.live-bar{
+  padding:9px 14px;text-align:center;font:600 12px/1.4 Sarabun,sans-serif;
+  background:#c62828;color:#fff;
+}
+.live-bar--loading{background:var(--accent-deep)}
+
+/* ── ลดการเคลื่อนไหวตามที่ผู้ใช้ตั้งค่าไว้ ───────────────────────────── */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important}
+  .paper-card:hover,.primary-btn:hover:not(:disabled),.theme-option:hover{transform:none}
+}

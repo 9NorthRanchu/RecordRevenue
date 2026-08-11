@@ -22,7 +22,7 @@ CREATE TABLE Users (user_id TEXT PRIMARY KEY, family_id TEXT, name TEXT, role TE
 CREATE TABLE Projects (project_id TEXT PRIMARY KEY, family_id TEXT, name TEXT, status TEXT,
   start_date TEXT, end_date TEXT, total_budget REAL, members TEXT, banner_url TEXT,
   theme_banner TEXT, posting_date TEXT, closed_at DATETIME, trip_stage TEXT DEFAULT 'ONGOING',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+  theme_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE TripMembers (member_id TEXT PRIMARY KEY, project_id TEXT, user_id TEXT,
   display_name TEXT, role TEXT, ledger_mode TEXT DEFAULT 'MAIN', is_admin INTEGER DEFAULT 0,
   avatar_color TEXT, created_at DATETIME);
@@ -1150,6 +1150,38 @@ check('ทริปเดิมยังเห็นรายการของ�
   (r.data.presets || []).some(p => p.preset_id === presetSnack));
 check('payload คืนชื่อหมวดบัญชีมาด้วย (ไม่ต้องจับคู่เอง)',
   r.data.presets.find(p => p.preset_id === presetSnack)?.category_name === 'ค่าอาหาร');
+
+console.log('\n── ธีมสีของทริป (2026-08-10) ──────');
+/* ธีมเก็บเป็น "รหัส" ไม่ใช่ค่าสี — สีจริงอยู่ใน themes.css
+   เทสจึงตรวจแค่ว่ารับเฉพาะรหัสที่รู้จัก และไม่แตะฟิลด์อื่นตอนเปลี่ยนธีม */
+
+r = await call('GET', '/api/unified-trip');
+check('ทริปใหม่ยังไม่มีธีม = null (ให้หน้าจอเลือกค่าเริ่มต้นเอง)', r.data.trip.theme_id === null, JSON.stringify(r.data.trip.theme_id));
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'Hokkaido 2026', theme_id: 'sakura' } });
+check('ตั้งธีมได้', r.status === 200 && r.data.theme_id === 'sakura', JSON.stringify(r));
+check('ธีมถูกเขียนลงฐานจริง',
+  db.prepare(`SELECT theme_id t FROM Projects WHERE project_id='TRP-1'`).get().t === 'sakura');
+
+r = await call('GET', '/api/unified-trip');
+check('อ่านธีมกลับมาได้', r.data.trip.theme_id === 'sakura');
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'Hokkaido 2026' } });
+check('🔑 ไม่ส่ง theme_id มา = ไม่แตะธีมเดิม', r.data.theme_id === 'sakura', JSON.stringify(r.data.theme_id));
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'Hokkaido 2026', theme_id: 'HOKKAIDO' } });
+check('รับตัวพิมพ์ใหญ่ได้ (แปลงเป็นตัวเล็ก)', r.data.theme_id === 'hokkaido', JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'Hokkaido 2026', theme_id: 'neon-cyberpunk' } });
+check('⚠️ ธีมที่ไม่รู้จัก → 400', r.status === 400, JSON.stringify(r));
+check('ธีมเดิมไม่ถูกทับเมื่อค่าใหม่ไม่ผ่าน',
+  db.prepare(`SELECT theme_id t FROM Projects WHERE project_id='TRP-1'`).get().t === 'hokkaido');
+
+r = await call('POST', '/api/unified-trip/trip', { body: { name: 'Hokkaido 2026', theme_id: '' } });
+check('ส่งค่าว่าง = ล้างธีม กลับไปใช้ค่าเริ่มต้น', r.status === 200 && r.data.theme_id === null, JSON.stringify(r));
+
+r = await call('POST', '/api/unified-trip/trip', { user: 'uPuii', body: { name: 'แอบเปลี่ยน', theme_id: 'sakura' } });
+check('⚠️ สมาชิกธรรมดาเปลี่ยนธีมไม่ได้ → 403', r.status === 403);
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 if (fail > 0) process.exit(1);
