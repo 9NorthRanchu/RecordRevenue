@@ -2339,8 +2339,9 @@ function renderPlanWorkspace() {
 
   $('#planList').innerHTML = activeDay.activities.length ? activeDay.activities.map(activity => `
     <article class="plan-item ${activity.id === selectedActivityId ? 'selected' : ''}" draggable="true" data-activity="${activity.id}">
-      <span class="drag">⠿</span><time>${activity.time}</time><img src="${activity.image}" alt="">
-      <div><b>${activity.name}</b><small>${activity.detail}</small><em>${activity.tag}</em></div>
+      <span class="drag">⠿</span><time>${activity.time || '—'}</time>
+      <img src="${activity.image || `${ART}st_camera2.png`}" alt="">
+      <div><b>${activity.name}</b><small>${activity.detail || 'ยังไม่มีรายละเอียด'}</small><em>${activity.tag}</em></div>
       <div class="plan-cost">${activity.cost}<small>${activity.bills}</small></div>
       <div class="plan-item-controls"><button class="edit-plan-item" data-edit="${activity.id}">แก้ไข</button><button data-move="up" aria-label="เลื่อนขึ้น">↑</button><button data-move="down" aria-label="เลื่อนลง">↓</button></div>
     </article>`).join('') : `<div class="plan-empty">ยังไม่มีกิจกรรมในวันนี้</div>`;
