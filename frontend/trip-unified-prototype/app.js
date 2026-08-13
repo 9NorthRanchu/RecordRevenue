@@ -2691,13 +2691,26 @@ function normaliseUpload(file, spec) {
         const drawWidth = image.width * scale;
         const drawHeight = image.height * scale;
         context.drawImage(image, (spec.width - drawWidth) / 2, (spec.height - drawHeight) / 2, drawWidth, drawHeight);
-        /* คุณภาพต่างกันตามขนาดภาพ: ไอคอนเล็กใช้ 0.86 ได้สบาย แต่แบนเนอร์
-           1920×810 ที่ 0.86 อาจโตเกิน 700 KB ซึ่งเกินเพดานที่เซิร์ฟเวอร์
-           เก็บลง D1 ได้ ลดเหลือ 0.72 สำหรับภาพใหญ่ — ตาแทบแยกไม่ออกบนแบนเนอร์
-           แต่ทำให้ไฟล์เล็กลงเกือบครึ่ง */
+        /* ⚠️ Safari เข้ารหัส WebP ผ่าน canvas ไม่ได้ (เปิดดูไฟล์ WebP ได้ แต่สร้างไม่ได้)
+           ตามสเปก เบราว์เซอร์จะถอยไปใช้ PNG "เงียบ ๆ" โดยไม่แจ้ง error เลย
+           ผลคือแบนเนอร์ 1920×810 กลายเป็น PNG ขนาดหลาย MB เกินเพดาน 700 KB
+           ที่เซิร์ฟเวอร์รับ → อัปโหลดถูกปฏิเสธ → รูปหายทุกครั้งที่รีเฟรช
+           (ใช้เวลาไล่หาสาเหตุนี้นาน 2026-08-11 เพราะไม่มี error ให้เห็น)
+
+           จึงต้องตรวจ blob.type ที่ได้จริง ไม่ใช่เชื่อว่าได้ตามที่ขอไป
+           ถ้าไม่ได้ WebP และไฟล์ใหญ่เกิน ให้เข้ารหัสใหม่เป็น JPEG ซึ่งทุก
+           เบราว์เซอร์ทำได้ · ไอคอนเล็กที่ต้องการพื้นโปร่งใสยังคงเป็น PNG ตามเดิม
+           เพราะเล็กพออยู่แล้วและ JPEG ทำพื้นโปร่งใสไม่ได้ */
         const quality = spec.width >= 1000 ? 0.72 : 0.86;
-        canvas.toBlob(blob => {
-          resolve({ dataUrl: canvas.toDataURL('image/webp', quality), blob });
+        const LIMIT = 700 * 1024;
+
+        const done = blob => resolve({ dataUrl: canvas.toDataURL(blob?.type || 'image/png', quality), blob });
+
+        canvas.toBlob(first => {
+          const encodedAsWebp = first?.type === 'image/webp';
+          if (first && (encodedAsWebp || first.size <= LIMIT)) return done(first);
+          // ถอยไป JPEG: ไม่มีพื้นโปร่งใส แต่แบนเนอร์เป็นภาพเต็มกรอบอยู่แล้ว
+          canvas.toBlob(second => done(second || first), 'image/jpeg', 0.82);
         }, 'image/webp', quality);
       };
       image.src = reader.result;
@@ -2731,8 +2744,13 @@ $('#assetUpload').addEventListener('change', async event => {
         /* ต้องบอกให้ชัดว่า "ยังไม่ถูกบันทึก" ไม่ใช่แค่แจ้งว่ามีอะไรผิดพลาด
            ข้อความเดิมเขียนว่าจะฝังรูปไปกับข้อมูลแทน ซึ่งไม่จริง — ฐานปฏิเสธ
            รูปแบบ data: ผลคือผู้ใช้เห็นรูปบนจอ คิดว่าเรียบร้อยแล้ว แต่พอรีเฟรช
-           รูปหาย และไม่มีใครรู้ว่าทำไม (เจอจริง 2026-08-11) */
+           รูปหาย และไม่มีใครรู้ว่าทำไม (เจอจริง 2026-08-11)
+
+           แจ้งสองที่: ข้อความในกล่อง (อ่านรายละเอียดได้) และ toast (เห็นแน่นอน)
+           เพราะข้อความเล็ก ๆ ในกล่องอย่างเดียวคนมองข้ามจริง ๆ */
         $('#assetError').textContent = `⚠️ อัปโหลดไม่สำเร็จ (${uploadError.message}) · รูปนี้จะยังไม่ถูกบันทึก`;
+        showPrototypeToast(`⚠️ อัปโหลดไม่สำเร็จ: ${uploadError.message}`);
+        console.error('icon upload failed', uploadError);
       }
     }
     assetLibrary[assetKind].unshift({ id:`up-${Date.now()}`, label, src: finalSrc, uploaded:true });
