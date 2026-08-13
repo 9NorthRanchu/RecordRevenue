@@ -2728,10 +2728,11 @@ $('#assetUpload').addEventListener('change', async event => {
         finalSrc = await TripApi.uploadIcon(blob, `${label}.webp`);
         $('#assetError').textContent = '';
       } catch (uploadError) {
-        // อัปโหลดแยกไฟล์ไม่ได้ (เช่นยังไม่ได้เปิด R2) ไม่ใช่ตัวบล็อก — รูปที่ย่อ
-        // แล้วยังถูกฝังไปกับข้อมูลตามปกติ (data:) ทุกคนในครอบครัวยังเห็นเหมือนกัน
-        // เพราะเก็บอยู่ในฐานเดียวกัน แค่ไม่ได้แยกเป็นไฟล์ต่างหากบน R2
-        $('#assetError').textContent = `อัปโหลดแยกไฟล์ไม่สำเร็จ (${uploadError.message}) · จะฝังรูปนี้ไปกับข้อมูลแทน`;
+        /* ต้องบอกให้ชัดว่า "ยังไม่ถูกบันทึก" ไม่ใช่แค่แจ้งว่ามีอะไรผิดพลาด
+           ข้อความเดิมเขียนว่าจะฝังรูปไปกับข้อมูลแทน ซึ่งไม่จริง — ฐานปฏิเสธ
+           รูปแบบ data: ผลคือผู้ใช้เห็นรูปบนจอ คิดว่าเรียบร้อยแล้ว แต่พอรีเฟรช
+           รูปหาย และไม่มีใครรู้ว่าทำไม (เจอจริง 2026-08-11) */
+        $('#assetError').textContent = `⚠️ อัปโหลดไม่สำเร็จ (${uploadError.message}) · รูปนี้จะยังไม่ถูกบันทึก`;
       }
     }
     assetLibrary[assetKind].unshift({ id:`up-${Date.now()}`, label, src: finalSrc, uploaded:true });

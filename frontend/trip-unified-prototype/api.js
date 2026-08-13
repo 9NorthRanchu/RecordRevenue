@@ -188,7 +188,13 @@ const TripApi = (() => {
       // (เซิร์ฟเวอร์ตรวจซ้ำอีกชั้นตอนลบจริงอยู่ดี ไม่ได้พึ่งแค่ตัวนี้)
       postedToLedger: (payload.closures || []).some(c => Boolean(c.linked_transaction_id)),
       projectId: payload.trip?.project_id || '',
-      banner: bannerPath(payload.trip?.banner_url || payload.trip?.theme_banner),
+      /* ⚠️ theme_banner ต้องมาก่อน banner_url เสมอ — เพราะ theme_banner คือช่อง
+         เดียวที่หน้านี้เขียนลงไป (ดู saveBanner) ส่วน banner_url เป็นคอลัมน์เก่า
+         จากหน้า TRIPS รุ่นก่อนที่ไม่มีอะไรเขียนแล้ว
+         เดิมเรียงสลับกัน ผลคือ: บันทึกรูปใหม่สำเร็จจริง (ขึ้นข้อความ "บันทึกถาวร")
+         แต่พอรีเฟรช ระบบหยิบ banner_url ค่าเก่ามาแสดงทับ — ดูเหมือนรูปหาย
+         ทั้งที่ยังอยู่ในฐาน (เจอจริง 2026-08-11) */
+      banner: bannerPath(payload.trip?.theme_banner || payload.trip?.banner_url),
       ledgerCategories: payload.ledger_categories || [],
       /* รายการค่าใช้จ่ายย่อยของทริปนี้ — ปุ่มที่ฟอร์มจดบิลใช้เลือก
          แต่ละอันมีชื่อ+ไอคอนของตัวเอง แล้วชี้ไปหมวดบัญชีหนึ่งหมวด */
