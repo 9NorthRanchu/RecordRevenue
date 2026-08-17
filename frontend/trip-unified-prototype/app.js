@@ -589,7 +589,11 @@ function openDocDialog(stopId = '') {
   closeLayers();
   docTargetStopId = stopId;
   pendingDocUpload = null;
-  $('#docName').value = '';
+  /* เติมชื่อเอกสารด้วยชื่อสถานที่ให้อัตโนมัติ — เอกสารเกือบทั้งหมดเป็นของสถานที่นั้น
+     อยู่แล้ว (ใบจองโรงแรม Kushiro อยู่ใต้จุดแวะโรงแรม Kushiro) การพิมพ์ชื่อซ้ำ
+     กับหัวข้อที่มันอยู่ข้างใต้จึงเป็นงานเปล่า ๆ · แก้ทีหลังได้ตามปกติ
+     ถ้าสถานที่นั้นมีเอกสารชื่อนี้อยู่แล้ว เติมเลขต่อท้ายกันสับสนเวลามีหลายใบ */
+  $('#docName').value = stopId ? nextDocName(stopId) : '';
   $('#docUrl').value = '';
   $('#docFile').value = '';
   $('#docError').textContent = '';
@@ -626,6 +630,17 @@ $('#stopDocuments')?.addEventListener('click', event => {
   const add = event.target.closest('[data-add-doc]');
   if (add) openDocDialog(add.dataset.addDoc);
 });
+
+/* ชื่อเอกสารถัดไปของสถานที่หนึ่ง ๆ — "โรงแรม Kushiro", "โรงแรม Kushiro (2)", …
+   ใบแรกไม่มีเลข เพราะส่วนใหญ่มีใบเดียวและเลข (1) ดูรกโดยไม่ได้ช่วยอะไร */
+function nextDocName(stopId) {
+  const base = planStopName(stopId) || 'เอกสาร';
+  const taken = new Set(docsForStop(stopId).map(doc => doc.name));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base} (${n})`)) n += 1;
+  return `${base} (${n})`;
+}
 
 function planStopName(stopId) {
   for (const day of planDays) {
