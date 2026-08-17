@@ -46,7 +46,8 @@ function openSheet() {
 function closeLayers() {
   mask.classList.remove('open');
   [sheet, dialog, planEditor, $('#assetPicker'), $('#newTripDialog'), $('#currencyDialog'),
-   $('#fundDialog'), $('#walletDialog'), $('#reopenDialog'), $('#presetDialog')].forEach(layer => {
+   $('#fundDialog'), $('#walletDialog'), $('#reopenDialog'), $('#presetDialog'),
+   $('#copyPresetDialog')].forEach(layer => {
     layer.classList.remove('open');
     layer.setAttribute('aria-hidden', 'true');
   });
@@ -602,8 +603,57 @@ function renderTripPresets() {
         </span>
       </div>`).join('')
     : '<p class="field-note">ทริปนี้ยังไม่มีรายการค่าใช้จ่าย — กดเพิ่มรายการแรกได้เลย</p>';
-  host.innerHTML = `${rows}<button type="button" class="soft-btn" id="addPresetBtn">＋ เพิ่มรายการ</button>`;
+  /* ปุ่มคัดลอกอยู่คู่กับปุ่มเพิ่มเสมอ ไม่ใช่โผล่เฉพาะตอนว่าง — เพราะเติมรายการ
+     จากทริปเก่าเข้ามาทีหลังก็มีประโยชน์ (เช่นนึกออกกลางทริปว่าลืมหมวดค่ารถ) */
+  host.innerHTML = `${rows}
+    <div class="preset-actions">
+      <button type="button" class="soft-btn" id="addPresetBtn">＋ เพิ่มรายการ</button>
+      <button type="button" class="soft-btn" id="copyPresetBtn">📋 คัดลอกจากทริปอื่น</button>
+    </div>`;
 }
+
+/* ── คัดลอกรายการจากทริปอื่น ──────────────────────────────────────────
+   ทริปใหม่เริ่มจากศูนย์ = จดบิลไม่ได้จนกว่าจะตั้งรายการเอง ซึ่งน่าเบื่อมาก
+   ถ้าครอบครัวเที่ยวแบบเดิม ๆ · ดึงรายชื่อทริปมาให้เลือกตอนกด ไม่โหลดล่วงหน้า
+   เพราะเป็นปุ่มที่กดไม่บ่อย ไม่ควรถ่วงการโหลดหน้าหลัก */
+async function openCopyPresetPicker() {
+  if (!liveMode) { showPrototypeToast('ใช้ได้เฉพาะโหมดข้อมูลจริง'); return; }
+  showPrototypeToast('กำลังดึงรายชื่อทริป…');
+  let trips = [];
+  try {
+    trips = (await TripApi.listTrips()).trips || [];
+  } catch (error) {
+    showPrototypeToast(`ดึงรายชื่อทริปไม่สำเร็จ: ${error.message}`);
+    return;
+  }
+
+  const others = trips.filter(trip => trip.project_id !== TripApi.config.projectId);
+  if (!others.length) { showPrototypeToast('ยังไม่มีทริปอื่นให้คัดลอก'); return; }
+
+  closeLayers();
+  $('#copyPresetList').innerHTML = others.map(trip => `
+    <button type="button" class="currency-row" data-copy-from="${trip.project_id}" style="width:100%;text-align:left;border:0;background:none;cursor:pointer">
+      <span class="currency-mark">🧳</span>
+      <span class="currency-main"><b>${trip.name}</b><small>${trip.start_date || 'ยังไม่ระบุวัน'}</small></span>
+    </button>`).join('');
+  mask.classList.add('open');
+  $('#copyPresetDialog').classList.add('open');
+  $('#copyPresetDialog').setAttribute('aria-hidden', 'false');
+}
+
+$('#copyPresetList')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-copy-from]');
+  if (!button) return;
+  TripApi.copyPresets(button.dataset.copyFrom)
+    .then(result => refreshFromServer().then(() => {
+      closeLayers();
+      showScreen('more');
+      showPrototypeToast(result.copied
+        ? `คัดลอกมา ${result.copied} รายการ${result.skipped ? ` · ข้ามที่ชื่อซ้ำ ${result.skipped}` : ''}`
+        : 'ไม่มีรายการใหม่ให้คัดลอก (ชื่อซ้ำทั้งหมด)');
+    }))
+    .catch(error => showPrototypeToast(`คัดลอกไม่สำเร็จ: ${error.message}`));
+});
 
 /* ฟอร์มเพิ่ม/แก้รายการ — ใช้ dialog เดียวกันทั้งสองกรณี
    editingPresetId ว่าง = สร้างใหม่ */
@@ -633,6 +683,7 @@ function openPresetDialog(preset = null) {
 
 $('#categoryIconRows')?.addEventListener('click', event => {
   if (event.target.closest('#addPresetBtn')) return openPresetDialog();
+  if (event.target.closest('#copyPresetBtn')) return openCopyPresetPicker();
 
   const edit = event.target.closest('[data-edit-preset]');
   if (edit) return openPresetDialog(presetById(edit.dataset.editPreset));

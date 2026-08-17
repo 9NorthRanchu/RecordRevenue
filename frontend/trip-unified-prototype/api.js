@@ -395,6 +395,12 @@ const TripApi = (() => {
   });
   const removePreset = id => send('DELETE', '/presets', { query: `&id=${encodeURIComponent(id)}` });
 
+  /* คัดลอกรายการทั้งชุดจากทริปอื่น — คืน { copied, skipped } เพื่อให้หน้าจอ
+     บอกผลได้ตรง ๆ ว่าได้มากี่รายการ และข้ามไปกี่รายการเพราะชื่อซ้ำ */
+  const copyPresets = fromProjectId => send('POST', '/presets/copy', {
+    body: { from_project_id: fromProjectId }
+  });
+
   /* ── ไอคอนที่ครอบครัวอัปโหลดเอง ───────────────────────────────────────
      อัปโหลดไฟล์จริงขึ้น R2 บนเซิร์ฟเวอร์ คืน URL ถาวรที่ทุกคนในครอบครัว
      เห็นเหมือนกัน ต่างจาก data: URL เดิมที่เห็นเฉพาะเบราว์เซอร์ที่อัปโหลด
@@ -423,6 +429,6 @@ const TripApi = (() => {
     saveWallet, saveFunding, removeFunding, closeTrip, reopenTrip,
     saveStop, removeStop, reorderStops, saveTripMeta, saveBanner,
     listTrips, createTrip, deleteTrip, authHeaders, sessionToken, bannerPath,
-    uploadIcon, loadCategoryIcons, saveCategoryIcon, savePreset, removePreset
+    uploadIcon, loadCategoryIcons, saveCategoryIcon, savePreset, removePreset, copyPresets
   };
 })();

@@ -1246,6 +1246,53 @@ let dbAssetUrl = '';
 r = await call('POST', '/api/unified-trip/trip', { body: { name: 'Hokkaido 2026', theme_banner: 'data:image/webp;base64,AAAA' } });
 check('⚠️ data: URL ยังถูกปฏิเสธ (กัน Projects บวม)', r.status === 400);
 
+console.log('\n── คัดลอกรายการค่าใช้จ่ายจากทริปอื่น (2026-08-11) ──────');
+/* ทริปใหม่เริ่มจากศูนย์ = จดบิลไม่ได้เลย · ฟีเจอร์นี้ปิดช่องนั้น
+   แต่ต้องไม่ทำลายหลักการ "แต่ละทริปมีชุดของตัวเอง" — คัดลอกแล้วต้องเป็นคนละแถว */
+
+// TRP-2 อยู่ครอบครัวเดียวกัน ยังไม่มี preset เลย · TRP-1 มี 'ขนม' กับ 'ไม่มีชื่อ' เหลืออยู่
+r = await call('POST', '/api/unified-trip/presets/copy', { project: 'TRP-2', body: { from_project_id: 'TRP-1' } });
+check('คัดลอกจากทริปอื่นในครอบครัวเดียวกันได้', r.status === 200 && r.data.copied > 0, JSON.stringify(r));
+const copiedCount = r.data.copied;
+
+r = await call('GET', '/api/unified-trip', { project: 'TRP-2' });
+check('รายการโผล่ในทริปปลายทางครบตามจำนวน', (r.data.presets || []).length === copiedCount, JSON.stringify(r.data.presets?.length));
+check('🔑 เป็นคนละแถวกับต้นทาง (ไม่ใช่ใช้ร่วมกัน)',
+  (r.data.presets || []).every(p => p.project_id === 'TRP-2'));
+
+// กดซ้ำต้องไม่เกิดของซ้ำซ้อน
+r = await call('POST', '/api/unified-trip/presets/copy', { project: 'TRP-2', body: { from_project_id: 'TRP-1' } });
+check('🔑 กดซ้ำ → ข้ามทั้งหมด ไม่เกิดรายการซ้ำ', r.data.copied === 0 && r.data.skipped === copiedCount, JSON.stringify(r));
+
+r = await call('GET', '/api/unified-trip', { project: 'TRP-2' });
+check('จำนวนรายการไม่เพิ่มหลังกดซ้ำ', (r.data.presets || []).length === copiedCount);
+
+// แก้ที่ปลายทางต้องไม่กระทบต้นทาง
+{
+  const target = (r.data.presets || [])[0];
+  await call('POST', '/api/unified-trip/presets', {
+    project: 'TRP-2', body: { preset_id: target.preset_id, label: 'ชื่อใหม่เฉพาะทริปนี้', category_id: 'CAT-FOOD' }
+  });
+  const src = await call('GET', '/api/unified-trip', { project: 'TRP-1' });
+  check('🔑 แก้ชื่อที่ปลายทาง ต้นทางไม่เปลี่ยนตาม',
+    !(src.data.presets || []).some(p => p.label === 'ชื่อใหม่เฉพาะทริปนี้'));
+}
+
+r = await call('POST', '/api/unified-trip/presets/copy', { project: 'TRP-2', body: { from_project_id: 'TRP-2' } });
+check('⚠️ คัดลอกจากทริปตัวเอง → 400', r.status === 400);
+
+r = await call('POST', '/api/unified-trip/presets/copy', { project: 'TRP-2', body: {} });
+check('⚠️ ไม่ระบุทริปต้นทาง → 400', r.status === 400);
+
+r = await call('POST', '/api/unified-trip/presets/copy', { project: 'TRP-2', body: { from_project_id: 'TRP-ไม่มีจริง' } });
+check('⚠️ ทริปต้นทางไม่มีอยู่ → 404', r.status === 404);
+
+// ข้ามครอบครัวต้องไม่ได้เด็ดขาด
+db.exec(`INSERT INTO Projects (project_id,family_id,name,status) VALUES ('TRP-FAM2','FAM-2','ทริปครอบครัวอื่น','active')`);
+db.exec(`INSERT INTO TripExpensePresets (preset_id,project_id,label,category_id) VALUES ('TXP-F2','TRP-FAM2','ของครอบครัวอื่น',NULL)`);
+r = await call('POST', '/api/unified-trip/presets/copy', { project: 'TRP-2', body: { from_project_id: 'TRP-FAM2' } });
+check('⚠️ คัดลอกข้ามครอบครัวไม่ได้ → 404', r.status === 404, JSON.stringify(r));
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 if (fail > 0) process.exit(1);
 process.exit(fail ? 1 : 0);

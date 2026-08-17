@@ -19,14 +19,14 @@ npx wrangler d1 execute record-revenue-db --remote --command \
 - Frontend: `frontend/index.html`, `frontend/app.js`, `frontend/style.css`
 - Backend: `backend/src/index.js` (deploy ที่ root — `main` อยู่ใน `wrangler.json`)
 - URL: https://record-revenue-web.pages.dev · API: https://record-revenue.9nimz.workers.dev
-- เวอร์ชัน cache-bust: `frontend/index.html` → `app.js?v=172` · `trip-unified-prototype/index.html` → `style.css?v=47` `themes.css?v=6` `api.js?v=21` `app.js?v=61` · `trips.html` → `trips.css?v=4` (ตรวจอีกครั้งก่อน bump)
+- เวอร์ชัน cache-bust: `frontend/index.html` → `app.js?v=172` · `trip-unified-prototype/index.html` → `style.css?v=47` `themes.css?v=7` `api.js?v=22` `app.js?v=62` · `trips.html` → `trips.css?v=4` (ตรวจอีกครั้งก่อน bump)
 
 ---
 
 # 🆕 สิ่งที่เปลี่ยนไประหว่าง 2026-08-07 → 08-11 (อ่านก่อนส่วนเก่า)
 
 ส่วนด้านล่างที่ลงวันที่ 2026-07-28 ยังใช้ได้เป็นส่วนใหญ่ แต่ข้อมูลบางอย่างล้าสมัยแล้ว
-หัวข้อนี้คือของใหม่ทั้งหมด · เทสตอนนี้ **281 เคส ผ่านหมด** (`node backend/test/unified-trip-write.test.mjs`)
+หัวข้อนี้คือของใหม่ทั้งหมด · เทสตอนนี้ **291 เคส ผ่านหมด** (`node backend/test/unified-trip-write.test.mjs`)
 
 ## A. รายการค่าใช้จ่ายย่อยประจำทริป — `TripExpensePresets`
 
@@ -51,6 +51,10 @@ npx wrangler d1 execute record-revenue-db --remote --command \
 - SQL: `add_trip_expense_presets.sql` (รันแล้ว)
 - API: `POST/DELETE /api/unified-trip/presets` · GET มากับ payload หลัก (`payload.presets`)
 - UI: หน้า "เพิ่มเติม" → การ์ด "รายการค่าใช้จ่ายในทริปนี้"
+
+**คัดลอกจากทริปอื่น** (`POST /presets/copy`) — ทริปใหม่เริ่มจากศูนย์แปลว่าจดบิลไม่ได้เลย
+จึงมีปุ่ม "คัดลอกจากทริปอื่น" ดึงทั้งชุดมาจากทริปในครอบครัวเดียวกัน
+คัดลอกแล้วเป็น **คนละแถว** (แก้/ลบไม่กระทบต้นทาง) และข้ามชื่อที่ซ้ำ จึงกดซ้ำได้ไม่เกิดของซ้ำซ้อน
 
 ## B. ธีมสีเลือกได้ต่อทริป — `Projects.theme_id` + `themes.css`
 

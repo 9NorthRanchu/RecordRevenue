@@ -20,6 +20,7 @@
 //   POST   /api/unified-trip/stops/order     — จัดลำดับ/ย้ายวัน ทั้งชุดในครั้งเดียว
 //   POST   /api/unified-trip/presets          — เพิ่ม/แก้รายการค่าใช้จ่ายย่อยของทริป (ชื่อ+ไอคอน+หมวดบัญชี)
 //   DELETE /api/unified-trip/presets?id=
+//   POST   /api/unified-trip/presets/copy    — คัดลอกรายการทั้งชุดจากทริปอื่นในครอบครัวเดียวกัน
 //   GET    /api/unified-trip/category-icons  — ไอคอนประจำหมวดค่าใช้จ่ายของครอบครัว (ไม่ต้อง projectId)
 //   POST   /api/unified-trip/category-icons  — ตั้งไอคอนของหมวด {category_id, icon_url}
 //   POST   /api/unified-trip/icon-upload     — อัปโหลดไฟล์รูป (multipart, field "file") ขึ้น R2 คืน URL
@@ -982,6 +983,45 @@ async function writePreset(request, env, ctx, projectId, corsHeaders) {
   return json({ ok: true, preset_id: presetId, created: true }, corsHeaders, 201);
 }
 
+/* คัดลอกรายการย่อยทั้งชุดจากทริปอื่น (2026-08-11)
+   ทริปใหม่เริ่มจากศูนย์เสมอ ซึ่งแปลว่าจดบิลไม่ได้เลยจนกว่าจะตั้งรายการเองทีละอัน
+   ครอบครัวหนึ่งมักไปเที่ยวแบบเดิม ๆ (ค่าอาหาร ค่ารถ ค่าที่พัก) การก๊อปจากทริปก่อน
+   จึงประหยัดเวลาได้มาก โดยยังคงหลักการ "แต่ละทริปมีชุดของตัวเอง" ไว้ —
+   คัดลอกแล้วเป็นคนละแถว แก้/ลบในทริปใหม่ไม่กระทบทริปต้นทาง
+
+   ⚠️ ข้ามรายการที่ชื่อซ้ำกับที่มีอยู่แล้ว เพื่อให้กดซ้ำได้โดยไม่เกิดของซ้ำซ้อน */
+async function copyPresets(request, env, ctx, projectId, corsHeaders) {
+  if (!ctx.viewer && !ctx.familyAdmin) return json({ error: 'ต้องเป็นสมาชิกของทริปนี้' }, corsHeaders, 403);
+
+  const body = await request.json().catch(() => ({}));
+  const fromId = String(body.from_project_id || '').trim();
+  if (!fromId) return json({ error: 'ต้องระบุทริปต้นทาง' }, corsHeaders, 400);
+  if (fromId === projectId) return json({ error: 'คัดลอกจากทริปเดียวกันไม่ได้' }, corsHeaders, 400);
+
+  // ต้องเป็นทริปในครอบครัวเดียวกัน ไม่งั้นจะดึงข้อมูลข้ามครอบครัวได้
+  const source = await env.DB.prepare(`SELECT project_id FROM Projects WHERE project_id=? AND family_id=?`)
+    .bind(fromId, ctx.trip.family_id).first();
+  if (!source) return json({ error: 'ไม่พบทริปต้นทาง หรือไม่ได้อยู่ในครอบครัวเดียวกัน' }, corsHeaders, 404);
+
+  const [from, existing] = await Promise.all([
+    env.DB.prepare(`SELECT label, icon_url, category_id, sort_order FROM TripExpensePresets
+                     WHERE project_id=? ORDER BY sort_order, created_at`).bind(fromId).all(),
+    env.DB.prepare(`SELECT label FROM TripExpensePresets WHERE project_id=?`).bind(projectId).all()
+  ]);
+
+  const taken = new Set((existing.results || []).map(row => row.label));
+  const rows = (from.results || []).filter(row => !taken.has(row.label));
+  if (!rows.length) return json({ ok: true, copied: 0, skipped: (from.results || []).length }, corsHeaders);
+
+  await env.DB.batch(rows.map((row, index) => env.DB.prepare(`
+    INSERT INTO TripExpensePresets (preset_id, project_id, label, icon_url, category_id, sort_order)
+    VALUES (?,?,?,?,?,?)
+  `).bind(`TXP-${projectId}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+          projectId, row.label, row.icon_url, row.category_id, taken.size + index)));
+
+  return json({ ok: true, copied: rows.length, skipped: (from.results || []).length - rows.length }, corsHeaders);
+}
+
 /* ลบรายการย่อย — บิลเก่าที่เคยใช้ยังอยู่ครบ แค่ preset_id ชี้ไปที่ที่ไม่มีแล้ว
    จึงต้องคลาย preset_id ของบิลออกก่อน แล้วเก็บ label ตอนนั้นไว้เป็นข้อความ
    ไม่งั้นบิลเก่าจะกลายเป็นรายการไม่มีชื่อ ซึ่งอ่านย้อนหลังไม่ออก */
@@ -1425,6 +1465,7 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     if (sub === '/presets' && request.method === 'DELETE') {
       return deletePreset(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);
     }
+    if (sub === '/presets/copy' && request.method === 'POST') return copyPresets(request, env, ctx, projectId, corsHeaders);
     // ปิดทริปแล้ว = ตัวเลขถูกรายงานเข้าบัญชีไปแล้ว ห้ามขยับ
     if (ctx.closed) {
       return json({ error: 'ทริปนี้ปิดแล้ว · แก้ข้อมูลการเงินไม่ได้ ต้องเปิดทริปกลับก่อน' }, corsHeaders, 409);

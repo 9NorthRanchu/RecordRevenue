@@ -8,7 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=47">
   <!-- ธีมสี kawaii เลือกได้ต่อทริป — สลับด้วย data-theme บน <html> -->
-  <link rel="stylesheet" href="themes.css?v=6">
+  <link rel="stylesheet" href="themes.css?v=7">
 </head>
 <body>
   <div class="app-shell">
@@ -306,6 +306,18 @@
     </form>
   </section>
 
+  <!-- คัดลอกรายการค่าใช้จ่ายจากทริปอื่นในครอบครัวเดียวกัน -->
+  <section class="dialog" id="copyPresetDialog" aria-hidden="true" role="dialog" aria-labelledby="copyPresetTitle">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">คัดลอกรายการ</span>
+    <h2 id="copyPresetTitle">เลือกทริปต้นทาง</h2>
+    <p class="field-note">คัดลอกมาแล้วเป็นรายการของทริปนี้เอง แก้หรือลบทีหลังไม่กระทบทริปต้นทาง · รายการที่ชื่อซ้ำจะถูกข้าม</p>
+    <div id="copyPresetList"></div>
+    <div class="sheet-actions">
+      <button type="button" class="soft-btn close-layer">ปิด</button>
+    </div>
+  </section>
+
   <!-- รายการค่าใช้จ่ายย่อยของทริป — ชื่อ+ไอคอนของตัวเอง ชี้ไปหมวดบัญชีหนึ่งหมวด -->
   <section class="dialog" id="presetDialog" aria-hidden="true" role="dialog" aria-labelledby="presetDialogTitle">
     <button class="dialog-close" aria-label="ปิด">×</button>
@@ -485,7 +497,7 @@
   </section>
   <div class="toast" id="toast"></div>
   <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
-  <script src="api.js?v=21"></script>
-  <script src="app.js?v=61"></script>
+  <script src="api.js?v=22"></script>
+  <script src="app.js?v=62"></script>
 </body>
 </html>

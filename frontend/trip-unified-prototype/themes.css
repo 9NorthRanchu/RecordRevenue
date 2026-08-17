@@ -288,6 +288,9 @@ body{
 .cross-day-move button:disabled{opacity:.45;box-shadow:none}
 .plan-weather{background:var(--card);border:2px solid var(--frame);border-radius:18px}
 
+/* ปุ่มจัดการรายการค่าใช้จ่าย — วางคู่กันให้เห็นว่าเป็นทางเลือกระดับเดียวกัน */
+.preset-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+
 /* ── ตัวเลือกธีมในหน้า "เพิ่มเติม" ───────────────────────────────────── */
 .theme-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:4px}
 .theme-option{
