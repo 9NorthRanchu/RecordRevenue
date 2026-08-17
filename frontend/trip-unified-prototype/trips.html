@@ -7,8 +7,8 @@
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=47">
-  <link rel="stylesheet" href="themes.css?v=7">
-  <link rel="stylesheet" href="trips.css?v=4">
+  <link rel="stylesheet" href="themes.css?v=8">
+  <link rel="stylesheet" href="trips.css?v=5">
 </head>
 <body>
   <div class="app-shell trips-shell">
@@ -25,6 +25,9 @@
         </div>
 
         <div id="tripsError" class="privacy-note" style="background:#fde8ee;border-color:#e86f91" hidden></div>
+
+        <!-- ปุ่มลัดเข้าทริปล่าสุด — แทนการเด้งอัตโนมัติที่เอาออกไปแล้ว -->
+        <div id="tripsShortcut" class="trips-shortcut" hidden></div>
 
         <div class="day-tabs" id="tripStageTabs">
           <button class="active" data-stage="ONGOING">🧭 <span>Ongoing</span><small>จะเกิดแน่ ๆ</small></button>
@@ -78,6 +81,6 @@
   </div>
 
   <script src="api.js?v=22"></script>
-  <script src="trips.js?v=2"></script>
+  <script src="trips.js?v=4"></script>
 </body>
 </html>

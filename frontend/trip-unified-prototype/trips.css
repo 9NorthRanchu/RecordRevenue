@@ -26,6 +26,9 @@
 
 .trip-pick-empty{margin-top:40px;text-align:center;color:var(--muted);padding:30px 10px}
 
+/* ปุ่มลัดเข้าทริปล่าสุด — อยู่เหนือแท็บประเภท เพราะเป็นทางลัด ไม่ใช่ตัวกรอง */
+.trips-shortcut{margin-bottom:14px}
+
 @media(max-width:640px){
   .trip-pick-grid{grid-template-columns:1fr 1fr;gap:10px}
   .trip-pick-body{padding:10px 12px 12px}

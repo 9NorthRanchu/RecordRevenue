@@ -1,19 +1,19 @@
 /* ── หน้ารวมทริป (trips.html) ──────────────────────────────────────────
-   เมนู "Unified Trip" ในแอปหลักชี้มาที่นี่ แต่ถ้าเครื่องนี้เคยเปิดทริปไหน
-   ล่าสุดจะเด้งเข้าทริปนั้นทันที (ตามที่ North เลือก — พฤติกรรมเหมือนตอนที่
-   เมนูพาเข้าทริปตรง ๆ) · อยากดูหน้ารวมจริง ๆ ให้เข้าด้วย ?all=1 ซึ่งเป็น
-   ลิงก์ที่ปุ่ม "ทริปทั้งหมด" ในหน้าทริปใช้ */
+   เมนู "Unified Trip" ในแอปหลักชี้มาที่นี่ และ **แสดงหน้ารวมเสมอ**
+
+   ⚠️ เดิมหน้านี้เด้งเข้าทริปล่าสุดอัตโนมัติ ซึ่งถูกยกเลิกแล้ว (2026-08-11)
+      เหตุผล: พอมีหลายทริป การเด้งเข้าทริปเดิมทำให้เข้าทริปอื่นไม่ได้เลย
+      ต้องรู้ว่ามี ?all=1 ซ่อนอยู่ถึงจะออกมาได้ ซึ่งไม่มีทางเดาได้
+      ตอนนี้เปลี่ยนเป็น "ปุ่มลัด" บนหน้ารวมแทน — ได้ความเร็วเหมือนเดิม
+      แต่ผู้ใช้เป็นคนตัดสินใจ ไม่ใช่ระบบตัดสินใจแทน
+
+   การเข้าทริปโดยตรงยังทำได้เหมือนเดิมผ่าน index.html?live=1&projectId=… */
 
 const LAST_TRIP_KEY = 'unified-trip-last';
 
-(() => {
-  const params = new URLSearchParams(location.search);
-  if (params.get('all') === '1') return;             // ตั้งใจมาดูหน้ารวม
-  let last = '';
-  try { last = localStorage.getItem(LAST_TRIP_KEY) || ''; } catch {}
-  if (!last) return;                                  // ครั้งแรกของเครื่องนี้ — แสดงหน้ารวม
-  location.replace(`index.html?live=1&projectId=${encodeURIComponent(last)}`);
-})();
+function lastTripId() {
+  try { return localStorage.getItem(LAST_TRIP_KEY) || ''; } catch { return ''; }
+}
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -50,6 +50,11 @@ function renderGrid() {
   const rows = allTrips.filter(t => (t.trip_stage || 'ONGOING') === activeStage);
 
   if (!rows.length) {
+    /* ล้างเนื้อหาด้วย ไม่ใช่แค่ซ่อน — ถ้ามีกฎ CSS ตัวไหนทำให้ hidden ไม่ทำงาน
+       (เคยเกิดกับ .trip-pick-grid ที่ตั้ง display:grid ทับ) การ์ดของแท็บก่อน
+       จะค้างอยู่บนจอพร้อมข้อความ "ยังไม่มีทริป" ซึ่งขัดกันเอง
+       ล้างทิ้งเลยทำให้ไม่มีทางแสดงของเก่าผิดแท็บได้ ไม่ว่า CSS จะเป็นอย่างไร */
+    grid.innerHTML = '';
     grid.hidden = true;
     empty.hidden = false;
     empty.textContent = STAGE_EMPTY[activeStage] || 'ยังไม่มีทริปในหมวดนี้';
@@ -79,6 +84,27 @@ function renderGrid() {
   });
 }
 
+/* ปุ่มลัดเข้าทริปล่าสุด — แทนที่การเด้งอัตโนมัติแบบเดิม
+   โชว์เฉพาะเมื่อทริปนั้นยังอยู่จริงในรายการ ไม่งั้นจะมีปุ่มที่กดแล้วเจอ error
+   (ทริปอาจถูกลบจากเครื่องอื่นไปแล้ว) */
+function renderShortcut() {
+  const host = $('#tripsShortcut');
+  if (!host) return;
+  const trip = allTrips.find(row => row.project_id === lastTripId());
+  if (!trip) { host.hidden = true; return; }
+  host.hidden = false;
+  host.innerHTML = `
+    <button type="button" class="soft-btn" data-open="${trip.project_id}">
+      ↩︎ กลับเข้า ${escapeHtml(trip.name || 'ทริปล่าสุด')}
+    </button>`;
+}
+
+$('#tripsShortcut')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-open]');
+  if (!button) return;
+  location.href = `index.html?live=1&projectId=${encodeURIComponent(button.dataset.open)}`;
+});
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -105,6 +131,7 @@ async function loadTrips() {
     const payload = await TripApi.listTrips();
     allTrips = payload.trips || [];
     $('#tripsLoading').hidden = true;
+    renderShortcut();
     renderGrid();
   } catch (error) {
     $('#tripsLoading').hidden = true;
