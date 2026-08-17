@@ -205,6 +205,18 @@ const TripApi = (() => {
       ledgerCategories: payload.ledger_categories || [],
       /* รายการค่าใช้จ่ายย่อยของทริปนี้ — ปุ่มที่ฟอร์มจดบิลใช้เลือก
          แต่ละอันมีชื่อ+ไอคอนของตัวเอง แล้วชี้ไปหมวดบัญชีหนึ่งหมวด */
+      /* เอกสารทั้งทริป — เซิร์ฟเวอร์แนบชื่อสถานที่มาให้แล้ว (stop_name)
+         หน้าจอจึงจัดกลุ่มตามสถานที่ได้เลยโดยไม่ต้องจับคู่เอง */
+      documents: (payload.documents || []).map(row => ({
+        id: row.doc_id,
+        stopId: row.stop_id || '',
+        stopName: row.stop_name || '',
+        name: row.name,
+        url: row.url,
+        kind: row.kind || 'link',
+        contentType: row.content_type || '',
+        sizeBytes: row.size_bytes || 0
+      })),
       presets: (payload.presets || []).map(row => ({
         id: row.preset_id,
         label: row.label,
@@ -401,6 +413,25 @@ const TripApi = (() => {
     body: { from_project_id: fromProjectId }
   });
 
+  /* ── เอกสารประจำทริป ─────────────────────────────────────────────────
+     ใบจอง ตั๋ว ประกัน — ผูกกับจุดแวะ (stopId) หรือเว้นว่าง = ระดับทริป
+     kind: 'file' = อัปโหลดเข้าระบบแล้ว · 'link' = ลิงก์ภายนอก เช่น Google Drive */
+  const saveDocument = ({ id, stopId, name, url, kind, contentType, sizeBytes }) =>
+    send('POST', '/documents', {
+      body: {
+        doc_id: id || undefined,
+        stop_id: stopId || '',
+        name, url, kind: kind || 'link',
+        content_type: contentType || undefined,
+        size_bytes: sizeBytes || undefined
+      }
+    });
+  const removeDocument = id => send('DELETE', '/documents', { query: `&id=${encodeURIComponent(id)}` });
+
+  /* อัปโหลดไฟล์เอกสาร — ใช้ทางเดียวกับรูป แต่ไม่ผ่าน canvas เพราะ PDF
+     ย่อขนาดไม่ได้และไม่ควรแตะต้องเนื้อไฟล์ ส่งขึ้นตรง ๆ ตามต้นฉบับ */
+  const uploadDocument = file => uploadIcon(file, file.name);
+
   /* ── ไอคอนที่ครอบครัวอัปโหลดเอง ───────────────────────────────────────
      อัปโหลดไฟล์จริงขึ้น R2 บนเซิร์ฟเวอร์ คืน URL ถาวรที่ทุกคนในครอบครัว
      เห็นเหมือนกัน ต่างจาก data: URL เดิมที่เห็นเฉพาะเบราว์เซอร์ที่อัปโหลด
@@ -429,6 +460,7 @@ const TripApi = (() => {
     saveWallet, saveFunding, removeFunding, closeTrip, reopenTrip,
     saveStop, removeStop, reorderStops, saveTripMeta, saveBanner,
     listTrips, createTrip, deleteTrip, authHeaders, sessionToken, bannerPath,
-    uploadIcon, loadCategoryIcons, saveCategoryIcon, savePreset, removePreset, copyPresets
+    uploadIcon, loadCategoryIcons, saveCategoryIcon, savePreset, removePreset, copyPresets,
+    saveDocument, removeDocument, uploadDocument
   };
 })();

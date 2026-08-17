@@ -8,7 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=47">
   <!-- ธีมสี kawaii เลือกได้ต่อทริป — สลับด้วย data-theme บน <html> -->
-  <link rel="stylesheet" href="themes.css?v=8">
+  <link rel="stylesheet" href="themes.css?v=9">
 </head>
 <body>
   <div class="app-shell">
@@ -168,6 +168,10 @@
             <div id="currencyRows"></div>
             <button class="soft-btn" id="addCurrency">＋ เพิ่มสกุลเงิน</button>
           </section>
+          <section class="paper-card"><h3>คลังเอกสาร</h3>
+            <p class="field-note">ใบจอง ตั๋ว ประกัน — จัดกลุ่มตามสถานที่ที่ผูกไว้ · เพิ่มเอกสารของสถานที่ได้จากหน้าแผนเที่ยว</p>
+            <div id="documentLibrary"></div>
+          </section>
           <section class="paper-card"><h3>ธีมสีของทริป</h3>
             <p class="field-note">แต่ละทริปเลือกธีมของตัวเองได้ · เปลี่ยนแล้วเห็นผลทันที ทุกคนในทริปเห็นเหมือนกัน</p>
             <div class="theme-picker" id="themePicker"></div>
@@ -296,12 +300,46 @@
           <img id="activityIconPreview" class="icon-preview rounded" alt="ไอคอนที่เลือก">
           <button type="button" class="soft-btn" id="pickActivityIcon">เลือกไอคอน</button>
         </div>
+        <div class="field-wide stop-docs-field">
+          <span class="stop-docs-label">เอกสารของสถานที่นี้</span>
+          <div id="stopDocuments"></div>
+        </div>
       </div>
       <div class="editor-note">สภาพอากาศจะแสดงตามสถานที่หลักของวันที่เลือก และอัปเดตบนแผนโดยอัตโนมัติ</div>
       <p class="form-error" id="planEditorError"></p>
       <div class="sheet-actions">
         <button type="button" class="soft-btn" id="cancelPlanEditor">ยกเลิก</button>
         <button type="submit" class="primary-btn">บันทึกในแผน</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- เพิ่มเอกสาร — แนบไฟล์ขึ้นระบบ หรือวางลิงก์ภายนอก (Google Drive ฯลฯ) -->
+  <section class="dialog" id="docDialog" aria-hidden="true" role="dialog" aria-labelledby="docDialogTitle">
+    <button class="dialog-close" aria-label="ปิด">×</button>
+    <span class="eyebrow">เอกสาร</span>
+    <h2 id="docDialogTitle">เพิ่มเอกสาร</h2>
+    <p class="field-note">ผูกกับ: <b id="docDialogWhere">—</b></p>
+    <form id="docForm" style="display:grid;gap:12px">
+      <label class="field-wide">ชื่อเอกสาร
+        <input id="docName" required maxlength="120" placeholder="เช่น ใบจอง Hotel Kushiro">
+      </label>
+
+      <label class="asset-upload">
+        <input type="file" id="docFile" accept="application/pdf,image/png,image/jpeg,image/webp">
+        <span><b>＋ แนบไฟล์ (PDF หรือรูป)</b><small>สูงสุด 15 MB · เก็บไว้ในระบบ ทุกคนในทริปเปิดดูได้</small></span>
+      </label>
+      <p class="field-note" id="docUploadNote"></p>
+
+      <label class="field-wide">หรือวางลิงก์เอกสาร
+        <input id="docUrl" placeholder="https://drive.google.com/…">
+      </label>
+      <p class="field-note">ถ้าใช้ลิงก์จาก Google Drive อย่าลืมตั้งสิทธิ์ให้คนในทริปเปิดได้</p>
+
+      <p class="form-error" id="docError"></p>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+        <button type="submit" class="primary-btn">บันทึกเอกสาร</button>
       </div>
     </form>
   </section>
@@ -497,7 +535,7 @@
   </section>
   <div class="toast" id="toast"></div>
   <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
-  <script src="api.js?v=22"></script>
-  <script src="app.js?v=62"></script>
+  <script src="api.js?v=23"></script>
+  <script src="app.js?v=63"></script>
 </body>
 </html>

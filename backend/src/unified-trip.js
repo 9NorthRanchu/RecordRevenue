@@ -21,6 +21,8 @@
 //   POST   /api/unified-trip/presets          — เพิ่ม/แก้รายการค่าใช้จ่ายย่อยของทริป (ชื่อ+ไอคอน+หมวดบัญชี)
 //   DELETE /api/unified-trip/presets?id=
 //   POST   /api/unified-trip/presets/copy    — คัดลอกรายการทั้งชุดจากทริปอื่นในครอบครัวเดียวกัน
+//   POST   /api/unified-trip/documents       — เพิ่ม/แก้เอกสาร (ไฟล์ที่อัปโหลด หรือลิงก์ภายนอก)
+//   DELETE /api/unified-trip/documents?id=
 //   GET    /api/unified-trip/category-icons  — ไอคอนประจำหมวดค่าใช้จ่ายของครอบครัว (ไม่ต้อง projectId)
 //   POST   /api/unified-trip/category-icons  — ตั้งไอคอนของหมวด {category_id, icon_url}
 //   POST   /api/unified-trip/icon-upload     — อัปโหลดไฟล์รูป (multipart, field "file") ขึ้น R2 คืน URL
@@ -720,9 +722,17 @@ async function createTrip(request, env, userId, corsHeaders) {
    ไฟล์จริงเก็บที่ R2 (binding "ICONS") คีย์เป็น icons/{family_id}/{uuid}.ext
    ตาราง Categories เก็บแค่ URL ที่ /api/unified-trip/icon/{key} ชี้กลับมา */
 
-const ICON_MIME_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+/* ชนิดไฟล์ที่รับ — รูปสำหรับไอคอน/แบนเนอร์ · PDF สำหรับเอกสารทริป (ใบจอง ตั๋ว)
+   PDF อยู่ในตารางเดียวกันเพราะใช้ทางอัปโหลดเดียวกัน แต่เพดานขนาดต่างกัน */
+const ICON_MIME_EXT = {
+  'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp',
+  'application/pdf': 'pdf'
+};
 const MAX_ICON_BYTES = 3 * 1024 * 1024;
-/* เพดานสำหรับรูปที่เก็บลง D1 (กรณีไม่มี R2) — ต่ำกว่า R2 มากโดยตั้งใจ
+/* ใบจองโรงแรม/ตั๋วเครื่องบินมักหนากว่ารูปมาก (หลายหน้า มีแผนที่ฝัง) 3 MB ไม่พอ
+   เก็บที่ R2 จึงให้ถึง 15 MB ได้สบาย ๆ ไม่กระทบอะไร */
+const MAX_DOC_BYTES = 15 * 1024 * 1024;
+/* เพดานสำหรับไฟล์ที่เก็บลง D1 (กรณีไม่มี R2) — ต่ำกว่า R2 มากโดยตั้งใจ
    เพราะ D1 เป็นฐานข้อมูล ไม่ใช่ที่เก็บไฟล์ แถวใหญ่ ๆ ทำให้ทั้งฐานช้าลง */
 const MAX_D1_ASSET_BYTES = 700 * 1024;
 
@@ -780,7 +790,11 @@ async function uploadIconRoute(request, env, userId, corsHeaders) {
      ฝั่งหน้าจอจะถอยไปเก็บรูปเป็น data: URL ในเบราว์เซอร์ ซึ่งรีเฟรชแล้วหาย
      และคนอื่นในทริปไม่เห็น (เจอปัญหานี้จริงกับภาพแบนเนอร์ 2026-08-11) */
   if (env.ICONS) {
-    if (file.size > MAX_ICON_BYTES) return json({ error: 'ไฟล์ใหญ่เกิน 3 MB' }, corsHeaders, 400);
+    // เอกสาร PDF ได้โควตาใหญ่กว่ารูป เพราะใบจองหลายหน้ามักหนากว่าไอคอนมาก
+    const limit = file.type === 'application/pdf' ? MAX_DOC_BYTES : MAX_ICON_BYTES;
+    if (file.size > limit) {
+      return json({ error: `ไฟล์ใหญ่เกิน ${Math.round(limit / 1024 / 1024)} MB` }, corsHeaders, 400);
+    }
     const key = `icons/${familyId}/${crypto.randomUUID()}.${ext}`;
     await env.ICONS.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
     return json({ url: `${origin}/api/unified-trip/icon/${key}` }, corsHeaders, 201);
@@ -981,6 +995,69 @@ async function writePreset(request, env, ctx, projectId, corsHeaders) {
     VALUES (?,?,?,?,?,?)
   `).bind(presetId, projectId, label, iconUrl, categoryId || null, sortOrder).run();
   return json({ ok: true, preset_id: presetId, created: true }, corsHeaders, 201);
+}
+
+/* ── เอกสารประจำทริป (2026-08-11) ─────────────────────────────────────
+   ใบจองโรงแรม ตั๋วเครื่องบิน ประกัน — ผูกกับจุดแวะเป็นหลัก (stop_id)
+   เว้น stop_id ว่างได้ = เอกสารที่ครอบคลุมทั้งทริป
+
+   สมาชิกทุกคนในทริปเพิ่ม/ลบได้ ไม่ต้องเป็น admin — เอกสารเป็นข้อมูลร่วม
+   คนละเรื่องกับตัวเลขการเงินที่ต้องคุมสิทธิ์ */
+async function writeDocument(request, env, ctx, projectId, corsHeaders) {
+  if (!ctx.viewer && !ctx.familyAdmin) return json({ error: 'ต้องเป็นสมาชิกของทริปนี้' }, corsHeaders, 403);
+
+  const body = await request.json().catch(() => ({}));
+  const name = String(body.name || '').trim();
+  const url = String(body.url || '').trim();
+  const stopId = String(body.stop_id || '').trim();
+  const kind = body.kind === 'file' ? 'file' : 'link';
+
+  if (!name) return json({ error: 'ต้องตั้งชื่อเอกสาร' }, corsHeaders, 400);
+  if (!url) return json({ error: 'ต้องมีไฟล์หรือลิงก์' }, corsHeaders, 400);
+  /* รับเฉพาะ http(s) — กัน javascript: และ data: ที่กลายเป็นช่องโจมตีได้
+     เพราะลิงก์นี้ถูกเอาไปใส่ href แล้วสมาชิกคนอื่นในทริปจะกดตาม */
+  if (!/^https?:\/\//i.test(url)) return json({ error: 'ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://' }, corsHeaders, 400);
+  if (url.length > 1000) return json({ error: 'ลิงก์ยาวเกินไป' }, corsHeaders, 400);
+
+  // จุดแวะต้องอยู่ในทริปนี้จริง ไม่งั้นเอกสารจะไปโผล่ในทริปที่ไม่เกี่ยวข้อง
+  if (stopId) {
+    const stop = await env.DB.prepare(`SELECT stop_id FROM TripStops WHERE stop_id=? AND project_id=?`)
+      .bind(stopId, projectId).first();
+    if (!stop) return json({ error: 'ไม่พบสถานที่นี้ในทริป' }, corsHeaders, 400);
+  }
+
+  if (body.doc_id) {
+    const existing = await env.DB.prepare(`SELECT document_id FROM TripDocuments WHERE document_id=? AND project_id=?`)
+      .bind(body.doc_id, projectId).first();
+    if (!existing) return json({ error: 'ไม่พบเอกสารที่จะแก้ไข' }, corsHeaders, 404);
+    await env.DB.prepare(`
+      UPDATE TripDocuments SET related_entity_id=?, description=?, file_url=?, kind=?
+       WHERE document_id=? AND project_id=?
+    `).bind(stopId || null, name, url, kind, body.doc_id, projectId).run();
+    return json({ ok: true, doc_id: body.doc_id, created: false }, corsHeaders);
+  }
+
+  const docId = `DOC-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await env.DB.prepare(`
+    INSERT INTO TripDocuments (document_id, project_id, related_entity_id, file_url, description, type, kind, content_type, size_bytes)
+    VALUES (?,?,?,?,?,?,?,?,?)
+  `).bind(docId, projectId, stopId || null, url, name, 'booking', kind,
+          body.content_type || null, Number(body.size_bytes) || null).run();
+  return json({ ok: true, doc_id: docId, created: true }, corsHeaders, 201);
+}
+
+/* ลบเอกสาร — ลบเฉพาะรายการในฐาน ไม่ลบไฟล์จริงบน R2
+   เหตุผล: ไฟล์เดียวกันอาจถูกอ้างจากหลายที่ (คนก๊อป URL ไปแปะเอกสารอื่น)
+   ลบไฟล์ทิ้งเลยจะทำให้อีกที่พังโดยไม่มีใครรู้ · พื้นที่ R2 ฟรี 10 GB
+   ซึ่งเหลือเฟือสำหรับเอกสารครอบครัว จึงไม่คุ้มเสี่ยงเพื่อประหยัดพื้นที่ */
+async function deleteDocument(env, ctx, projectId, docId, corsHeaders) {
+  if (!ctx.viewer && !ctx.familyAdmin) return json({ error: 'ต้องเป็นสมาชิกของทริปนี้' }, corsHeaders, 403);
+  if (!docId) return json({ error: 'ต้องระบุ id' }, corsHeaders, 400);
+  const existing = await env.DB.prepare(`SELECT document_id FROM TripDocuments WHERE document_id=? AND project_id=?`)
+    .bind(docId, projectId).first();
+  if (!existing) return json({ error: 'ไม่พบเอกสารนี้' }, corsHeaders, 404);
+  await env.DB.prepare(`DELETE FROM TripDocuments WHERE document_id=? AND project_id=?`).bind(docId, projectId).run();
+  return json({ ok: true, deleted: docId }, corsHeaders);
 }
 
 /* คัดลอกรายการย่อยทั้งชุดจากทริปอื่น (2026-08-11)
@@ -1466,6 +1543,12 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
       return deletePreset(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);
     }
     if (sub === '/presets/copy' && request.method === 'POST') return copyPresets(request, env, ctx, projectId, corsHeaders);
+    /* เอกสารก็อยู่ก่อนด่านทริปปิดเหมือนแผนเที่ยว — ใบจองย้อนหลังยังต้องเปิดดู
+       และเพิ่มได้แม้ปิดทริปแล้ว (เช่นเพิ่งได้ใบเสร็จจากโรงแรมทีหลัง) */
+    if (sub === '/documents' && request.method === 'POST') return writeDocument(request, env, ctx, projectId, corsHeaders);
+    if (sub === '/documents' && request.method === 'DELETE') {
+      return deleteDocument(env, ctx, projectId, url.searchParams.get('id') || '', corsHeaders);
+    }
     // ปิดทริปแล้ว = ตัวเลขถูกรายงานเข้าบัญชีไปแล้ว ห้ามขยับ
     if (ctx.closed) {
       return json({ error: 'ทริปนี้ปิดแล้ว · แก้ข้อมูลการเงินไม่ได้ ต้องเปิดทริปกลับก่อน' }, corsHeaders, 409);
@@ -1487,7 +1570,7 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     return json({ error: `ยังไม่รองรับ ${request.method} ${sub || '/'} ในเฟสนี้` }, corsHeaders, 405);
   }
 
-  const [members, currencies, wallets, fundings, expenses, categories, participants, closures, closureLines, presence, stops, ledgerCategories, presets] =
+  const [members, currencies, wallets, fundings, expenses, categories, participants, closures, closureLines, presence, stops, ledgerCategories, presets, documents] =
     await Promise.all([
       env.DB.prepare(`SELECT * FROM TripMembers WHERE project_id=? ORDER BY is_admin DESC, display_name`).bind(projectId).all(),
       env.DB.prepare(`SELECT * FROM TripCurrencies WHERE project_id=? ORDER BY is_base DESC, code`).bind(projectId).all(),
@@ -1522,6 +1605,23 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
           LEFT JOIN Categories c ON c.category_id = p.category_id
          WHERE p.project_id = ?
          ORDER BY p.sort_order, p.created_at
+      `).bind(projectId).all(),
+      /* เอกสารพร้อมชื่อสถานที่ที่ผูกไว้ — หน้าจอจะได้จัดกลุ่มตามชื่อสถานที่
+         ได้เลยโดยไม่ต้องไปจับคู่กับรายการจุดแวะเองอีกรอบ */
+      /* ⚠️ ตารางนี้เป็นของเดิมที่แอปหลักใช้ร่วม — ชื่อคอลัมน์จึงไม่ตรงกับที่
+         หน้าทริปอยากได้ แปลงชื่อตรงนี้ทีเดียว (document_id→doc_id ฯลฯ)
+         เพื่อให้ฝั่งหน้าจอไม่ต้องรู้เรื่องประวัติของตาราง
+         related_entity_id เก็บได้ทั้ง stop_id และ trip_expense_id — join กับ
+         TripStops จึงคืน stop_name เฉพาะอันที่เป็นจุดแวะจริงเท่านั้น */
+      env.DB.prepare(`
+        SELECT d.document_id AS doc_id, d.project_id, d.related_entity_id AS stop_id,
+               d.description AS name, d.file_url AS url,
+               COALESCE(d.kind, 'link') AS kind, d.content_type, d.size_bytes, d.created_at,
+               COALESCE(s.name_th, s.name_en, s.city) AS stop_name
+          FROM TripDocuments d
+          LEFT JOIN TripStops s ON s.stop_id = d.related_entity_id
+         WHERE d.project_id = ?
+         ORDER BY d.created_at
       `).bind(projectId).all()
     ]);
 
@@ -1613,6 +1713,7 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     expenses: visibleExpenses,
     stops: stops.results || [],
     presets: presetRows,
+    documents: documents.results || [],
     ledger_categories: ledgerCategories.results || [],
     presence: presence.results || [],
     closures: closureRows.map(row => ({

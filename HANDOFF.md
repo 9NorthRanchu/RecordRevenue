@@ -19,14 +19,14 @@ npx wrangler d1 execute record-revenue-db --remote --command \
 - Frontend: `frontend/index.html`, `frontend/app.js`, `frontend/style.css`
 - Backend: `backend/src/index.js` (deploy ที่ root — `main` อยู่ใน `wrangler.json`)
 - URL: https://record-revenue-web.pages.dev · API: https://record-revenue.9nimz.workers.dev
-- เวอร์ชัน cache-bust: `frontend/index.html` → `app.js?v=172` · `trip-unified-prototype/index.html` → `style.css?v=47` `themes.css?v=7` `api.js?v=22` `app.js?v=62` · `trips.html` → `trips.css?v=4` (ตรวจอีกครั้งก่อน bump)
+- เวอร์ชัน cache-bust: `frontend/index.html` → `app.js?v=172` · `trip-unified-prototype/index.html` → `style.css?v=47` `themes.css?v=9` `api.js?v=23` `app.js?v=63` · `trips.html` → `trips.css?v=5` `trips.js?v=4` (ตรวจอีกครั้งก่อน bump)
 
 ---
 
 # 🆕 สิ่งที่เปลี่ยนไประหว่าง 2026-08-07 → 08-11 (อ่านก่อนส่วนเก่า)
 
 ส่วนด้านล่างที่ลงวันที่ 2026-07-28 ยังใช้ได้เป็นส่วนใหญ่ แต่ข้อมูลบางอย่างล้าสมัยแล้ว
-หัวข้อนี้คือของใหม่ทั้งหมด · เทสตอนนี้ **291 เคส ผ่านหมด** (`node backend/test/unified-trip-write.test.mjs`)
+หัวข้อนี้คือของใหม่ทั้งหมด · เทสตอนนี้ **316 เคส ผ่านหมด** (`node backend/test/unified-trip-write.test.mjs`)
 
 ## A. รายการค่าใช้จ่ายย่อยประจำทริป — `TripExpensePresets`
 
@@ -90,6 +90,46 @@ npx wrangler d1 execute record-revenue-db --remote --command \
 
 ⚠️ `Projects.theme_banner` **ไม่รับ `data:` URL** (ยาวเป็นแสนตัวอักษร ทำให้แถวบวม)
 รูปที่อัปโหลดต้องผ่าน `/icon-upload` ก่อน แล้วเก็บ URL สั้นที่ได้
+
+## C2. เอกสารประจำทริป — `TripDocuments` (2026-08-11)
+
+🔴 **ใช้ตาราง `TripDocuments` ที่มีอยู่เดิม ไม่ได้สร้างใหม่** — แอปหลัก
+(`backend/src/index.js` → `/api/trips/documents`) ใช้ตารางเดียวกันนี้อยู่แล้ว
+เอกสารจึงเป็นชุดเดียวกันทั้งสองแอป
+
+⚠️ บทเรียน: ครั้งแรกผมเขียน `CREATE TABLE IF NOT EXISTS TripDocuments` ใหม่ทับ
+โดยไม่ตรวจว่ามีอยู่แล้ว · `IF NOT EXISTS` ทำให้ผ่านไปเงียบ ๆ แล้วไปพังที่
+`CREATE INDEX` (`no such column: stop_id`) — **ก่อนตั้งชื่อตารางใหม่ ให้ grep
+ทั้งโปรเจกต์ก่อนเสมอ** โดยเฉพาะ `backup-before-trip-finance.sql` ซึ่งเป็น
+ภาพถ่ายของฐาน production จริง
+
+ชื่อคอลัมน์เดิมไม่ตรงกับที่หน้าทริปใช้ จึงแปลงชื่อใน SQL ตอน GET ทีเดียว:
+`document_id→doc_id` · `related_entity_id→stop_id` · `description→name` · `file_url→url`
+(`related_entity_id` เก็บได้ทั้ง stop_id และ trip_expense_id — join กับ TripStops
+จึงคืน `stop_name` เฉพาะอันที่เป็นจุดแวะจริง)
+
+`add_trip_documents.sql` เติมแค่ 3 คอลัมน์: `kind` · `content_type` · `size_bytes`
+เอกสารเก่าที่ไม่มี `kind` ถือเป็น `link` โดยอัตโนมัติ (มีเทสครอบ)
+
+ผูกกับ **จุดแวะ** เป็นหลัก · เว้นว่าง = เอกสารระดับทริป (เช่นประกันทั้งทริป)
+
+เก็บได้สองแบบในตารางเดียว ต่างกันที่คอลัมน์ `kind`:
+- `file` = อัปโหลดเข้าระบบ (R2) · url ชี้ไป `/api/unified-trip/icon/…`
+- `link` = ลิงก์ภายนอก เช่น Google Drive · ระบบไม่ได้ถือไฟล์เอง
+
+⚠️ **URL รับเฉพาะ `http(s)://`** — ปฏิเสธ `javascript:` และ `data:` เพราะลิงก์นี้
+ถูกเอาไปใส่ `href` ให้สมาชิกคนอื่นในทริปกด (มีเทสครอบไว้แล้ว ห้ามผ่อนกฎนี้)
+ฝั่งหน้าจอใช้ `rel="noopener noreferrer"` ด้วยเหตุผลเดียวกัน
+
+⚠️ **ลบเอกสาร = ลบแค่แถวในฐาน ไม่ลบไฟล์บน R2** — ไฟล์เดียวอาจถูกอ้างจากหลายที่
+ลบทิ้งเลยจะทำให้อีกที่พังเงียบ ๆ · R2 ฟรี 10 GB ไม่คุ้มเสี่ยงเพื่อประหยัดพื้นที่
+
+**ลบจุดแวะแล้วเอกสารไม่หายตาม** (มีเทสยืนยัน) — กลายเป็นเอกสารระดับทริปแทน
+
+- SQL: `add_trip_documents.sql`
+- API: `POST/DELETE /api/unified-trip/documents` · GET มากับ payload (`payload.documents` พร้อม `stop_name`)
+- UI: ฟอร์มแก้สถานที่ (แนบ/ดู) · การ์ด "คลังเอกสาร" ในหน้าเพิ่มเติม (จัดกลุ่มตามสถานที่) · ป้าย 📎 ในรายการแผน
+- อัปโหลด PDF ใช้ทางเดียวกับรูป (`/icon-upload`) เพดาน 15 MB เมื่อมี R2
 
 ## D. กับดักที่เสียเวลาไปมาก — อ่านก่อนแก้เรื่องรูป
 

@@ -49,6 +49,12 @@ CREATE TABLE TripExpensePresets (preset_id TEXT PRIMARY KEY, project_id TEXT NOT
   icon_url TEXT, category_id TEXT, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE TripAssets (asset_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, content_type TEXT NOT NULL,
   bytes BLOB NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+-- ⚠️ ลอกจากฐาน production จริง (backup-before-trip-finance.sql) ไม่ใช่จากที่อยากให้เป็น
+-- ตารางนี้มีมาก่อนแล้วและแอปหลักใช้อยู่ · add_trip_documents.sql เติมแค่ 3 คอลัมน์ท้าย
+CREATE TABLE TripDocuments (document_id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+  related_entity_id TEXT, file_url TEXT NOT NULL, description TEXT, type TEXT DEFAULT 'general',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  kind TEXT DEFAULT 'link', content_type TEXT, size_bytes INTEGER);
 CREATE TABLE TripExpenseParticipants (participant_id TEXT PRIMARY KEY, trip_expense_id TEXT, member_id TEXT, amount_foreign REAL, percent REAL);
 CREATE TABLE TripClosures (closure_id TEXT PRIMARY KEY, project_id TEXT, entry_type TEXT,
   posting_date TEXT, ledger_total REAL, trip_only_total REAL, fx_result REAL, carried_thb REAL,
@@ -1292,6 +1298,119 @@ db.exec(`INSERT INTO Projects (project_id,family_id,name,status) VALUES ('TRP-FA
 db.exec(`INSERT INTO TripExpensePresets (preset_id,project_id,label,category_id) VALUES ('TXP-F2','TRP-FAM2','ของครอบครัวอื่น',NULL)`);
 r = await call('POST', '/api/unified-trip/presets/copy', { project: 'TRP-2', body: { from_project_id: 'TRP-FAM2' } });
 check('⚠️ คัดลอกข้ามครอบครัวไม่ได้ → 404', r.status === 404, JSON.stringify(r));
+
+console.log('\n── เอกสารประจำทริป (2026-08-11) ──────');
+/* ใบจอง/ตั๋ว ผูกกับจุดแวะ · เก็บได้ทั้งไฟล์ที่อัปโหลดและลิงก์ภายนอก
+   จุดที่ต้องกันให้แน่นคือ URL — ลิงก์นี้ถูกเอาไปใส่ href ให้สมาชิกคนอื่นกด */
+
+db.exec(`INSERT INTO TripStops (stop_id,project_id,stop_date,name_th) VALUES ('TS-DOC','TRP-1','2026-12-18','โรงแรม Kushiro')`);
+
+/* 🔑 เอกสารเก่าที่แอปหลักสร้างไว้ (ไม่มี kind/content_type) ต้องอ่านได้ตามปกติ
+   เพราะทั้งสองแอปใช้ตาราง TripDocuments ร่วมกัน ถ้าหน้าทริปอ่านของเก่าไม่ได้
+   ผู้ใช้จะเห็นเอกสารหายไปเฉย ๆ ทั้งที่ยังอยู่ในฐาน */
+db.exec(`INSERT INTO TripDocuments (document_id,project_id,related_entity_id,file_url,description,type)
+         VALUES ('DOC-LEGACY','TRP-1','TS-DOC','https://old.example.com/voucher.pdf','ใบจองจากแอปหลัก','booking')`);
+r = await call('GET', '/api/unified-trip');
+{
+  const legacy = (r.data.documents || []).find(d => d.doc_id === 'DOC-LEGACY');
+  check('🔑 อ่านเอกสารเดิมจากแอปหลักได้ (kind ว่าง → ถือเป็น link)',
+    legacy?.kind === 'link' && legacy?.name === 'ใบจองจากแอปหลัก', JSON.stringify(legacy));
+  check('เอกสารเดิมได้ชื่อสถานที่ด้วย', legacy?.stop_name === 'โรงแรม Kushiro');
+}
+
+r = await call('POST', '/api/unified-trip/documents', {
+  body: { stop_id: 'TS-DOC', name: 'ใบจอง Hotel Kushiro', url: 'https://drive.google.com/file/abc', kind: 'link' }
+});
+check('เพิ่มเอกสารผูกกับสถานที่ได้', r.status === 201, JSON.stringify(r));
+const docId = r.data.doc_id;
+
+r = await call('GET', '/api/unified-trip');
+let doc = (r.data.documents || []).find(d => d.doc_id === docId);
+check('เอกสารมากับ payload หลัก', Boolean(doc), JSON.stringify(r.data.documents));
+check('🔑 แนบชื่อสถานที่มาให้ด้วย (ไม่ต้องจับคู่เอง)', doc?.stop_name === 'โรงแรม Kushiro', JSON.stringify(doc?.stop_name));
+
+r = await call('POST', '/api/unified-trip/documents', {
+  body: { name: 'ประกันเดินทางทั้งทริป', url: 'https://example.com/insurance.pdf' }
+});
+check('เอกสารระดับทริป (ไม่ผูกสถานที่) ได้', r.status === 201);
+
+r = await call('GET', '/api/unified-trip');
+const tripDoc = (r.data.documents || []).find(d => d.name === 'ประกันเดินทางทั้งทริป');
+check('เอกสารระดับทริปมี stop_id ว่าง', tripDoc?.stop_id === null, JSON.stringify(tripDoc?.stop_id));
+
+// ── ความปลอดภัยของ URL ──
+for (const [label, bad] of [
+  ['javascript:', 'javascript:alert(1)'],
+  ['data:', 'data:text/html,<script>alert(1)</script>'],
+  ['ไม่มี scheme', 'drive.google.com/file/abc']
+]) {
+  r = await call('POST', '/api/unified-trip/documents', { body: { name: 'x', url: bad } });
+  check(`⚠️ ปฏิเสธลิงก์ ${label} → 400`, r.status === 400, JSON.stringify(r.status));
+}
+
+r = await call('POST', '/api/unified-trip/documents', { body: { name: '', url: 'https://x.com/a' } });
+check('⚠️ ไม่มีชื่อ → 400', r.status === 400);
+r = await call('POST', '/api/unified-trip/documents', { body: { name: 'x' } });
+check('⚠️ ไม่มีไฟล์หรือลิงก์ → 400', r.status === 400);
+
+r = await call('POST', '/api/unified-trip/documents', {
+  body: { stop_id: 'TS-ไม่มีจริง', name: 'x', url: 'https://x.com/a' }
+});
+check('⚠️ ผูกกับสถานที่ที่ไม่มีในทริป → 400', r.status === 400);
+
+// จุดแวะของทริปอื่นก็ผูกไม่ได้ แม้จะมีอยู่จริง
+db.exec(`INSERT INTO TripStops (stop_id,project_id,stop_date,name_th) VALUES ('TS-OTHER','TRP-2','2026-12-18','ของทริปอื่น')`);
+r = await call('POST', '/api/unified-trip/documents', {
+  body: { stop_id: 'TS-OTHER', name: 'x', url: 'https://x.com/a' }
+});
+check('⚠️ ผูกกับสถานที่ของทริปอื่น → 400', r.status === 400);
+
+// แก้ไข
+r = await call('POST', '/api/unified-trip/documents', {
+  body: { doc_id: docId, stop_id: 'TS-DOC', name: 'ใบจอง Hotel Kushiro (แก้ไข)', url: 'https://drive.google.com/file/xyz' }
+});
+check('แก้เอกสารได้', r.status === 200 && r.data.created === false, JSON.stringify(r));
+r = await call('GET', '/api/unified-trip');
+doc = (r.data.documents || []).find(d => d.doc_id === docId);
+check('ชื่อและลิงก์ถูกอัปเดต', doc?.name.includes('แก้ไข') && doc?.url.endsWith('xyz'));
+
+r = await call('POST', '/api/unified-trip/documents', { body: { doc_id: 'DOC-ไม่มีจริง', name: 'x', url: 'https://x.com/a' } });
+check('แก้เอกสารที่ไม่มี → 404', r.status === 404);
+
+// เอกสารของทริปอื่นต้องมองไม่เห็น
+r = await call('GET', '/api/unified-trip', { project: 'TRP-2' });
+check('⚠️ เอกสารไม่ข้ามทริป', !(r.data.documents || []).some(d => d.doc_id === docId), JSON.stringify(r.data.documents?.length));
+
+// ลบ
+r = await call('DELETE', '/api/unified-trip/documents', { query: `&id=${encodeURIComponent(docId)}` });
+check('ลบเอกสารได้', r.status === 200);
+r = await call('GET', '/api/unified-trip');
+check('ลบแล้วหายจริง', !(r.data.documents || []).some(d => d.doc_id === docId));
+r = await call('DELETE', '/api/unified-trip/documents', { query: '&id=DOC-ไม่มีจริง' });
+check('ลบเอกสารที่ไม่มี → 404', r.status === 404);
+
+// จุดแวะที่มีเอกสารผูกอยู่ ลบได้ตามปกติ (เอกสารกลายเป็นระดับทริป ไม่พัง)
+r = await call('POST', '/api/unified-trip/documents', {
+  body: { stop_id: 'TS-DOC', name: 'ใบจองที่จะค้าง', url: 'https://x.com/a' }
+});
+check('เพิ่มเอกสารใหม่ก่อนทดสอบลบจุดแวะ', r.status === 201);
+r = await call('DELETE', '/api/unified-trip/stops', { query: '&id=TS-DOC' });
+check('ลบจุดแวะที่มีเอกสารผูกอยู่ได้ ไม่ error', r.status === 200, JSON.stringify(r));
+r = await call('GET', '/api/unified-trip');
+check('🔑 เอกสารยังอยู่ ไม่หายไปพร้อมจุดแวะ',
+  (r.data.documents || []).some(d => d.name === 'ใบจองที่จะค้าง'), JSON.stringify(r.data.documents?.length));
+
+// อัปโหลดไฟล์ PDF ผ่านทางเดียวกับรูป
+{
+  const pdf = new Blob([new Uint8Array([37, 80, 68, 70])], { type: 'application/pdf' });
+  const form = new FormData();
+  form.append('file', pdf, 'booking.pdf');
+  const url = new URL('https://x/api/unified-trip/icon-upload');
+  const req = new Request(url, { method: 'POST', headers: { 'x-user-id': '9North' }, body: form });
+  const res = await handleUnifiedTrip(req, { DB, ICONS }, url, cors, '9North');
+  const data = await res.json();
+  check('🔑 อัปโหลด PDF ได้ (ไม่ใช่แค่รูป)', res.status === 201 && String(data.url).endsWith('.pdf'), JSON.stringify(data));
+}
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 if (fail > 0) process.exit(1);

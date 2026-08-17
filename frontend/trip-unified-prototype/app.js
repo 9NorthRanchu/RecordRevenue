@@ -47,7 +47,7 @@ function closeLayers() {
   mask.classList.remove('open');
   [sheet, dialog, planEditor, $('#assetPicker'), $('#newTripDialog'), $('#currencyDialog'),
    $('#fundDialog'), $('#walletDialog'), $('#reopenDialog'), $('#presetDialog'),
-   $('#copyPresetDialog')].forEach(layer => {
+   $('#copyPresetDialog'), $('#docDialog')].forEach(layer => {
     layer.classList.remove('open');
     layer.setAttribute('aria-hidden', 'true');
   });
@@ -334,6 +334,7 @@ function renderBills() {
   renderMembers();
   renderCurrencies();
   renderTripPresets();
+  renderDocumentLibrary();
   renderCloseLines();
   renderPresence();
   applyTripLock();
@@ -505,6 +506,191 @@ function renderCurrencies() {
     </div>`;
   }).join('');
 }
+
+/* ── เอกสารประจำทริป (2026-08-11) ──────────────────────────────────────
+   ใบจองโรงแรม ตั๋วเครื่องบิน ประกัน — ผูกกับจุดแวะ หรือเป็นเอกสารของทั้งทริป
+   เก็บเป็นได้สองแบบ: อัปโหลดเข้าระบบ (R2) หรือวางลิงก์ภายนอก เช่น Google Drive
+   ทั้งสองแบบหน้าตาเหมือนกันหมด ต่างแค่ที่อยู่ของไฟล์ */
+let tripDocuments = [];
+
+const docsForStop = stopId => tripDocuments.filter(doc => doc.stopId === stopId);
+
+/* ไอคอนตามชนิดไฟล์ — ช่วยให้กวาดตาหาเอกสารที่ต้องการได้เร็วกว่าอ่านชื่อทุกอัน */
+function docIcon(doc) {
+  if (doc.contentType?.includes('pdf')) return '📄';
+  if (doc.contentType?.startsWith('image/')) return '🖼️';
+  return doc.kind === 'file' ? '📎' : '🔗';
+}
+
+function fmtFileSize(bytes) {
+  if (!bytes) return '';
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.round(bytes / 1024)} KB`;
+}
+
+/* ── คลังเอกสาร: รวมทั้งทริป จัดกลุ่มตามชื่อสถานที่ ───────────────────
+   เอกสารที่ไม่ได้ผูกสถานที่ไปรวมกันใต้หัวข้อ "เอกสารของทริป"
+   เรียงให้สถานที่มาก่อน เพราะเป็นสิ่งที่คนมองหาบ่อยกว่า */
+function renderDocumentLibrary() {
+  const host = $('#documentLibrary');
+  if (!host) return;
+  if (!liveMode) {
+    host.innerHTML = '<p class="field-note">เข้าทริปโหมดข้อมูลจริงก่อนถึงจะเก็บเอกสารได้</p>';
+    return;
+  }
+  if (!tripDocuments.length) {
+    host.innerHTML = `<p class="field-note">ยังไม่มีเอกสาร — เพิ่มได้จากหน้าแผนเที่ยว กด "แก้ไข" ที่สถานที่ใดก็ได้</p>
+      <button type="button" class="soft-btn" id="addTripDocBtn">＋ เพิ่มเอกสารของทริป</button>`;
+    return;
+  }
+
+  const groups = new Map();
+  tripDocuments.forEach(doc => {
+    const key = doc.stopId || '';
+    if (!groups.has(key)) groups.set(key, { name: doc.stopName || 'เอกสารของทริป', docs: [] });
+    groups.get(key).docs.push(doc);
+  });
+  // สถานที่ก่อน แล้วค่อยเอกสารระดับทริป
+  const ordered = [...groups.entries()].sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1));
+
+  host.innerHTML = ordered.map(([, group]) => `
+    <div class="doc-group">
+      <h4>${group.name}<small>${group.docs.length} ไฟล์</small></h4>
+      ${group.docs.map(doc => docRowMarkup(doc)).join('')}
+    </div>`).join('')
+    + '<button type="button" class="soft-btn" id="addTripDocBtn">＋ เพิ่มเอกสารของทริป</button>';
+}
+
+/* แถวเอกสารหนึ่งรายการ — ใช้ทั้งในคลังเอกสารและในฟอร์มแก้สถานที่
+   target=_blank + rel=noopener: เอกสารอาจเป็นลิงก์ภายนอกที่เราไม่ได้คุม
+   ห้ามให้หน้าปลายทางเข้าถึง window.opener ของเราได้ */
+function docRowMarkup(doc) {
+  return `
+    <div class="doc-row">
+      <a class="doc-open" href="${doc.url}" target="_blank" rel="noopener noreferrer">
+        <span class="doc-icon">${docIcon(doc)}</span>
+        <span class="doc-main"><b>${doc.name}</b><small>${doc.kind === 'file'
+          ? `ไฟล์ในระบบ${doc.sizeBytes ? ` · ${fmtFileSize(doc.sizeBytes)}` : ''}`
+          : 'ลิงก์ภายนอก'}</small></span>
+      </a>
+      <button type="button" class="doc-remove" data-remove-doc="${doc.id}" aria-label="ลบเอกสาร">✕</button>
+    </div>`;
+}
+
+/* ── ฟอร์มเพิ่มเอกสาร ────────────────────────────────────────────────
+   เปิดจากสองที่: ฟอร์มแก้สถานที่ (ผูกกับสถานที่นั้น) และคลังเอกสาร (ระดับทริป)
+   docTargetStopId จำไว้ว่ากำลังเพิ่มให้ใคร */
+let docTargetStopId = '';
+let pendingDocUpload = null;   // { url, contentType, sizeBytes } เมื่ออัปโหลดไฟล์เสร็จ
+
+function openDocDialog(stopId = '') {
+  if (!liveMode) { showPrototypeToast('เก็บเอกสารได้เฉพาะโหมดข้อมูลจริง'); return; }
+  closeLayers();
+  docTargetStopId = stopId;
+  pendingDocUpload = null;
+  $('#docName').value = '';
+  $('#docUrl').value = '';
+  $('#docFile').value = '';
+  $('#docError').textContent = '';
+  $('#docUploadNote').textContent = '';
+  $('#docDialogWhere').textContent = stopId
+    ? (planStopName(stopId) || 'สถานที่ที่เลือก')
+    : 'ทั้งทริป (ไม่ผูกกับสถานที่ใด)';
+  mask.classList.add('open');
+  $('#docDialog').classList.add('open');
+  $('#docDialog').setAttribute('aria-hidden', 'false');
+  setTimeout(() => $('#docName').focus(), 80);
+}
+
+/* เอกสารของสถานที่หนึ่ง ๆ ในฟอร์มแก้สถานที่
+   สถานที่ที่ยังไม่ได้บันทึก (ยังไม่มี stop_id จริง) แนบเอกสารไม่ได้ เพราะ
+   เอกสารต้องผูกกับจุดแวะที่มีอยู่จริงในฐาน — บอกให้ชัดแทนที่จะซ่อนปุ่มเฉย ๆ */
+function renderStopDocuments(stopId) {
+  const host = $('#stopDocuments');
+  if (!host) return;
+  if (!liveMode) {
+    host.innerHTML = '<p class="field-note">แนบเอกสารได้เฉพาะโหมดข้อมูลจริง</p>';
+    return;
+  }
+  if (!stopId) {
+    host.innerHTML = '<p class="field-note">บันทึกสถานที่นี้ก่อน แล้วเปิดขึ้นมาแก้ไขอีกครั้งจึงจะแนบเอกสารได้</p>';
+    return;
+  }
+  const docs = docsForStop(stopId);
+  host.innerHTML = (docs.length ? docs.map(docRowMarkup).join('') : '')
+    + `<button type="button" class="soft-btn" data-add-doc="${stopId}">＋ แนบเอกสาร</button>`;
+}
+
+$('#stopDocuments')?.addEventListener('click', event => {
+  const add = event.target.closest('[data-add-doc]');
+  if (add) openDocDialog(add.dataset.addDoc);
+});
+
+function planStopName(stopId) {
+  for (const day of planDays) {
+    const found = day.activities.find(activity => activity.id === stopId);
+    if (found) return found.name;
+  }
+  return '';
+}
+
+/* อัปโหลดไฟล์ทันทีที่เลือก ไม่รอกดบันทึก — ผู้ใช้จะได้รู้ผลเร็ว
+   และถ้าไฟล์ใหญ่เกินจะได้แก้ก่อนเสียเวลากรอกชื่อ */
+$('#docFile')?.addEventListener('change', async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  $('#docError').textContent = '';
+  $('#docUploadNote').textContent = 'กำลังอัปโหลด…';
+  try {
+    const url = await TripApi.uploadDocument(file);
+    pendingDocUpload = { url, contentType: file.type, sizeBytes: file.size };
+    $('#docUrl').value = url;
+    $('#docUploadNote').textContent = `✓ อัปโหลดแล้ว · ${fmtFileSize(file.size)}`;
+    // เติมชื่อให้อัตโนมัติถ้ายังว่าง — ลดขั้นตอนโดยยังแก้ได้
+    if (!$('#docName').value.trim()) $('#docName').value = file.name.replace(/\.[^.]+$/, '');
+  } catch (error) {
+    pendingDocUpload = null;
+    $('#docUploadNote').textContent = '';
+    $('#docError').textContent = `อัปโหลดไม่สำเร็จ: ${error.message}`;
+  }
+});
+
+$('#docForm')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const name = $('#docName').value.trim();
+  const url = $('#docUrl').value.trim();
+  if (!name) { $('#docError').textContent = 'ตั้งชื่อเอกสารก่อน'; return; }
+  if (!url) { $('#docError').textContent = 'แนบไฟล์ หรือวางลิงก์อย่างใดอย่างหนึ่ง'; return; }
+
+  TripApi.saveDocument({
+    stopId: docTargetStopId,
+    name, url,
+    kind: pendingDocUpload ? 'file' : 'link',
+    contentType: pendingDocUpload?.contentType,
+    sizeBytes: pendingDocUpload?.sizeBytes
+  })
+    .then(() => refreshFromServer())
+    .then(() => { closeLayers(); showPrototypeToast(`เพิ่มเอกสาร ${name} แล้ว`); })
+    .catch(error => { $('#docError').textContent = error.message; });
+});
+
+/* ลบเอกสาร — จับที่ระดับเอกสารเพื่อให้ครอบคลุมทั้งคลังเอกสารและฟอร์มสถานที่
+   โดยไม่ต้องผูก handler ซ้ำสองที่ */
+document.addEventListener('click', event => {
+  const remove = event.target.closest('[data-remove-doc]');
+  if (!remove) return;
+  const doc = tripDocuments.find(item => item.id === remove.dataset.removeDoc);
+  if (!doc || !confirm(`ลบเอกสาร "${doc.name}" ?`)) return;
+  TripApi.removeDocument(doc.id)
+    .then(() => refreshFromServer())
+    .then(() => showPrototypeToast('ลบเอกสารแล้ว'))
+    .catch(error => showPrototypeToast(`ลบไม่สำเร็จ: ${error.message}`));
+});
+
+$('#documentLibrary')?.addEventListener('click', event => {
+  if (event.target.closest('#addTripDocBtn')) openDocDialog('');
+});
 
 /* ── ธีมสีของทริป (2026-08-10) ─────────────────────────────────────────
    ค่าสีจริงอยู่ใน themes.css ทั้งหมด ที่นี่เก็บแค่ "รหัสธีม + ชื่อที่คนอ่าน"
@@ -2392,7 +2578,9 @@ function renderPlanWorkspace() {
     <article class="plan-item ${activity.id === selectedActivityId ? 'selected' : ''}" draggable="true" data-activity="${activity.id}">
       <span class="drag">⠿</span><time>${activity.time || '—'}</time>
       <img src="${activity.image || `${ART}st_camera2.png`}" alt="">
-      <div><b>${activity.name}</b><small>${activity.detail || 'ยังไม่มีรายละเอียด'}</small><em>${activity.tag}</em></div>
+      <div><b>${activity.name}</b><small>${activity.detail || 'ยังไม่มีรายละเอียด'}</small><em>${activity.tag}</em>${
+        docsForStop(activity.id).length
+          ? `<em class="doc-badge">📎 ${docsForStop(activity.id).length} เอกสาร</em>` : ''}</div>
       <div class="plan-cost">${activity.cost}<small>${activity.bills}</small></div>
       <div class="plan-item-controls"><button class="edit-plan-item" data-edit="${activity.id}">แก้ไข</button><button data-move="up" aria-label="เลื่อนขึ้น">↑</button><button data-move="down" aria-label="เลื่อนลง">↓</button></div>
     </article>`).join('') : `<div class="plan-empty">ยังไม่มีกิจกรรมในวันนี้</div>`;
@@ -2519,6 +2707,7 @@ function openPlanEditor(activity = null) {
   $('#activityDetail').value = activity?.detail || '';
   activityIcon = activity?.image || `${ART}st_camera2.png`;
   $('#activityIconPreview').src = activityIcon;
+  renderStopDocuments(activity?.id || '');
   mask.classList.add('open');
   planEditor.classList.add('open');
   planEditor.setAttribute('aria-hidden', 'false');
@@ -3017,6 +3206,7 @@ function applyLiveState(state) {
   if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
   ledgerCategories = state.ledgerCategories || [];
   tripPresets = state.presets || [];
+  tripDocuments = state.documents || [];
   applyTheme(state.themeId || DEFAULT_THEME);
   /* ⚠️ ต้องตั้ง viewerId ก่อนเรียก fillTripMetaForm — ฟอร์มเช็คสิทธิ์ admin
      จาก viewerId ถ้าเรียกสลับกัน มันจะเช็คด้วยตัวตนของข้อมูลตัวอย่างเก่า
@@ -3052,7 +3242,8 @@ function applyLiveState(state) {
 
   applyTripLock();
   [renderBills, renderWallets, renderMoneyStrip, renderMembers, renderCurrencies,
-   renderTripPresets, renderPresence, refreshQuickAdd, renderPlanWorkspace].forEach(render => render());
+   renderTripPresets, renderDocumentLibrary, renderPresence, refreshQuickAdd,
+   renderPlanWorkspace].forEach(render => render());
   /* การ์ดอากาศผูกกับ dayId ของแผนตัวอย่าง พอเปลี่ยนเป็นวันจริงแล้ว id ไม่ตรงกัน
      renderTodayWeather จะ return ทันทีและปล่อยตัวเลขเดิมค้างบนจอ ต้องสั่งใหม่เอง */
   if (state.planDays.length) renderTodayWeather(planDays[0].id);
