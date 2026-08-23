@@ -1,41 +1,49 @@
-/* หน้ารวมทริป (trips.html) — ไฟล์แยกจาก style.css ตั้งใจ เพื่อไม่ให้แก้อะไร
-   ที่นี่กระทบหน้าทริปเดี่ยว (index.html) ซึ่งมีเทสครอบคลุมอยู่แล้ว */
+/* หน้ารวมทริป — Corkboard gallery
+   แยกจาก style.css เพื่อไม่ให้หน้าตานี้กระทบหน้ารายละเอียดทริป */
+@font-face{font-family:TripLooped;src:url('../puppup-prototype/fonts/noto-sans-thai-looped-thai-600-normal.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:TripLooped;src:url('../puppup-prototype/fonts/noto-sans-thai-looped-thai-700-normal.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:TripLatin;src:url('../puppup-prototype/fonts/anuphan-latin-400-normal.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:TripLatin;src:url('../puppup-prototype/fonts/anuphan-latin-600-normal.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap}
+:root{--trip-board:#a9ddf2;--trip-paper:#fffdf9;--trip-note:#ffedb8;--trip-ink:#435b57;--trip-muted:#73827f;--trip-teal:#4f9c8b;--trip-teal-soft:#dff3ed;--trip-pink:#ffdce7;--trip-pink-strong:#ef87a7;--trip-blue:#dff2fa;--trip-blue-strong:#78b9d5;--trip-green:#e3f1d8;--trip-yellow:#ffeab0;--trip-line:#ead9ca;--trip-cocoa:#795d4e}
+html,body{min-width:100%;background:var(--trip-board)}
+body{font-family:TripLooped,TripLatin,Tahoma,"Leelawadee UI",sans-serif;color:var(--trip-ink)}
+/* style.css เดิมมี font shorthand ระบุ Sarabun/Poppins ไว้รายปุ่ม จึงต้องล็อก
+   family ที่ขอบเขตหน้ารวม ไม่เช่นนั้นหัวข้อ แท็บ และปุ่มจะใช้คนละฟอนต์ */
+.trips-shell,.trips-shell button,.trips-shell input,.trips-shell select,.trips-shell textarea,
+#newTripDialog,#newTripDialog button,#newTripDialog input,#newTripDialog select{font-family:TripLooped,TripLatin,Tahoma,"Leelawadee UI",sans-serif!important}
+.trips-shell{grid-template-columns:1fr;background:#fff8f2;width:100%;max-width:none;margin:0}
+.trips-shell .topbar{font-family:TripLooped,TripLatin,Tahoma,sans-serif;background:rgba(255,250,246,.97);border-bottom-color:#f2d7cf}
+.trips-shell .back{background:#e4f3fa!important;color:#427487!important;border-color:#cde9f4!important}.trips-shell #newTripTop{background:linear-gradient(135deg,#f39ab4,#e8799d)!important;border-color:#ffd3df!important;color:#fff!important;box-shadow:0 4px 0 #c95d80!important}
+.trips-brand{display:grid;min-width:0;gap:1px}.trips-brand b{font-size:17px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.trips-brand small{font-size:12px;line-height:1.35;color:var(--trip-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trips-board{padding:24px 24px 110px!important;min-height:calc(100vh - 74px);background-color:var(--trip-board);background-image:radial-gradient(rgba(35,112,146,.18) 1px,transparent 1px),linear-gradient(145deg,rgba(255,255,255,.3),transparent 42%,rgba(104,196,231,.2));background-size:12px 12px,100% 100%}
+.trips-note{width:min(1180px,100%);margin:0 auto 24px;background:linear-gradient(135deg,#fff8d7,#ffe9aa);padding:17px 112px 17px 20px;border:2px solid rgba(255,255,255,.76);border-radius:24px;box-shadow:4px 5px 0 rgba(121,93,78,.14);display:flex;align-items:center;justify-content:space-between;gap:18px;position:relative;overflow:hidden}
+.trips-note::before{content:'✦ さあ、旅へ ✦';position:absolute;right:18px;top:10px;color:var(--trip-pink-strong);font:700 11px TripLatin,Tahoma,sans-serif;letter-spacing:.06em;transform:rotate(3deg)}
+.trips-note::after{content:'🦊';position:absolute;right:31px;bottom:-12px;width:58px;height:58px;border-radius:50% 50% 44% 44%;background:#fff9ed;border:3px solid #fff;display:grid;place-items:center;font-size:34px;box-shadow:0 5px 0 rgba(124,76,39,.12)}
+.trips-note h1{margin:0;font-size:24px;line-height:1.35}.trips-note p{margin:3px 0 0;font-size:14px;line-height:1.5;color:#725f45}
+#tripStageTabs{margin:0;flex-shrink:0;gap:9px}#tripStageTabs button{min-width:126px;min-height:58px;display:grid;grid-template-columns:auto auto;align-items:center;justify-content:center;column-gap:7px;padding:9px 13px;line-height:1.3;text-align:left;border:2px solid rgba(255,255,255,.82);background:#e6f5ef;color:#416d63;box-shadow:0 4px 0 #b9dcd3}#tripStageTabs button:nth-child(2){background:#fff0f5;color:#9a5870;box-shadow:0 4px 0 #edc8d5}#tripStageTabs button:nth-child(3){background:#eaf6fb;color:#4e7d90;box-shadow:0 4px 0 #c1e0ec}#tripStageTabs .stage-icon{font-size:16px;line-height:1}#tripStageTabs .stage-copy{display:grid}#tripStageTabs .stage-copy b{font-size:14px}#tripStageTabs .stage-copy small{font-size:11px;font-weight:600;opacity:.82}#tripStageTabs button.active{background:linear-gradient(135deg,#67b5a4,#4f9c8b);border-color:#d6f5ed;color:#fff;box-shadow:0 5px 0 #377c6e}
+.trips-shortcut{width:min(1180px,100%);margin:0 auto 16px}.trips-shortcut .soft-btn{background:var(--trip-paper);color:var(--trip-teal);box-shadow:0 5px 14px rgba(72,48,27,.13)}
+.trip-pick-grid{width:min(1180px,100%);margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:24px;align-items:start}.trip-pick-grid[hidden]{display:none}.trip-pick-card:only-child{width:100%;margin-inline:0}
+.trip-pick-card{background:var(--trip-paper);border:3px solid rgba(255,255,255,.9);border-radius:28px;padding:12px 12px 18px;box-shadow:7px 10px 22px rgba(92,65,48,.18);display:flex;flex-direction:column;min-width:0;overflow:visible;position:relative;transition:transform .16s ease,box-shadow .16s ease}.trip-pick-card::before{content:'TRAVEL MEMO';position:absolute;z-index:5;left:32px;top:-12px;padding:5px 18px;background:rgba(255,220,231,.94);color:#a24d6a;font:700 10px TripLatin,Tahoma,sans-serif;letter-spacing:.12em;box-shadow:0 3px 6px rgba(79,47,37,.1);transform:rotate(-1deg)}.trip-pick-card::after{content:'✿';position:absolute;z-index:5;right:-9px;top:24px;width:34px;height:34px;border-radius:50%;background:var(--trip-pink-strong);color:white;border:3px solid #fff;display:grid;place-items:center;font-size:16px;box-shadow:0 4px 8px rgba(79,47,37,.14)}.trip-pick-card:hover{transform:translateY(-3px);box-shadow:8px 14px 28px rgba(92,65,48,.23)}
+.trip-pick-media{height:238px;border-radius:18px;overflow:hidden;position:relative;background:linear-gradient(135deg,var(--trip-pink),#ffedc9 48%,var(--trip-blue))}.trip-pick-banner,.trip-pick-photo{position:absolute;inset:0;background-size:cover;background-position:center;transition:opacity .35s ease,transform .35s ease}.trip-pick-banner{display:grid;place-items:center;font-size:54px}.trip-pick-banner.no-image::after{content:'🏔️  🚂  🦊'}.trip-pick-photo{opacity:0;transform:scale(1.04)}.trip-pick-card.has-photo:hover .trip-pick-banner,.trip-pick-card.has-photo:focus-within .trip-pick-banner{opacity:0;transform:scale(.98)}.trip-pick-card.has-photo:hover .trip-pick-photo,.trip-pick-card.has-photo:focus-within .trip-pick-photo{opacity:1;transform:scale(1)}
+.trip-pick-date{position:absolute;right:12px;bottom:12px;z-index:3;background:#fff9d9;padding:6px 11px;border:2px solid #fff;border-radius:99px;box-shadow:0 4px 10px rgba(50,38,25,.14);font-size:12px}
+.trip-pick-body{padding:15px 7px 0;display:grid;gap:11px;min-width:0}.trip-pick-title{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}.trip-pick-title h3{margin:0;font-size:22px;line-height:1.35}.trip-countdown{color:#a33f60;white-space:nowrap;font-size:13px}.trip-route{margin:-5px 0 0;font-size:14px;line-height:1.45;color:var(--trip-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.trip-facts{display:flex;gap:15px;flex-wrap:wrap;color:var(--trip-muted);font-size:13px;line-height:1.4}
+.trip-pick-tags{display:flex;gap:6px;flex-wrap:wrap}.trip-pick-tags:empty{display:none}.trip-pick-tags span{font-size:11px;padding:3px 8px;border-radius:99px;background:#f1efec;color:var(--trip-muted);font-weight:600}.trip-pick-tags span.posted{background:var(--sage-soft);color:var(--sage-ink,#3a7a52)}.trip-pick-tags span.closed{background:var(--sun-soft,#fff0e3);color:var(--sun-ink,#a5652c)}
+.trip-stop-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.trip-stop-head strong{font-size:14px}.trip-stop-head span{color:var(--trip-muted);font-size:12px}.trip-stop-rail{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:7px;min-width:0}.trip-stop-rail.can-scroll{grid-template-columns:auto minmax(0,1fr) auto}.trip-stop-slide{border:0;background:var(--trip-teal-soft);color:var(--trip-teal);width:36px;height:36px;border-radius:12px;display:grid;place-items:center;font-size:21px}.trip-stop-slide[hidden]{display:none}.trip-stop-strip{display:flex;align-items:start;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;padding:5px 2px 8px;min-width:0}.trip-stop-strip::-webkit-scrollbar{display:none}.trip-stop{display:grid;justify-items:center;align-content:start;gap:5px;flex:0 0 72px;scroll-snap-align:start;min-width:0}.trip-stop-picture{width:68px;height:68px;border-radius:20px;background:linear-gradient(145deg,var(--trip-blue),var(--trip-green));display:grid;place-items:center;overflow:hidden;box-shadow:0 5px 10px rgba(53,65,50,.14)}.trip-stop:nth-child(even) .trip-stop-picture{background:linear-gradient(145deg,var(--trip-pink),#fff0b8)}.trip-stop:nth-child(3n) .trip-stop-picture{background:linear-gradient(145deg,#eee5ff,var(--trip-blue))}.trip-stop-picture img{width:100%;height:100%;object-fit:contain}.trip-stop small{max-width:72px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--trip-ink);font-size:12px;line-height:1.35;text-align:center}.trip-stop-empty{color:var(--trip-muted);font-size:13px;padding:8px 0}
+.trip-card-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px}.trip-open{border:2px solid #d6f5ed;background:linear-gradient(135deg,#67b5a4,#4f9c8b);color:#fff;min-height:40px;padding:9px 17px;border-radius:15px;font-size:14px;font-weight:700;box-shadow:0 4px 0 #377c6e}.trip-more{border:2px solid #fff;background:#ffe4ed;color:#a34869;width:40px;height:40px;border-radius:13px;padding:0;box-shadow:0 3px 0 #e8bdcc;display:grid;place-items:center}.trip-more svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}.trip-pick-empty{width:min(1180px,100%);margin:24px auto 0;text-align:center;color:var(--trip-cocoa);background:rgba(255,253,249,.62);border-radius:22px;padding:30px 10px}#newTripFab{display:none!important}
+#newTripDialog,#newTripDialog h2,#newTripDialog input,#newTripDialog select,#newTripDialog button{font-family:TripLooped,TripLatin,Tahoma,sans-serif!important}
+@media(max-width:820px){.trips-note{display:grid;padding-right:84px}#tripStageTabs{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px}}
+@media(max-width:640px){.trips-shell .topbar{min-height:62px;height:auto;padding:9px 12px;gap:9px}.trips-brand{flex:1}.trips-brand b{font-size:15px}.trips-brand small{font-size:10px}#newTripTop{display:grid!important;place-items:center;width:42px;min-width:42px;height:42px;padding:0!important;border-radius:14px!important;font-size:0!important}#newTripTop::after{content:'＋';font-size:23px;line-height:1}#newTripFab{display:none!important}.trips-board{padding:14px 12px 90px!important}.trips-note{padding:15px;margin-bottom:18px;grid-template-columns:minmax(0,1fr);justify-content:stretch}.trips-note>div:first-child{width:100%;min-width:0}.trips-note::before,.trips-note::after{display:none}.trips-note h1{font-size:20px}.trips-note p{font-size:12px}#tripStageTabs{display:flex!important;width:100%!important;max-width:none;gap:6px;overflow:visible;padding-bottom:5px;align-items:stretch;justify-self:stretch}#tripStageTabs button{flex:1 1 0!important;width:0!important;min-width:0!important;min-height:68px;padding:8px 5px;column-gap:4px;grid-template-columns:auto auto;justify-content:center;text-align:left}#tripStageTabs .stage-icon{font-size:14px}#tripStageTabs .stage-copy{min-width:0}#tripStageTabs .stage-copy b{font-size:12px;white-space:nowrap}#tripStageTabs .stage-copy small{font-size:10px;white-space:nowrap}.trip-pick-grid{grid-template-columns:1fr;gap:18px}.trip-pick-card{border-radius:24px;padding:10px 10px 16px}.trip-pick-media{height:190px;border-radius:16px}.trip-pick-body{padding:12px 4px 0}.trip-pick-title h3{font-size:18px}.trip-stop-rail{gap:5px}}
+@media(prefers-reduced-motion:reduce){.trip-pick-card,.trip-pick-banner,.trip-pick-photo,.trip-stop-strip{transition:none;scroll-behavior:auto}}
 
-.trips-shell{grid-template-columns:1fr}
-#tripStageTabs{margin-top:18px}
-#tripStageTabs button{min-width:140px;text-align:left;display:grid;gap:2px;line-height:1.3}
-#tripStageTabs button span{font-size:14px}
-#tripStageTabs button small{font-weight:400}
-
-.trip-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:18px}
-
-.trip-pick-card{background:var(--paper);border:1px solid var(--line);border-radius:22px;overflow:hidden;
-  box-shadow:var(--shadow,0 6px 18px rgba(78,73,72,.06));cursor:pointer;display:flex;flex-direction:column;
-  transition:transform .16s ease,box-shadow .16s ease}
-.trip-pick-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lift,0 14px 30px rgba(78,73,72,.16))}
-/* แบนเนอร์ทริปที่ยังไม่ได้ตั้งรูป — ไล่สีสดใสแทนพื้นเทา จะได้ไม่ดูเหมือนช่องว่าง */
-.trip-pick-banner{height:110px;background:linear-gradient(135deg,#ffd9e4,#ffe9c9 45%,#d6f2ff);
-  background-size:cover;background-position:center}
-.trip-pick-body{padding:14px 16px 16px;display:grid;gap:6px}
-.trip-pick-body h3{margin:0;font:800 18px Sarabun}
-.trip-pick-body small{color:var(--muted)}
-.trip-pick-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
-.trip-pick-tags span{font-size:10px;padding:3px 8px;border-radius:99px;background:#f1efec;color:var(--muted);font-weight:600}
-.trip-pick-tags span.posted{background:var(--sage-soft);color:var(--sage-ink,#3a7a52)}
-.trip-pick-tags span.closed{background:var(--sun-soft,#fff0e3);color:var(--sun-ink,#a5652c)}
-
-.trip-pick-empty{margin-top:40px;text-align:center;color:var(--muted);padding:30px 10px}
-
-/* ปุ่มลัดเข้าทริปล่าสุด — อยู่เหนือแท็บประเภท เพราะเป็นทางลัด ไม่ใช่ตัวกรอง */
-.trips-shortcut{margin-bottom:14px}
-
-@media(max-width:640px){
-  .trip-pick-grid{grid-template-columns:1fr 1fr;gap:10px}
-  .trip-pick-body{padding:10px 12px 12px}
-  .trip-pick-body h3{font-size:15px}
-  #tripStageTabs{overflow-x:auto;flex-wrap:nowrap}
-  #tripStageTabs button{min-width:110px}
-}
-@media(max-width:420px){
-  .trip-pick-grid{grid-template-columns:1fr}
-}
+/* ── ช่องกรอกและช่องเลือกในหน้ารวมทริป (2026-08-23) ──────────────────
+   สไตล์เดิมติดมากับแท็กใน trips.html (border:1px solid #d9d5d0) ซึ่งแก้ยาก
+   ย้ายมาไว้ที่นี่ให้ตรงกับกรอบของหน้าอื่นในแอป · ช่องเลือกไม่ใช่กล่องเทาของระบบ */
+#newTripDialog input,
+#newTripDialog select{width:100%;border:1px solid #d9e4f0;background-color:#fff;
+  border-radius:12px;padding:11px;font:14px TripLooped,Sarabun,sans-serif;color:#26405e}
+#newTripDialog select{appearance:none;-webkit-appearance:none;cursor:pointer;
+  padding-right:36px;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='%235c86b4' stroke-width='2' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 13px center}
+#newTripDialog input:focus,
+#newTripDialog select:focus{outline:2px solid #b6d1ec;outline-offset:1px}

@@ -4,22 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Unified Trip — Hokkaido Prototype</title>
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=47">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/noto-sans-thai-looped-thai-600-normal.woff2">
+  <link rel="stylesheet" href="style.css?v=157">
   <!-- ธีมสี kawaii เลือกได้ต่อทริป — สลับด้วย data-theme บน <html> -->
-  <link rel="stylesheet" href="themes.css?v=9">
+  <link rel="stylesheet" href="themes.css?v=18">
 </head>
 <body>
   <div class="app-shell">
     <aside class="side-rail">
       <div class="brand"><span>旅</span><div><b id="brandTitle">Hokkaido Family</b><small id="brandSub">Winter road trip · 12 วัน</small></div></div>
       <nav class="main-nav">
-        <button class="active" data-screen="today"><i>⌂</i><span>วันนี้</span></button>
-        <button data-screen="plan"><i>⌁</i><span>แผนเที่ยว</span></button>
-        <button data-screen="bills"><i>¥</i><span>บิล</span></button>
-        <button data-screen="wallets"><i>◫</i><span>กระเป๋า</span></button>
-        <button data-screen="more"><i>•••</i><span>เพิ่มเติม</span></button>
+        <button class="active" data-screen="today"><i>🏠</i><span>วันนี้</span></button>
+        <button data-screen="plan"><i>🗺️</i><span>แผนเที่ยว</span></button>
+        <button data-screen="bills"><i>🧾</i><span>บิล</span></button>
+        <button data-screen="wallets"><i>👛</i><span>กระเป๋า</span></button>
+        <button data-screen="more"><i>✨</i><span>เพิ่มเติม</span></button>
       </nav>
       <div class="rail-foot"><span class="avatar">N</span><div><b>North</b><small>ผู้ดูแลทริป</small></div></div>
     </aside>
@@ -30,7 +29,12 @@
         <!-- หน้ารวมทริปยังเข้าถึงได้เสมอ แม้เมนูหลักจะเด้งเข้าทริปล่าสุดโดยตรง -->
         <button class="back" id="allTripsBtn" title="ทริปทั้งหมด">🗂️ ทริปทั้งหมด</button>
         <div class="trip-heading"><b id="tripTitle">Hokkaido Family Trip</b><small id="tripDates">8–19 ก.พ. 2027 · กำลังเดินทาง</small></div>
-        <div class="top-actions"><button class="icon-btn" id="shareLocation">⌖</button><button class="avatar">N</button></div>
+        <div class="top-actions">
+          <button class="icon-btn location-share" id="shareLocation" type="button" aria-label="แชร์ตำแหน่ง" title="แชร์ตำแหน่ง">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z"/><circle cx="12" cy="10" r="2.4"/></svg>
+          </button>
+          <button class="avatar">N</button>
+        </div>
       </header>
 
       <section class="screen active" id="screen-today">
@@ -55,7 +59,13 @@
             <g class="journey-pin future" data-index="10" data-x="690" data-y="665" transform="translate(690 665)"><circle r="15"/><path class="check" d="M-8 0 L-2 7 L10 -8"/><text x="-6" y="43">Chitose Airport</text></g>
             <g class="presence-layer" id="presenceLayer"></g>
           </svg>
-          <button class="banner-edit" id="changeBanner">🖼️ เปลี่ยนแบนเนอร์</button>
+          <!-- แผนที่จริงวางทับภาพวาด — สร้างหมุดจากพิกัดของจุดแวะจริง
+               ซ่อนไว้ก่อนจนผู้ใช้กดดู เพราะ Leaflet โหลดจาก CDN (lazy) -->
+          <div class="real-map" id="tripMap" hidden></div>
+        </div>
+        <div class="map-hero-actions" aria-label="เครื่องมือแผนที่และแบนเนอร์">
+          <button class="banner-edit" id="toggleMapView"><span aria-hidden="true">🗺️</span> แผนที่จริง</button>
+          <button class="banner-edit" id="changeBanner"><span aria-hidden="true">🖼️</span> เปลี่ยนแบนเนอร์</button>
         </div>
         <div class="day-summary">
           <div class="day-number"><span>DAY</span><strong id="journeyDay">03</strong></div>
@@ -65,22 +75,24 @@
 
         <div class="today-grid">
           <section class="next-card paper-card">
-            <div class="section-kicker"><span class="pulse"></span>กิจกรรมถัดไป</div>
-            <div class="next-time"><strong>14:30</strong><span>ออกในอีก 35 นาที</span></div>
-            <div class="next-main">
-              <img src="../puppup-prototype/art/act_ainukotan.png" alt="">
-              <div><h2>Akanko Ainu Kotan</h2><p>หมู่บ้านวัฒนธรรมไอนุ · เดินจากที่พัก 8 นาที</p></div>
+            <div class="section-kicker"><span class="pulse"></span><span id="nextKicker">เลือกสถานที่ที่กำลังจะไป</span></div>
+            <p class="section-explain" id="nextExplain">เปลี่ยนจุดปัจจุบันได้โดยไม่เปลี่ยนลำดับแผนถาวร</p>
+            <div class="day-stop-strip" id="dayStopChoices" aria-label="สถานที่ในวันนี้"></div>
+            <div class="selected-stop-detail">
+              <img id="nextIcon" src="../puppup-prototype/art/act_ainukotan.png" alt="">
+              <div class="selected-stop-content">
+                <div class="selected-stop-head"><h2 id="nextName">—</h2><strong id="nextTime">—</strong></div>
+                <p id="nextDetail"></p>
+                <div class="selected-stop-facts">
+                  <div><small>สภาพอากาศ</small><b id="selectedStopWeather">—</b></div>
+                  <div><small>ไฮไลต์</small><b id="selectedStopHighlight">ยังไม่ได้ระบุ</b></div>
+                  <div><small>เอกสาร</small><b id="selectedStopDocs">ไม่มีเอกสาร</b></div>
+                </div>
+              </div>
             </div>
             <div class="member-presence" id="memberPresence"></div>
             <p class="presence-consent" id="presenceConsent"></p>
-            <div class="card-actions"><button class="soft-btn" id="checkIn">✓ เช็กอิน</button><button class="primary-btn">เปิดเส้นทาง</button></div>
-          </section>
-
-          <section class="weather-card paper-card">
-            <div class="section-title"><div><span>สภาพอากาศตามสถานที่</span><h3 id="weatherPlace">Lake Akan</h3></div><small id="weatherStamp">อัปเดต 5 นาทีที่แล้ว</small></div>
-            <div class="weather-now" id="weatherNow"></div>
-            <div class="weather-periods" id="weatherPeriods"></div>
-            <p class="weather-tip" id="weatherTip"></p>
+            <div class="card-actions"><button class="skip-action soft-btn" id="skipCurrentStop">ข้ามสถานที่นี้</button><button class="soft-btn" id="checkIn">✓ เช็กอิน</button><button class="primary-btn" id="openRoute">เปิดเส้นทาง</button></div>
           </section>
 
           <section class="money-strip paper-card">
@@ -92,13 +104,20 @@
       </section>
 
       <section class="screen" id="screen-plan">
-        <div class="page-head"><div><span>ยืดหยุ่นตามอากาศ</span><h1>แผนเที่ยว</h1><p>ลากสถานที่เพื่อสลับลำดับ หรือย้ายข้ามวันได้</p></div><button class="primary-btn" id="addPlace">＋ เพิ่มสถานที่</button></div>
+        <div class="page-head"><div><span>จัดลำดับง่าย · ใช้จริงระหว่างทริป</span><h1>แผนเที่ยว 🗺️</h1><p>เวลา เส้นทาง เอกสาร และสิ่งสำคัญของทุกจุดในหน้าเดียว</p></div><button class="primary-btn" id="addPlace">＋ เพิ่มสถานที่</button></div>
         <div class="plan-layout">
           <div class="day-tabs" id="planDayTabs"></div>
+          <!-- การ์ดสรุปวัน: ชื่อแผนประจำวัน · ลำดับเมือง · ชิปสรุป (จุด/เวลา/ระยะ/อากาศ/เอกสาร) -->
           <div class="plan-day-overview" id="planDayOverview"></div>
+          <div class="plan-list-head"><b>กำหนดการวันนี้</b><small>ลากเพื่อจัดลำดับ · แตะ ••• เพื่อจัดการ</small></div>
           <div class="plan-list" id="planList"></div>
-          <div class="cross-day-move">
-            <span>ย้ายกิจกรรมที่เลือกไป</span>
+          <div class="plan-foot">
+            <p class="plan-backup" id="planBackup" hidden></p>
+            <button class="primary-btn" id="addPlaceFoot">＋ เพิ่ม Stop วันนี้</button>
+          </div>
+          <!-- ย้ายจุดแวะข้ามวัน · ซ่อนทั้งบล็อกเมื่อทริปมีวันเดียว (ไม่มีปลายทางให้ย้าย) -->
+          <div class="cross-day-move" id="crossDayMove" hidden>
+            <span id="crossDayLabel"></span>
             <div id="moveDayTargets"></div>
           </div>
         </div>
@@ -107,81 +126,195 @@
       <section class="screen" id="screen-bills">
         <div class="page-head"><div><span>ค่าใช้จ่ายทั้งหมด</span><h1>บิล</h1><p>เห็นเฉพาะรายการที่คุณมีสิทธิ์ และรายการที่แชร์กับทริป</p></div><button class="primary-btn add-expense">＋ จดค่าใช้จ่าย</button></div>
         <div class="trip-locked-note" hidden>🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้</div>
-        <div class="bill-summary">
-          <div class="paper-card"><span>รวมทั้งทริป</span><strong id="billTotal">฿ 0</strong><small>ส่วนตัว + ค่าใช้จ่ายร่วม</small></div>
-          <div class="paper-card"><span>คุณจ่ายจริง</span><strong id="billMine">฿ 0</strong><small>จาก YouTrip ของ North</small></div>
-          <div class="paper-card"><span>เฉพาะทริป</span><strong id="billTripOnly">฿ 0</strong><small>ไม่ลงบัญชีหลัก</small></div>
-        </div>
-        <p class="field-note bill-notice" id="billNotice"></p>
-        <div class="filters" id="billFilters"><button class="active" data-bill-filter="all">ทั้งหมด</button><button data-bill-filter="shared">ค่าใช้จ่ายร่วม</button><button data-bill-filter="mine">ของฉัน</button><button data-bill-filter="trip-only">เฉพาะทริป</button></div>
-        <div class="bill-table paper-card" id="billTable"></div>
+        <!-- แถบงบใหญ่ — ยอดเป็นบาทเสมอ (บวกข้ามสกุลไม่ได้)
+             ใต้ยอดมีแถบสกุลจริง เพราะคนจำได้ว่าจ่ายเยนไปเท่าไร ไม่ได้จำเป็นบาท -->
+        <div class="budget-hero" id="budgetHero"></div>
+
+        <!-- ป้ายเตือนเรื่องอัตราแลกเปลี่ยน · ว่างเมื่อทุกบิลใช้เรทจริง -->
+        <div id="rateAlerts"></div>
+
+        <section class="bill-block" id="categoryBlock">
+          <div class="bill-block-head"><b>ใช้ไปกับอะไรบ้าง</b><small>เทียบกันเป็นบาท</small></div>
+          <div id="categoryBars"></div>
+        </section>
+
+        <div class="people-grid" id="peopleGrid"></div>
+
+        <section class="bill-block" id="settleBlock" hidden>
+          <div class="bill-block-head"><b>ใครติดใคร</b><small>คิดจากบิลที่แชร์ทั้งหมด</small></div>
+          <div id="settleList"></div>
+        </section>
+
+        <section class="bill-block">
+          <div class="bill-block-head"><b>รายการบิล</b><small id="billCount"></small></div>
+          <div class="filter-bar">
+            <div class="date-filter"><label for="billDateFilter">วันที่</label><select id="billDateFilter"></select></div>
+            <div class="filters" id="billFilters"><button class="active" data-bill-filter="all">ทั้งหมด</button><button data-bill-filter="shared">ค่าใช้จ่ายร่วม</button><button data-bill-filter="mine">ของฉัน</button><button data-bill-filter="trip-only">เฉพาะทริป</button></div>
+            <div class="who-filter" id="billPayerFilter"></div>
+            <button type="button" class="filter-reset" id="billFilterReset" hidden>✕ ล้างตัวกรอง</button>
+          </div>
+          <div class="bill-table" id="billTable"></div>
+        </section>
+        <span hidden id="billTotal"></span><span hidden id="billMine"></span><span hidden id="billTripOnly"></span><span hidden id="billNotice"></span>
       </section>
 
       <section class="screen" id="screen-wallets">
         <div class="page-head"><div><span>ข้อมูลส่วนตัวของแต่ละสมาชิก</span><h1 id="walletHeading">กระเป๋าของฉัน</h1><p>สมาชิกอื่นเห็นเฉพาะบิลที่คุณแชร์ ไม่เห็นยอดหรือประวัติเติมเงิน</p></div><button class="primary-btn" id="addWallet">＋ เพิ่มกระเป๋า</button></div>
         <div class="trip-locked-note" hidden>🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้</div>
         <div class="privacy-note" id="walletPrivacy"></div>
+        <section class="wallet-summary" id="walletSummary"></section>
         <div class="wallet-grid" id="walletGrid"></div>
-        <section class="paper-card wallet-activity"><h3>รายการล่าสุด</h3><div id="walletActivity"></div></section>
+        <section class="paper-card wallet-activity" id="walletActivityBlock">
+          <div class="wact-head">
+            <h3 id="walletActivityTitle">รายการล่าสุด · ทุกกระเป๋า</h3>
+            <button type="button" class="soft-btn" id="walletActivityClear" hidden>ดูทุกกระเป๋า</button>
+          </div>
+          <div id="walletActivity"></div>
+        </section>
       </section>
 
       <section class="screen" id="screen-more">
-        <div class="page-head"><div><span>สิทธิ์และการเงิน</span><h1>จัดการทริป</h1><p>ตรวจสมาชิก การมองเห็น และผลลัพธ์ก่อนปิดทริป</p></div><div class="head-actions"><button class="soft-btn" id="openNewTrip">＋ ทริปใหม่</button><button class="soft-btn" id="editTripBanner">🖼️ เปลี่ยนแบนเนอร์</button></div></div>
+        <div class="page-head"><div><span>สิทธิ์และการเงิน</span><h1>จัดการทริป</h1></div><div class="head-actions"><button class="soft-btn" id="openNewTrip">＋ ทริปใหม่</button><button class="soft-btn" id="editTripBanner">🖼️ แบนเนอร์</button></div></div>
         <div class="trip-locked-note" hidden>🔒 <b>ทริปนี้ปิดแล้ว</b> — ตัวเลขการเงินถูกล็อกให้ตรงกับยอดที่สรุปเข้าบัญชี ดูได้อย่างเดียว แต่แผนเที่ยวและรูปภาพยังแก้ได้</div>
-        <div class="manage-grid">
-          <section class="paper-card"><h3>ชื่อทริปและวันเดินทาง</h3>
-            <p class="field-note">ชื่อทริปไปโผล่ในรายการที่ลงบัญชีจริงตอนปิดทริป · ช่วงวันที่ใช้เตือนเรื่องงวดบัญชี</p>
-            <form id="tripMetaForm">
-              <label class="field-wide">ชื่อทริป<input id="tripNameInput" required maxlength="80" placeholder="เช่น Hokkaido ฤดูหนาว 2026"></label>
-              <div class="date-pair">
-                <label>เริ่มเดินทาง<input id="tripStartInput" type="date"></label>
-                <label>กลับถึงบ้าน<input id="tripEndInput" type="date"></label>
+
+        <!-- แถบสรุปทริป — ตัวเลขทั้งหมดคำนวณสดใน renderManageSummary() ห้าม hardcode -->
+        <section class="manage-hero" id="manageHero"></section>
+        <!-- แถบเตือน — บอกก่อนว่ามีอะไรค้างต้องทำ ก่อนจะให้เลือกหัวข้อ
+             ทุกข้อคำนวณสดใน renderManageAlerts() ห้าม hardcode เด็ดขาด -->
+        <section class="manage-alerts" id="manageAlerts"></section>
+
+        <div class="manage-layout">
+          <!-- เมนูหัวข้อ · จอกว้างอยู่ซ้าย · มือถือกลายเป็นแถบเลื่อนแนวนอน
+               ปุ่มแต่ละอันมีตัวนับบอกว่ามีอะไรอยู่ข้างใน จะได้รู้ว่าต้องเข้าไปดูไหม -->
+          <nav class="manage-rail" id="manageRail" aria-label="หัวข้อการจัดการ">
+            <button type="button" class="mrail-item active" data-panel="trip">
+              <i class="mrail-icon trip">📍</i><span><b>ข้อมูลทริป</b><small data-manage-count="trip"></small></span>
+            </button>
+            <button type="button" class="mrail-item" data-panel="people">
+              <i class="mrail-icon people">👥</i><span><b>คนและสิทธิ์</b><small data-manage-count="people"></small></span>
+            </button>
+            <button type="button" class="mrail-item" data-panel="money">
+              <i class="mrail-icon money">💱</i><span><b>เงินและหมวด</b><small data-manage-count="money"></small></span>
+            </button>
+            <button type="button" class="mrail-item" data-panel="docs">
+              <i class="mrail-icon docs">📁</i><span><b>เอกสาร</b><small data-manage-count="docs"></small></span>
+            </button>
+            <button type="button" class="mrail-item" data-panel="theme">
+              <i class="mrail-icon theme">🎨</i><span><b>ธีมสี</b><small data-manage-count="theme"></small></span>
+            </button>
+            <button type="button" class="mrail-item" data-panel="art">
+              <i class="mrail-icon art">🖼️</i><span><b>การสร้างภาพ</b><small data-manage-count="art"></small></span>
+            </button>
+            <button type="button" class="mrail-item" data-panel="close">
+              <i class="mrail-icon close">🔒</i><span><b>ปิดทริป</b><small data-manage-count="close"></small></span>
+            </button>
+            <!-- 🔴 ไม่มีหัวข้อ "ลิงก์และลบทริป" แล้ว (North 2026-08-23)
+                 ลิงก์เป็นเรื่องของคน → อยู่ใน "คนและสิทธิ์"
+                 ลบทริปเป็นเรื่องของตัวทริป → อยู่ท้าย "ข้อมูลทริป"
+                 หัวข้อที่รวมของสองเรื่องที่ไม่เกี่ยวกันไว้ด้วยกันเพราะ "อันตรายเหมือนกัน"
+                 ทำให้หาไม่เจอ — คนหาลิงก์ไม่ได้คิดว่ามันอยู่ใต้ป้ายเตือนสีแดง -->
+          </nav>
+
+          <div class="manage-panels">
+            <!-- แผงเนื้อหา — เห็นทันทีเมื่อเลือกหัวข้อ ไม่ต้องกดกางอีกชั้น -->
+            <section class="mpanel active" data-panel="trip">
+              <header class="mpanel-head"><button type="button" class="mpanel-back">‹ หัวข้อทั้งหมด</button><h3>ข้อมูลทริป</h3>
+                <button type="button" class="mpanel-info" data-manage-info="trip">ⓘ อธิบายหัวข้อนี้</button></header>
+              <form id="tripMetaForm">
+                <label class="field-wide">ชื่อทริป<input id="tripNameInput" required maxlength="80" placeholder="เช่น Hokkaido ฤดูหนาว 2026"></label>
+                <div class="date-pair">
+                  <label>เริ่มเดินทาง<input id="tripStartInput" type="date"></label>
+                  <label>กลับถึงบ้าน<input id="tripEndInput" type="date"></label>
+                </div>
+                <label class="field-wide">ประเภททริป
+                  <select id="tripStageInput">
+                    <option value="ONGOING">🧭 Ongoing — จะเกิดแน่ ๆ</option>
+                    <option value="DREAM">💭 Dream — ยังไม่แน่นอน</option>
+                    <option value="MEMORY">📸 Memory — จบไปแล้ว</option>
+                  </select>
+                </label>
+                <p class="form-error" id="tripMetaError"></p>
+                <button class="primary-btn" type="submit" id="saveTripMeta">บันทึกข้อมูลทริป</button>
+              </form>
+              <!-- ลบทริปอยู่ท้ายหัวข้อนี้ — เป็นเรื่องของตัวทริป เหมือนชื่อกับวันเดินทาง
+                   อยู่ท้ายสุดหลังปุ่มบันทึก จะได้ไม่กดโดนตอนเลื่อนหาช่องกรอก -->
+              <div class="danger-zone">
+                <button type="button" class="soft-btn danger-btn" id="deleteTripBtn">🗑️ ลบทริปนี้</button>
+                <p class="field-note" id="deleteTripNote"></p>
               </div>
-              <label class="field-wide">ประเภททริป
-                <select id="tripStageInput">
-                  <option value="ONGOING">🧭 Ongoing — จะเกิดแน่ ๆ</option>
-                  <option value="DREAM">💭 Dream — ยังไม่แน่นอน</option>
-                  <option value="MEMORY">📸 Memory — จบไปแล้ว</option>
-                </select>
-              </label>
-              <p class="form-error" id="tripMetaError"></p>
-              <button class="primary-btn" type="submit" id="saveTripMeta">บันทึกข้อมูลทริป</button>
-            </form>
-            <div class="trip-direct-link">
-              <p class="field-note">ลิงก์เข้าทริปนี้โดยตรง — ใช้ส่งให้ผู้ร่วมทริปเปิดบนมือถือได้เลย ไม่ต้องผ่านหน้ารวมทริป</p>
-              <div class="direct-link-row">
-                <input id="directTripLink" readonly>
-                <button type="button" class="soft-btn" id="copyDirectLink">คัดลอก</button>
+              <!-- ⚠️ ซ่อนทั้งก้อนในโหมดข้อมูลจริง — ปุ่มที่กดแล้วไม่เกิดอะไร
+                   ทำให้คนไม่เชื่อปุ่มอื่นในหน้าเดียวกันไปด้วย -->
+              <div class="proto-zone" id="protoZone">
+                <div class="close-lines"><span>บิลที่บันทึกไว้ในเบราว์เซอร์นี้<b id="storageCount">—</b></span></div>
+                <button class="soft-btn" id="resetDemo">คืนค่าข้อมูลตัวอย่าง</button>
               </div>
-            </div>
-            <div class="danger-zone">
-              <button type="button" class="soft-btn danger-btn" id="deleteTripBtn">🗑️ ลบทริปนี้</button>
-              <p class="field-note" id="deleteTripNote"></p>
-            </div>
-          </section>
-          <section class="paper-card"><h3>สมาชิกและสิทธิ์</h3>
-            <p class="field-note">กดชื่อเพื่อดูแอปในมุมมองของคนนั้น — ใช้ตรวจว่ากติกาการมองเห็นทำงานถูกต้อง</p>
-            <div id="memberRows"></div>
-          </section>
-          <section class="paper-card"><h3>สกุลเงินในทริป</h3>
-            <p class="field-note">ตั้งเรทประมาณการไว้ล่วงหน้าได้ ระบบจะใช้จนกว่ากระเป๋านั้นมีการเติมเงินจริง แล้วสลับไปใช้เรทเฉลี่ยจริงเอง</p>
-            <div id="currencyRows"></div>
-            <button class="soft-btn" id="addCurrency">＋ เพิ่มสกุลเงิน</button>
-          </section>
-          <section class="paper-card"><h3>คลังเอกสาร</h3>
-            <p class="field-note">ใบจอง ตั๋ว ประกัน — จัดกลุ่มตามสถานที่ที่ผูกไว้ · เพิ่มเอกสารของสถานที่ได้จากหน้าแผนเที่ยว</p>
-            <div id="documentLibrary"></div>
-          </section>
-          <section class="paper-card"><h3>ธีมสีของทริป</h3>
-            <p class="field-note">แต่ละทริปเลือกธีมของตัวเองได้ · เปลี่ยนแล้วเห็นผลทันที ทุกคนในทริปเห็นเหมือนกัน</p>
-            <div class="theme-picker" id="themePicker"></div>
-          </section>
-          <section class="paper-card"><h3>รายการค่าใช้จ่ายในทริปนี้</h3>
-            <p class="field-note">ตั้งชื่อและไอคอนของแต่ละรายการเอง แล้วผูกไปหมวดบัญชีสำหรับตอนปิดทริป · หลายรายการผูกหมวดเดียวกันได้ (เช่น ราเมง/ขนม/เครื่องดื่ม → หมวดอาหาร) · แก้ชื่อหรือไอคอนทีหลัง บิลเก่าในทริปนี้จะเปลี่ยนตามทันที</p>
-            <div id="categoryIconRows"></div>
-          </section>
-          <section class="paper-card"><h3>ข้อมูล prototype</h3><p>รายการและแผนที่คุณแก้จะถูกเก็บไว้ในเบราว์เซอร์นี้ ไม่ส่งขึ้นเซิร์ฟเวอร์และไม่แตะบัญชีจริง</p><div class="close-lines"><span>บิลที่บันทึกไว้<b id="storageCount">—</b></span></div><button class="soft-btn" id="resetDemo">คืนค่าข้อมูลตัวอย่าง</button></section>
-          <section class="paper-card"><h3>ปิดทริป</h3><p>ตรวจยอดที่ลงบัญชีหลักและยอดที่เก็บเฉพาะประวัติทริปก่อนยืนยัน</p><div class="close-lines" id="closeLines"></div><div class="close-actions"><button class="primary-btn" id="closePreview">ดูพรีวิวปิดทริป</button><button class="soft-btn" id="reopenTrip" hidden>เปิดทริปกลับ</button></div><div id="tripLog"></div></section>
+            </section>
+
+            <section class="mpanel" data-panel="people">
+              <header class="mpanel-head"><button type="button" class="mpanel-back">‹ หัวข้อทั้งหมด</button><h3>คนและสิทธิ์</h3>
+                <button type="button" class="mpanel-info" data-manage-info="people">ⓘ อธิบายหัวข้อนี้</button></header>
+              <!-- ลิงก์อยู่บนสุดของหัวข้อนี้ — เป็นเรื่องของ "ใครเข้าได้บ้าง"
+                   ไม่ใช่ของอันตราย จึงไม่ควรไปซ่อนอยู่ใต้ป้ายเตือนสีแดง (North 2026-08-23)
+                   🔴 นี่คือช่องลิงก์ช่องเดียวในแอป ห้ามเพิ่มช่องที่สองที่หน้าอื่นอีก -->
+              <div class="join-link-box">
+                <b>ลิงก์เข้าทริป</b>
+                <p class="field-note">ลิงก์เดียวใช้ได้ทุกคน — คนที่มีบัญชีครอบครัวเข้าได้เลย
+                  คนที่ไม่มีจะถูกถามรหัสของตัวเองก่อน แล้วเข้ามาที่ทริปนี้
+                  · ตั้งรหัสรายคนได้ที่ปุ่ม ✏️ ในแถวของแต่ละคนด้านล่าง</p>
+                <div class="direct-link-row">
+                  <input id="joinLink" readonly>
+                  <button type="button" class="soft-btn" id="copyJoinLink">คัดลอกลิงก์</button>
+                </div>
+              </div>
+              <!-- 🔴 การตั้ง/ถอนรหัสรวมอยู่ในแถวสมาชิกแล้ว ไม่มีรายการซ้ำอีกชุด
+                   รายชื่อสองชุดที่แก้คนละที่คือที่มาของความสับสน -->
+              <div id="memberRows"></div>
+              <button type="button" class="soft-btn" id="addMember">＋ เพิ่มสมาชิก</button>
+            </section>
+
+            <section class="mpanel" data-panel="money">
+              <header class="mpanel-head"><button type="button" class="mpanel-back">‹ หัวข้อทั้งหมด</button><h3>เงินและหมวด</h3>
+                <button type="button" class="mpanel-info" data-manage-info="money">ⓘ อธิบายหัวข้อนี้</button></header>
+              <div id="currencyRows"></div>
+              <button class="soft-btn" id="addCurrency">＋ เพิ่มสกุลเงิน</button>
+              <div class="mpanel-sub">
+                <b>รายการค่าใช้จ่ายในทริปนี้</b>
+                <div id="categoryIconRows"></div>
+              </div>
+            </section>
+
+            <section class="mpanel" data-panel="docs">
+              <header class="mpanel-head"><button type="button" class="mpanel-back">‹ หัวข้อทั้งหมด</button><h3>คลังเอกสาร</h3>
+                <button type="button" class="mpanel-info" data-manage-info="docs">ⓘ อธิบายหัวข้อนี้</button></header>
+              <div id="documentLibrary"></div>
+            </section>
+
+            <section class="mpanel" data-panel="theme">
+              <header class="mpanel-head"><button type="button" class="mpanel-back">‹ หัวข้อทั้งหมด</button><h3>ธีมสีของทริป</h3>
+                <button type="button" class="mpanel-info" data-manage-info="theme">ⓘ อธิบายหัวข้อนี้</button></header>
+              <div class="theme-picker" id="themePicker"></div>
+            </section>
+
+            <section class="mpanel" data-panel="art">
+              <header class="mpanel-head"><button type="button" class="mpanel-back">‹ หัวข้อทั้งหมด</button><h3>การสร้างภาพ</h3>
+                <button type="button" class="mpanel-info" data-manage-info="art">ⓘ อธิบายหัวข้อนี้</button></header>
+              <!-- ตารางสเปกกับ prompt สร้างสดใน renderArtGuide() จาก assetSpecs
+                   ห้าม hardcode ขนาดลงใน HTML — ถ้าสเปกในโค้ดเปลี่ยน หน้านี้ต้องเปลี่ยนตาม -->
+              <div id="artGuide"></div>
+            </section>
+
+            <section class="mpanel" data-panel="close">
+              <header class="mpanel-head"><button type="button" class="mpanel-back">‹ หัวข้อทั้งหมด</button><h3>ปิดทริป</h3>
+                <button type="button" class="mpanel-info" data-manage-info="close">ⓘ อธิบายหัวข้อนี้</button></header>
+              <div class="close-lines" id="closeLines"></div>
+              <div class="close-actions">
+                <button class="primary-btn" id="closePreview">ดูพรีวิวปิดทริป</button>
+                <button class="soft-btn" id="reopenTrip" hidden>เปิดทริปกลับ</button>
+              </div>
+              <div id="tripLog"></div>
+            </section>
+
+          </div>
         </div>
       </section>
     </main>
@@ -189,11 +322,11 @@
 
   <button class="mobile-fab add-expense">＋ จดค่าใช้จ่าย</button>
   <nav class="mobile-nav">
-    <button class="active" data-screen="today"><i>⌂</i><span>วันนี้</span></button>
-    <button data-screen="plan"><i>⌁</i><span>แผน</span></button>
-    <button data-screen="bills"><i>¥</i><span>บิล</span></button>
-    <button data-screen="wallets"><i>◫</i><span>กระเป๋า</span></button>
-    <button data-screen="more"><i>•••</i><span>เพิ่มเติม</span></button>
+    <button class="active" data-screen="today"><i>🏠</i><span>วันนี้</span></button>
+    <button data-screen="plan"><i>🗺️</i><span>แผน</span></button>
+    <button data-screen="bills"><i>🧾</i><span>บิล</span></button>
+    <button data-screen="wallets"><i>👛</i><span>กระเป๋า</span></button>
+    <button data-screen="more"><i>✨</i><span>เพิ่มเติม</span></button>
   </nav>
 
   <div class="sheet-mask" id="sheetMask"></div>
@@ -202,14 +335,17 @@
        สำหรับการจดบิลตอนยืนอยู่หน้าเคาน์เตอร์
        เรียงตามลำดับที่คนคิดจริง ๆ: จ่ายเท่าไร → จ่ายอะไร → หารกับใคร -->
   <section class="bottom-sheet quick-add" id="expenseSheet" aria-hidden="true">
-    <div class="sheet-handle"></div><button class="sheet-close">×</button>
+    <div class="sheet-handle"></div><button class="sheet-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <div class="quick-scroll">
-      <h2 class="quick-title">จดค่าใช้จ่าย</h2>
+      <div class="quick-heading">
+        <span class="quick-heading-icon" aria-hidden="true">🧾</span>
+        <div><h2 class="quick-title">จดค่าใช้จ่าย</h2><p>บันทึกค่าใช้จ่ายระหว่างทริป ❄️🦊</p></div>
+      </div>
 
       <!-- ยอดเงินตัวใหญ่สุดบนจอ เพราะเป็นสิ่งแรกที่คนพิมพ์ -->
       <div class="amount-hero">
         <span id="amountSymbol">¥</span>
-        <input id="expenseAmount" inputmode="decimal" placeholder="0" autocomplete="off">
+        <input id="expenseAmount" inputmode="decimal" placeholder="0.00" autocomplete="off">
       </div>
       <p class="conversion" id="conversionLine"></p>
 
@@ -217,18 +353,31 @@
         <label>กระเป๋า<select id="walletSelect"></select></label>
         <label>วันที่<input id="expenseDate" type="date"></label>
       </div>
+      <label class="quick-field">กิจกรรมที่เกี่ยวข้อง<select id="expenseActivity"></select></label>
       <label class="quick-field">รายละเอียด<input id="expenseDescription" placeholder="เช่น มื้อเย็นร้านปู"></label>
 
+      <div class="receipt-field">
+        <div class="receipt-copy"><b>สลิป / ใบเสร็จ</b><small>ไม่บังคับ · รูปถ่ายหรือรูปจากเครื่อง</small></div>
+        <label class="receipt-picker" for="expenseReceipt"><span>📷</span><b id="receiptPickLabel">แนบรูป</b></label>
+        <input id="expenseReceipt" type="file" accept="image/png,image/jpeg,image/webp" capture="environment" hidden>
+        <div class="receipt-preview" id="receiptPreview" hidden>
+          <img id="receiptPreviewImage" alt="ภาพสลิปที่แนบ">
+          <div><b id="receiptFileName"></b><small id="receiptUploadState">พร้อมบันทึก</small></div>
+          <button type="button" id="removeReceipt" aria-label="ลบรูปสลิป"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+      </div>
+
       <div class="quick-section">
-        <div class="quick-section-head"><b>หมวด</b><span id="allocatedLine"></span></div>
+        <div class="quick-section-head"><div><b>หมวดค่าใช้จ่าย</b><small>เลือกประเภทที่ต้องการบันทึก</small></div><span id="allocatedLine"></span></div>
         <div id="splitRows"></div>
         <button class="add-line" type="button" id="addSplitRow">＋ แบ่งหลายหมวด</button>
       </div>
 
       <div class="quick-section">
-        <div class="quick-section-head"><b>หารกับใคร</b></div>
+        <div class="quick-section-head"><div><b>หารกับใคร</b><small>ค่าเริ่มต้นไม่หาร · เลือกวิธีอื่นเมื่อต้องการแบ่งยอด</small></div></div>
         <div class="segmented split-mode" id="splitMode">
-          <button type="button" class="active" data-split="equal">เท่ากัน</button>
+          <button type="button" class="active" data-split="none">ไม่หาร</button>
+          <button type="button" data-split="equal">เท่ากัน</button>
           <button type="button" data-split="manual">กำหนดเอง</button>
           <button type="button" data-split="percent">เปอร์เซ็นต์</button>
         </div>
@@ -245,10 +394,7 @@
           <label>เจ้าของเงิน<select id="expenseOwner"></select></label>
         </div>
         <p class="field-note" id="ownerNote"></p>
-        <div class="quick-row two">
-          <label>การมองเห็น<select id="visibility"><option value="trip">ทุกคนในทริป</option><option value="selected">เฉพาะผู้เกี่ยวข้อง</option><option value="private">ส่วนตัว</option></select></label>
-          <label>ผูกกับกิจกรรม<select id="expenseActivity"></select></label>
-        </div>
+        <label>การมองเห็น<select id="visibility"><option value="trip">ทุกคนในทริป</option><option value="selected">เฉพาะผู้เกี่ยวข้อง</option><option value="private">ส่วนตัว</option></select></label>
         <div class="toggle-row"><span><b>ค่าใช้จ่ายร่วม</b><small>แบ่งความรับผิดชอบให้เห็นร่วมกัน โดยเงินยังหักจากกระเป๋าเดียว</small></span><button class="toggle on" id="sharedToggle"></button></div>
         <div class="icon-field">
           <span>ไอคอน</span>
@@ -266,7 +412,7 @@
   </section>
 
   <section class="dialog plan-editor" id="planEditor" aria-hidden="true" role="dialog" aria-labelledby="planEditorTitle">
-    <button class="dialog-close" id="closePlanEditor" aria-label="ปิด">×</button>
+    <button class="dialog-close" id="closePlanEditor" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">FLEXIBLE ITINERARY</span>
     <h2 id="planEditorTitle">เพิ่มสถานที่ในแผน</h2>
     <form id="planEditorForm">
@@ -278,7 +424,10 @@
           <select id="activityDay"></select>
         </label>
         <label>เวลา
-          <input id="activityTime" type="time" required>
+          <span class="time-picker" id="activityTime" data-required="1"></span>
+        </label>
+        <label>เวลาสิ้นสุด
+          <span class="time-picker" id="activityEndTime"></span>
         </label>
         <label>ประเภท
           <select id="activityTag">
@@ -292,8 +441,32 @@
         <label>งบประมาณ (JPY)
           <input id="activityCost" inputmode="numeric" placeholder="เช่น 2800">
         </label>
+        <!-- GPS รถเช่าในญี่ปุ่นค้นชื่อสถานที่มักไม่เจอ แต่ใส่ mapcode เข้าได้เสมอ -->
+        <label class="field-wide">Mapcode (สำหรับ GPS รถเช่า)
+          <input id="activityMapcode" maxlength="32" placeholder="เช่น 149 287 165*36">
+        </label>
+        <label>เวลาเปิด
+          <span class="time-picker" id="activityOpen"></span>
+        </label>
+        <label>เวลาปิด
+          <span class="time-picker" id="activityClose"></span>
+        </label>
+        <label class="field-wide">วันหยุดประจำสัปดาห์
+          <span class="weekday-picker" id="activityClosedDays">
+            <label><input type="checkbox" value="0"><span>อา</span></label>
+            <label><input type="checkbox" value="1"><span>จ</span></label>
+            <label><input type="checkbox" value="2"><span>อ</span></label>
+            <label><input type="checkbox" value="3"><span>พ</span></label>
+            <label><input type="checkbox" value="4"><span>พฤ</span></label>
+            <label><input type="checkbox" value="5"><span>ศ</span></label>
+            <label><input type="checkbox" value="6"><span>ส</span></label>
+          </span>
+        </label>
         <label class="field-wide">รายละเอียด
           <textarea id="activityDetail" rows="3" placeholder="การเดินทาง สิ่งที่ควรเตรียม หรือแผนสำรอง"></textarea>
+        </label>
+        <label class="field-wide">ไฮไลต์ (ของดี/ของเด็ด)
+          <input id="activityHighlight" maxlength="160" placeholder="เช่น ข้าวหน้าปลาดิบ Katte Don หรือจุดชมพระอาทิตย์ตก">
         </label>
         <div class="icon-field field-wide">
           <span>ไอคอนสถานที่</span>
@@ -316,11 +489,11 @@
 
   <!-- เพิ่มเอกสาร — แนบไฟล์ขึ้นระบบ หรือวางลิงก์ภายนอก (Google Drive ฯลฯ) -->
   <section class="dialog" id="docDialog" aria-hidden="true" role="dialog" aria-labelledby="docDialogTitle">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">เอกสาร</span>
     <h2 id="docDialogTitle">เพิ่มเอกสาร</h2>
     <p class="field-note">ผูกกับ: <b id="docDialogWhere">—</b></p>
-    <form id="docForm" style="display:grid;gap:12px">
+    <form id="docForm" class="stack-form">
       <label class="field-wide">ชื่อเอกสาร
         <input id="docName" required maxlength="120" placeholder="เช่น ใบจอง Hotel Kushiro">
       </label>
@@ -346,7 +519,7 @@
 
   <!-- คัดลอกรายการค่าใช้จ่ายจากทริปอื่นในครอบครัวเดียวกัน -->
   <section class="dialog" id="copyPresetDialog" aria-hidden="true" role="dialog" aria-labelledby="copyPresetTitle">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">คัดลอกรายการ</span>
     <h2 id="copyPresetTitle">เลือกทริปต้นทาง</h2>
     <p class="field-note">คัดลอกมาแล้วเป็นรายการของทริปนี้เอง แก้หรือลบทีหลังไม่กระทบทริปต้นทาง · รายการที่ชื่อซ้ำจะถูกข้าม</p>
@@ -358,10 +531,10 @@
 
   <!-- รายการค่าใช้จ่ายย่อยของทริป — ชื่อ+ไอคอนของตัวเอง ชี้ไปหมวดบัญชีหนึ่งหมวด -->
   <section class="dialog" id="presetDialog" aria-hidden="true" role="dialog" aria-labelledby="presetDialogTitle">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">รายการค่าใช้จ่าย</span>
     <h2 id="presetDialogTitle">เพิ่มรายการค่าใช้จ่าย</h2>
-    <form id="presetForm" style="display:grid;gap:12px">
+    <form id="presetForm" class="stack-form">
       <label class="field-wide">ชื่อรายการ
         <input id="presetLabel" required maxlength="60" placeholder="เช่น ราเมง · เป็ดปักกิ่ง · ค่ารถไฟ">
       </label>
@@ -382,7 +555,7 @@
   </section>
 
   <section class="dialog asset-picker" id="assetPicker" aria-hidden="true" role="dialog" aria-labelledby="assetPickerTitle">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">เลือกรูปภาพ</span>
     <h2 id="assetPickerTitle">เลือกรูป</h2>
     <div class="asset-spec" id="assetSpec"></div>
@@ -398,8 +571,42 @@
     </div>
   </section>
 
+  <!-- ดูภาพสลิปเต็มจอ — กดที่ภาพในรายละเอียดบิล -->
+  <section class="dialog image-viewer" id="imageViewer" aria-hidden="true" role="dialog" aria-label="ดูเอกสารแนบ">
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div id="imageViewerBody"></div>
+  </section>
+
+  <!-- ตัดภาพรวมหลายไอคอนเป็นไฟล์แยก — ภาพที่ Gemini/ChatGPT สร้างมักมาเป็นแผ่นเดียว
+       มีหลายไอคอนเรียงกัน ระบบตัดให้เองแล้วให้เลือกว่าจะเอาชิ้นไหน -->
+  <section class="dialog slicer" id="iconSlicer" aria-hidden="true" role="dialog" aria-labelledby="slicerTitle">
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <span class="eyebrow">ตัดภาพรวมเป็นไอคอนแยก</span>
+    <h2 id="slicerTitle">เจอไอคอนในภาพนี้</h2>
+    <p class="slicer-lead" id="slicerLead"></p>
+    <div class="slicer-controls">
+      <label class="slicer-toggle"><input type="checkbox" id="slicerCutBg"><span>ลบพื้นหลัง (ทำให้โปร่งใส)</span></label>
+      <div class="slicer-manual">
+        <span>ตัดเป็นตาราง</span>
+        <input type="number" id="slicerRows" min="1" max="12" placeholder="แถว" aria-label="จำนวนแถว">
+        <span>×</span>
+        <input type="number" id="slicerCols" min="1" max="12" placeholder="คอลัมน์" aria-label="จำนวนคอลัมน์">
+        <button type="button" class="soft-btn" id="slicerApplyGrid">ตัดใหม่</button>
+        <button type="button" class="soft-btn" id="slicerAuto">ให้ระบบหาเอง</button>
+      </div>
+    </div>
+    <div class="slicer-grid" id="slicerGrid"></div>
+    <p class="field-note" id="slicerError"></p>
+    <div class="sheet-actions">
+      <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+      <button type="button" class="soft-btn" id="slicerWhole">ใช้ทั้งภาพเป็นไอคอนเดียว</button>
+      <button type="button" class="soft-btn" id="slicerToggleAll">เลือกทั้งหมด</button>
+      <button type="button" class="primary-btn" id="slicerConfirm">เพิ่มที่เลือกไว้</button>
+    </div>
+  </section>
+
   <section class="dialog" id="reopenDialog" aria-hidden="true" role="dialog" aria-labelledby="reopenTitle">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">REOPEN TRIP</span>
     <h2 id="reopenTitle">เปิดทริปกลับมาแก้ไข</h2>
     <p class="reopen-warn" id="reopenImpact"></p>
@@ -416,7 +623,7 @@
   </section>
 
   <section class="dialog" id="fundDialog" aria-hidden="true" role="dialog" aria-labelledby="fundTitle">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">FUND WALLET</span>
     <h2 id="fundTitle">เติมเงินเข้ากระเป๋า</h2>
     <form id="fundForm">
@@ -436,30 +643,146 @@
     </form>
   </section>
 
+  <section class="dialog" id="memberDialog" aria-hidden="true" role="dialog" aria-labelledby="memberDialogTitle">
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <span class="eyebrow">TRIP MEMBER</span>
+    <h2 id="memberDialogTitle">เพิ่มสมาชิก</h2>
+    <form id="memberForm">
+      <div class="editor-grid">
+        <div class="avatar-field field-wide">
+          <span id="memberAvatarPreview" class="avatar-preview"></span>
+          <div>
+            <b>รูปประจำตัว</b>
+            <small>แสดงเป็นวงกลมเล็กทั่วทั้งแอป · ไม่เลือกก็ได้ ระบบจะใช้ตัวอักษรตัวแรกของชื่อ</small>
+          </div>
+          <button type="button" class="soft-btn" id="pickMemberAvatar">เลือกรูป</button>
+          <button type="button" class="soft-btn" id="clearMemberAvatar" hidden>ล้างรูป</button>
+        </div>
+        <label class="field-wide">ชื่อที่แสดง<input id="memberName" required maxlength="60" placeholder="เช่น ป้าแดง"></label>
+        <label class="field-wide">บทบาท<input id="memberRole" maxlength="40" placeholder="เช่น สมาชิก · ญาติ · เพื่อน"></label>
+        <label class="field-wide">ยอดของคนนี้ลงที่ไหน
+          <select id="memberLedger">
+            <option value="MAIN">ลงบัญชีหลัก — ไหลเข้าบัญชีครอบครัวจริง</option>
+            <option value="TRIP_ONLY">เฉพาะทริป — เก็บเป็นประวัติ ไม่แตะบัญชีจริง</option>
+          </select>
+        </label>
+        <!-- โผล่เฉพาะเมื่อเลือก "ลงบัญชีหลัก" — ยอดของคนกลุ่มนี้ไหลเข้าสมุดบัญชีจริง
+             ถ้าไม่รู้ว่าเป็นใครก็ตรวจย้อนไม่ได้ว่ายอดก้อนนั้นเป็นของใคร -->
+        <label class="field-wide" id="memberUserField">ผูกกับบัญชีในครอบครัว
+          <select id="memberUser"></select>
+          <small class="field-hint">จำเป็นสำหรับคนที่ลงบัญชีหลัก</small>
+        </label>
+        <label class="field-wide">ให้ใครจดแทนได้บ้าง
+          <select id="memberKeeper"></select>
+          <small class="field-hint">คนที่เลือกไว้จะจดบิล เติมเงิน และแก้กระเป๋าแทนคนนี้ได้ · ไม่เลือกก็ได้</small>
+        </label>
+        <label class="toggle-check field-wide">
+          <input type="checkbox" id="memberAdmin">
+          <span><b>เป็นผู้ดูแลทริป</b><small>แก้ข้อมูลทริป เพิ่มคน ตั้งรหัส และปิดทริปได้</small></span>
+        </label>
+
+        <!-- ── การเข้าใช้งาน — อยู่หน้าเดียวกับแก้ไข (North 2026-08-23) ──
+             "ในส่วนผู้ใช้ที่มีบัญชีหลัก ให้ตั้งรหัสเข้าใช้ได้ด้วย
+              เอาไว้หน้าเดียวกับแก้ไข ได้ไหม แล้วแสดงข้อมูลไว้"
+
+             🔴 ตั้งรหัสได้ทุกคน รวมคนที่ผูกบัญชีครอบครัวแล้ว — ฝั่งเซิร์ฟเวอร์
+                (memberLogin) ไม่เคยสนใจ user_id เลย ใครมีรหัสก็เข้าได้
+                สำหรับคนที่มีบัญชีอยู่แล้ว รหัสคือ "ประตูที่สอง" ไม่ใช่ประตูเดียว
+                ใช้ตอนอยู่บนเครื่องที่ไม่ได้ล็อกอินบัญชีครอบครัวไว้ -->
+        <div class="access-block field-wide" id="memberAccessBlock">
+          <b class="access-head">การเข้าใช้งาน</b>
+          <div id="memberAccessInfo"></div>
+          <div class="access-fields" id="memberAccessFields">
+            <label>ตั้งรหัสใหม่
+              <input id="passcodeInput" type="password" autocomplete="new-password"
+                minlength="6" maxlength="40" placeholder="อย่างน้อย 6 ตัวอักษร">
+            </label>
+            <label>พิมพ์อีกครั้ง
+              <input id="passcodeConfirm" type="password" autocomplete="new-password"
+                minlength="6" maxlength="40" placeholder="ให้ตรงกับช่องซ้าย">
+            </label>
+          </div>
+          <small class="field-hint">เว้นว่างไว้ = ไม่แตะรหัสเดิม · ระบบเก็บเฉพาะค่าที่เข้ารหัสแล้ว
+            เปิดดูรหัสเดิมไม่ได้ ลืมเมื่อไรก็ตั้งใหม่ได้</small>
+          <label class="toggle-check">
+            <input type="checkbox" id="passcodeShow">
+            <span><b>แสดงรหัสที่พิมพ์</b><small>กันพิมพ์ผิด ถ้าไม่มีคนมองจออยู่</small></span>
+          </label>
+          <div class="access-actions">
+            <!-- ปุ่มนี้คือสิ่งที่ต้องทำต่อจริง ๆ หลังตั้งรหัสเสร็จ: ส่ง "ลิงก์ + รหัส" ให้เจ้าตัว -->
+            <button type="button" class="soft-btn" id="passcodeCopyBoth">📋 คัดลอกลิงก์พร้อมรหัส</button>
+            <button type="button" class="soft-btn danger-btn" id="passcodeClear" hidden>ถอนรหัสเข้าใช้งาน</button>
+          </div>
+        </div>
+      </div>
+      <p class="field-note" id="memberError"></p>
+      <div class="sheet-actions">
+        <button type="button" class="soft-btn danger-btn" id="deleteMemberBtn" hidden>🗑️ ลบสมาชิก</button>
+        <button type="button" class="soft-btn close-layer">ยกเลิก</button>
+        <button type="submit" class="primary-btn" id="memberSubmit">เพิ่มสมาชิก</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="dialog narrow" id="walletInfoDialog" aria-hidden="true" role="dialog" aria-labelledby="walletInfoTitle">
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <span class="eyebrow">อธิบาย</span>
+    <h2 id="walletInfoTitle"></h2>
+    <div id="walletInfoBody"></div>
+    <div class="sheet-actions"><button type="button" class="soft-btn close-layer">เข้าใจแล้ว</button></div>
+  </section>
+
+  <section class="dialog" id="walletTotalsDialog" aria-hidden="true" role="dialog" aria-labelledby="walletTotalsTitle">
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <span class="eyebrow">WALLET BREAKDOWN</span>
+    <h2 id="walletTotalsTitle">เงินคงเหลือรายกระเป๋า</h2>
+    <div id="walletTotalsBody"></div>
+    <div class="sheet-actions">
+      <button type="button" class="soft-btn close-layer">ปิด</button>
+    </div>
+  </section>
+
   <section class="dialog" id="walletDialog" aria-hidden="true" role="dialog" aria-labelledby="walletDialogTitle">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">NEW WALLET</span>
     <h2 id="walletDialogTitle">เพิ่มกระเป๋าเงิน</h2>
     <form id="walletForm">
       <div class="editor-grid">
         <label class="field-wide">ชื่อกระเป๋า<input id="walletLabel" required placeholder="เช่น YouTrip JPY"></label>
-        <label class="field-wide">สกุลเงิน<select id="walletCurrency"></select></label>
+        <label class="field-wide">ชนิดกระเป๋า
+          <select id="walletKind">
+            <option value="CASH">เงินสด / บัตรเติมเงิน — เติมเงินเข้าไปก่อนแล้วค่อยใช้</option>
+            <option value="CREDIT">บัตรเครดิต — ใช้ก่อน แล้วบิลมาเรียกเก็บทีหลัง</option>
+          </select>
+        </label>
+        <label class="field-wide">สกุลเงิน<select id="walletCurrency"></select><small class="field-hint" id="walletCurrencyHint"></small></label>
+        <!-- โผล่เฉพาะกระเป๋าเงินสด — บัตรเครดิตยังไม่รู้ยอดบาทจนกว่าบิลจะมา -->
+        <label class="field-wide" id="walletAccountField">เงินก้อนนี้ออกจากบัญชีไหน
+          <select id="walletAccount"></select>
+          <small class="field-hint">ใช้ตอนปิดทริปเพื่อลงบัญชีให้ถูกเล่ม · ไม่เลือกก็ได้</small>
+        </label>
+        <p class="field-note" id="walletKindNote" hidden>💳 บัตรเครดิต — ตอนปิดทริปต้องกรอกยอดเงินบาทที่ถูกเรียกเก็บจริง
+          ระบบจะใช้ยอดนั้นเป็นเรทจริงของกระเป๋าใบนี้ ไม่ใช่เรทประมาณการ</p>
         <div class="icon-field field-wide">
           <span>ไอคอนกระเป๋า</span>
           <img id="walletIconPreview" class="icon-preview rounded" alt="ไอคอนที่เลือก">
           <button type="button" class="soft-btn" id="pickWalletIcon">เลือกไอคอน</button>
         </div>
+        <div class="field-wide">
+          <span class="swatch-label">สีประจำกระเป๋า</span>
+          <div class="swatch-row" id="walletSwatches"></div>
+        </div>
       </div>
       <p class="field-note" id="walletError"></p>
       <div class="sheet-actions">
         <button type="button" class="soft-btn close-layer">ยกเลิก</button>
-        <button type="submit" class="primary-btn">สร้างกระเป๋า</button>
+        <button type="submit" class="primary-btn" id="walletSubmit">สร้างกระเป๋า</button>
       </div>
     </form>
   </section>
 
   <section class="dialog" id="currencyDialog" aria-hidden="true" role="dialog" aria-labelledby="currencyTitle">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">TRIP CURRENCY</span>
     <h2 id="currencyTitle">เพิ่มสกุลเงิน</h2>
     <form id="currencyForm">
@@ -486,7 +809,7 @@
   </section>
 
   <section class="dialog" id="newTripDialog" aria-hidden="true" role="dialog" aria-labelledby="newTripTitle">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">NEW TRIP</span>
     <h2 id="newTripTitle">สร้างทริปใหม่</h2>
     <form id="newTripForm">
@@ -508,9 +831,13 @@
   </section>
 
   <section class="dialog" id="closeDialog" aria-hidden="true">
-    <button class="dialog-close" aria-label="ปิด">×</button>
+    <button class="dialog-close" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="eyebrow">CLOSE TRIP PREVIEW</span><h2>ตรวจสอบก่อนปิดทริป</h2>
     <div id="closeBody"></div>
+    <!-- 🔴 บัตรเครดิต: ยอดบาทจริงรู้เมื่อบิลมาเท่านั้น · ไม่กรอกปิดทริปไม่ได้ -->
+    <div class="credit-settle" id="creditSettlement" hidden></div>
+    <!-- 🔴 กำไร/ขาดทุนค่าเงินลงเป็นรายการแยก จึงต้องมีบัญชีและหมวดของตัวเอง -->
+    <div class="fx-posting" id="fxPosting" hidden></div>
     <div class="settlement" id="settlementBlock">
       <h3>จัดการเงินเหลือแต่ละกระเป๋า</h3>
       <p class="settlement-hint">ระบุยอดที่ได้รับกลับมาจริง ส่วนต่างจากต้นทุนจะถูกบันทึกเป็นกำไร/ขาดทุนอัตราแลกเปลี่ยนของทริปนี้</p>
@@ -535,7 +862,11 @@
   </section>
   <div class="toast" id="toast"></div>
   <!-- api.js ต้องมาก่อน app.js เพราะ app.js อ่าน TripApi.config ตอนโหลด -->
-  <script src="api.js?v=23"></script>
-  <script src="app.js?v=64"></script>
+  <!-- ตรรกะตัดภาพรวมหลายไอคอน (ไม่แตะ DOM · มีเทสคุมใน backend/test/slice-engine.test.mjs) -->
+  <!-- ตรรกะเงิน: หารบิล จับคู่โอน สรุปหมวด (มีเทสคุมใน backend/test/money.test.mjs) -->
+  <script src="money.js?v=3"></script>
+  <script src="slice-engine.js?v=2"></script>
+  <script src="api.js?v=47"></script>
+  <script src="app.js?v=124"></script>
 </body>
 </html>

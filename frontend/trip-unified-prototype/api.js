@@ -39,7 +39,16 @@ const TripApi = (() => {
     projectId: params.get('projectId') || '',
     // session มาก่อน URL เสมอ — ใครใส่ ?userId= ของคนอื่นมาก็ไม่ทับของที่ล็อกอินจริง
     userId: fromSession || fromUrl,
-    userSource: sessionToken() ? 'token' : (fromSession ? 'session' : (fromUrl ? 'url' : 'none'))
+    userSource: sessionToken() ? 'token' : (fromSession ? 'session' : (fromUrl ? 'url' : 'none')),
+    /* 🔴 ผู้ร่วมทริปที่ล็อกอินด้วยรหัสมี token ของตัวเอง แต่ไม่มี user_id
+       ของระบบบัญชีครอบครัว — ถ้าดูแค่ userSource จะนับว่า "ไม่มีตัวตน"
+       แล้วลิงก์เดียวจะเด้งเขากลับไปหน้าใส่รหัสวนไม่รู้จบ
+       ตัวจริงอ่านจาก localStorage ตอนเรียก ไม่ใช่ค่าที่จำไว้ตอนโหลด
+       เพราะ join.html เขียนค่านี้ลงไปหลังจากหน้านั้นโหลดไปแล้ว */
+    get hasIdentity() {
+      if (sessionToken() || sessionUserId() || fromUrl) return true;
+      try { return Boolean(localStorage.getItem('trip_member_token')); } catch { return false; }
+    }
   };
 
   /* ไอคอนในฐานเก็บได้ทั้งชื่อไฟล์เปล่าและ path เต็ม — ทำให้เป็น path เดียวกัน
@@ -78,7 +87,13 @@ const TripApi = (() => {
       name: row.display_name,
       ledgerMode: row.ledger_mode || 'MAIN',
       role: row.role || 'สมาชิก',
-      admin: Boolean(row.is_admin)
+      admin: Boolean(row.is_admin),
+      // รูปประจำตัว · ว่าง = หน้าจอถอยไปใช้ตัวอักษรตัวแรกของชื่อ
+      avatar: row.avatar_url ? iconPath(row.avatar_url, '') : '',
+      userId: row.user_id || '',
+      managedBy: row.managed_by || '',
+      // ตั้งรหัสผู้ร่วมทริปแล้วหรือยัง · เซิร์ฟเวอร์ไม่ส่งค่า hash ออกมาเลย
+      hasPasscode: Boolean(row.has_passcode)
     }));
 
     const wallets = (payload.wallets || []).map(row => ({
@@ -87,7 +102,16 @@ const TripApi = (() => {
       label: row.name,
       currency: row.currency,
       icon: iconPath(row.icon_url, 'art/icons/wallet_classic.svg'),
-      lockedRate: row.locked_rate ?? null
+      lockedRate: row.locked_rate ?? null,
+      /* 🔴 เคยลืมอ่านสองช่องนี้กลับมา (แก้ 2026-08-22)
+         เซิร์ฟเวอร์บันทึก exclude_on_close ถูกต้องมาตลอด แต่หน้าจอไม่เคยอ่านกลับ
+         พอ refreshFromServer() เสร็จ ค่าจึงกลายเป็น undefined → ช่องติ๊ก
+         "ยกยอดไปทริปหน้า" เด้งกลับเป็นไม่ติ๊กทุกครั้ง ทั้งที่ฐานข้อมูลบันทึกแล้ว
+         เป็นบั๊กที่ดูเหมือน "กดไม่ติด" แต่จริง ๆ คือ "บันทึกติดแล้วอ่านไม่กลับ" */
+      excludeOnClose: Boolean(row.exclude_on_close),
+      colorHue: row.color_hue ?? null,
+      kind: row.kind === 'CREDIT' ? 'CREDIT' : 'CASH',
+      accountId: row.account_id || ''
     }));
 
     // ล็อตเติมเงินซ้อนอยู่ในกระเป๋าแต่ละใบ ต้องคลี่ออกมาเป็นรายการเดียว
@@ -98,7 +122,9 @@ const TripApi = (() => {
         date: lot.funding_date || '',
         thb: lot.thb_amount || 0,
         foreign: lot.foreign_amount || 0,
-        note: lot.note || ''
+        note: lot.note || '',
+        // ลำดับที่ผู้ใช้จัดเองในหน้ากระเป๋า · ใช้คิวเลขชุดเดียวกับบิล
+        sortOrder: lot.sort_order ?? null
       })));
 
     const tripCurrencies = (payload.currencies || []).map(row => ({
@@ -134,7 +160,17 @@ const TripApi = (() => {
       participants: (row.participants || []).map(p => ({
         memberId: p.member_id, amount: p.amount_foreign || 0
       })),
-      activityId: null
+      receiptUrl: row.receipt_image_url || '',
+      /* จุดแวะที่บิลนี้เกิดขึ้น — ว่างได้ · เดิมตรงนี้เป็น null ตายตัวเพราะฐาน
+         ไม่มีคอลัมน์ ทำให้ยอด "ใช้วันนี้" กรองไม่เจออะไรเลยและได้ ฿0 ตลอด */
+      activityId: row.stop_id || null,
+      // ลำดับที่ผู้ใช้จัดเอง · null = ยังไม่เคยจัด (หน้าจอดันไปท้ายของวันนั้น)
+      sortOrder: row.sort_order ?? null,
+      /* 🔴 ยอดบาทจริงของบิลบัตรเครดิตที่เคยกรอกไว้ตอนปิดทริป
+         เดิมเซิร์ฟเวอร์บันทึกลง TripExpenses.settled_thb แต่ตรงนี้ไม่เคยอ่านกลับ
+         → เปิดทริปกลับมาแก้ทีไร ช่องยอดจริงว่างเปล่าทุกครั้ง ต้องนั่งกรอกใหม่
+         ทั้งที่ตัวเลขอยู่ในฐานข้อมูลแล้ว (บั๊กชุดเดียวกับ exclude_on_close) */
+      settledThb: row.settled_thb ?? null
     }));
 
     // สมุดปิดทริป: ปิดเป็นบวก เปิดกลับเป็นลบของครั้งที่กลับ
@@ -155,6 +191,7 @@ const TripApi = (() => {
           "ยังไม่มีข้อมูล" แทนที่จะโชว์ตัวเลขของข้อมูลตัวอย่างค้างไว้
        เรียงตาม sort_order ก่อน แล้วค่อยเวลา — เวลาชนกันได้ ลำดับจึงต้องมีตัวตัดสิน */
     const byDate = {};
+    const dayTitleByDate = Object.fromEntries((payload.day_plans || []).map(row => [row.plan_date, row.title]));
     [...(payload.stops || [])]
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
         || String(a.time || '').localeCompare(String(b.time || '')))
@@ -168,20 +205,48 @@ const TripApi = (() => {
       day: index + 1,
       city: byDate[date].find(s => s.city)?.city || byDate[date][0]?.name_en || '—',
       date,
+      title: dayTitleByDate[date] || '',
       activities: byDate[date].map(stop => ({
         id: stop.stop_id,
         time: stop.time || '',
+        endTime: stop.end_time || '',
         name: stop.name_th || stop.name_en || stop.city || 'จุดแวะ',
         detail: stop.notes || stop.accommodation || '',
         tag: stop.accommodation ? 'ที่พัก' : 'สถานที่',
         cost: '—',
         bills: 'ยังไม่ผูกบิล',
-        image: stop.icon_asset || ''
+        image: stop.icon_asset || '',
+        /* พิกัดจริงของจุดแวะ — ได้มาตอนระบบอากาศ geocode ชื่อสถานที่แล้วเขียนกลับลงฐาน
+           null ได้ (สถานที่ที่หาพิกัดไม่เจอ) แผนที่จะข้ามจุดนั้นไป ไม่ใช่วางที่ 0,0
+           ซึ่งจะกลายเป็นหมุดกลางมหาสมุทรแอตแลนติกแล้วดึงกรอบแผนที่เพี้ยนทั้งทริป */
+        lat: Number.isFinite(Number(stop.latitude)) ? Number(stop.latitude) : null,
+        lon: Number.isFinite(Number(stop.longitude)) ? Number(stop.longitude) : null,
+        /* งบที่ตั้งไว้ · null = ยังไม่ได้ตั้งงบ ต่างจาก 0 = ตั้งใจว่าไม่เสียเงิน
+           หน้าจอต้องแสดงสองอย่างนี้ต่างกัน จึงห้ามยุบเป็น 0 */
+        plannedCost: stop.planned_cost == null ? null : Number(stop.planned_cost),
+        plannedCurrency: stop.planned_currency || '',
+        mapcode: stop.mapcode || '',
+        openTime: stop.open_time || '',
+        closeTime: stop.close_time || '',
+        // เลขวันหยุด 0–6 ตาม Date.getDay() · ว่าง = เปิดทุกวัน
+        closedDays: String(stop.closed_days || '').split(',').filter(Boolean).map(Number),
+        visitStatus: String(stop.visit_status || 'PLANNED').toUpperCase(),
+        skippedReason: stop.skipped_reason || '',
+        highlight: stop.highlight_text || ''
       }))
     }));
 
     return {
       members, wallets, fundings, tripCurrencies, bills, tripLog, planDays,
+      presence: Object.fromEntries((payload.presence || []).map(row => [row.member_id, {
+        sharing: Boolean(row.is_sharing),
+        at: row.checked_in_at ? new Date(row.checked_in_at).getTime() : null,
+        place: row.place_label || '',
+        status: row.status || 'arrived',
+        stopId: row.stop_id || null,
+        lat: row.latitude == null ? null : Number(row.latitude),
+        lon: row.longitude == null ? null : Number(row.longitude)
+      }])),
       viewerId: payload.viewer?.member_id || null,
       tripClosed: Boolean(payload.trip?.closed),
       postingDate: payload.trip?.posting_date || '',
@@ -229,23 +294,38 @@ const TripApi = (() => {
       hiddenExpenseCount: payload.meta?.hidden_expense_count ?? 0,
       /* สิทธิ์จัดการทริป — เซิร์ฟเวอร์คิดให้แล้ว (รวมผู้ดูแลระบบครอบครัว
          ที่ไม่ได้เป็นสมาชิกทริป) หน้าจอห้ามเดาซ้ำจากรายชื่อสมาชิกอย่างเดียว */
-      canManageTrip: Boolean(payload.meta?.can_manage_trip)
+      canManageTrip: Boolean(payload.meta?.can_manage_trip),
+      // เข้ามาด้วยรหัสผู้ร่วมทริปหรือไม่ — ใช้ซ่อนปุ่มที่กดไปก็โดนปฏิเสธ
+      isGuest: Boolean(payload.meta?.is_guest)
     };
   }
 
   /* token มาก่อน x-user-id เสมอ · ยังส่ง x-user-id ไปด้วยเพื่อให้ใช้ได้
      ระหว่างที่เซิร์ฟเวอร์ยังอยู่ในช่วงเปลี่ยนผ่าน */
+  /* token ของผู้ร่วมทริป (เข้าด้วยรหัสจาก join.html) — เก็บคนละคีย์กับ
+     session ของระบบครอบครัวโดยตั้งใจ จะได้ไม่เตะกันเองในเครื่องเดียวกัน */
+  const memberToken = () => {
+    try { return localStorage.getItem('trip_member_token') || ''; } catch { return ''; }
+  };
+
   function authHeaders() {
-    const headers = { 'x-user-id': config.userId };
     const token = sessionToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
+    /* สมาชิกครอบครัวมาก่อนเสมอ — ถ้าเครื่องนี้ล็อกอินระบบบัญชีไว้ ให้ใช้สิทธิ์นั้น
+       ไม่ใช่สิทธิ์ผู้ร่วมทริปซึ่งแคบกว่า (เจ้าของเครื่องจะได้ไม่งงว่าทำไมทำอะไรไม่ได้)
+       ผู้ร่วมทริปไม่มี x-user-id เลย เพราะไม่ได้เป็นผู้ใช้ของระบบ */
+    if (token) return { 'x-user-id': config.userId, Authorization: `Bearer ${token}` };
+    const guest = memberToken();
+    if (guest) return { Authorization: `Bearer ${guest}` };
+    return { 'x-user-id': config.userId };
   }
 
   async function fetchTrip() {
     if (!config.projectId) throw new Error('ต้องระบุ projectId ใน URL');
     // มี token ก็พอ เซิร์ฟเวอร์รู้เองว่าเป็นใคร ไม่ต้องพึ่ง userId ฝั่งหน้าจอ
-    if (!config.userId && !sessionToken()) {
+    /* ผู้ร่วมทริปไม่มี userId และไม่มี session ของระบบครอบครัว — มีแต่ token
+       ของตัวเอง จึงต้องนับเป็น "ล็อกอินแล้ว" ด้วย ไม่งั้นจะโดนด่านนี้ปัดตกทั้งที่
+       เข้าระบบมาถูกต้อง */
+    if (!config.userId && !sessionToken() && !memberToken()) {
       throw new Error('ยังไม่ได้ล็อกอิน — เปิดแอปหลักแล้วล็อกอินก่อน จากนั้นเปิดหน้านี้ในแท็บเดิม');
     }
     const url = `${config.base}/api/unified-trip?projectId=${encodeURIComponent(config.projectId)}`;
@@ -259,8 +339,8 @@ const TripApi = (() => {
      เปิดทีละส่วน ตอนนี้มีแค่บิล · ข้อความ error จากเซิร์ฟเวอร์ถูกส่งต่อ
      ตามจริง ไม่แปลงเป็นข้อความกลาง ๆ เพราะฝั่งเซิร์ฟเวอร์บอกสาเหตุไว้ละเอียด
      กว่าที่หน้าจอจะเดาเองได้ (เช่น "ยอดหมวดรวม 900 ไม่เท่ากับยอดบิล 1000") */
-  async function send(method, path, { body, query = '' } = {}) {
-    const url = `${config.base}/api/unified-trip${path}?projectId=${encodeURIComponent(config.projectId)}${query}`;
+  async function send(method, path, { body, query = '', projectId = config.projectId } = {}) {
+    const url = `${config.base}/api/unified-trip${path}?projectId=${encodeURIComponent(projectId)}${query}`;
     const response = await fetch(url, {
       method,
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -284,6 +364,11 @@ const TripApi = (() => {
     wallet_id: bill.walletId || null,
     note: bill.title,
     icon_url: bill.image || null,
+    receipt_image_url: bill.receiptUrl || null,
+    /* จุดแวะที่บิลนี้เกิดขึ้น — ทำให้หน้าบิลบอกได้ว่า "จ่ายที่ไหน"
+       และหน้าแผนเที่ยวบอกได้ว่าจุดนี้ใช้เงินไปเท่าไรเทียบกับงบที่ตั้งไว้
+       ฟอร์มมีช่องนี้มานานแล้ว แต่ค่าไม่เคยถูกส่งขึ้นเซิร์ฟเวอร์เลย */
+    stop_id: bill.activityId || null,
     visibility: String(bill.visibility || 'trip').toUpperCase(),
     is_shared: Boolean(bill.shared),
     split_mode: String(bill.splitMode || 'equal').toUpperCase(),
@@ -316,7 +401,12 @@ const TripApi = (() => {
       wallet_id: wallet.id && !wallet.id.startsWith('w-') ? wallet.id : undefined,
       name: wallet.label, currency: wallet.currency,
       owner_member_id: wallet.ownerId, icon_url: wallet.icon || null,
-      exclude_on_close: Boolean(wallet.excludeOnClose)
+      exclude_on_close: Boolean(wallet.excludeOnClose),
+      // CASH = เติมเงินก่อนใช้ · CREDIT = บัตรเครดิต ยอดบาทจริงมาตอนปิดทริป
+      kind: wallet.kind || 'CASH',
+      account_id: wallet.accountId || null,
+      // ⚠️ ?? ไม่ใช่ || — องศา 0 คือสีแดง ไม่ใช่ "ไม่ได้เลือกสี"
+      color_hue: wallet.colorHue ?? null
     }
   });
 
@@ -324,22 +414,59 @@ const TripApi = (() => {
      ถ้าหน้าจอส่งไปด้วย เลขที่เก็บอาจไม่ตรงกับเงินที่จ่ายจริง */
   const saveFunding = lot => send('POST', '/fundings', {
     body: {
+      /* id ที่ขึ้นต้นด้วย f- คือของที่หน้าจอตั้งเองในโหมดตัวอย่าง ยังไม่เคยขึ้นเซิร์ฟเวอร์
+         ส่งขึ้นไปจะกลายเป็น 404 "ไม่พบรายการที่จะแก้ไข" ทั้งที่ตั้งใจจะเพิ่มใหม่ */
+      funding_id: lot.id && !lot.id.startsWith('f-') ? lot.id : undefined,
       wallet_id: lot.walletId, thb_amount: lot.thb, foreign_amount: lot.foreign,
       funding_date: lot.date, note: lot.note || null
     }
   });
   const removeFunding = id => send('DELETE', '/fundings', { query: `&id=${encodeURIComponent(id)}` });
+  const removeWallet = id => send('DELETE', '/wallets', { query: `&id=${encodeURIComponent(id)}` });
+
+  /* ส่งลำดับทั้งชุด ไม่ใช่ส่งทีละคู่ที่สลับ — "ครั้งสุดท้ายชนะ" เข้าใจง่ายกว่า
+     และไม่มีสถานะกลางที่ผิดเมื่อมีคนแก้พร้อมกัน */
+  const reorderExpenses = ids => send('POST', '/expenses/reorder', { body: { order: ids } });
+
+  /* หน้ากระเป๋าแสดงบิลกับการเติมเงินปนกัน ลำดับจึงต้องข้ามสองตารางได้
+     items = [{ kind:'bill'|'fund', id }] เรียงตามที่ต้องการให้เห็นบนจอ */
+  const reorderActivity = items => send('POST', '/activity/reorder', { body: { order: items } });
+
+  /* เพิ่ม/แก้สมาชิกในทริป — ผู้ดูแลเท่านั้น (เซิร์ฟเวอร์ตรวจอีกชั้น)
+     ⚠️ id ที่ขึ้นต้นด้วย m- คือของที่หน้าจอตั้งเองในโหมดตัวอย่าง ยังไม่เคยขึ้นเซิร์ฟเวอร์
+        ส่งขึ้นไปจะได้ 404 ทั้งที่ตั้งใจจะเพิ่มใหม่ */
+  const saveMember = member => send('POST', '/members', {
+    body: {
+      member_id: member.id && !member.id.startsWith('m-') ? member.id : undefined,
+      display_name: member.name, role: member.role || null,
+      ledger_mode: member.ledgerMode || 'MAIN', is_admin: Boolean(member.admin),
+      avatar_url: member.avatar || null,
+      // ผูกบัญชีครอบครัว (บังคับเมื่อ MAIN) · ผู้ดูแลรายคน (ไม่บังคับ)
+      user_id: member.userId || null,
+      managed_by: member.managedBy || null
+    }
+  });
+  const removeMember = id => send('DELETE', '/members', { query: `&id=${encodeURIComponent(id)}` });
 
   /* ปิดทริป — ต้องบอกทุกกระเป๋าที่มีเงินเหลือว่าจะเอาไปไหน ไม่งั้นเซิร์ฟเวอร์
      ปฏิเสธ (เงินที่ไม่ได้ระบุจะหายจากบัญชีเงียบ ๆ)
      ยอดที่ลงบัญชีเซิร์ฟเวอร์คิดเองจากผู้ร่วมจ่ายจริง หน้าจอไม่ส่งขึ้นไป */
-  const closeTrip = ({ postingDate, lines, reason }) => send('POST', '/closures', {
+  const closeTrip = ({ postingDate, lines, reason, settlements, fxCategoryId }) => send('POST', '/closures', {
     body: {
       posting_date: postingDate, reason: reason || null,
-      lines: lines.map(line => line.mode === 'carry'
-        ? { wallet_id: line.walletId, disposition: 'CARRY',
-            carry_currency: line.carryCurrency, carry_amount: line.carryAmount }
-        : { wallet_id: line.walletId, disposition: 'RETURN', received_thb: line.receivedThb })
+      // ยอดบาทจริงของบิลบัตรเครดิต — กรอกทีละบิลเพราะธนาคารแปลงค่าเงินทีละรายการ
+      settlements: settlements || [],
+      // หมวดตั้งต้นของ FX — แต่ละกระเป๋าแทนที่ด้วยของตัวเองได้
+      fx_category_id: fxCategoryId || null,
+      lines: lines.map(line => {
+        return line.mode === 'carry'
+          ? { wallet_id: line.walletId, disposition: 'CARRY',
+              carry_currency: line.carryCurrency, carry_amount: line.carryAmount }
+          /* 🔴 บัญชี/หมวดของกำไร-ขาดทุนติดมากับบรรทัดของกระเป๋าใบนั้น
+             ห้ามรวมข้ามกระเป๋า — แต่ละใบแลกคืนเข้าคนละบัญชีได้ */
+          : { wallet_id: line.walletId, disposition: 'RETURN', received_thb: line.receivedThb,
+              fx_account_id: line.fxAccountId || null, fx_category_id: line.fxCategoryId || null };
+      })
     }
   });
 
@@ -368,7 +495,7 @@ const TripApi = (() => {
 
   /* ลบทริปนี้ — เซิร์ฟเวอร์เองจะปฏิเสธถ้าทริปนี้เคยโพสต์เข้าบัญชีจริงแล้ว
      (409 พร้อมข้อความอธิบาย) หน้าจอไม่ต้องเดาเงื่อนไขเอง ส่งต่อ error ตรง ๆ */
-  const deleteTrip = () => send('DELETE', '/trip', {});
+  const deleteTrip = (projectId = config.projectId) => send('DELETE', '/trip', { projectId });
 
   /* แบนเนอร์เก็บที่ Projects.theme_banner ตัวเดียวกับที่แอปหลักใช้
      จะได้ไม่มีสองที่เก็บรูปคนละอันแล้วขัดกัน · ส่ง path ตามที่เห็นบนจอ
@@ -377,15 +504,27 @@ const TripApi = (() => {
 
   /* จุดแวะ — id ที่ prototype สร้างเองขึ้นต้นด้วย activity- ไม่ใช่ของจริงในฐาน
      ต้องไม่ส่งขึ้นไป ไม่งั้นเซิร์ฟเวอร์จะหาไม่เจอแล้วตอบ 404 ทั้งที่เป็นการสร้างใหม่ */
-  const saveStop = ({ id, dayDate, time, name, detail, tag, icon }) => send('POST', '/stops', {
+  const saveStop = ({ id, dayDate, time, endTime, name, detail, tag, icon, visitStatus, skippedReason, highlight, plannedCost, plannedCurrency, mapcode, openTime, closeTime, closedDays }) => send('POST', '/stops', {
     body: {
       stop_id: id && !id.startsWith('activity-') ? id : undefined,
       stop_date: dayDate,
       time: time || undefined,
+      end_time: endTime || undefined,
       name_th: name,
       notes: detail,
       accommodation: tag === 'ที่พัก' ? detail || name : undefined,
-      icon_asset: icon || undefined
+      icon_asset: icon || undefined,
+      visit_status: visitStatus || undefined,
+      skipped_reason: skippedReason || undefined,
+      highlight_text: highlight,
+      /* '' = ล้างงบทิ้ง · undefined = ไม่แตะของเดิม — สองอย่างนี้ต้องต่างกัน
+         ไม่งั้นเปิดฟอร์มแล้วกดบันทึกเฉย ๆ จะไปล้างงบที่ตั้งไว้โดยไม่ตั้งใจ */
+      planned_cost: plannedCost === undefined ? undefined : (plannedCost === '' ? '' : Number(plannedCost)),
+      planned_currency: plannedCurrency || undefined,
+      mapcode: mapcode === undefined ? undefined : mapcode,
+      open_time: openTime === undefined ? undefined : openTime,
+      close_time: closeTime === undefined ? undefined : closeTime,
+      closed_days: closedDays === undefined ? undefined : (closedDays || []).join(',')
     }
   });
   const removeStop = id => send('DELETE', '/stops', { query: `&id=${encodeURIComponent(id)}` });
@@ -393,6 +532,9 @@ const TripApi = (() => {
   /* ส่งลำดับทั้งชุด ไม่ใช่ทีละแถว — ลากทีเดียวกระทบหลายแถว ถ้ายิงทีละอันแล้ว
      ขาดกลางคัน ลำดับในฐานจะค้างครึ่ง ๆ ไม่ตรงกับที่เห็นบนจอ */
   const reorderStops = stops => send('POST', '/stops/order', { body: { stops } });
+  const saveDayTitle = (planDate, title) => send('POST', '/days', {
+    body: { plan_date:planDate, title }
+  });
 
   /* ── รายการค่าใช้จ่ายย่อยของทริป ─────────────────────────────────────
      ชื่อ+ไอคอน+หมวดบัญชีที่ผูก · id ที่หน้าจอสร้างเองขึ้นต้นด้วย new- ไม่ใช่ของจริง
@@ -409,6 +551,19 @@ const TripApi = (() => {
 
   /* คัดลอกรายการทั้งชุดจากทริปอื่น — คืน { copied, skipped } เพื่อให้หน้าจอ
      บอกผลได้ตรง ๆ ว่าได้มากี่รายการ และข้ามไปกี่รายการเพราะชื่อซ้ำ */
+  /* ผู้ดูแลตั้ง/ล้างรหัสของสมาชิก · ส่งรหัสว่าง = ถอนสิทธิ์ (เตะ session เดิมออกด้วย) */
+  const setMemberPasscode = (memberId, passcode) => send('POST', '/members/passcode', {
+    body: { member_id: memberId, passcode }
+  });
+
+  /* ออกจากระบบผู้ร่วมทริป — ลบเฉพาะ token ของตัวเอง ไม่แตะ session ครอบครัว */
+  const signOutMember = () => {
+    try {
+      localStorage.removeItem('trip_member_token');
+      localStorage.removeItem('trip_member_name');
+    } catch {}
+  };
+
   const copyPresets = fromProjectId => send('POST', '/presets/copy', {
     body: { from_project_id: fromProjectId }
   });
@@ -428,8 +583,50 @@ const TripApi = (() => {
     });
   const removeDocument = id => send('DELETE', '/documents', { query: `&id=${encodeURIComponent(id)}` });
 
+  /* พยากรณ์อากาศของวันหนึ่ง ๆ — คืน { available, kind: 'forecast'|'historical', … }
+     kind สำคัญมาก: historical = ค่าเฉลี่ยปีก่อน ไม่ใช่พยากรณ์ ห้ามแสดงปนกัน */
+  const weatherFor = (date, stopId = '') => send('GET', '/weather', {
+    query: `&date=${encodeURIComponent(date)}${stopId ? `&stopId=${encodeURIComponent(stopId)}` : ''}`
+  });
+
+  /* เติมพิกัดให้จุดแวะที่ยังไม่มี — หน้าแผนที่เรียกก่อนวาดหมุด
+     offset = จำนวนจุดที่รอบก่อนค้นไม่เจอ (ต้องข้ามไป ไม่งั้นวนค้นซ้ำจุดเดิม)
+     คืน { filled, failed, scanned, remaining } */
+  const geocodeStops = (offset = 0) =>
+    send('GET', '/geocode-stops', { query: `&offset=${offset}` });
+
+  /* ระยะ/เวลาขับจริงระหว่างจุดที่ติดกันในวันเดียวกัน (OSRM · แคชฝั่งเซิร์ฟเวอร์)
+     คืน { legs: [{from_stop_id,to_stop_id,meters,seconds,source}], remaining }
+     ⚠️ source='straight' = OSRM ตอบไม่ได้ ค่านี้เป็นการประมาณจากเส้นตรง
+        หน้าจอต้องเขียนกำกับให้ต่างจากค่าจริง */
+  const routeLegs = () => send('GET', '/route', {});
+
+  /* เช็กอินของสมาชิกคนปัจจุบัน · ไม่ส่ง member_id เพราะเซิร์ฟเวอร์ยึดตัวตน
+     จาก session เท่านั้น ป้องกันการเช็กอินแทนคนอื่น */
+  const checkIn = ({ stopId, latitude, longitude }) => send('POST', '/presence', {
+    body: {
+      stop_id: stopId,
+      latitude: Number.isFinite(latitude) ? latitude : undefined,
+      longitude: Number.isFinite(longitude) ? longitude : undefined
+    }
+  });
+
   /* อัปโหลดไฟล์เอกสาร — ใช้ทางเดียวกับรูป แต่ไม่ผ่าน canvas เพราะ PDF
      ย่อขนาดไม่ได้และไม่ควรแตะต้องเนื้อไฟล์ ส่งขึ้นตรง ๆ ตามต้นฉบับ */
+  /* คลังรูปที่อัปโหลดเอง — ลิสต์ได้ทุกคน แต่ลบได้เฉพาะผู้ดูแลระบบครอบครัว
+     (เซิร์ฟเวอร์คืน can_delete มาให้ หน้าจอใช้ตัดสินว่าจะโชว์ปุ่มลบไหม) */
+  /* ⚠️ ทั้งสองเส้นทางนี้ผูกกับ "ครอบครัว" ไม่ใช่ทริป — เซิร์ฟเวอร์เช็คก่อนด่าน
+     projectId อยู่แล้ว การที่ send() แนบ ?projectId= มาด้วยจึงไม่มีผล */
+  /* บัญชีในครอบครัว — ใช้เป็นตัวเลือกตอนผูกสมาชิกที่ลงบัญชีหลัก */
+  const listFamilyUsers = () => send('GET', '/family-users');
+  /* บัญชีเงินฝากในครอบครัว — ใช้ผูกกับกระเป๋าว่าเงินก้อนนี้ออกจากบัญชีไหน */
+  const listFamilyAccounts = () => send('GET', '/family-accounts');
+
+  const listUploadedIcons = () => send('GET', '/icon-upload');
+  const removeUploadedIcon = key => send('DELETE', '/icon-upload', {
+    query: `&key=${encodeURIComponent(key)}`
+  });
+
   const uploadDocument = file => uploadIcon(file, file.name);
 
   /* ── ไอคอนที่ครอบครัวอัปโหลดเอง ───────────────────────────────────────
@@ -457,10 +654,11 @@ const TripApi = (() => {
   return {
     config, fetchTrip, toPrototypeState, toExpenseBody,
     saveExpense, removeExpense, saveCurrency, removeCurrency,
-    saveWallet, saveFunding, removeFunding, closeTrip, reopenTrip,
-    saveStop, removeStop, reorderStops, saveTripMeta, saveBanner,
+    saveMember, removeMember, saveWallet, removeWallet, reorderExpenses, reorderActivity, saveFunding, removeFunding, closeTrip, reopenTrip,
+    saveStop, removeStop, reorderStops, saveDayTitle, saveTripMeta, saveBanner,
     listTrips, createTrip, deleteTrip, authHeaders, sessionToken, bannerPath,
-    uploadIcon, loadCategoryIcons, saveCategoryIcon, savePreset, removePreset, copyPresets,
-    saveDocument, removeDocument, uploadDocument
+    uploadIcon, listFamilyUsers, listFamilyAccounts, listUploadedIcons, removeUploadedIcon, loadCategoryIcons, saveCategoryIcon, savePreset, removePreset, copyPresets,
+    saveDocument, removeDocument, uploadDocument, weatherFor, geocodeStops, routeLegs, checkIn,
+    setMemberPasscode, memberToken, signOutMember
   };
 })();

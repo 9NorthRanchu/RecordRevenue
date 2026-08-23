@@ -4,36 +4,38 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>ทริปทั้งหมด — Unified Trip</title>
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=47">
-  <link rel="stylesheet" href="themes.css?v=9">
-  <link rel="stylesheet" href="trips.css?v=5">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/noto-sans-thai-looped-thai-600-normal.woff2">
+  <link rel="stylesheet" href="style.css?v=157">
+  <link rel="stylesheet" href="themes.css?v=18">
+  <link rel="stylesheet" href="trips.css?v=19">
 </head>
 <body>
   <div class="app-shell trips-shell">
     <main class="workspace" style="grid-column:1/-1">
       <header class="topbar">
         <button class="back" id="tripsBack"><span aria-hidden="true">‹</span> เมนูหลัก</button>
-        <div><b>ทริปทั้งหมด</b><small>เลือกทริปที่จะเข้า หรือเริ่มทริปใหม่</small></div>
-        <div class="top-actions"></div>
+        <div class="trips-brand"><b>Our Travel Board</b><small>บอร์ดรวมทริปและความทรงจำ</small></div>
+        <div class="top-actions"><button class="primary-btn" id="newTripTop">＋ สร้างทริป</button></div>
       </header>
 
-      <section class="screen active" style="padding:20px 20px 100px">
+      <section class="screen active trips-board">
         <div id="tripsLoginNotice" class="privacy-note" hidden>
           ยังไม่ได้ล็อกอิน — เปิดแอปหลักแล้วล็อกอินก่อน จากนั้นกดเมนู "Unified Trip" ใหม่อีกครั้งในแท็บเดิม
         </div>
 
         <div id="tripsError" class="privacy-note" style="background:#fde8ee;border-color:#e86f91" hidden></div>
 
+        <div class="trips-note">
+          <div><h1>ทริปที่กำลังรอเราอยู่ ✈️</h1><p>เลือกทริปเพื่อวางแผนต่อ หรือกลับไปเปิดความทรงจำที่ผ่านมา</p></div>
+          <div class="day-tabs" id="tripStageTabs">
+            <button class="active" data-stage="ONGOING"><span class="stage-icon">🧭</span><span class="stage-copy"><b>กำลังเตรียม</b><small>Ongoing</small></span></button>
+            <button data-stage="DREAM"><span class="stage-icon">💭</span><span class="stage-copy"><b>ทริปในฝัน</b><small>Dream</small></span></button>
+            <button data-stage="MEMORY"><span class="stage-icon">📸</span><span class="stage-copy"><b>ความทรงจำ</b><small>Memory</small></span></button>
+          </div>
+        </div>
+
         <!-- ปุ่มลัดเข้าทริปล่าสุด — แทนการเด้งอัตโนมัติที่เอาออกไปแล้ว -->
         <div id="tripsShortcut" class="trips-shortcut" hidden></div>
-
-        <div class="day-tabs" id="tripStageTabs">
-          <button class="active" data-stage="ONGOING">🧭 <span>Ongoing</span><small>จะเกิดแน่ ๆ</small></button>
-          <button data-stage="DREAM">💭 <span>Dream</span><small>ยังไม่แน่นอน</small></button>
-          <button data-stage="MEMORY">📸 <span>Memory</span><small>จบไปแล้ว</small></button>
-        </div>
 
         <div id="tripsLoading" class="trip-pick-empty">กำลังโหลดรายการทริป…</div>
         <div id="tripsGrid" class="trip-pick-grid" hidden></div>
@@ -53,21 +55,21 @@
       <label style="display:grid;gap:5px;font-weight:700">
         ชื่อทริป
         <input type="text" id="newTripName" placeholder="เช่น ทริปเกาะหลีเป๊ะ" required
-          style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Sarabun">
+         >
       </label>
       <div class="date-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <label style="display:grid;gap:5px;font-weight:700">
           วันเริ่ม (ถ้ารู้แล้ว)
-          <input type="date" id="newTripStart" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Sarabun">
+          <input type="date" id="newTripStart">
         </label>
         <label style="display:grid;gap:5px;font-weight:700">
           วันจบ
-          <input type="date" id="newTripEnd" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Sarabun">
+          <input type="date" id="newTripEnd">
         </label>
       </div>
       <label style="display:grid;gap:5px;font-weight:700">
         ประเภททริป
-        <select id="newTripStage" style="border:1px solid #d9d5d0;border-radius:12px;padding:11px;font:14px Sarabun">
+        <select id="newTripStage">
           <option value="DREAM" selected>💭 Dream — ยังไม่แน่นอน</option>
           <option value="ONGOING">🧭 Ongoing — จะเกิดแน่ ๆ</option>
         </select>
@@ -80,7 +82,7 @@
     </form>
   </div>
 
-  <script src="api.js?v=23"></script>
-  <script src="trips.js?v=4"></script>
+  <script src="api.js?v=47"></script>
+  <script src="trips.js?v=8"></script>
 </body>
 </html>

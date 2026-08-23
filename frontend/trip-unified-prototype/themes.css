@@ -20,21 +20,21 @@
 /* ❄ Hokkaido ฤดูหนาว — ฟ้าน้ำแข็ง ขาวหิมะ ทองอุ่น */
 :root,
 [data-theme="hokkaido"]{
-  --bg-1:#c8e9ff;  --bg-2:#e8f6ff;  --bg-3:#f6fcff;
+  --bg-1:#a9ddf2;  --bg-2:#dff2fa;  --bg-3:#fff8f2;
   --speck:#ffffff;                       /* จุดหิมะบนพื้นหลัง */
   --mark:"❄";                            /* สัญลักษณ์หน้าหัวข้อการ์ด */
 
-  --accent:#1f6fa8;      --accent-2:#3aa5d9;   --accent-deep:#164f78;
-  --accent-soft:#dff2fb; --accent-ink:#12496e;
+  --accent:#348fc1;      --accent-2:#67b9df;   --accent-deep:#236f9c;
+  --accent-soft:#dff2fa; --accent-ink:#285f7d;
 
-  --warm:#f0b429;        --warm-soft:#fff0cf;  --warm-edge:#e8c983;  --warm-ink:#6b5a2a;
-  --fresh:#2f9e6b;       --fresh-soft:#cfeee0; --fresh-edge:#93cfb4; --fresh-ink:#0f5a3e;
-  --calm:#4f63c4;        --calm-soft:#dfe4ff;  --calm-edge:#b3bcf0;  --calm-ink:#2f3d8a;
+  --warm:#ef87a7;        --warm-soft:#ffdce7;  --warm-edge:#e8bdcc;  --warm-ink:#93435f;
+  --fresh:#4f9c8b;       --fresh-soft:#dff3ed; --fresh-edge:#b9dcd3; --fresh-ink:#326f63;
+  --calm:#78b9d5;        --calm-soft:#dff2fa;  --calm-edge:#c1e0ec;  --calm-ink:#427487;
   /* เฉดเข้มเฉพาะกรณี "พื้นสีเต็ม + ตัวอักษรขาว" — สีสดเฉย ๆ ได้ contrast ไม่ถึง */
-  --warm-deep:#8a6300;   --fresh-deep:#1c7a4f;
+  --warm-deep:#a34869;   --fresh-deep:#377c6e;
 
-  --ink:#12324d;   --muted:#4e6d84;   --card:rgba(255,255,255,.96);
-  --frame:#ffffff; --drop:rgba(31,111,168,.18);
+  --ink:#435b57;   --muted:#73827f;   --card:rgba(255,253,249,.97);
+  --frame:#ffffff; --drop:rgba(52,143,193,.2);
 }
 
 /* 🌸 Fuji ซากุระ — ชมพูซากุระ ม่วงพลบค่ำ เขียวใบอ่อน */
@@ -74,6 +74,18 @@
    ประกาศครั้งเดียวตรงนี้เพื่อกันทั้งแอป ไม่ต้องไล่แก้ทีละอิลิเมนต์
    และไม่ต้องกลัวว่าจะมีที่ไหนหลุดอีกในอนาคต */
 [hidden]{display:none!important}
+
+/* ชุดเดียวกับหน้า Our Travel Board: ไทยหัวกลม + อังกฤษ Anuphan
+   โหลดจากไฟล์ในโปรเจกต์ เพื่อให้ทุกเครื่องแสดงเหมือนกันและไม่พึ่ง Google Fonts */
+@font-face{font-family:TripLooped;src:url('../puppup-prototype/fonts/noto-sans-thai-looped-thai-600-normal.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:TripLooped;src:url('../puppup-prototype/fonts/noto-sans-thai-looped-thai-600-normal.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:TripLooped;src:url('../puppup-prototype/fonts/noto-sans-thai-looped-thai-600-normal.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:TripLooped;src:url('../puppup-prototype/fonts/noto-sans-thai-looped-thai-700-normal.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:TripLooped;src:url('../puppup-prototype/fonts/noto-sans-thai-looped-thai-800-normal.woff2') format('woff2');font-weight:800;font-style:normal;font-display:swap}
+@font-face{font-family:TripLatin;src:url('../puppup-prototype/fonts/anuphan-latin-400-normal.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:TripLatin;src:url('../puppup-prototype/fonts/anuphan-latin-600-normal.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:TripLatin;src:url('../puppup-prototype/fonts/anuphan-latin-700-normal.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap}
+body,.app-shell,.app-shell *,button,input,select,textarea{font-family:TripLooped,TripLatin,Tahoma,"Leelawadee UI",sans-serif!important}
 
 body{
   background:linear-gradient(170deg,var(--bg-1) 0%,var(--bg-2) 40%,var(--bg-3) 100%) fixed;
@@ -118,6 +130,13 @@ body{
   background:linear-gradient(110deg,var(--accent-deep),var(--accent));color:#fff;font-weight:700;
   box-shadow:0 4px 0 var(--drop);
 }
+.main-nav button i,.mobile-nav button i{display:grid;place-items:center;font-style:normal}
+.main-nav button:nth-child(1) i,.mobile-nav button:nth-child(1) i{background:#dff3ed;color:#326f63}
+.main-nav button:nth-child(2) i,.mobile-nav button:nth-child(2) i{background:#dff2fa;color:#285f7d}
+.main-nav button:nth-child(3) i,.mobile-nav button:nth-child(3) i{background:#fff0c9;color:#8b6722}
+.main-nav button:nth-child(4) i,.mobile-nav button:nth-child(4) i{background:#ffdce7;color:#93435f}
+.main-nav button:nth-child(5) i,.mobile-nav button:nth-child(5) i{background:#eee5ff;color:#7254a4}
+.main-nav button.active i,.mobile-nav button.active i{outline:3px solid #fff;box-shadow:0 3px 0 var(--drop)}
 .avatar{
   background:linear-gradient(140deg,var(--accent-deep),var(--accent));color:#fff;font-weight:700;
   border:3px solid var(--frame);box-shadow:0 3px 0 var(--drop);
@@ -186,6 +205,7 @@ body{
   border-radius:50%;background:rgba(255,255,255,.2);pointer-events:none;
 }
 .day-summary>*{position:relative;z-index:1}
+.day-summary>div:nth-child(2){min-width:0}
 .day-summary h1,.day-summary p,.day-summary span{color:#fff}
 .day-summary .day-number{
   background:rgba(255,255,255,.95);color:var(--accent-deep);
@@ -193,10 +213,62 @@ body{
 }
 .day-summary .day-number span,.day-summary .day-number strong{color:var(--accent-deep)}
 
-.next-card{border:3px solid var(--frame);box-shadow:0 7px 0 var(--drop)}
-.next-time{color:var(--accent-ink);font-weight:700}
+.day-summary>div:nth-child(2)>span{font-size:13px;line-height:1.35;font-weight:800;letter-spacing:.04em}
+.day-summary h1{font-size:clamp(22px,2.1vw,28px);line-height:1.25;margin:3px 0}
+.day-summary p{font-size:14px;line-height:1.5}
+.day-summary #journeyTitle,.day-summary #journeyDescription{max-width:100%;overflow-wrap:anywhere}
+.day-summary #journeyDescription{white-space:normal}
+
+.next-card{grid-column:1/-1;border:3px solid var(--frame);box-shadow:0 7px 0 var(--drop)}
+.section-kicker{font-size:15px;line-height:1.4}
+.section-explain{margin:3px 0 12px;color:var(--muted);font-size:12.5px;line-height:1.5}
+.next-card{overflow:hidden;background:linear-gradient(145deg,#fff 0%,#fff 76%,var(--accent-soft) 145%)}
+.next-card .section-kicker{color:#b84d78}
+.next-time{color:var(--accent-ink);font-weight:700;align-items:center;flex-wrap:wrap;gap:8px 12px}
+.next-time strong{font-size:34px;line-height:1.1}
+.next-time span{max-width:100%;padding:4px 9px;border-radius:99px;background:var(--warm-soft);
+  color:var(--warm-ink);font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.next-main{min-width:0;padding:10px 12px;border-radius:18px;background:var(--accent-soft)}
+.next-main>div{min-width:0}
+.next-main h2{font-size:22px;line-height:1.3}
+.next-main p{font-size:14px;line-height:1.5;overflow-wrap:anywhere}
 .next-main img{border-radius:17px;border:3px solid var(--frame);box-shadow:0 4px 0 var(--drop)}
+.next-card .member-presence{display:grid;grid-template-columns:1fr;gap:7px;min-width:0}
+.next-card .member-presence>span{display:grid;grid-template-columns:28px max-content minmax(0,1fr);
+  align-items:center;gap:6px;width:100%;min-width:0;padding:6px 10px 6px 6px;border:1px solid transparent}
+.next-card .presence-chip b{font-size:12.5px;line-height:1.35;white-space:nowrap}
+.next-card .presence-chip small{min-width:0;font-size:12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere}
+.next-card .presence-chip.live{background:var(--fresh-soft);border-color:var(--fresh-edge)}
+.next-card .presence-chip.stale{background:var(--warm-soft);border-color:var(--warm-edge)}
+.next-card .presence-chip.off,.next-card .presence-chip.idle{background:#edf6f8;color:#57717c}
+.next-card .presence-chip.me{border-color:#73a7a2}
+.next-card .presence-consent{max-width:100%;margin:10px 0;padding:9px 11px;border-radius:13px;
+  background:#dff3f4;color:#2b6380;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.next-card .card-actions{display:flex;flex-wrap:wrap;gap:9px;max-width:100%}
+.next-card .card-actions button{min-height:42px;white-space:normal;text-align:center}
+.day-stop-strip{display:flex;gap:9px;overflow-x:auto;padding:5px 2px 13px;scrollbar-width:thin;scroll-snap-type:x proximity}
+.day-stop-choice{flex:0 0 112px;min-height:112px;padding:8px;border:2px solid #d9edf5;border-radius:18px;
+  background:#edf8fb;color:var(--ink);text-align:center;cursor:pointer;scroll-snap-align:start}
+.day-stop-choice.active{border-color:var(--fresh-edge);background:var(--fresh-soft);box-shadow:0 4px 0 var(--fresh-edge);transform:translateY(-2px)}
+.day-stop-choice.skipped{opacity:.66;filter:grayscale(.65)}
+.day-stop-choice img{display:block;width:48px;height:48px;object-fit:contain;margin:0 auto 4px;border-radius:14px;background:#fff}
+.day-stop-choice b,.day-stop-choice small{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day-stop-choice b{font-size:12px}.day-stop-choice small{font-size:11px;color:var(--muted)}
+.day-stop-choice em{display:inline-block;margin-top:4px;padding:2px 6px;border-radius:99px;background:#fff;font-size:9px;font-style:normal;font-weight:800;color:var(--accent-ink)}
+.selected-stop-detail{display:grid;grid-template-columns:88px minmax(0,1fr);gap:14px;padding:14px;border-radius:21px;background:var(--accent-soft);border:2px solid var(--frame)}
+.selected-stop-detail>img{width:88px;height:88px;object-fit:contain;border-radius:21px;background:#fff;border:3px solid var(--frame);box-shadow:0 4px 0 var(--drop)}
+.selected-stop-content{min-width:0}.selected-stop-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.selected-stop-head h2{margin:0;font-size:21px;line-height:1.3;overflow-wrap:anywhere}.selected-stop-head strong{white-space:nowrap;color:#b64973;font-size:13px}
+.selected-stop-content>p{margin:3px 0 10px;color:var(--muted);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.selected-stop-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.selected-stop-facts>div{min-width:0;padding:8px;border-radius:13px;background:#fff}
+.selected-stop-facts small{display:block;color:var(--muted);font-size:10px}.selected-stop-facts b{display:block;margin-top:2px;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.next-card .skip-action{background:#ffe7ee;color:#9e4364}
 .weather-card{background:var(--accent-soft);border:3px solid var(--frame);box-shadow:0 6px 0 var(--drop)}
+.weather-card .section-title span{font-size:14px;line-height:1.4;font-weight:700}
+.weather-card .section-title h3{font-size:22px;line-height:1.3;margin-top:3px}
+.weather-card .section-title small{font-size:12px;line-height:1.4;text-align:right}
+.weather-empty,.weather-tip{font-size:13.5px;line-height:1.6}
 
 /* แถบเงิน — "ใช้ไปแล้ว" ใช้สีอุ่น · "เหลืองบ" ใช้สีสดชื่น สื่อความหมายตรงตัว */
 .money-strip>div{border-radius:22px;border:3px solid var(--frame);padding:13px 15px}
@@ -246,10 +318,10 @@ body{
 .bottom-sheet{border-radius:30px 30px 0 0;border-top:4px solid var(--frame)}
 .dialog{border-radius:28px;border:4px solid var(--frame)}
 .amount-hero{
-  background:var(--warm-soft);border:3px solid var(--frame);border-radius:22px;
-  box-shadow:0 5px 0 var(--warm-edge);
+  background:#fff;border:3px solid #68bddd;border-radius:18px;
+  box-shadow:0 5px 0 #b6dfeb;
 }
-.amount-hero input{color:var(--accent-ink)}
+.amount-hero input{color:#153f54}
 .add-line{
   color:var(--calm-ink);background:var(--calm-soft);border:2px solid var(--frame);
   border-radius:99px;box-shadow:0 3px 0 var(--calm-edge);transition:.14s;
@@ -275,17 +347,25 @@ body{
 /* กำลังลาก — ยุบลงไปติดพื้นเพื่อให้รู้ว่า "ยกออกมาแล้ว" ไม่ใช่แค่จางลงเฉย ๆ */
 .plan-item.dragging{opacity:.5;transform:translateY(3px);box-shadow:0 1px 0 var(--drop)}
 .plan-item.selected{outline:3px solid var(--accent);outline-offset:2px}
+.plan-item.skipped{opacity:.76;background:#eef3f4;border-style:dashed;box-shadow:0 3px 0 #c8d5d9}
+.plan-item.skipped:hover{transform:none;box-shadow:0 3px 0 #c8d5d9}
+.plan-item.skipped>time,.plan-item.skipped>div>b{text-decoration:line-through;color:#667b83}
+.plan-item.skipped img{filter:grayscale(.75);opacity:.72}
 .plan-item img{
   border-radius:16px;border:3px solid var(--frame);background:var(--accent-soft);
   box-shadow:0 3px 0 var(--drop);
 }
 .plan-item time{color:var(--accent-ink);font-weight:700}
 .plan-item em{background:var(--calm-soft);color:var(--calm-ink);border:2px solid var(--frame);border-radius:99px;font-weight:600}
+.plan-item em.skip-badge{display:inline-block;margin-left:5px;background:#eef1f2;color:#596d75;border-color:#cbd6da;
+  white-space:normal;overflow-wrap:anywhere;text-decoration:none}
 .plan-item-controls button{
   border:2px solid var(--frame);border-radius:99px;background:var(--warm-soft);
   color:var(--warm-ink);font-weight:600;box-shadow:0 3px 0 var(--warm-edge);transition:.14s;
 }
 .plan-item-controls button:hover:not(:disabled){transform:translateY(-1px)}
+.plan-item-controls .skip-plan-item{width:auto;padding-inline:10px;background:var(--calm-soft);color:var(--calm-ink)}
+.plan-item-controls .delete-plan-item{background:#ffe7eb;color:#a33e5d;box-shadow:0 3px 0 #efb9c8}
 .plan-cost{color:var(--accent-ink)}
 
 /* วันที่ยังไม่มีกิจกรรม — เส้นประหนาให้รู้ว่าเป็นที่ว่างที่เติมได้ ไม่ใช่ข้อมูลหาย */
@@ -297,6 +377,8 @@ body{
   border:2px solid var(--frame);border-radius:99px;background:var(--accent-soft);
   color:var(--accent-ink);font-weight:600;box-shadow:0 3px 0 var(--drop);transition:.14s;
 }
+.edit-day-title{display:inline-flex;align-items:center;gap:5px;margin:2px 0 8px;padding:5px 10px;border:2px solid var(--frame);
+  border-radius:99px;background:var(--warm-soft);color:var(--warm-ink);font-weight:700;cursor:pointer;box-shadow:0 2px 0 var(--warm-edge)}
 .cross-day-move button:hover:not(:disabled){transform:translateY(-1px)}
 .cross-day-move button:disabled{opacity:.45;box-shadow:none}
 .plan-weather{background:var(--card);border:2px solid var(--frame);border-radius:18px}
@@ -333,6 +415,22 @@ body{
 
 .stop-docs-field{display:grid;gap:7px}
 .stop-docs-label{font-weight:700}
+
+/* ── หน้าเข้าร่วมทริปสำหรับผู้ร่วมทริป (join.html) ────────────────────
+   หน้าเดียวโดด ๆ ไม่มีเมนู ไม่มีอะไรให้หลงทาง — คนที่มาถึงหน้านี้มีงานเดียว */
+.join-screen{display:grid;place-items:center;min-height:100vh;padding:20px}
+.join-card{width:min(420px,100%);padding:26px 24px}
+.join-card h1{margin:0 0 4px;font-size:22px}
+.join-card form{display:grid;gap:13px;margin-top:16px}
+.join-card label{display:grid;gap:6px;font-weight:700}
+.join-card input,.join-card select{
+  width:100%;border:2px solid var(--frame);background:#fff;border-radius:14px;
+  padding:12px;font:15px Sarabun,sans-serif;color:var(--ink);
+  box-shadow:0 3px 0 var(--drop);
+}
+.join-card .primary-btn{width:100%;padding:13px}
+.join-foot{margin-top:18px;text-align:center}
+.join-foot a{color:var(--accent-ink);font-weight:600}
 
 /* ── ตัวเลือกธีมในหน้า "เพิ่มเติม" ───────────────────────────────────── */
 .theme-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:4px}
@@ -392,6 +490,21 @@ body{
   .paper-card{padding:14px 15px}
   .day-summary{padding:13px;gap:11px}
   .day-summary .day-number{width:52px;height:52px;border-radius:17px}
+  .day-summary h1{font-size:21px}
+  .day-summary p{font-size:13px}
+  .section-kicker{font-size:14px}
+  .section-explain{font-size:12px;margin-bottom:10px}
+  .next-time strong{font-size:30px}
+  .next-main h2,.weather-card .section-title h3{font-size:19px}
+  .next-card .member-presence>span{grid-template-columns:28px minmax(0,1fr)}
+  .next-card .presence-chip b,.next-card .presence-chip small{grid-column:2}
+  .next-card .presence-chip b{align-self:end}
+  .next-card .presence-chip small{align-self:start}
+  .next-card .card-actions button{flex:1 1 130px;min-width:0;padding-inline:10px}
+  .selected-stop-detail{grid-template-columns:64px minmax(0,1fr);gap:10px;padding:11px}
+  .selected-stop-detail>img{width:64px;height:64px;border-radius:17px}
+  .selected-stop-head{display:block}.selected-stop-head strong{display:block;margin-top:2px}
+  .selected-stop-facts{grid-template-columns:1fr}
 
   /* ปุ่มลอยเลี่ยงขอบล่างของเครื่องที่มีแถบ home indicator */
   .mobile-fab{bottom:calc(78px + env(safe-area-inset-bottom,0px))}
@@ -456,6 +569,11 @@ body{
   background:#c62828;color:#fff;
 }
 .live-bar--loading{background:var(--accent-deep)}
+
+@media(max-width:900px){
+  .mobile-nav button{gap:3px}
+  .mobile-nav button i{width:34px;height:30px;border-radius:11px;font-size:17px;line-height:1}
+}
 
 /* ── ลดการเคลื่อนไหวตามที่ผู้ใช้ตั้งค่าไว้ ───────────────────────────── */
 @media(prefers-reduced-motion:reduce){

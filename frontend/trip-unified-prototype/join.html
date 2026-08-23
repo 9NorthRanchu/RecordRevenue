@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>เข้าร่วมทริป — Unified Trip</title>
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/anuphan-thai-400-normal.woff2">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=157">
+  <link rel="stylesheet" href="themes.css?v=18">
+</head>
+<body>
+  <div class="app-shell">
+    <main class="workspace" style="grid-column:1/-1">
+      <section class="screen active join-screen">
+        <div class="join-card paper-card">
+          <h1 id="joinTripName">เข้าร่วมทริป</h1>
+          <p class="field-note">เลือกชื่อของคุณ แล้วใส่รหัสที่ผู้ดูแลทริปให้ไว้</p>
+
+          <div id="joinLoading" class="field-note">กำลังโหลด…</div>
+
+          <form id="joinForm" hidden>
+            <label class="field-wide">คุณคือใคร
+              <select id="joinMember"></select>
+            </label>
+            <label class="field-wide">รหัสเข้าใช้งาน
+              <input id="joinPasscode" type="password" required autocomplete="current-password"
+                     placeholder="รหัสที่ผู้ดูแลทริปให้ไว้">
+            </label>
+            <p class="form-error" id="joinError"></p>
+            <button type="submit" class="primary-btn" id="joinSubmit">เข้าใช้งาน</button>
+          </form>
+
+          <div id="joinBlocked" class="field-note" hidden></div>
+
+          <p class="field-note join-foot">
+            เป็นสมาชิกครอบครัวและมีบัญชีของระบบอยู่แล้ว?
+            <a href="../index.html">เข้าสู่ระบบตามปกติ</a>
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="api.js?v=47"></script>
+  <script src="join.js?v=2"></script>
+</body>
+</html>

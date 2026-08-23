@@ -119,8 +119,8 @@ body{font-family:Poppins,Anuphan,system-ui,sans-serif}
 #saveWarning{color:#b1414f;font-weight:600}
 #saveWarning:empty,#ownerNote:empty{display:none}
 
-.split-row{grid-template-columns:1fr 110px 30px}
-.remove-split{border:0;background:#f2efec;color:var(--muted);border-radius:9px;height:34px;
+.split-row{grid-template-columns:minmax(0,1fr) 110px 44px}
+.remove-split{border:0;background:#fff;color:var(--muted);border-radius:9px;height:44px;
   font-size:18px;line-height:1;cursor:pointer}
 .remove-split:disabled{opacity:.35;cursor:not-allowed}
 .allocated.off-balance{background:#fdeceb;outline:1px solid #eeb6b6}
@@ -223,6 +223,73 @@ body{font-family:Poppins,Anuphan,system-ui,sans-serif}
   font:700 13px Poppins,Anuphan,sans-serif;box-shadow:0 6px 18px rgba(16,38,74,.18);backdrop-filter:blur(6px)}
 .banner-edit:hover{background:#fff}
 .head-actions{display:flex;gap:8px;flex-wrap:wrap}
+/* ── v17 · ตัดภาพรวมหลายไอคอนเป็นไฟล์แยก ── */
+.slicer{width:min(760px,calc(100% - 28px))}
+.slicer-lead{margin:0 0 12px;color:var(--muted);font-size:13px}
+.slicer-controls{display:grid;gap:9px;background:#f7f5f2;border-radius:14px;padding:11px 13px;margin-bottom:13px}
+.slicer-toggle{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px}
+.slicer-toggle input{width:auto}
+.slicer-manual{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.slicer-manual input{width:62px;border:1px solid #d9d5d0;background:#fff;border-radius:10px;
+  padding:7px 9px;font:14px Sarabun,sans-serif;text-align:center}
+.slicer-manual .soft-btn{padding:7px 12px;font-size:13px}
+/* พื้นหมากรุกอ่อน ๆ ใต้ชิ้นตัวอย่าง — ไอคอนพื้นโปร่งใสบนพื้นขาวล้วนจะดูเหมือน
+   พื้นหลังยังไม่ถูกลบ ทำให้กดปุ่ม "ลบพื้นหลัง" ซ้ำโดยไม่จำเป็น */
+.slicer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:9px;
+  max-height:44vh;overflow:auto;padding:2px}
+.slice-option{position:relative;border:2px solid transparent;border-radius:14px;padding:6px;cursor:pointer;
+  background-color:#f4f2ef;
+  background-image:linear-gradient(45deg,#e6e2dd 25%,transparent 25%,transparent 75%,#e6e2dd 75%),
+                   linear-gradient(45deg,#e6e2dd 25%,transparent 25%,transparent 75%,#e6e2dd 75%);
+  background-size:14px 14px;background-position:0 0,7px 7px}
+.slice-option img{display:block;width:100%;aspect-ratio:1;object-fit:contain}
+.slice-option small{position:absolute;left:5px;top:5px;background:rgba(255,255,255,.9);border-radius:99px;
+  min-width:19px;padding:1px 5px;font:700 11px Poppins,Anuphan,sans-serif;color:var(--muted)}
+.slice-option.chosen{border-color:var(--pink);background-color:var(--pink-soft)}
+.slice-option.chosen small{background:var(--pink);color:#fff}
+.slice-option:not(.chosen){opacity:.5}
+
+/* เครื่องมืออยู่ใต้ภาพ ไม่ลอยทับแบนเนอร์ หมุด หรือชื่อสถานที่ */
+.map-hero-actions{position:static;display:flex;justify-content:flex-end;align-items:center;gap:8px;
+  flex-wrap:wrap;margin:10px 2px 12px}
+.map-hero-actions .banner-edit{position:static;right:auto;bottom:auto}
+.real-map{position:absolute;inset:0;z-index:2;background:#dfe6e4}
+/* ป้ายชื่อสถานที่บนหมุด — ต้องอ่านออกทั้งบนหิมะขาวและบนป่าเขียวเข้ม
+   จึงใช้พื้นทึบ ไม่ใช่ตัวอักษรลอยพร้อม text-shadow ซึ่งจะจมไปกับแผนที่ */
+.trip-pin{background:none;border:0}
+.trip-pin i{display:block;width:26px;height:26px;border-radius:50%;border:3px solid #fff;
+  box-shadow:0 2px 6px rgba(16,38,74,.4);font-style:normal;text-align:center;
+  font:700 13px/21px Poppins,Anuphan,sans-serif;color:#fff}
+.trip-pin.past i{background:#8c9aa6}
+.trip-pin.today i{background:#e2588a;width:34px;height:34px;line-height:28px;font-size:15px;
+  box-shadow:0 0 0 7px rgba(226,88,138,.28),0 2px 8px rgba(16,38,74,.45)}
+.trip-pin.future i{background:#3f88a8}
+.trip-pin b{display:block;margin-top:3px;white-space:nowrap;transform:translateX(-50%);
+  margin-left:13px;background:rgba(255,255,255,.94);border-radius:99px;padding:1px 7px;
+  font:700 11px Poppins,Anuphan,sans-serif;color:#2c3540;box-shadow:0 1px 4px rgba(16,38,74,.22)}
+.trip-pin.today b{margin-left:17px}
+.map-legend{position:absolute;left:14px;bottom:14px;z-index:3;display:flex;gap:10px;flex-wrap:wrap;
+  background:rgba(255,255,255,.93);border-radius:14px;padding:7px 11px;
+  font:600 11px Poppins,Anuphan,sans-serif;box-shadow:0 4px 14px rgba(16,38,74,.18)}
+.map-legend span{display:flex;align-items:center;gap:5px}
+.map-legend i{width:11px;height:11px;border-radius:50%;font-style:normal}
+.map-legend .past i{background:#8c9aa6}
+.map-legend .today i{background:#e2588a}
+.map-legend .future i{background:#3f88a8}
+.map-note{position:absolute;left:14px;top:14px;right:14px;z-index:3;background:rgba(255,247,224,.96);
+  border-radius:13px;padding:9px 12px;font:600 12px Anuphan,sans-serif;color:#6b4a12;
+  box-shadow:0 4px 14px rgba(16,38,74,.16)}
+/* ระยะทางระหว่างจุดในหน้าแผนเที่ยว */
+.leg-distance{display:flex;align-items:center;gap:7px;padding:1px 0 1px 30px;
+  color:var(--muted);font:600 11px Poppins,Anuphan,sans-serif}
+.leg-distance:before{content:"";width:2px;height:15px;background:#d9d3cd;border-radius:2px}
+.day-distance{color:var(--muted);font:600 12px Poppins,Anuphan,sans-serif}
+@media(max-width:640px){
+  .map-hero-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:9px 0 12px}
+  .map-hero-actions .banner-edit{width:100%;min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px}
+  .map-legend{left:10px;bottom:10px;padding:5px 9px;gap:7px;font-size:10px}
+  .trip-pin b{font-size:10px}
+}
 
 .icon-field{display:flex;align-items:center;gap:12px;background:#f7f5f2;border-radius:14px;padding:11px 13px}
 .icon-field>span{font-weight:700;flex:1}
@@ -235,6 +302,16 @@ body{font-family:Poppins,Anuphan,system-ui,sans-serif}
 .asset-spec b{font:700 14px Poppins,Anuphan,sans-serif}
 .asset-spec span{font-size:13px}
 .asset-spec small{color:var(--muted);font-size:12px;line-height:1.5}
+
+/* ไอคอนแชร์ตำแหน่งใช้ SVG แทนอักขระ ⌖ ซึ่ง baseline ของแต่ละฟอนต์ไม่เท่ากัน
+   จึงดูเยื้องแม้กล่องปุ่มจะมีขนาดถูกต้อง */
+.icon-btn.location-share{display:grid;place-items:center;width:36px;height:36px;flex:0 0 36px;
+  padding:0;line-height:1;color:#347c9d;background:#e2f3fa;border:1px solid #c4e7f5}
+.location-share svg{display:block;width:20px;height:20px;overflow:visible}
+.location-share svg path{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.location-share svg circle{fill:currentColor;stroke:none}
+.icon-btn.location-share.sharing{color:#fff;background:#2f9a7f;border-color:#267c68;
+  box-shadow:0 0 0 3px rgba(47,154,127,.16)}
 .asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;
   max-height:46vh;overflow:auto;padding:2px}
 .asset-option{border:2px solid transparent;background:#f7f5f2;border-radius:16px;padding:9px 7px;
@@ -275,7 +352,7 @@ body{font-family:Poppins,Anuphan,system-ui,sans-serif}
 .asset-picker{z-index:54}
 
 /* ── v18 · split modes, live wallets, viewer switcher ── */
-.split-mode{grid-template-columns:repeat(3,1fr);margin-bottom:2px}
+.split-mode{grid-template-columns:repeat(2,minmax(0,1fr));margin:0}
 .split-mode.disabled{opacity:.4;pointer-events:none}
 .people-rows{display:grid;gap:7px}
 .people-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;
@@ -574,6 +651,15 @@ body.trip-closed .mobile-fab{opacity:.4;pointer-events:none}
 .direct-link-row{display:flex;gap:8px;margin-top:6px}
 .direct-link-row input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:11px;
   font-size:12px;color:var(--muted);background:#f8f6f3}
+/* 🔴 .field-note มี margin-top:-6px ทั่วทั้งแอป (ดูบรรทัด ~117) ซึ่งตั้งไว้
+   สำหรับคำอธิบายที่อยู่ใต้ "ช่องกรอก" เพื่อดึงให้ชิดกัน — แต่พอไปอยู่ใต้ "ปุ่ม"
+   ค่าติดลบนั้นจะดันข้อความขึ้นไปทับขอบล่างของปุ่มพอดี
+   เจอจริงจากภาพหน้าจอที่ North ส่งมา 2026-08-23: ข้อความ "ลบแล้วกู้คืนไม่ได้…"
+   ทับปุ่ม "🗑️ ลบทริปนี้"
+   ⚠️ ด่านตรวจอัตโนมัติจับไม่ได้ เพราะ jsdom ไม่มี layout engine — ไม่มีอะไร
+      คำนวณตำแหน่งจริงของกล่องได้เลย ต้องมีคนมองจอถึงจะเห็น */
+button + .field-note{margin-top:9px}
+
 .danger-zone{margin-top:18px;padding-top:14px;border-top:1px dashed var(--line)}
 .danger-btn{color:var(--danger)!important;border:1px solid var(--danger)!important;background:#fff!important}
 .danger-btn:disabled{opacity:.45;cursor:not-allowed}
@@ -581,32 +667,99 @@ body.trip-closed .mobile-fab{opacity:.4;pointer-events:none}
 /* ── จดค่าใช้จ่าย: หน้าเดียว ใช้มือเดียวบนมือถือ ──────────────────────
    โครง: หัวเรื่อง + พื้นที่เลื่อน + ปุ่มบันทึกติดล่าง
    ปุ่มบันทึกต้องอยู่กับที่ ไม่งั้นกรอกเสร็จแล้วต้องเลื่อนหาปุ่ม */
-.quick-add{display:flex;flex-direction:column;max-height:92vh;padding-bottom:0}
+.quick-add{display:flex;flex-direction:column;max-height:92vh;padding-bottom:0;
+  background:linear-gradient(180deg,#f8fdff 0%,#fffdf9 38%,#f3fbff 100%)}
+.quick-add{--quick-border:#b9d8e2;--quick-radius:14px}
 .quick-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px}
-.quick-title{margin:2px 0 14px;font-size:19px}
+.quick-heading{display:flex;align-items:center;gap:11px;margin:0 42px 16px 0}
+.quick-heading-icon{width:42px;height:42px;display:grid;place-items:center;flex:none;
+  border-radius:14px;background:linear-gradient(145deg,#d9f4ff,#eadfff);font-size:20px;
+  box-shadow:0 3px 0 #acd9e8}
+.quick-heading div{min-width:0}.quick-title{margin:0;font-size:20px}.quick-heading p{margin:2px 0 0;
+  color:var(--muted);font-size:12px;line-height:1.4}
 
 /* ยอดเงินเป็นสิ่งแรกที่คนพิมพ์ จึงใหญ่ที่สุดและกดโดนง่ายที่สุด */
-.amount-hero{display:flex;align-items:baseline;gap:8px;padding:14px 16px;
-  background:var(--cream);border-radius:16px;border:1px solid var(--line)}
-.amount-hero span{font-size:24px;color:var(--muted)}
+.amount-hero{display:flex;align-items:center;gap:10px;min-height:76px;padding:14px 16px;
+  background:#fff;border-radius:18px;border:3px solid #68bddd;box-shadow:0 5px 0 #b6dfeb}
+.amount-hero span{width:42px;height:42px;display:grid;place-items:center;flex:none;border-radius:13px;
+  background:#e0f5fd;color:#237c9f;font-size:22px;font-weight:700}
 .amount-hero input{flex:1;min-width:0;border:0;background:none;outline:none;
-  font:700 34px/1.1 Poppins,Anuphan,sans-serif;color:var(--ink)}
+  font:700 36px/1.1 Poppins,Anuphan,sans-serif;color:#153f54;text-align:right}
 .quick-add .conversion{margin:8px 2px 14px;font-size:13px;color:var(--muted)}
 
 .quick-row{display:grid;gap:12px;margin-bottom:12px}
 .quick-row.two{grid-template-columns:1fr 1fr}
 .quick-add label{display:grid;gap:5px;font-size:13px;color:var(--muted)}
-.quick-add label input,.quick-add label select{padding:11px 12px;border:1px solid var(--line);
-  border-radius:11px;font:inherit;color:var(--ink);background:#fff;min-width:0}
+.quick-add label input,.quick-add label select{width:100%;height:44px;padding:0 12px;border:1px solid var(--line);
+  border-radius:var(--quick-radius);font:inherit;color:var(--ink);background-color:#fff;min-width:0}
+.quick-add label select,.quick-add .split-row select{-webkit-appearance:none;appearance:none;padding-right:36px;
+  background-color:#fff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23476b7d' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center}
+.quick-add label input,.quick-add label select,.quick-add .split-row select,
+.quick-add .split-row input{border-color:var(--quick-border);border-radius:var(--quick-radius)}
+.quick-add .split-row select,.quick-add .split-row input{height:44px;background-color:#fff}
+.quick-add .category-amount,.quick-add .share-input{text-align:right;font-variant-numeric:tabular-nums}
 .quick-field{margin-bottom:14px}
+.receipt-field{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin:0 0 14px;
+  padding:11px 12px;background:#fff;border:1px solid var(--quick-border);border-radius:var(--quick-radius)}
+.receipt-copy{display:grid;min-width:0}.receipt-copy b{font-size:13px}.receipt-copy small{font-size:11px;color:var(--muted)}
+.receipt-picker{display:flex!important;align-items:center;gap:6px;padding:8px 11px;border-radius:11px;
+  background:var(--blue-soft);color:var(--ink)!important;cursor:pointer;white-space:nowrap}
+.receipt-picker span{font-size:16px}.receipt-picker b{font-size:12px}
+.receipt-preview{grid-column:1/-1;display:grid;grid-template-columns:48px 1fr 30px;gap:9px;align-items:center;
+  padding-top:10px;border-top:1px solid var(--line)}
+.receipt-preview[hidden]{display:none}.receipt-preview img{width:48px;height:48px;object-fit:cover;border-radius:10px;
+  border:1px solid var(--quick-border)}.receipt-preview>div{display:grid;min-width:0}
+.receipt-preview b{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.receipt-preview small{font-size:11px;color:var(--muted)}.receipt-preview button{width:30px;height:30px;border:1px solid var(--quick-border);
+  border-radius:10px;background:#fff;color:var(--muted);font-size:18px}
 
-.quick-section{padding:14px 0;border-top:1px solid var(--line)}
-.quick-section-head{display:flex;justify-content:space-between;align-items:baseline;
-  gap:10px;margin-bottom:10px;font-size:14px}
+.quick-section{display:grid;gap:10px;padding:15px 14px;margin:0 0 12px;background:#fff;border:1px solid var(--quick-border);
+  border-radius:var(--quick-radius);box-shadow:0 3px 0 #e0f2f7}
+.quick-section-head{display:grid;grid-template-columns:1fr;align-items:start;
+  gap:8px;margin:0;font-size:14px}
+.quick-section-head>div{display:grid;gap:2px}.quick-section-head small{font-size:11px;
+  font-weight:400;color:var(--muted)}
 .quick-section-head span{font-size:12px;color:var(--muted)}
+#allocatedLine{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;
+  min-height:36px;padding:7px 10px;border-radius:10px;background:#f1faff}
+#allocatedLine>b{text-align:right;color:#31576b;font-variant-numeric:tabular-nums}
+#splitRows{display:grid;gap:8px}
+.quick-add .split-row select{padding:0 36px 0 12px;border:1px solid var(--quick-border)}
+.quick-add .split-row input{padding:0 10px;border:1px solid var(--quick-border)}
+
+/* รายชื่อผู้ร่วมบิลเป็นช่องข้อมูลปกติ ไม่ใช้พื้นเทาที่ดูเหมือนถูกปิดใช้งาน */
+.quick-add .people-rows{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0}
+.quick-add .people-row{min-height:44px;padding:8px 11px;background:#fff;border:1px solid var(--line);
+  border-color:var(--quick-border);border-radius:var(--quick-radius);transition:border-color .15s,box-shadow .15s,opacity .15s}
+.quick-add .people-row:has(input[type="checkbox"]:checked){border-color:#a9d5df;
+  box-shadow:0 0 0 2px rgba(169,213,223,.18)}
+.quick-add .people-row.off{opacity:1;color:var(--muted);background:#fff}
+.quick-add .people-row.off label{font-weight:500}
+.quick-add .people-row label{min-width:0;color:var(--ink)}
+.quick-add .people-row input[type="checkbox"]{accent-color:var(--blue)}
+.quick-add .people-row:has(.share-input:not([hidden])){grid-column:1/-1}
+.quick-add .people-row:has(.share-input:not([hidden])){grid-template-columns:minmax(0,1fr) 94px 28px;
+  column-gap:0;padding-right:10px}
+.quick-add .people-row:has(.share-input:not([hidden])) label{margin-right:10px}
+.quick-add .people-row .share-input{width:94px;height:36px;border:1px solid var(--quick-border);
+  border-radius:10px 0 0 10px;padding:0 8px;background:#fff}
+.quick-add .people-row .share-unit{width:28px;height:36px;display:grid;place-items:center;border:1px solid var(--quick-border);
+  border-left:0;border-radius:0 10px 10px 0;background:#f1faff;color:#31576b}
+.quick-add .people-rows[hidden]{display:none}
+.quick-add .share-result{min-height:44px;align-items:center;background:#fff;border:1px solid var(--line);
+  border-color:var(--quick-border);border-radius:var(--quick-radius);padding:10px 12px;margin:0}
+.quick-add .split-mode button,.quick-add .add-line,.quick-add .remove-split{
+  border-radius:var(--quick-radius)}
+.quick-add .split-mode button:not(.active),.quick-add .add-line,.quick-add .remove-split{
+  border-color:var(--quick-border)}
+.quick-add .split-mode button{background:#fff;color:#37687e;border:2px solid #fff;
+  min-height:46px;box-shadow:0 3px 0 #b9dce8;white-space:nowrap}
+.quick-add .split-mode button.active{background:linear-gradient(135deg,#56b9dc,#6d98dc);color:#fff;
+  border-color:#fff;box-shadow:0 4px 0 #387fa1}
 
 /* ตัวเลือกที่คนส่วนใหญ่ไม่แตะ — พับไว้แต่เปิดได้ในคลิกเดียว */
-.quick-advanced{border-top:1px solid var(--line);padding-top:12px}
+.quick-advanced{border:1px solid var(--quick-border);border-radius:var(--quick-radius);padding:9px 12px;margin-bottom:12px;background:#fff}
 .quick-advanced summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--ink);
   padding:6px 0;list-style:none}
 .quick-advanced summary::before{content:'⌄ ';color:var(--muted)}
@@ -615,14 +768,15 @@ body.trip-closed .mobile-fab{opacity:.4;pointer-events:none}
 
 .quick-footer{position:sticky;bottom:0;padding:12px 0 16px;background:var(--paper);
   border-top:1px solid var(--line)}
-.quick-footer .primary-btn{width:100%;padding:15px;font-size:16px}
+.quick-footer .primary-btn{width:100%;padding:15px;font-size:16px;background:linear-gradient(100deg,#46b8df,#759ee8 52%,#e58fc0);
+  border:2px solid #fff;box-shadow:0 6px 0 #4789ad,0 12px 24px rgba(62,151,193,.28)}
 .quick-footer .field-note{margin:0 0 8px}
 .quick-footer .field-note:empty{display:none}
 
 @media(max-width:640px){
   .quick-add{max-height:94vh}
-  .quick-row.two{grid-template-columns:1fr}
   .amount-hero input{font-size:30px}
+  .quick-section-head>span{width:100%}
 }
 
 /* ── อ่านง่าย + ลื่นบนมือถือ (2026-08-02) ─────────────────────────────
@@ -669,4 +823,1440 @@ body{background:linear-gradient(165deg,#DFF1F0,#F4FAF6 48%,#FDF7E9) fixed}
   .topbar{backdrop-filter:none;background:#fff}
   .mobile-nav{backdrop-filter:none;background:#fffdf9}
   .trip-pick-card{transition:none}
+}
+
+/* ── Plan timeline · Hokkaido Kawaii (2026-08-21) ─────────────────── */
+#screen-plan{background-color:#d9f4ff;background-image:radial-gradient(#a8ddef 1.2px,transparent 1.2px);background-size:18px 18px;min-height:calc(100vh - 74px)}
+#screen-plan .plan-layout{max-width:980px}
+#screen-plan .page-head{margin-bottom:15px}
+#screen-plan .page-head .primary-btn{border:2px solid #fff;border-radius:999px;background:linear-gradient(135deg,#176a9b,#268cc7);box-shadow:0 4px 0 #155b85}
+#screen-plan .day-tabs{padding:4px 2px 10px;scrollbar-width:none}
+#screen-plan .day-tabs button{min-width:128px;padding:10px 15px;border:2px solid #fff;border-radius:18px;background:rgba(255,255,255,.78);box-shadow:0 3px 0 rgba(31,116,159,.12);text-align:left}
+#screen-plan .day-tabs button.active{background:#176a9b;color:#fff;border-color:#fff}
+.plan-day-overview{position:relative;overflow:hidden;grid-template-columns:62px minmax(0,1fr) auto auto;gap:14px;background:linear-gradient(135deg,#fff8d9,#fff0bb);border:3px solid #fff;border-radius:26px;padding:18px 20px;box-shadow:0 7px 0 rgba(42,120,153,.17);margin-bottom:18px}
+.plan-day-overview:after{content:'❄';position:absolute;right:18px;top:4px;font-size:72px;color:#268cc7;opacity:.1;pointer-events:none}
+.plan-day-badge{width:61px;height:61px;border-radius:19px;background:#fff;display:grid!important;place-content:center;text-align:center;color:#176a9b;box-shadow:0 3px 0 #d6c785;line-height:1}
+.plan-day-badge small{font-size:9px;font-weight:800}.plan-day-badge b{font-size:22px}
+.plan-overview-copy{min-width:0;align-self:center}.plan-overview-copy h3{font-size:22px;margin:1px 0}.plan-route-summary{margin:2px 0 5px;color:#655d49;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plan-overview-copy>span{display:inline-block;margin-right:8px;font-size:11px;color:#5c6b70}.plan-overview-copy .day-distance{font-size:10px}
+.plan-overview-actions{display:flex!important;flex-direction:column;gap:8px;align-items:flex-end;align-self:center;z-index:1}
+.edit-day-title{position:static;border:1px solid #e7c978;background:#fff;color:#745f26;border-radius:999px;padding:8px 12px;font:700 12px Sarabun;white-space:nowrap}
+.plan-quick-stats{display:flex!important;gap:5px;flex-wrap:wrap;justify-content:flex-end}.plan-quick-stats span{padding:5px 8px;border-radius:999px;background:rgba(255,255,255,.78);font-size:10px;font-weight:700;white-space:nowrap}
+.plan-weather{z-index:1}.plan-weather>span{font-size:25px}.plan-weather b{font-size:17px}.plan-weather small{max-width:100px;font-size:10px}
+.plan-list-head{display:flex;justify-content:space-between;align-items:center;padding:0 5px 10px}.plan-list-head b{font-size:16px}.plan-list-head small{color:var(--muted)}
+.plan-list{gap:0;padding:14px;background:rgba(255,255,255,.56);border:2px solid rgba(255,255,255,.88);border-radius:26px}
+.plan-item{grid-template-columns:20px 68px 58px minmax(0,1fr) auto 40px;gap:12px;padding:13px 14px;border:2px solid #fff;border-radius:21px;background:#fffdf9;box-shadow:0 4px 0 rgba(46,119,150,.13);cursor:grab;position:relative;overflow:visible}
+.plan-item time{color:#176a9b;text-align:center;font-size:16px}.plan-item time small{font:700 9px Sarabun;color:var(--muted);margin-top:2px}
+.plan-item img{width:56px;height:56px;border-radius:17px;background:#e6f6fb;object-fit:contain;padding:3px;border:2px solid #fff;box-shadow:0 3px 8px rgba(35,91,117,.12)}
+.plan-place-copy{min-width:0}.plan-place-copy>b,.plan-place-copy>small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.plan-place-copy>b{font-size:15px}.plan-place-copy>small{font-size:11px}
+.plan-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}.plan-item .plan-tags em{color:#287865;background:#dff6ed}.plan-item .plan-tags .cost-badge{background:#fff0d1;color:#8a641b}.plan-item .plan-tags .doc-badge{background:#eee9ff;color:#6656a3}.plan-item .plan-tags .skip-badge{background:#ffe1ec;color:#a84168}
+.plan-cost small{font-size:10px;color:var(--muted);white-space:nowrap}
+.plan-item-menu{position:relative}.plan-item-menu summary{list-style:none;width:38px;height:38px;border-radius:13px;background:#e6f5fb;color:#176a9b;display:grid;place-items:center;font-weight:900;cursor:pointer}.plan-item-menu summary::-webkit-details-marker{display:none}
+.plan-item-menu>div{position:absolute;right:0;top:44px;z-index:9;width:170px;padding:6px;border:1px solid #b8ddea;border-radius:14px;background:#fff;box-shadow:0 10px 24px rgba(33,78,99,.2)}
+.plan-item-menu button{width:100%;min-height:34px;padding:7px 9px;border:0;border-radius:9px;background:#fff;text-align:left;color:var(--ink);font:600 12px Sarabun;cursor:pointer}.plan-item-menu button:hover{background:#edf8fc}.plan-item-menu button.danger{color:#b23b58}
+.leg-distance{display:grid;grid-template-columns:20px 68px 1fr;min-height:40px;align-items:center}.leg-distance span{grid-column:2;width:2px;height:100%;margin:auto;background:repeating-linear-gradient(to bottom,#268cc7 0 5px,transparent 5px 10px)}.leg-distance b{grid-column:3;color:var(--muted);font-size:10px;font-weight:700}
+.cross-day-move{margin-top:13px;border:2px dashed #b8ddea;background:rgba(255,255,255,.62);border-radius:18px}
+@media(max-width:760px){
+  #screen-plan{padding-left:10px;padding-right:10px;min-height:calc(100vh - 64px)}
+  .plan-day-overview{grid-template-columns:54px minmax(0,1fr) 38px;padding:14px;gap:10px}.plan-day-badge{width:54px;height:54px;border-radius:17px}.plan-overview-copy h3{font-size:18px}.plan-route-summary{font-size:11px}.plan-overview-actions{display:block!important}.plan-overview-actions .edit-day-title{font-size:0;width:38px;height:38px;padding:0}.plan-overview-actions .edit-day-title:before{content:'✎';font-size:17px}.plan-quick-stats{position:absolute;left:14px;right:14px;bottom:11px}.plan-day-overview{padding-bottom:48px}.plan-weather{display:none}
+  .plan-list-head small{font-size:10px}.plan-list{padding:9px}.plan-item{grid-template-columns:17px 49px 48px minmax(0,1fr) 38px;gap:7px;padding:10px 8px}.plan-item time{font-size:13px}.plan-item img{width:48px;height:48px;border-radius:15px}.plan-place-copy>b{font-size:14px}.plan-place-copy>small{max-width:170px}.plan-cost{display:none}.plan-item-menu{grid-column:5}.leg-distance{grid-template-columns:17px 49px 1fr;min-height:36px}.leg-distance span{grid-column:2}.leg-distance b{grid-column:3}.cross-day-move{font-size:12px}
+}
+/* ── v19 · หน้าแผนเที่ยว ตาม mockup ของ North (2026-08-22) ────────────
+   🔴 ทุกกฎในบล็อกนี้ผูกกับ #screen-plan โดยตั้งใจ — ห้ามถอดออก
+
+   เหตุผล: ไฟล์นี้มีคนแก้คู่ขนานกันหลายคน และ themes.css ยังโหลด "ทีหลัง"
+   style.css อีกชั้น การพึ่ง "อยู่ท้ายไฟล์เลยชนะ" จึงพังทันทีที่มีใครต่อบล็อกใหม่
+   เคยพังมาแล้วจริง: หน้าที่ deploy ออกไปยังเป็นของบล็อกเก่า ทั้งที่กฎใหม่อยู่ในไฟล์
+   id ให้ specificity 100 ซึ่งชนะกฎที่ใช้ class ล้วนได้ทุกกรณี ไม่ว่าจะอยู่ตรงไหน
+
+   🔴 บทเรียนจากหน้าจริงที่พัง: คอลัมน์เวลาเดิมกว้าง 49px แต่ "11:20" ที่ 21px
+      กว้างกว่านั้น เลยถูกตัดเหลือ "12:0…" · และคอลัมน์เนื้อหาไม่ได้ตั้ง min-width:0
+      ป้ายกำกับจึงดันความกว้างตัวเองจนห่อเป็นตับแนวตั้งสูงเท่าการ์ด
+      ห้ามลดคอลัมน์เวลาต่ำกว่า 68px และห้ามถอด minmax(0,1fr) */
+
+#screen-plan{background:#e9f3fc;
+  background-image:radial-gradient(#cfe3f5 1.1px,transparent 1.1px);
+  background-size:22px 22px;border-radius:26px}
+#screen-plan .page-head span{color:#5c86b4}
+#screen-plan .page-head h1{color:#20344f}
+#screen-plan .page-head p{color:#6f8aa8}
+#screen-plan .page-head .primary-btn{background:#3f6fa8;border-radius:999px;
+  padding:13px 22px;box-shadow:0 8px 18px rgba(47,79,122,.28)}
+
+#screen-plan .day-tabs{gap:11px;padding:2px 2px 8px}
+#screen-plan .day-tabs button{min-width:132px;border-radius:20px;padding:12px 17px;background:#fff;
+  border:1px solid #dfeaf6;box-shadow:0 3px 10px rgba(47,79,122,.07);text-align:left;line-height:1.35}
+#screen-plan .day-tabs button b{display:block;font:700 17px Poppins,Anuphan,sans-serif;color:#20344f}
+#screen-plan .day-tabs button small{display:block;color:#7e97b3;font-weight:500;font-size:12.5px;margin-top:3px}
+#screen-plan .day-tabs button.active{background:#3f6fa8;border-color:#3f6fa8;box-shadow:0 8px 18px rgba(47,79,122,.3)}
+#screen-plan .day-tabs button.active b{color:#fff}
+#screen-plan .day-tabs button.active small{color:#fff;opacity:.86}
+#screen-plan .day-tabs button.add-day{border-style:dashed;border-color:#c9dcee;background:#fbfdff}
+#screen-plan .day-tabs button.add-day b{color:#5c86b4}
+
+#screen-plan .plan-day-overview{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:18px;
+  align-items:start;background:linear-gradient(135deg,#fdf3d8,#fefaee 62%,#fdf6e4);
+  border:1px solid #f2e3bb;border-radius:26px;padding:20px 22px;margin-bottom:20px;
+  box-shadow:0 6px 20px rgba(150,120,40,.09)}
+#screen-plan .plan-day-badge{width:66px;height:66px;border-radius:20px;background:#fff;
+  border:1px solid #efdfb6;display:grid;place-content:center;text-align:center;line-height:1.1}
+#screen-plan .plan-day-badge span{font:700 10px Poppins,sans-serif;color:#b28f3d;letter-spacing:.12em}
+#screen-plan .plan-day-badge strong{font:700 26px Poppins,sans-serif;color:#8a6a1e}
+#screen-plan .plan-day-main h3{margin:0;font:800 26px Sarabun,Anuphan,sans-serif;color:#2a2110}
+#screen-plan .plan-day-route{margin:6px 0 0;color:#5c86b4;font:600 14px/1.55 Anuphan,sans-serif}
+#screen-plan .plan-day-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+#screen-plan .plan-day-chips span{display:inline-flex;align-items:center;gap:6px;background:#fff;
+  border:1px solid #f0e3c4;border-radius:999px;padding:7px 13px;
+  font:600 13px Anuphan,sans-serif;color:#6b5a30;white-space:nowrap}
+#screen-plan .plan-day-chips span.warn{background:#fff2e2;border-color:#f2d3ab;color:#8a5320}
+#screen-plan .edit-day-btn{border:1px solid #efdfb6;background:#fff;border-radius:999px;padding:11px 18px;
+  font:700 14px Anuphan,sans-serif;color:#8a6a1e;cursor:pointer;white-space:nowrap;
+  box-shadow:0 3px 10px rgba(150,120,40,.1)}
+#screen-plan .edit-day-btn:hover{background:#fffdf6}
+
+#screen-plan .plan-list-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0 4px 12px}
+#screen-plan .plan-list-head b{font:800 18px Sarabun,Anuphan,sans-serif;color:#20344f}
+#screen-plan .plan-list-head small{color:#7e97b3;font-size:13px}
+
+#screen-plan .plan-list{display:grid;gap:0;padding:0;background:none}
+#screen-plan .plan-item{display:grid;grid-template-columns:68px 60px minmax(0,1fr) auto;gap:16px;
+  align-items:center;background:#fff;border:1px solid #e4eefa;border-radius:22px;
+  padding:16px 18px;box-shadow:0 4px 14px rgba(47,79,122,.07)}
+#screen-plan .plan-item.selected{border-color:#9dc2e8;box-shadow:0 6px 18px rgba(47,79,122,.16)}
+#screen-plan .plan-item .drag{display:none}
+#screen-plan .plan-time{display:grid;text-align:left;line-height:1.2}
+#screen-plan .plan-time b{font:700 21px Poppins,Anuphan,sans-serif;color:#2f4f7a}
+#screen-plan .plan-time small{color:#8ea4bd;font-size:12px;margin-top:2px}
+#screen-plan .plan-item img{width:56px;height:56px;border-radius:18px;background:#f2f7fd;padding:6px;
+  object-fit:contain;border:1px solid #e7f0fa}
+#screen-plan .plan-place-copy{min-width:0}
+#screen-plan .plan-item b.stop-name{display:block;font:700 18px Sarabun,Anuphan,sans-serif;color:#20344f}
+#screen-plan .plan-place-copy>small{display:block;color:#7e97b3;font-size:13.5px;margin-top:3px}
+#screen-plan .plan-tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+#screen-plan .plan-tags em{font-style:normal;border-radius:999px;padding:5px 11px;white-space:nowrap;
+  font:600 12px Anuphan,sans-serif;background:#eef2f6;color:#5f7690}
+#screen-plan .plan-tags em.start, #screen-plan .plan-tags em.stay{background:#e2f3e8;color:#3d7a54}
+#screen-plan .plan-tags em.doc{background:#ece9f8;color:#5a4b9c}
+#screen-plan .plan-tags em.star, #screen-plan .plan-tags em.money{background:#fde8f0;color:#a63e68}
+#screen-plan .plan-tags em.over{background:#fde3da;color:#a2482a}
+#screen-plan .plan-tags em.weather{background:#e6f1f9;color:#3a6c92}
+
+#screen-plan .plan-item-menu{position:relative;justify-self:end}
+#screen-plan .plan-item-menu summary{list-style:none;width:44px;height:44px;border-radius:50%;
+  background:#eef4fb;display:grid;place-items:center;font:700 17px Poppins,sans-serif;
+  color:#5c86b4;cursor:pointer;letter-spacing:.06em}
+#screen-plan .plan-item-menu summary::-webkit-details-marker{display:none}
+#screen-plan .plan-item-menu summary:hover{background:#e2ecf7}
+#screen-plan .plan-item.skipped{opacity:.6}
+#screen-plan .plan-item.skipped b.stop-name{text-decoration:line-through}
+
+#screen-plan .leg-distance{display:flex;align-items:center;gap:8px;white-space:nowrap;
+  margin:0 0 0 34px;padding:12px 0 12px 22px;border-left:2px dashed #b9d2ea;
+  color:#6f8aa8;font:600 13px Anuphan,sans-serif}
+#screen-plan .leg-distance:before{content:none}
+#screen-plan .leg-distance i{font-style:normal;font-size:15px}
+#screen-plan .leg-distance u{text-decoration:none;color:#9db3c9;font-weight:500}
+#screen-plan .plan-list>.plan-item+.plan-item{margin-top:14px}
+#screen-plan .plan-empty{background:#fff;border:1px dashed #cfe0f0;border-radius:22px;padding:26px;
+  text-align:center;color:#7e97b3}
+
+#screen-plan .plan-foot{display:flex;justify-content:space-between;align-items:center;gap:14px;
+  flex-wrap:wrap;margin-top:20px}
+#screen-plan .plan-backup{margin:0;color:#6f8aa8;font:600 13.5px Anuphan,sans-serif}
+#addPlaceFoot{border-radius:999px;padding:14px 24px;background:#e97fa4;
+  box-shadow:0 8px 18px rgba(212,83,126,.3)}
+
+@media(max-width:640px){
+  #screen-plan{border-radius:0;background-size:18px 18px}
+  #screen-plan .plan-day-overview{grid-template-columns:auto minmax(0,1fr);gap:13px;padding:16px;border-radius:22px}
+  #screen-plan .edit-day-btn{grid-column:1/-1;justify-self:stretch;text-align:center}
+  #screen-plan .plan-day-main h3{font-size:21px}
+  #screen-plan .plan-day-route{font-size:13px}
+  #screen-plan .plan-item{grid-template-columns:58px 46px minmax(0,1fr) auto;gap:11px;padding:13px}
+  #screen-plan .plan-item img{width:46px;height:46px;border-radius:15px}
+  #screen-plan .plan-time b{font-size:18px}
+  #screen-plan .plan-item b.stop-name{font-size:16px}
+  #screen-plan .plan-item-menu summary{width:38px;height:38px;font-size:15px}
+  #screen-plan .leg-distance{margin-left:24px;padding-left:16px}
+  #addPlaceFoot{flex:1}
+}
+
+/* ── v20 · mapcode + เวลาเปิด-ปิด + คำเตือนต่อจุด (2026-08-22) ── */
+#screen-plan .plan-tags em.mapcode{background:#e8f0f8;color:#2f5e8c;font-family:Poppins,monospace;
+  letter-spacing:.02em;cursor:pointer;border:1px dashed #b9d0e6}
+#screen-plan .plan-tags em.mapcode:hover{background:#dce9f5}
+.weekday-picker{display:flex;gap:6px;flex-wrap:wrap}
+.weekday-picker label{display:inline-flex!important;align-items:center;justify-content:center;
+  min-width:42px;padding:8px 6px;border:1px solid #d9d5d0;border-radius:12px;background:#fff;
+  cursor:pointer;font:600 13px Anuphan,sans-serif;color:var(--muted)}
+.weekday-picker input{position:absolute;opacity:0;width:0;height:0}
+.weekday-picker label:has(input:checked){background:#fdeae4;border-color:#e9b39a;color:#a2482a}
+
+/* ── v21 · ให้ <select> หน้าตาเหมือน <input> (2026-08-22) ──────────────
+   เบราว์เซอร์วาด <select> ด้วยสไตล์ของตัวเอง (native / UA appearance)
+   จึงได้พื้นเทาไล่สีกับลูกศรคู่ ไม่เข้ากับช่องอื่นในฟอร์มเดียวกัน
+
+   วิธีมาตรฐาน: ปิด appearance แล้ววาดลูกศรเองด้วย background-image
+   ⚠️ ลูกศรของ select แต่งด้วย CSS ไม่ได้ ต้องซ่อนของเดิมแล้ววาดใหม่เท่านั้น
+   ⚠️ ต้องเว้น padding ขวาให้พอ ไม่งั้นข้อความยาว ๆ จะวิ่งไปทับลูกศร */
+#planEditor select,
+#planEditor input,
+#planEditor textarea,
+.dialog select,
+.bottom-sheet select{
+  appearance:none;-webkit-appearance:none;-moz-appearance:none;
+  background-color:#fff;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%235c86b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 14px center;
+  padding-right:38px;
+}
+/* input/textarea ไม่มีลูกศร — ลบภาพพื้นหลังที่เพิ่งใส่ให้ทั้งกลุ่มออก
+   เขียนรวมกันข้างบนเพื่อให้ขอบ พื้น และความสูงตรงกันทุกช่องแน่นอน */
+#planEditor input,
+#planEditor textarea{background-image:none;padding-right:12px}
+#planEditor select::-ms-expand{display:none}
+
+/* ── v22 · แถบปุ่มจัดการเป็นไอคอน แทน dropdown (2026-08-22) ────────────
+   ของเดิมเป็น <details> ที่กางเมนูลอยลงมา แล้วโดนขอบการ์ดตัดจนอ่านไม่ครบ
+   (การ์ดมี overflow และมีการ์ดใบถัดไปทับ) · แก้ที่ต้นเหตุคือ "ไม่ต้องมีเมนูลอย"
+   วางปุ่มไว้บนการ์ดเลย — กดครั้งเดียวจบ ไม่ต้องเปิดเมนูก่อน และไม่มีอะไรให้ตัด
+
+   ⚠️ ทุกปุ่มมี title + aria-label เพราะไอคอนล้วนไม่บอกความหมายกับคนที่ใช้
+      screen reader และคนที่จำไอคอนไม่ได้ */
+#screen-plan .plan-actions{display:flex;gap:6px;justify-self:end;align-items:center}
+#screen-plan .plan-actions button{
+  width:38px;height:38px;border:1px solid #e0ebf7;border-radius:13px;background:#f5f9fd;
+  display:grid;place-items:center;font-size:15px;line-height:1;cursor:pointer;
+  color:#456a94;transition:background .12s,transform .12s}
+#screen-plan .plan-actions button:hover:not(:disabled){background:#e6f0fa;transform:translateY(-1px)}
+#screen-plan .plan-actions button:active:not(:disabled){transform:translateY(0)}
+#screen-plan .plan-actions button:disabled{opacity:.35;cursor:not-allowed}
+#screen-plan .plan-actions button[data-move]{font-size:11px;color:#6f8aa8}
+#screen-plan .plan-actions .delete-plan-item{background:#fdf0f2;border-color:#f5d9df}
+#screen-plan .plan-actions .delete-plan-item:hover{background:#fbe2e7}
+
+/* จอแคบ — 5 ปุ่มเรียงข้างเนื้อหาจะเบียดจนกดพลาด ย้ายลงมาเต็มความกว้างแทน
+   ปุ่มยืดเท่ากันทุกอัน นิ้วโป้งกดง่ายกว่าไอคอนเล็ก ๆ ชิดขวา */
+@media(max-width:640px){
+  #screen-plan .plan-actions{grid-column:1/-1;justify-self:stretch;
+    margin-top:10px;padding-top:10px;border-top:1px dashed #e4eefa}
+  #screen-plan .plan-actions button{flex:1;height:40px}
+}
+
+/* ── v23 · ปุ่มเลื่อนขึ้น-ลง เฉพาะอุปกรณ์ที่ลากไม่ได้ (2026-08-22) ──────
+   บนคอมลากสลับลำดับได้อยู่แล้ว ปุ่ม ▲▼ จึงเป็นของซ้ำซ้อน — ซ่อนทิ้ง
+
+   🔴 ห้ามลบออกจาก HTML: การลากใช้ HTML5 dragstart ซึ่ง **ไม่ทำงานบนจอสัมผัส**
+      (touchstart ไม่ทริกเกอร์ dragstart และยังไม่มี polyfill ในโปรเจกต์นี้)
+      ถ้าลบปุ่มทิ้ง ผู้ใช้มือถือจะสลับลำดับจุดแวะไม่ได้เลย
+      hover:hover + pointer:fine = มีเมาส์จริง → ลากได้ → ซ่อนปุ่มได้ */
+@media (hover: hover) and (pointer: fine){
+  #screen-plan .plan-actions button[data-move]{display:none}
+}
+
+/* ── v24 · แถบย้ายจุดแวะข้ามวัน (2026-08-22) ──────────────────────────
+   ป้ายบอกวิธีใช้เมื่อยังไม่ได้เลือก · ปุ่มปลายทางจางลงจนกว่าจะเลือกจุด */
+#screen-plan .cross-day-move{display:grid;gap:10px;margin-top:16px;padding:14px 16px;
+  background:#fff;border:1px dashed #cfe0f0;border-radius:20px}
+#screen-plan .cross-day-move>span{font:600 13px Anuphan,sans-serif;color:#6f8aa8}
+#screen-plan #moveDayTargets{display:flex;gap:8px;flex-wrap:wrap}
+#screen-plan #moveDayTargets button{border:1px solid #dfeaf6;background:#f5f9fd;
+  border-radius:999px;padding:9px 15px;font:600 13px Anuphan,sans-serif;color:#2f4f7a;cursor:pointer}
+#screen-plan #moveDayTargets button:hover:not(:disabled){background:#e6f0fa}
+#screen-plan #moveDayTargets button:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── v25 · ตัวอักษรในฟอร์มให้เข้มพอจะอ่านสบาย (2026-08-22) ─────────────
+   themes.css ตั้ง --ink เป็น #435b57 (เทาอมเขียว) ซึ่งจางเกินไปสำหรับ
+   ป้ายกำกับช่องกรอกและข้อความที่ผู้ใช้ต้องอ่านจริงจังตอนกรอกข้อมูล
+   ตรงนี้บังคับสีเข้มเฉพาะในกล่องฟอร์ม ไม่แตะสีของหน้าอื่น */
+.dialog h2,.bottom-sheet h2{color:#16233a}
+.dialog label,.bottom-sheet label,
+.dialog .editor-grid label,.editor-grid label{color:#1c2b3f}
+.dialog input,.dialog select,.dialog textarea,
+.bottom-sheet input,.bottom-sheet select,.bottom-sheet textarea{color:#16233a}
+.dialog input::placeholder,.dialog textarea::placeholder,
+.bottom-sheet input::placeholder,.bottom-sheet textarea::placeholder{color:#8c9bb0}
+/* ข้อความช่วยเหลือใต้หัวข้อ — จางกว่าป้ายได้ แต่ต้องยังอ่านออก (contrast ≥ 4.5:1) */
+.dialog .field-note,.dialog .hint,.dialog small,
+.bottom-sheet .field-note,.bottom-sheet small{color:#5a6b82}
+.dialog .form-error,.dialog .field-note.error{color:#a8324f;font-weight:600}
+
+/* ── v26 · ช่องเลือกเวลาแบบเลื่อน (2026-08-22) ─────────────────────────
+   กรอบนอกทำหน้าตาเหมือนช่องกรอกอื่น ส่วน select ข้างในโปร่งใสไร้ขอบ
+   จะได้ดูเป็นช่องเดียวกัน ไม่ใช่สองกล่องเรียงกัน */
+.time-picker{display:flex;align-items:center;gap:2px;width:100%;
+  border:1px solid #d9dfe8;background:#fff;border-radius:12px;padding:4px 8px 4px 4px}
+.time-picker>b{color:#8c9bb0;font-weight:600}
+.time-picker select{
+  appearance:none;-webkit-appearance:none;-moz-appearance:none;
+  border:0;background:transparent;padding:7px 4px;width:auto;flex:1;
+  font:600 15px Poppins,Anuphan,sans-serif;color:#16233a;text-align:center;cursor:pointer}
+.time-picker select:focus{outline:none}
+.time-picker:focus-within{border-color:#7fa9d8;box-shadow:0 0 0 3px rgba(63,111,168,.12)}
+/* ลูกศรอันเดียวท้ายกรอบ บอกว่าทั้งช่องนี้กดเลือกได้ */
+.time-picker:after{content:"";width:12px;height:8px;flex:none;margin-left:2px;
+  background:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%235c86b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center}
+
+/* ── v27 · หน้าบิลแบบแดชบอร์ด (2026-08-22) ────────────────────────────
+   ผูกกับ #screen-bills ทุกกฎ ด้วยเหตุผลเดียวกับหน้าแผนเที่ยว —
+   ไฟล์นี้มีคนแก้คู่ขนานและ themes.css โหลดทีหลัง การพึ่งลำดับไม่ปลอดภัย */
+#screen-bills{background:#e9f3fc;
+  background-image:radial-gradient(#cfe3f5 1.1px,transparent 1.1px);
+  background-size:22px 22px;border-radius:26px}
+#screen-bills .page-head span{color:#5c86b4}
+#screen-bills .page-head h1{color:#20344f}
+#screen-bills .page-head p{color:#6f8aa8}
+#screen-bills .page-head .primary-btn{background:#3f6fa8;border-radius:999px;
+  padding:13px 22px;box-shadow:0 8px 18px rgba(47,79,122,.28)}
+
+/* แถบงบใหญ่ */
+#screen-bills .budget-hero{background:#3f6fa8;border-radius:24px;padding:20px 22px;
+  color:#fff;margin-bottom:12px;box-shadow:0 8px 22px rgba(47,79,122,.24)}
+#screen-bills .budget-hero.over{background:#a2482a}
+#screen-bills .budget-label{font:600 12.5px Anuphan,sans-serif;opacity:.85}
+#screen-bills .budget-amount{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:4px}
+#screen-bills .budget-amount strong{font:700 34px Poppins,Anuphan,sans-serif}
+#screen-bills .budget-amount span{font:600 13px Anuphan,sans-serif;opacity:.85}
+#screen-bills .budget-currencies{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+#screen-bills .budget-currencies span{background:rgba(255,255,255,.16);border-radius:999px;
+  padding:6px 13px;font:600 13px Poppins,Anuphan,sans-serif;white-space:nowrap}
+/* สองเฉด: ทึบ = เรทนิ่งแล้ว · จาง = ส่วนที่ใช้เรทประมาณการ
+   เห็นสัดส่วนความไม่แน่นอนได้โดยไม่ต้องอ่านตัวอักษร */
+#screen-bills .budget-bar{display:flex;height:10px;background:rgba(255,255,255,.25);
+  border-radius:999px;margin-top:13px;overflow:hidden}
+#screen-bills .budget-bar i{background:#ffd479}
+#screen-bills .budget-bar u{background:#ffd479;opacity:.45}
+#screen-bills .budget-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  margin-top:9px;font:600 12px Anuphan,sans-serif;opacity:.92}
+
+/* ป้ายเตือนเรท */
+#screen-bills .rate-alert{display:grid;gap:2px;border-radius:16px;padding:11px 14px;margin-bottom:10px}
+#screen-bills .rate-alert b{font:600 13.5px Anuphan,sans-serif}
+#screen-bills .rate-alert small{font-size:12.5px}
+#screen-bills .rate-alert.danger{background:#fdeef0;border:1px solid #f3c6cd;color:#a8324f}
+#screen-bills .rate-alert.danger b{color:#7d203a}
+#screen-bills .rate-alert.warn{background:#fff4e2;border:1px solid #f2d3ab;color:#8a5320}
+#screen-bills .rate-alert.warn b{color:#6b3f12}
+#screen-bills .rate-alert.calm{background:#eaf5ee;border:1px solid #c9e4d4;color:#3d7a54}
+
+#screen-bills .bill-block{background:#fff;border:1px solid #e4eefa;border-radius:22px;
+  padding:16px 18px;margin-bottom:14px;box-shadow:0 4px 14px rgba(47,79,122,.06)}
+#screen-bills .bill-block-head{display:flex;justify-content:space-between;align-items:baseline;
+  gap:10px;margin-bottom:13px}
+#screen-bills .bill-block-head b{font:800 16px Sarabun,Anuphan,sans-serif;color:#20344f}
+#screen-bills .bill-block-head small{color:#7e97b3;font-size:12.5px}
+
+/* แถบสัดส่วนตามหมวด */
+#screen-bills .cat-row{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:11px;
+  align-items:center;margin-bottom:12px}
+#screen-bills .cat-row:last-child{margin-bottom:0}
+#screen-bills .cat-icon{width:36px;height:36px;border-radius:12px;background:#f2f7fd;
+  display:grid;place-items:center;font-size:17px;overflow:hidden}
+#screen-bills .cat-icon img{width:100%;height:100%;object-fit:contain;padding:4px}
+#screen-bills .cat-line{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+#screen-bills .cat-line b{font:600 13.5px Anuphan,sans-serif;color:#20344f}
+#screen-bills .cat-line small{color:#7e97b3;font-size:12px;white-space:nowrap}
+#screen-bills .cat-bar{display:block;height:8px;background:#f2f7fd;border-radius:999px;
+  margin-top:6px;overflow:hidden}
+#screen-bills .cat-bar i{display:block;height:100%;background:#3f6fa8;border-radius:999px}
+#screen-bills .cat-thb{font:600 13.5px Poppins,Anuphan,sans-serif;color:#20344f;white-space:nowrap}
+/* หมวดที่แปลงเป็นบาทไม่ได้ — ลายทางให้ต่างจากหมวดที่ใช้ไป 0 บาทจริง ๆ */
+#screen-bills .cat-row.unknown .cat-line small,
+#screen-bills .cat-row.unknown .cat-thb{color:#a8324f}
+#screen-bills .cat-row.unknown .cat-bar i{background:repeating-linear-gradient(45deg,
+  #e9b0bc,#e9b0bc 4px,#f6dbe0 4px,#f6dbe0 8px)}
+
+/* การ์ดรายคน */
+#screen-bills .people-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:10px;margin-bottom:14px}
+#screen-bills .person-card{background:#fff;border:1px solid #e4eefa;border-radius:18px;
+  padding:14px 12px;text-align:center;box-shadow:0 4px 14px rgba(47,79,122,.06)}
+#screen-bills .person-face{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
+  margin:0 auto 7px;font:700 14px Poppins,sans-serif;color:#2c3540}
+#screen-bills .person-card small{display:block;color:#7e97b3;font-size:12px}
+#screen-bills .person-card b{display:block;font:700 16px Poppins,Anuphan,sans-serif;color:#20344f;margin-top:2px}
+#screen-bills .person-card em{display:block;font-style:normal;font-size:11.5px;margin-top:3px;font-weight:600}
+#screen-bills .person-card em.owe{color:#a63e68}
+#screen-bills .person-card em.get{color:#3d7a54}
+#screen-bills .person-card em.even{color:#8ea4bd}
+
+/* ใครติดใคร */
+#screen-bills .settle-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:11px;
+  align-items:center;background:#fdf0f4;border-radius:14px;padding:10px 13px;margin-bottom:8px;
+  font:600 13.5px Anuphan,sans-serif;color:#20344f}
+#screen-bills .settle-row:last-child{margin-bottom:0}
+#screen-bills .settle-row b{font:700 15px Poppins,Anuphan,sans-serif;color:#a63e68}
+
+/* รายการบิล */
+#screen-bills .filters{margin:0 0 12px}
+#screen-bills .filters button{border:1px solid #dfeaf6;background:#f5f9fd;border-radius:999px;
+  padding:8px 15px;font:600 13px Anuphan,sans-serif;color:#5c86b4}
+#screen-bills .filters button.active{background:#3f6fa8;border-color:#3f6fa8;color:#fff}
+#screen-bills .bill-table{padding:0}
+#screen-bills .bill-row,
+#screen-wallets .bill-row{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;
+  align-items:center;padding:12px 0;border-bottom:1px solid #eef4fb}
+#screen-bills .bill-row:last-child,
+#screen-wallets .bill-row:last-child{border-bottom:0;padding-bottom:0}
+#screen-bills .bill-row img,
+#screen-wallets .bill-row img{width:44px;height:44px;border-radius:50%;background:#f5f9fd;
+  padding:6px;object-fit:contain}
+#screen-bills .bill-main,
+#screen-wallets .bill-main{min-width:0}
+#screen-bills .bill-main b,
+#screen-wallets .bill-main b{display:block;font:600 14.5px Anuphan,sans-serif;color:#20344f}
+#screen-bills .bill-main small,
+#screen-wallets .bill-main small{display:block;color:#7e97b3;font-size:12px;margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#screen-bills .bill-main em,
+#screen-wallets .bill-main em{display:inline-block;font-style:normal;margin-top:6px;margin-right:5px;
+  border-radius:999px;padding:3px 9px;font:600 11px Anuphan,sans-serif}
+#screen-bills .bill-main em.only,
+#screen-wallets .bill-main em.only{background:#fff2e2;color:#8a5320}
+#screen-bills .bill-main em.private,
+#screen-wallets .bill-main em.private{background:#eef1f2;color:#5f7690}
+#screen-bills .bill-money,
+#screen-wallets .bill-money{text-align:right;white-space:nowrap}
+#screen-bills .bill-money b,
+#screen-wallets .bill-money b{display:block;font:700 15px Poppins,Anuphan,sans-serif;color:#20344f}
+#screen-bills .bill-money small,
+#screen-wallets .bill-money small{display:block;color:#7e97b3;font-size:11.5px;margin-top:1px}
+#screen-bills .bill-row.no-rate .bill-money small,
+#screen-wallets .bill-row.no-rate .bill-money small{color:#a8324f;font-weight:600}
+#screen-bills .bill-empty,
+#screen-wallets .bill-empty{padding:26px;text-align:center;color:#7e97b3}
+
+@media(max-width:640px){
+  #screen-bills{border-radius:0;background-size:18px 18px}
+  #screen-bills .budget-amount strong{font-size:28px}
+  #screen-bills .people-grid{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+  #screen-bills .cat-line small{font-size:11px}
+}
+
+/* ── v28 · หน้าบิล จัดความกว้างและสัดส่วนให้ตรงกับที่ออกแบบไว้ (2026-08-22) ──
+   🔴 ต้นเหตุที่หน้าจริงดูแบนกว่าแบบร่าง: แบบร่างวาดที่ 680px แต่หน้าจริง
+      กว้างเกือบ 1,900px และหน้าบิลไม่มีตัวครอบความกว้างเหมือน .plan-layout
+      ผลคือแถบงบยืดเป็นเส้นบางยาว การ์ดรายคนกลายเป็นกล่องโล่ง
+      ทุกอย่างถูกต้องหมด แค่ "ยืด" จนสัดส่วนเสีย
+
+   ห้ามถอด max-width ออก — ตัวเลขการเงินอ่านง่ายที่สุดเมื่อบรรทัดไม่ยาวเกินไป */
+#screen-bills > *{max-width:940px;margin-left:auto;margin-right:auto}
+#screen-bills .page-head{max-width:940px}
+
+#screen-bills .budget-hero{padding:24px 26px}
+#screen-bills .budget-amount strong{font-size:40px;letter-spacing:-.01em}
+#screen-bills .budget-amount span{font-size:15px}
+#screen-bills .budget-label{font-size:13px}
+#screen-bills .budget-currencies span{font-size:14px;padding:7px 15px}
+#screen-bills .budget-bar{height:14px;margin-top:16px}
+#screen-bills .budget-foot{font-size:13px;margin-top:11px}
+
+/* แถบหมวด — จำกัดความกว้างของแถบเอง ไม่ให้ยืดจนดูเป็นเส้นตรงไร้ความหมาย
+   และดันตัวเลขบาทมาชิดแถบ จะได้อ่านคู่กันได้โดยไม่ต้องกวาดตาข้ามจอ */
+#screen-bills .cat-row{grid-template-columns:44px minmax(0,1fr) 110px;gap:14px;margin-bottom:16px}
+#screen-bills .cat-icon{width:44px;height:44px;border-radius:14px;font-size:20px}
+#screen-bills .cat-line b{font-size:15px}
+#screen-bills .cat-line small{font-size:12.5px}
+#screen-bills .cat-bar{height:11px;margin-top:8px}
+#screen-bills .cat-thb{font-size:15px;text-align:right}
+
+/* การ์ดรายคน — เดิมกว้าง 600px ต่อใบเพราะ auto-fit ยืดเต็มแถว
+   ตรึงไว้ 3 ใบต่อแถวและกันไม่ให้กว้างเกิน จะได้เป็นการ์ดจริง ไม่ใช่แผงว่าง */
+#screen-bills .people-grid{grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:12px}
+#screen-bills .person-card{padding:16px 12px}
+#screen-bills .person-face{width:44px;height:44px;font-size:16px;margin-bottom:9px}
+#screen-bills .person-card small{font-size:12.5px}
+#screen-bills .person-card b{font-size:19px;margin-top:3px}
+#screen-bills .person-card em{font-size:12.5px;margin-top:5px}
+
+#screen-bills .bill-block{padding:18px 22px}
+#screen-bills .bill-block-head b{font-size:17px}
+#screen-bills .bill-row,
+#screen-wallets .bill-row{grid-template-columns:52px minmax(0,1fr) auto;gap:14px;padding:14px 0}
+#screen-bills .bill-row img,
+#screen-wallets .bill-row img{width:52px;height:52px;padding:8px}
+#screen-bills .bill-main b,
+#screen-wallets .bill-main b{font-size:15.5px}
+#screen-bills .bill-main small,
+#screen-wallets .bill-main small{font-size:12.5px}
+#screen-bills .bill-money b,
+#screen-wallets .bill-money b{font-size:17px}
+#screen-bills .bill-money small,
+#screen-wallets .bill-money small{font-size:12.5px}
+#screen-bills .rate-alert{padding:13px 16px}
+#screen-bills .rate-alert b{font-size:14px}
+
+@media(max-width:640px){
+  #screen-bills .budget-hero{padding:18px}
+  #screen-bills .budget-amount strong{font-size:30px}
+  #screen-bills .cat-row{grid-template-columns:38px minmax(0,1fr) 78px;gap:10px}
+  #screen-bills .cat-thb{font-size:13px}
+  #screen-bills .bill-block{padding:15px 16px}
+  #screen-bills .bill-row,
+#screen-wallets .bill-row{grid-template-columns:44px minmax(0,1fr) auto;gap:10px}
+  #screen-bills .bill-row img,
+#screen-wallets .bill-row img{width:44px;height:44px}
+}
+
+/* ── v29 · แถวบิลกดได้ + รายละเอียดบิล (2026-08-22) ───────────────────
+   แถบสีของแถวเดิมกินพื้นที่แค่ในระยะ padding ของการ์ด ทำให้ดูเหมือน
+   ไฮไลต์ครึ่ง ๆ กลาง ๆ · ดันให้ล้นออกไปชนขอบบล็อกด้วย margin ติดลบ
+   แล้วดึง padding กลับเข้ามาเท่าเดิม ผลคือแถบสีเต็มความกว้างจริง */
+#screen-bills .bill-row,
+#screen-wallets .bill-row{cursor:pointer;border-radius:14px;
+  margin:0 -12px;padding-left:12px;padding-right:12px;transition:background .12s}
+#screen-bills .bill-row:hover,
+#screen-wallets .bill-row:hover{background:#eef5fc}
+#screen-bills .bill-row:active,
+#screen-wallets .bill-row:active{background:#e3eefa}
+
+/* กล่องรายละเอียดบิล */
+.bill-detail{width:min(560px,calc(100% - 28px));padding:0;overflow:hidden}
+.bill-detail .bd-hero{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;
+  align-items:center;background:linear-gradient(135deg,#3f6fa8,#5b8ac4);padding:22px 24px;color:#fff}
+.bill-detail .bd-hero img{width:66px;height:66px;border-radius:22px;background:rgba(255,255,255,.9);
+  padding:8px;object-fit:contain}
+.bill-detail .bd-hero .eyebrow{color:rgba(255,255,255,.82);letter-spacing:.02em}
+.bill-detail .bd-hero h2{margin:3px 0 0;font:800 22px Sarabun,Anuphan,sans-serif;color:#fff}
+.bill-detail .bd-amount{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px}
+.bill-detail .bd-amount strong{font:700 26px Poppins,Anuphan,sans-serif}
+.bill-detail .bd-amount small{font-size:13px;opacity:.88}
+.bill-detail .bd-amount small.no-rate{background:rgba(255,255,255,.2);border-radius:999px;padding:3px 10px}
+
+.bill-detail .bd-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:18px 24px 0}
+.bill-detail .bd-fact{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto;
+  column-gap:9px;background:#f5f9fd;border:1px solid #e4eefa;border-radius:14px;padding:10px 12px}
+.bill-detail .bd-fact span{grid-row:1/3;align-self:center;font-size:18px}
+.bill-detail .bd-fact small{color:#7e97b3;font-size:11.5px}
+.bill-detail .bd-fact b{font:600 13.5px Anuphan,sans-serif;color:#20344f;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.bill-detail .bd-tags{display:flex;flex-wrap:wrap;gap:7px;padding:14px 24px 0}
+.bill-detail .bd-tags em{display:inline-flex;align-items:center;gap:6px;font-style:normal;
+  border-radius:999px;padding:6px 12px;font:600 12.5px Anuphan,sans-serif}
+.bill-detail .bd-tags em img{width:18px;height:18px;object-fit:contain}
+.bill-detail .bd-tags em.cat{background:#fdf3e4;color:#8a5320}
+.bill-detail .bd-tags em.who{background:#e6f1f9;color:#2f5e8c}
+
+/* สลิป — กดที่รูปเพื่อดูเต็มจอ */
+.bill-detail .bd-receipt{padding:16px 24px 0}
+.bill-detail .bd-photo{position:relative;display:block;width:100%;border:1px solid #e4eefa;
+  border-radius:16px;overflow:hidden;padding:0;background:#f5f9fd;cursor:zoom-in}
+.bill-detail .bd-photo img{display:block;width:100%;max-height:230px;object-fit:cover}
+.bill-detail .bd-photo span{position:absolute;right:10px;bottom:10px;background:rgba(22,35,58,.78);
+  color:#fff;border-radius:999px;padding:6px 12px;font:600 12px Anuphan,sans-serif}
+.bill-detail .bd-pdf{display:block;text-align:center;background:#f3eefb;color:#5a4b9c;
+  border:1px solid #e3daf5;border-radius:14px;padding:14px;font:600 14px Anuphan,sans-serif;text-decoration:none}
+.bill-detail .sheet-actions{padding:18px 24px 22px}
+.bill-detail .soft-btn.danger{background:#fdeef0;color:#a8324f}
+
+/* ดูเอกสารเต็มจอ */
+.image-viewer{width:min(880px,calc(100% - 28px));padding:16px;background:#16233a}
+.image-viewer .dialog-close{background:rgba(255,255,255,.9)}
+.image-viewer img{display:block;width:100%;max-height:78vh;object-fit:contain;border-radius:12px}
+
+@media(max-width:640px){
+  .bill-detail .bd-facts{grid-template-columns:1fr}
+  .bill-detail .bd-hero{padding:18px}
+  .bill-detail .bd-hero img{width:54px;height:54px;border-radius:18px}
+  .bill-detail .bd-hero h2{font-size:19px}
+}
+
+/* ── v30 · การ์ดบิลแบบชิปข้อมูล (2026-08-22) ──────────────────────────
+   หนึ่งเรื่องหนึ่งชิป แต่ละเรื่องมีสีประจำตัวคงที่ทั้งหน้า
+   ตาจับได้เองว่าอันไหนวันที่ อันไหนกระเป๋า โดยไม่ต้องอ่านคำ
+
+   🔴 ชิปที่ติด .lite ถูกซ่อนบนจอเล็ก เหลือ วันที่ · จุดแวะ · หมวด
+      ถ้าโชว์ครบ 6–8 ชิปบนมือถือ การ์ดจะสูงราว 150px
+      บิล 20 ใบ = เลื่อน 3,000px หาอะไรไม่เจอ */
+#screen-bills .who-filter{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:0 0 10px}
+#screen-bills .who-filter:empty{display:none}
+#screen-bills .who-label{font:600 12px Anuphan,sans-serif;color:#7e97b3;margin-right:2px}
+#screen-bills .who-filter button{display:inline-flex;align-items:center;gap:7px;
+  border:1px solid #dfeaf6;background:#f5f9fd;border-radius:999px;padding:6px 13px 6px 6px;
+  font:600 12.5px Anuphan,sans-serif;color:#5c86b4;cursor:pointer}
+#screen-bills .who-filter button[data-bill-payer=""]{padding-left:13px}
+#screen-bills .who-filter button.active{background:#3f6fa8;border-color:#3f6fa8;color:#fff}
+#screen-bills .face-dot{width:21px;height:21px;border-radius:50%;display:grid;place-items:center;
+  font:700 11px Poppins,sans-serif;color:#2c3540;font-style:normal}
+
+#screen-bills .bill-row,
+#screen-wallets .bill-row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:14px;
+  align-items:start;padding:14px 12px;margin:0 -12px;border-radius:14px;border-bottom:0;
+  cursor:default;transition:background .12s}
+#screen-bills .bill-row + .bill-row,
+#screen-wallets .bill-row + .bill-row{border-top:1px solid #eef4fb}
+#screen-bills .bill-row:hover,
+#screen-wallets .bill-row:hover{background:#f7fbff}
+#screen-bills .bill-icon,
+#screen-wallets .bill-icon{width:52px;height:52px;border-radius:50%;background:#f5f9fd;
+  padding:7px;object-fit:contain}
+#screen-bills .bill-main,
+#screen-wallets .bill-main{min-width:0}
+#screen-bills .bill-main b,
+#screen-wallets .bill-main b{display:block;font:600 15.5px Anuphan,sans-serif;color:#20344f}
+#screen-bills .bill-chips,
+#screen-wallets .bill-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+#screen-bills .bill-chips em,
+#screen-wallets .bill-chips em{font-style:normal;border-radius:8px;padding:4px 9px;
+  font:600 12px Anuphan,sans-serif;white-space:nowrap;max-width:200px;
+  overflow:hidden;text-overflow:ellipsis}
+#screen-bills .bill-chips .c-date,
+#screen-wallets .bill-chips .c-date{background:#e6f1f9;color:#2f5e8c}
+#screen-bills .bill-chips .c-stop,
+#screen-wallets .bill-chips .c-stop{background:#e2f3e8;color:#3d7a54}
+#screen-bills .bill-chips .c-cat,
+#screen-wallets .bill-chips .c-cat{background:#fdf3e4;color:#8a5320}
+#screen-bills .bill-chips .c-wallet,
+#screen-wallets .bill-chips .c-wallet{background:#f3eefb;color:#5a4b9c}
+#screen-bills .bill-chips .c-payer,
+#screen-wallets .bill-chips .c-payer{background:#fdf0f4;color:#8a3557}
+#screen-bills .bill-chips .c-split,
+#screen-wallets .bill-chips .c-split{background:#e6f4f4;color:#2c6076}
+#screen-bills .bill-chips .c-only,
+#screen-wallets .bill-chips .c-only{background:#fff2e2;color:#8a5320}
+#screen-bills .bill-chips .c-none,
+#screen-wallets .bill-chips .c-none{background:#eef1f2;color:#5f7690}
+
+#screen-bills .bill-side,
+#screen-wallets .bill-side{display:grid;gap:9px;justify-items:end}
+#screen-bills .bill-money,
+#screen-wallets .bill-money{text-align:right;white-space:nowrap}
+#screen-bills .bill-money b,
+#screen-wallets .bill-money b{display:block;font:700 17px Poppins,Anuphan,sans-serif;color:#20344f}
+#screen-bills .bill-money small,
+#screen-wallets .bill-money small{display:block;color:#7e97b3;font-size:12px;margin-top:1px}
+#screen-bills .bill-row.no-rate .bill-money small,
+#screen-wallets .bill-row.no-rate .bill-money small{color:#a8324f;font-weight:600}
+
+#screen-bills .bill-tools,
+#screen-wallets .bill-tools{display:flex;gap:6px;align-items:center}
+#screen-bills .bill-slip,
+#screen-wallets .bill-slip{width:44px;height:44px;padding:0;border:1px solid #dfeaf6;border-radius:10px;
+  overflow:hidden;background:#f5f9fd;cursor:zoom-in;display:grid;place-items:center;
+  font-size:19px;text-decoration:none;color:#5a4b9c}
+#screen-bills .bill-slip img,
+#screen-wallets .bill-slip img{width:100%;height:100%;object-fit:cover;display:block}
+#screen-bills .bill-tools button:not(.bill-slip),
+#screen-wallets .bill-tools button:not(.bill-slip){width:36px;height:36px;padding:0;border-radius:11px;
+  border:1px solid #e0ebf7;background:#f5f9fd;font-size:15px;cursor:pointer;color:#456a94}
+#screen-bills .bill-tools button:not(.bill-slip):hover,
+#screen-wallets .bill-tools button:not(.bill-slip):hover{background:#e6f0fa}
+#screen-bills .bill-del,
+#screen-wallets .bill-del{background:#fdf0f2!important;border-color:#f5d9df!important}
+#screen-bills .bill-del:hover,
+#screen-wallets .bill-del:hover{background:#fbe2e7!important}
+
+@media(max-width:640px){
+  #screen-bills .bill-chips .lite,
+#screen-wallets .bill-chips .lite{display:none}
+  #screen-bills .bill-row,
+#screen-wallets .bill-row{grid-template-columns:44px minmax(0,1fr);gap:10px;padding:12px 10px}
+  #screen-bills .bill-icon,
+#screen-wallets .bill-icon{width:44px;height:44px}
+  #screen-bills .bill-side,
+#screen-wallets .bill-side{grid-column:1/-1;grid-template-columns:minmax(0,1fr) auto;
+    justify-items:stretch;align-items:center;gap:10px;margin-top:4px}
+  #screen-bills .bill-money,
+#screen-wallets .bill-money{text-align:left}
+  #screen-bills .bill-tools,
+#screen-wallets .bill-tools{justify-content:flex-end}
+  #screen-bills .bill-chips em,
+#screen-wallets .bill-chips em{max-width:150px}
+}
+
+/* ── v31 · หน้ากระเป๋า: การ์ดแยกใบ + สีตามสกุลเงิน (2026-08-22) ─────────
+   สั่งโดย North: "ให้การ์ดกระเป๋าแยกจากกัน · ปุ่มเติมเงิน แก้ไข ลบ ให้เป็น
+   Icon ที่มีสีสัน ไว้ใต้ bar · ให้แสดงจำนวนเงินทั้งหมด รวมเริ่มต้น + เติมเงิน
+   ไว้บน bar · จำนวนเงินคงเหลือ แสดงให้ชัดเจน แต่ละค่าเงินมีสีต่างกัน ·
+   แต่ละกระเป๋าดูประวัติการเติมเงินของตัวเองได้"
+
+   🔴 ทุกกฎในบล็อกนี้ผูกกับ #screen-wallets โดยตั้งใจ — ห้ามถอดออก
+      ไฟล์นี้มีคนแก้คู่ขนานกันหลายคน และ themes.css ยังโหลด "ทีหลัง"
+      style.css อีกชั้น ถ้าไม่ scope ไว้ กฎพวกนี้จะถูกทับเงียบ ๆ
+
+   --wc คือ "hue" ของสกุลเงิน (ไม่ใช่สีสำเร็จรูป) ตั้งจาก app.js ที่ระดับการ์ด
+   ทุกเฉดในการ์ดจึงคุมโทนเดียวกันอัตโนมัติ และสกุลใหม่ที่ยังไม่เคยมีในระบบ
+   ก็ได้ชุดสีที่อ่านออกทันทีโดยไม่ต้องมาเพิ่ม CSS ทีละสกุล */
+#screen-wallets .wallet-summary{display:flex;flex-wrap:wrap;align-items:center;gap:14px;
+  background:linear-gradient(120deg,#eef5ff,#f7fbff);border:1px solid #dfeaf6;
+  border-radius:18px;padding:14px 16px;margin:0 0 14px}
+#screen-wallets .wallet-summary:empty{display:none}
+#screen-wallets .wsum-left{display:flex;flex-direction:column;gap:8px;margin-right:auto}
+#screen-wallets .wsum-left>span{font:600 12px Anuphan,sans-serif;color:#7e97b3}
+
+/* ยอดสรุปชิดขวาเสมอ · หน่วย ฿ ต่อท้ายตัวเลข · บวกเขียว ลบแดง (North 2026-08-22)
+   🔴 สีต้องมาคู่กับเครื่องหมาย + / − เสมอ ห้ามใช้สีอย่างเดียวเป็นตัวบอก
+      คนตาบอดสีแดง-เขียวมีราว 1 ใน 12 ของผู้ชาย และโปรแกรมอ่านหน้าจออ่านสีไม่ได้ */
+#screen-wallets .wsum-main{display:flex;flex-direction:column;gap:1px;text-align:right;margin-left:auto}
+#screen-wallets .wsum-main strong{font:700 27px Anuphan,sans-serif;line-height:1.15;
+  font-variant-numeric:tabular-nums}
+#screen-wallets .wsum-main small{font-size:12px;color:#8aa2bd}
+#screen-wallets .signed{font-variant-numeric:tabular-nums}
+#screen-wallets .signed.up{color:#1f7a4d}
+#screen-wallets .signed.down{color:#c0392f}
+#screen-wallets .signed.flat{color:#7e97b3}
+
+/* ปุ่มเปิด popup รายกระเป๋า — แทนแถวชิปเดิมที่ยาวขึ้นเรื่อย ๆ ตามจำนวนสกุล */
+#screen-wallets .wsum-open{display:inline-flex;align-items:center;gap:9px;align-self:flex-start;
+  border:1px solid #cfe0f2;background:#fff;border-radius:14px;padding:7px 12px 7px 8px;cursor:pointer;
+  font:inherit;color:inherit}
+#screen-wallets .wsum-open:hover{background:#f3f8ff;border-color:#b6d1ec}
+#screen-wallets .wsum-open-ico{font-size:17px;font-style:normal;line-height:1}
+#screen-wallets .wsum-open>span{display:flex;flex-direction:column;gap:0;text-align:left;
+  font:700 13px Anuphan,sans-serif;color:#2b5fa8}
+#screen-wallets .wsum-open>span small{font:500 11px Anuphan,sans-serif;color:#8aa2bd}
+#screen-wallets .wsum-open em{font-style:normal;font-size:19px;color:#9db3ca;line-height:1}
+
+/* popup รายกระเป๋า — อยู่นอก #screen-wallets เพราะ dialog ถูกวางท้าย body */
+#walletTotalsBody{display:flex;flex-direction:column;gap:12px;margin:14px 0 4px;
+  max-height:56vh;overflow:auto}
+
+/* กรอบกลุ่มสกุลเงินใช้โทนฟ้ากลางเสมอ (North 2026-08-22)
+   เดิมพื้นหลังใช้สีของสกุลเงิน ทำให้กลุ่ม JPY กลายเป็นกรอบชมพูทั้งใบ
+   ซึ่งชนกับสีแดงของยอดติดลบ — คนอ่านแล้วนึกว่าทั้งกลุ่มมีปัญหา
+   สีประจำสกุลย้ายไปอยู่ที่ "ตัวเลขสกุลนั้น" กับป้ายรหัสสกุลแทน */
+#walletTotalsBody .wtot-group{border:1px solid #cfe0f2;border-radius:15px;
+  background:#f4f9ff;padding:10px 12px}
+#walletTotalsBody .wtot-group>header{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+#walletTotalsBody .wtot-group>header b{font:700 14px Anuphan,sans-serif;
+  color:hsl(var(--wc) 55% 36%);background:hsl(var(--wc) 82% 95%);
+  border:1px solid hsl(var(--wc) 60% 86%);border-radius:8px;padding:1px 8px}
+#walletTotalsBody .wtot-group>header span{font:500 11.5px Anuphan,sans-serif;color:#7e97b3}
+
+/* 34px | สกุลตปท.(ชิดขวา) | @เรท(ชิดซ้าย) | บาท(ชิดขวา)
+   ทุกแถวและแถวสรุปใช้เทมเพลตเดียวกัน ตัวเลขจึงตรงคอลัมน์กันจริง */
+#walletTotalsBody .wtot-row,
+#walletTotalsBody .wtot-sub{display:grid;
+  grid-template-columns:34px minmax(0,1fr) 104px minmax(0,1fr);
+  align-items:center;column-gap:9px;row-gap:2px;font-variant-numeric:tabular-nums}
+#walletTotalsBody .wtot-row{padding:8px 0;border-top:1px solid #dfeaf6}
+#walletTotalsBody .wtot-row:first-of-type{border-top:0}
+#walletTotalsBody .wtot-row img{grid-row:span 2;width:34px;height:34px;border-radius:10px;
+  object-fit:cover;background:#fff}
+#walletTotalsBody .wtot-title{grid-column:2/-1;font:600 13.5px Anuphan,sans-serif;color:#26405e;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#walletTotalsBody .wtot-title span{font-weight:500;color:#8aa2bd}
+#walletTotalsBody .wtot-native{text-align:right;font:700 14px Anuphan,sans-serif;
+  color:hsl(var(--wc) 52% 36%);white-space:nowrap}
+#walletTotalsBody .wtot-rate{text-align:left;font:600 12.5px Anuphan,sans-serif;
+  color:#1f7a4d;white-space:nowrap}
+#walletTotalsBody .wtot-baht{text-align:right;font:700 14px Anuphan,sans-serif;white-space:nowrap}
+#walletTotalsBody .wtot-none{text-align:right;font:500 12px Anuphan,sans-serif;color:#b03a55}
+#walletTotalsBody .wtot-sub{margin:9px 0 0;border-top:1px solid #cfe0f2;padding-top:9px}
+#walletTotalsBody .wtot-sublabel{font:600 12.5px Anuphan,sans-serif;color:#7e97b3;text-align:center}
+#walletTotalsBody .wtot-total{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  margin:0;border-top:2px solid #dfeaf6;padding-top:11px;font:700 20px Anuphan,sans-serif}
+#walletTotalsBody .wtot-total span{font:600 13px Anuphan,sans-serif;color:#7e97b3}
+#walletTotalsBody .wtot-warn{margin:0;background:#fff6e6;border:1px solid #f2ddb4;border-radius:12px;
+  padding:9px 11px;font:600 12px Anuphan,sans-serif;color:#8a6410}
+#walletTotalsBody .wtot-empty{margin:0;text-align:center;color:#8aa2bd;font:500 13px Anuphan,sans-serif}
+#walletTotalsBody .signed{font-variant-numeric:tabular-nums}
+#walletTotalsBody .signed.up{color:#1f7a4d}
+#walletTotalsBody .signed.down{color:#c0392f}
+#walletTotalsBody .signed.flat{color:#7e97b3}
+
+/* การ์ดแยกใบจริง ๆ — ระยะห่าง 16px และเงาอ่อน ๆ ทำให้ตาแยกใบได้ทันที
+   ไม่ใช่ตารางที่ไหลต่อกันจนอ่านผิดใบ */
+#screen-wallets .wallet-grid{display:grid;gap:16px;
+  grid-template-columns:repeat(auto-fill,minmax(310px,1fr));align-items:start}
+#screen-wallets .wcard{position:relative;display:flex;flex-direction:column;gap:10px;
+  background:hsl(var(--wc) 70% 99%);border:1px solid hsl(var(--wc) 55% 85%);
+  border-radius:20px;padding:16px 16px 14px;
+  box-shadow:0 6px 20px hsl(var(--wc) 45% 55% / .12);overflow:hidden}
+/* แถบสีบนหัวการ์ด = ตัวบอกสกุลเงินที่เห็นได้จากหางตา ไม่ต้องอ่านตัวหนังสือ */
+#screen-wallets .wcard::before{content:'';position:absolute;inset:0 0 auto;height:5px;
+  background:linear-gradient(90deg,hsl(var(--wc) 72% 62%),hsl(var(--wc) 72% 78%))}
+/* 🔴 .short (ใช้เกินยอด) ไม่แตะสีการ์ดอีกต่อไป (North 2026-08-22)
+   "ให้เปลี่ยนสีกรอบและ bg ด้วย ไม่ใช่เปลี่ยนสีอักษรในกรอบ"
+   สีที่ผู้ใช้เลือกต้องชนะเสมอ ไม่งั้นเลือกสีเขียวแล้วได้การ์ดชมพูเพราะยอดติดลบ
+   การเตือนย้ายไปอยู่ที่ปุ่ม ⚠️ ข้างคำว่า "คงเหลือ" ซึ่งชัดกว่าและไม่กินสีทั้งใบ */
+
+#screen-wallets .wcard-head{display:flex;align-items:center;gap:10px;margin-top:4px}
+#screen-wallets .wcard-icon{width:40px;height:40px;border-radius:12px;object-fit:cover;
+  background:hsl(var(--wc) 80% 96%);flex:none}
+#screen-wallets .wcard-name{display:flex;flex-direction:column;gap:1px;min-width:0;margin-right:auto}
+#screen-wallets .wcard-name b{font:700 16px Anuphan,sans-serif;color:#26405e;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#screen-wallets .wcard-name small{font-size:11.5px;color:#8aa2bd}
+#screen-wallets .wcard-name .unknown-rate{color:#b03a55;font-weight:600}
+
+/* ยอดคงเหลือ — ตัวเลขใหญ่สุดในการ์ด และเป็นสีของสกุลเงินนั้น */
+#screen-wallets .wcard-balance{display:flex;flex-direction:column;gap:1px;text-align:right;
+  background:hsl(var(--wc) 78% 95%);border:1px solid hsl(var(--wc) 60% 84%);
+  border-radius:15px;padding:11px 14px}
+/* สีธีมอยู่ที่ "พื้นหลังกับกรอบ" ตัวอักษรเป็นสีกลางเสมอ
+   ถ้าย้อมตัวเลขตามสีธีมด้วย สีอ่อนอย่างเหลืองจะอ่านแทบไม่ออก
+   และตัวเลขจะเปลี่ยนความชัดไปตามสีที่เลือก ซึ่งไม่ควรเกิดกับตัวเลขเงิน */
+#screen-wallets .wcard-balance span{font:600 11.5px Anuphan,sans-serif;color:#5c7d9e}
+#screen-wallets .wcard-balance strong{font:700 30px Anuphan,sans-serif;line-height:1.1;color:#26405e}
+#screen-wallets .wcard-balance small{font-size:12px;color:#7e97b3}
+#screen-wallets .wcard-warn{margin:0;background:#fdf1f4;border:1px solid #f3ccd6;border-radius:13px;
+  padding:9px 12px;font:600 12.5px Anuphan,sans-serif;color:#a8324f}
+#screen-wallets .wcard-warn small{display:block;font-weight:500;color:#b5697f;margin-top:3px}
+
+/* เงินเข้าทั้งหมด "อยู่บน bar" ตามที่สั่ง — bar จึงอ่านได้ว่าเป็นสัดส่วนของยอดนี้ */
+#screen-wallets .wcard-total{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;margin-top:2px}
+#screen-wallets .wcard-total span{font:600 11.5px Anuphan,sans-serif;color:#7e97b3;width:100%}
+#screen-wallets .wcard-total b{font:700 17px Anuphan,sans-serif;color:#26405e}
+#screen-wallets .wcard-total em{font:500 12px Anuphan,sans-serif;font-style:normal;color:#8aa2bd}
+#screen-wallets .wcard-bar{height:9px;border-radius:99px;background:hsl(var(--wc) 60% 93%);overflow:hidden}
+#screen-wallets .wcard-bar i{display:block;height:100%;border-radius:99px;
+  background:linear-gradient(90deg,hsl(var(--wc) 68% 58%),hsl(var(--wc) 68% 70%));
+  transition:width .3s ease}
+
+#screen-wallets .wcard-legend{display:flex;justify-content:space-between;gap:10px;
+  font:600 11.5px Anuphan,sans-serif}
+#screen-wallets .wcard-legend .spent{color:#8aa2bd}
+#screen-wallets .wcard-legend .left{color:#456a94}
+
+/* ปุ่มไอคอนสี "ใต้ bar" — แต่ละงานคนละสี จำตำแหน่งได้เร็วกว่าอ่านคำ
+   44px คือขนาดขั้นต่ำที่นิ้วกดไม่พลาดบนมือถือ */
+#screen-wallets .wcard-actions{display:flex;gap:8px;margin-top:2px}
+#screen-wallets .wico{width:44px;height:44px;border-radius:14px;border:1px solid transparent;
+  font-size:18px;line-height:1;cursor:pointer;display:grid;place-items:center;flex:none;
+  transition:transform .12s ease,filter .12s ease}
+#screen-wallets .wico:hover:not(:disabled){transform:translateY(-1px);filter:brightness(.97)}
+#screen-wallets .wico:disabled{opacity:.4;cursor:not-allowed}
+#screen-wallets .wico.green{background:#e4f7ec;border-color:#bde8ce;color:#1f7a4d}
+#screen-wallets .wico.blue{background:#e6f0ff;border-color:#c4dcff;color:#2b5fa8}
+#screen-wallets .wico.purple{background:#f0eaff;border-color:#d8caf7;color:#5a3fa8}
+#screen-wallets .wico.purple.on{background:#5a3fa8;border-color:#5a3fa8;color:#fff}
+#screen-wallets .wico.pink{background:#fdeaef;border-color:#f6ccd7;color:#a8324f}
+#screen-wallets .wico.plain{width:34px;height:34px;border-radius:11px;font-size:15px;
+  background:#f5f9fd;border-color:#e0ebf7}
+
+#screen-wallets .carry-toggle{margin-top:2px}
+#screen-wallets .rate-badge{align-self:flex-start}
+
+/* ประวัติการเติมเงินของกระเป๋าใบนั้น ๆ · เรียงใหม่ → เก่าตามวันที่จริงเสมอ */
+#screen-wallets .wcard-history{border-top:1px dashed hsl(var(--wc) 55% 88%);padding-top:10px;margin-top:2px}
+#screen-wallets .wlot-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+#screen-wallets .wlot-list li{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;
+  align-items:center;gap:9px;background:#fff;border:1px solid hsl(var(--wc) 55% 90%);
+  border-radius:13px;padding:8px 10px}
+#screen-wallets .wlot-when{font:600 11.5px Anuphan,sans-serif;color:#8aa2bd;white-space:nowrap}
+#screen-wallets .wlot-what{display:flex;flex-direction:column;gap:1px;min-width:0}
+#screen-wallets .wlot-what b{font:700 14px Anuphan,sans-serif;color:#26405e}
+#screen-wallets .wlot-what small{font-size:11px;color:#8aa2bd;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+#screen-wallets .wlot-cost{text-align:right;font:600 13px Anuphan,sans-serif;color:#456a94;white-space:nowrap}
+#screen-wallets .wlot-cost small{display:block;font-size:10.5px;font-weight:500;color:#9db3ca}
+#screen-wallets .wlot-do{display:flex;gap:5px}
+#screen-wallets .wlot-do .wico{width:32px;height:32px;border-radius:10px;font-size:14px}
+#screen-wallets .wlot-empty{margin:0;font:500 12.5px Anuphan,sans-serif;color:#8aa2bd;
+  background:#f8fbfe;border:1px dashed #dfeaf6;border-radius:13px;padding:11px 12px;text-align:center}
+#screen-wallets .wlot-foot{margin:9px 0 0;font:600 12px Anuphan,sans-serif;color:#456a94}
+#screen-wallets .wlot-foot small{display:block;font-weight:500;font-size:11px;color:#9db3ca;margin-top:2px}
+
+@media(max-width:640px){
+  #screen-wallets .wallet-grid{grid-template-columns:1fr}
+  #screen-wallets .wsum-main strong{font-size:23px}
+  #screen-wallets .wcard-balance strong{font-size:26px}
+  /* บนจอเล็กเวลาแลกไม่ได้ช่วยอะไร ตัดออกเพื่อให้แถวไม่แตกบรรทัด */
+  #screen-wallets .wlot-cost small{display:none}
+}
+
+/* ── v32 · ปุ่ม ⓘ + จานสีกระเป๋า (2026-08-22) ─────────────────────────
+   North: "ปรับให้ไปอยู่ปุ่ม info ในส่วนของข้อมูลที่เกี่ยวข้อง"
+          "ให้เลือกสีธีมกระเป๋าได้ ให้เป็นสีพาสเทลทุกสีมีให้เลือก"
+
+   🔴 ทุกกฎผูกกับ #screen-wallets / #wallet…Dialog โดยตั้งใจ — ห้ามถอดออก
+      themes.css โหลดทีหลัง style.css ถ้าไม่ scope ไว้จะถูกทับเงียบ ๆ */
+#screen-wallets .wcard-info{width:20px;height:20px;padding:0;margin-left:5px;border:0;
+  border-radius:50%;background:#e8f0fa;color:#5c86b4;font-size:11.5px;line-height:1;
+  cursor:pointer;vertical-align:middle;display:inline-grid;place-items:center}
+#screen-wallets .wcard-info:hover{background:#d6e6f8}
+/* ⚠️ ปุ่มเตือน "ใช้เกินยอด" ต้องเด่นกว่า ⓘ ธรรมดา — ย้ายแค่คำอธิบาย ไม่ใช่ย้ายการเตือน */
+#screen-wallets .wcard-info.warn{background:#fdeaef;font-size:12px;width:22px;height:22px}
+#screen-wallets .wcard-info.warn:hover{background:#fad7e0}
+
+#screen-wallets .carry-line{display:flex;align-items:center;gap:6px}
+#screen-wallets .carry-line .carry-toggle{flex:1;margin:0}
+
+#walletInfoBody{margin:12px 0 4px;font:400 13.5px/1.65 Anuphan,sans-serif;color:#3d5875}
+#walletInfoBody b{display:block;font:700 15px Anuphan,sans-serif;color:#26405e;margin-bottom:6px}
+#walletInfoBody p{margin:0 0 9px}
+#walletInfoBody p:last-child{margin-bottom:0}
+#walletInfoBody p b{display:inline;font:700 13.5px Anuphan,sans-serif;margin:0}
+#walletInfoBody .dim{color:#8aa2bd;font-size:12.5px}
+.dialog.narrow{width:min(430px,calc(100% - 28px))}
+
+/* จานสี — พาสเทลทั้งหมดเพราะ CSS คุมความสว่าง/ความอิ่มสีไว้ ผู้ใช้เลือกได้แค่ "องศาสี"
+   จึงไม่มีทางเลือกสีที่ทำให้ตัวหนังสือบนการ์ดอ่านไม่ออก */
+.swatch-label{display:block;font:700 13px Anuphan,sans-serif;color:#3d5875;margin-bottom:7px}
+.swatch-row{display:flex;flex-wrap:wrap;gap:7px}
+.swatch{width:32px;height:32px;padding:0;border-radius:50%;cursor:pointer;
+  background:hsl(var(--wc) 78% 84%);border:2px solid hsl(var(--wc) 60% 72%)}
+.swatch:hover{transform:scale(1.08)}
+.swatch.on{box-shadow:0 0 0 3px #fff,0 0 0 5px hsl(var(--wc) 55% 55%)}
+.swatch.auto{width:auto;height:32px;border-radius:16px;padding:0 13px;background:#f2f7fd;
+  border-color:#cfe0f2;font:700 12px Anuphan,sans-serif;color:#5c86b4}
+.swatch.auto.on{box-shadow:0 0 0 3px #fff,0 0 0 5px #5c86b4}
+
+/* ── v33 · หัววันคั่นในรายการบิล (2026-08-22) ─────────────────────────
+   North: "ให้แสดงวันที่ ไว้ก่อนรายการค่าใช้จ่าย โดยวันที่ให้เป็น DD MMM YYYY"
+   ชิป 📅 บนการ์ดถูกถอดออกพร้อมกัน เพราะหัววันบอกไปแล้ว */
+#screen-bills .bill-date,
+#screen-wallets .bill-date{display:flex;align-items:center;gap:10px;margin:16px 0 8px}
+#screen-bills .bill-date:first-child,
+#screen-wallets .bill-date:first-child{margin-top:4px}
+#screen-bills .bill-date span,
+#screen-wallets .bill-date span{font:700 13px Anuphan,sans-serif;color:#5c86b4;
+  background:#eaf2fb;border:1px solid #d7e6f7;border-radius:999px;padding:4px 13px;white-space:nowrap}
+#screen-bills .bill-date::after,
+#screen-wallets .bill-date::after{content:'';flex:1;height:1px;background:#e4edf7}
+
+/* ── v34 · ตัวกรองวันที่ + ลากสลับลำดับบิล + รายการกระเป๋าแบบการ์ด (2026-08-22) */
+/* ตัวกรองทั้งหมดอยู่แถวเดียวกัน · ห่อบรรทัดเองเมื่อจอแคบ (North 2026-08-22) */
+#screen-bills .filter-bar{display:flex;flex-wrap:wrap;align-items:center;gap:9px 12px;margin:0 0 12px}
+#screen-bills .filter-bar .filters{margin:0;overflow:visible}
+#screen-bills .filter-bar .who-filter{margin:0}
+#screen-bills .filter-bar .who-filter:empty{display:none}
+#screen-bills .filter-reset{margin-left:auto;border:1px solid #f3ccd6;background:#fdf1f4;
+  border-radius:999px;padding:7px 14px;font:700 12.5px Anuphan,sans-serif;color:#a8324f;cursor:pointer}
+#screen-bills .filter-reset:hover{background:#fbe2e7}
+#screen-bills .date-filter{display:flex;align-items:center;gap:9px;margin:0}
+#screen-bills .date-filter label{font:600 12px Anuphan,sans-serif;color:#7e97b3}
+#screen-bills .date-filter select{width:auto;min-width:190px;appearance:none;
+  border:1px solid #dfeaf6;background:#fff;border-radius:12px;padding:9px 34px 9px 13px;
+  font:600 13px Anuphan,sans-serif;color:#26405e;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='%235c86b4' stroke-width='2' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 13px center}
+
+@media(max-width:640px){
+  #screen-bills .date-filter{width:100%}
+  #screen-bills .date-filter select{flex:1;min-width:0}
+  #screen-bills .filter-reset{margin-left:0}
+}
+
+/* หูจับลาก — โชว์ชัดเฉพาะเมาส์ บนจอสัมผัสลากที่การ์ดได้เลย */
+#screen-bills .bill-row,
+#screen-wallets .bill-row{grid-template-columns:18px 60px 1fr auto}
+#screen-bills .bill-drag{color:#c2d3e4;font-size:16px;cursor:grab;user-select:none;text-align:center}
+#screen-bills .bill-row.dragging{opacity:.45}
+#screen-bills .bill-row.drop-before{box-shadow:0 -3px 0 0 #5c86b4}
+#screen-bills .bill-row.drop-after{box-shadow:0 3px 0 0 #5c86b4}
+
+/* รายการในหน้ากระเป๋าใช้โครงเดียวกับการ์ดบิล แต่ไม่มีหูจับ (ลากไม่ได้) */
+#screen-wallets .wact-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+#screen-wallets .wact-head h3{margin:0;flex:1}
+/* มีหูจับลากเหมือนหน้าบิล · ลากได้เฉพาะภายในวันเดียวกัน */
+#screen-wallets .wact-row{grid-template-columns:18px 60px 1fr auto}
+#screen-wallets .wact-row .bill-drag{color:#c2d3e4;font-size:16px;cursor:grab;user-select:none;text-align:center}
+#screen-wallets .wact-row.dragging{opacity:.45}
+#screen-wallets .wact-row.drop-before{box-shadow:0 -3px 0 0 #5c86b4}
+#screen-wallets .wact-row.drop-after{box-shadow:0 3px 0 0 #5c86b4}
+#screen-wallets .wcard[data-wallet-card]{cursor:pointer}
+#screen-wallets .wcard.picked{box-shadow:0 0 0 3px hsl(var(--wc) 60% 78%),0 6px 20px hsl(var(--wc) 45% 55% / .18)}
+#screen-wallets .bill-chips .c-fund{background:#e4f7ec;color:#1f7a4d}
+#screen-wallets .bill-chips .c-rate{background:#eef3ff;color:#4a5fa8}
+
+/* ── v35 · หน้าจัดการทริป: การ์ดพับได้ + แถบสรุป (2026-08-23) ─────────
+   North เลือกแบบ B — "เห็นทุกหัวข้อพร้อมกัน กางเฉพาะที่จะแก้"
+   คำอธิบายทั้งหมดย้ายไปอยู่หลังปุ่ม ⓘ (ดู MANAGE_INFO ใน app.js)
+
+   🔴 ทุกกฎผูกกับ #screen-more โดยตั้งใจ — ห้ามถอดออก
+      themes.css โหลดทีหลัง style.css ถ้าไม่ scope ไว้จะถูกทับเงียบ ๆ */
+#screen-more .manage-hero{display:flex;flex-wrap:wrap;align-items:center;gap:14px;
+  background:linear-gradient(120deg,#eef5ff,#f7fbff);border:1px solid #dfeaf6;
+  border-radius:18px;padding:15px 17px;margin:0 0 14px}
+#screen-more .manage-hero:empty{display:none}
+#screen-more .mhero-main{display:flex;flex-direction:column;gap:1px;margin-right:auto;min-width:200px}
+#screen-more .mhero-main span{font:600 11.5px Anuphan,sans-serif;color:#7e97b3}
+#screen-more .mhero-main strong{font:700 21px Anuphan,sans-serif;color:#26405e;line-height:1.2}
+#screen-more .mhero-main small{font-size:12px;color:#8aa2bd}
+#screen-more .mhero-chips{display:flex;flex-wrap:wrap;gap:7px}
+#screen-more .mhero-chip{display:flex;flex-direction:column;gap:0;align-items:center;
+  background:#fff;border:1px solid #e2ecf8;border-radius:12px;padding:6px 12px;min-width:58px}
+#screen-more .mhero-chip b{font:700 15px Anuphan,sans-serif;color:#26405e;font-variant-numeric:tabular-nums}
+#screen-more .mhero-chip small{font-size:10.5px;color:#8aa2bd;white-space:nowrap}
+#screen-more .mhero-chip.live{background:#e9f7ef;border-color:#c3e8d3}
+#screen-more .mhero-chip.live b{color:#1f7a4d;font-size:13px}
+#screen-more .mhero-chip.locked{background:#f2f1f6;border-color:#dcd9e6}
+#screen-more .mhero-chip.locked b{color:#5f5a75;font-size:13px}
+#screen-more .mhero-warn{flex-basis:100%;margin:0;background:#fff6e6;border:1px solid #f2ddb4;
+  border-radius:12px;padding:9px 12px;font:600 12.5px Anuphan,sans-serif;color:#8a6410}
+
+/* ── หน้าจัดการทริป รอบ 3 · ตารางการ์ดสี + แถบเตือน (2026-08-23) ─────
+   North เลือก "เอา B เป็นโครงแล้วเอาแถบเตือนของ C มาแปะบนสุด"
+
+   ทำไมเป็นตาราง 2 คอลัมน์บนมือถือ:
+     · เห็นครบทั้ง 7 หัวข้อในจอเดียว ไม่ต้องเลื่อนหา
+     · การ์ดใหญ่พอให้นิ้วโป้งกดไม่พลาด (สูง ~86px)
+     · สีประจำหัวข้อทำให้จำตำแหน่งได้โดยไม่ต้องอ่าน
+
+   🔴 ห้ามกลับไปใช้แถบเลื่อนแนวนอน — หัวข้อที่ 5–7 จะอยู่นอกจอ
+      โดยไม่มีอะไรบอกว่ามีต่อ คนจะไม่เคยเจอ "ปิดทริป" กับ "ลบทริป" เลย */
+
+/* ── แถบเตือน "ที่ควรดูตอนนี้" ── */
+#screen-more .manage-alerts{display:flex;flex-direction:column;gap:7px;margin:0 0 14px}
+#screen-more .manage-alerts:empty{display:none}
+#screen-more .malert-label{margin:0 0 1px;font:700 12px Anuphan,sans-serif;color:#7e97b3}
+#screen-more .malert{display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  border:1px solid #f2ddb4;background:#fff9ee;border-radius:14px;padding:11px 13px;
+  cursor:pointer;font:inherit;color:inherit}
+#screen-more .malert:hover{filter:brightness(.985)}
+#screen-more .malert i{font-style:normal;font-size:17px;flex:none;line-height:1}
+#screen-more .malert span{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+#screen-more .malert b{font:700 13.5px Anuphan,sans-serif;color:#8a6410}
+#screen-more .malert small{font:500 11.5px Anuphan,sans-serif;color:#a1834a}
+#screen-more .malert em{font-style:normal;font-size:19px;color:#c8ac74;line-height:1}
+#screen-more .malert.info{border-color:#cfe0f2;background:#f4f9ff}
+#screen-more .malert.info b{color:#2b5fa8}
+#screen-more .malert.info small{color:#7195c2}
+#screen-more .malert.info em{color:#9db3ca}
+#screen-more .malert.locked{border-color:#dcd9e6;background:#f6f5fa}
+#screen-more .malert.locked b{color:#5f5a75}
+#screen-more .malert.locked small{color:#8b869d}
+#screen-more .malert.locked em{color:#b3aec2}
+#screen-more .malert-ok{margin:0;background:#f0f9f4;border:1px solid #cfe9da;border-radius:14px;
+  padding:11px 13px;font:600 13px Anuphan,sans-serif;color:#1f7a4d}
+
+/* ── ตารางการ์ดหัวข้อ ── */
+#screen-more .manage-layout{display:flex;flex-direction:column;gap:14px;max-width:1040px}
+#screen-more .manage-rail{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;
+  background:transparent;border:0;padding:0}
+#screen-more .mrail-item{display:flex;flex-direction:column;justify-content:space-between;gap:14px;
+  min-height:96px;border:1px solid transparent;border-radius:16px;padding:13px 13px 12px;
+  cursor:pointer;text-align:left;font:inherit;color:inherit;transition:transform .12s ease}
+#screen-more .mrail-item:hover{transform:translateY(-2px)}
+#screen-more .mrail-item span{display:flex;flex-direction:column;gap:0;min-width:0}
+#screen-more .mrail-item b{font:700 14px Anuphan,sans-serif;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#screen-more .mrail-item small{font:500 11.5px Anuphan,sans-serif;opacity:.78;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#screen-more .mrail-icon{font-size:22px;font-style:normal;line-height:1;background:transparent}
+#screen-more .mrail-go{display:none}
+
+/* สีประจำหัวข้อ — พื้นอ่อน ตัวอักษรเข้มของโทนเดียวกัน อ่านออกทุกใบ */
+#screen-more .mrail-item[data-panel="trip"]{background:#e6f1fb;border-color:#c9e0f6}
+#screen-more .mrail-item[data-panel="trip"] b{color:#0c447c}
+#screen-more .mrail-item[data-panel="trip"] small{color:#185fa5}
+#screen-more .mrail-item[data-panel="people"]{background:#e2f5ed;border-color:#c2e7d8}
+#screen-more .mrail-item[data-panel="people"] b{color:#085041}
+#screen-more .mrail-item[data-panel="people"] small{color:#0f6e56}
+#screen-more .mrail-item[data-panel="money"]{background:#fbeed9;border-color:#f2ddb4}
+#screen-more .mrail-item[data-panel="money"] b{color:#633806}
+#screen-more .mrail-item[data-panel="money"] small{color:#854f0b}
+#screen-more .mrail-item[data-panel="docs"]{background:#eeecfd;border-color:#d8d3f5}
+#screen-more .mrail-item[data-panel="docs"] b{color:#26215c}
+#screen-more .mrail-item[data-panel="docs"] small{color:#3c3489}
+#screen-more .mrail-item[data-panel="theme"]{background:#fbeaf0;border-color:#f4d3e0}
+#screen-more .mrail-item[data-panel="theme"] b{color:#72243e}
+#screen-more .mrail-item[data-panel="theme"] small{color:#993556}
+#screen-more .mrail-item[data-panel="close"]{background:#f1f0ea;border-color:#dedbd2}
+#screen-more .mrail-item[data-panel="close"] b{color:#2c2c2a}
+#screen-more .mrail-item[data-panel="close"] small{color:#5f5e5a}
+/* 🔴 ไม่มีหัวข้อ "ลิงก์และลบทริป" แล้ว (North 2026-08-23) — กฎของ
+   .mrail-item[data-panel="danger"] ถูกลบทิ้งพร้อมกัน
+   ลบทริปย้ายไปท้ายหัวข้อ "ข้อมูลทริป" · ลิงก์ย้ายไป "คนและสิทธิ์"
+   ปุ่มลบยังกันนิ้วพลาดอยู่ด้วย .danger-zone ที่มีเส้นคั่นและอยู่ท้ายสุดของแผง */
+
+/* หัวข้อที่กำลังเปิดอยู่ — ขอบหนาขึ้น ไม่เปลี่ยนสีพื้น จะได้ยังจำสีประจำหัวข้อได้ */
+#screen-more .mrail-item.active{border-width:2px;border-color:currentColor;
+  box-shadow:0 4px 14px rgba(40,66,107,.10)}
+
+#screen-more .manage-panels{min-width:0}
+/* 🔴 แผงที่ไม่ได้เลือกต้อง display:none ไม่ใช่ opacity/height
+   ฟอร์มที่ยังอยู่ใน tab order ทำให้กด Tab แล้วโฟกัสหายเข้าไปในแผงที่มองไม่เห็น */
+#screen-more .mpanel{display:none;background:#fff;border:1px solid #e2ecf8;
+  border-radius:16px;padding:18px}
+#screen-more .mpanel.active{display:block}
+#screen-more .mpanel-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid #eef4fb}
+#screen-more .mpanel-head h3{margin:0;font:800 19px Anuphan,sans-serif;color:#26405e;margin-right:auto}
+#screen-more .mpanel-info{border:1px solid #cfe0f2;background:#f4f9ff;border-radius:999px;
+  padding:6px 13px;font:600 12px Anuphan,sans-serif;color:#2b5fa8;cursor:pointer;white-space:nowrap}
+#screen-more .mpanel-info:hover{background:#e6f0fb}
+#screen-more .mpanel-sub{margin-top:16px;padding-top:14px;border-top:1px dashed #e2ecf8}
+#screen-more .mpanel-sub>b{display:block;font:700 13.5px Anuphan,sans-serif;color:#26405e;margin-bottom:9px}
+#screen-more .proto-zone{margin-top:14px;padding-top:13px;border-top:1px dashed #e2ecf8}
+#screen-more .proto-zone[hidden]{display:none}
+
+/* 🔴 ช่องเลือก (select) ทุกที่ในแอปต้องหน้าตาเหมือนช่องกรอกปกติ
+      ขอบเดียวกัน พื้นขาว ไม่ใช่กล่องเทาของระบบ (North สั่งซ้ำสามรอบ:
+      หน้าแผนเที่ยว · หน้าจัดการ · ตัวเลือกประเภททริป)
+
+   appearance:none ตัดลูกศรของระบบทิ้ง แล้ววาดลูกศรเองด้วย background-image
+   ⚠️ ต้องเว้น padding ขวา 36px ไว้ให้ลูกศร ไม่งั้นข้อความยาว ๆ จะทับลูกศร
+   ⚠️ ห้ามใส่ !important — trips.html เคยมี style ติดมากับแท็ก แก้ที่ต้นทางแล้ว
+      ถ้าไล่ทับด้วย !important จะทำให้แก้ทีหลังยากขึ้นอีก */
+.screen select,
+.dialog select,
+.bottom-sheet select,
+.sheet-step select{appearance:none;-webkit-appearance:none;
+  border:1px solid #d9e4f0;background-color:#fff;border-radius:12px;
+  padding:11px 36px 11px 13px;font:14px Anuphan,Sarabun,sans-serif;color:#26405e;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='%235c86b4' stroke-width='2' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 13px center}
+.screen select:focus,
+.dialog select:focus,
+.bottom-sheet select:focus,
+.sheet-step select:focus{outline:2px solid #b6d1ec;outline-offset:1px}
+.screen select:disabled,
+.dialog select:disabled{background-color:#f5f8fc;color:#8aa2bd;cursor:not-allowed}
+
+/* ปุ่มย้อนกลับมีไว้ใช้บนมือถือเท่านั้น */
+#screen-more .mpanel-back{display:none}
+
+@media(max-width:900px){
+  /* ── มือถือ: ตาราง 2 คอลัมน์ → กดเข้าไปในหัวข้อ ── */
+  #screen-more .manage-rail{grid-template-columns:1fr 1fr;gap:9px}
+  #screen-more .mrail-item{min-height:88px;gap:12px;padding:12px}
+  #screen-more .mrail-item b{font-size:13px}
+  #screen-more .mrail-item small{font-size:11px}
+
+  /* อยู่ที่ตาราง = ซ่อนเนื้อหา · อยู่ในหัวข้อ = ซ่อนตาราง
+     ทีละหน้าจอเดียว ไม่ต้องเลื่อนหาว่าตอนนี้อยู่ตรงไหน */
+  #screen-more .manage-layout:not(.drilled) .manage-panels{display:none}
+  #screen-more .manage-layout.drilled .manage-rail{display:none}
+  #screen-more .manage-layout.drilled .manage-alerts{display:none}
+
+  #screen-more .mpanel-back{display:inline-flex;align-items:center;justify-content:center;
+    border:1px solid #dfeaf6;background:#f5f9fd;border-radius:999px;
+    padding:8px 14px;font:700 12.5px Anuphan,sans-serif;color:#2b5fa8;cursor:pointer;
+    order:-1;flex-basis:100%;margin-bottom:4px}
+  #screen-more .mpanel-back:hover{background:#e6f0fa}
+  #screen-more .mpanel-head{flex-wrap:wrap}
+
+  /* แถบชิปตัวเลขซ้ำกับตัวเลขบนการ์ดหัวข้ออยู่แล้ว — ตัดออกเพื่อไม่ให้ดันเนื้อหาลง */
+  #screen-more .mhero-chips{display:none}
+  #screen-more .manage-hero{margin-bottom:10px;padding:12px 14px}
+}
+
+@media(max-width:640px){
+  #screen-more .mhero-main strong{font-size:18px}
+  #screen-more .mpanel{padding:14px}
+}
+
+/* ── v36 · แถวสมาชิกที่แก้ไขได้ + ฟอร์มสมาชิก (2026-08-23) ───────────
+   North: "ให้เพิ่ม คนและสิทธิ์ได้ด้วย"
+
+   🔴 แถวเป็น <div> ไม่ใช่ <button> เพราะมีปุ่ม ✏️ อยู่ข้างใน
+      ปุ่มซ้อนปุ่มเป็น HTML ที่ไม่ถูกต้อง เบราว์เซอร์จะย้ายมันออกมาเอง
+      แล้ว layout เพี้ยนแบบหาสาเหตุยากมาก */
+#screen-more .member-row{display:flex;align-items:center;gap:9px;
+  border:0;border-bottom:1px solid #eef4fb;padding:9px 0;background:transparent}
+#screen-more .member-row:last-of-type{border-bottom:0}
+#screen-more .member-row.viewing{background:#f2f9f5;border-radius:12px;padding:9px 11px;
+  border-bottom-color:transparent}
+#screen-more .member-face{display:flex;align-items:center;gap:10px;flex:1;min-width:0;
+  border:0;background:transparent;padding:0;cursor:pointer;text-align:left;font:inherit;color:inherit}
+#screen-more .member-face span{display:flex;flex-direction:column;gap:0;min-width:0}
+#screen-more .member-face b{font:700 14px Anuphan,sans-serif;color:#26405e;
+  display:flex;align-items:center;gap:6px}
+#screen-more .member-face small{font:500 11.5px Anuphan,sans-serif;color:#8aa2bd}
+#screen-more .admin-tag{font-style:normal;font:700 10px Anuphan,sans-serif;color:#1f7a4d;
+  background:#e4f7ec;border-radius:999px;padding:2px 7px}
+#screen-more .viewing-tag{font-style:normal;font:700 11px Anuphan,sans-serif;color:#1f7a4d;
+  background:#e4f7ec;border-radius:999px;padding:4px 10px;white-space:nowrap}
+#screen-more .member-tools{display:flex;align-items:center;gap:7px;flex:none}
+#screen-more .member-edit{width:34px;height:34px;padding:0;border-radius:11px;
+  border:1px solid #dfeaf6;background:#f5f9fd;font-size:14px;cursor:pointer;color:#456a94}
+#screen-more .member-edit:hover{background:#e6f0fa}
+#screen-more #addMember{margin-top:11px}
+#screen-more #addMember[hidden]{display:none}
+
+/* ช่องติ๊กพร้อมคำอธิบาย — ใช้ในฟอร์มสมาชิก */
+.toggle-check{display:flex!important;align-items:flex-start;gap:10px;background:#f6faff;
+  border:1px solid #e2ecf8;border-radius:13px;padding:11px 13px;cursor:pointer}
+.toggle-check input{width:auto!important;margin-top:2px;flex:none}
+.toggle-check span{display:flex;flex-direction:column;gap:1px}
+.toggle-check b{font:700 13.5px Anuphan,sans-serif;color:#26405e}
+.toggle-check small{font:500 12px Anuphan,sans-serif;color:#8aa2bd}
+#memberDialog .sheet-actions{flex-wrap:wrap}
+#memberDialog #deleteMemberBtn{margin-right:auto}
+#memberDialog #deleteMemberBtn[hidden]{display:none}
+
+/* ── v37 · ปุ่มปิดกับแถวปุ่มท้ายฟอร์ม (2026-08-23) ────────────────────
+   North: "เห็น x ปุ่มปิด ไม่อยู่ตรงกลาง · ปุ่มยกเลิก/เพิ่มสมาชิก ทับข้อมูล
+           ซึ่งเป็นแบบนี้หลายอันมาก · แก้ทุกอัน"
+
+   🔴 สาเหตุที่ × ไม่อยู่ตรงกลาง — ไม่ใช่เรื่องระยะ แต่เป็นเรื่อง "ตัวอักษร"
+      ปุ่มกว้าง 34px แต่ไม่ได้สั่งจัดกึ่งกลางแนวตั้งเลย ตัวอักษรจึงวางบนเส้น
+      baseline ตามปกติ และตัว × เองก็มีกรอบตัวอักษรที่ไม่สมมาตร
+      เปลี่ยนเป็น SVG + place-items:center จึงตรงกลางจริงทุกเบราว์เซอร์
+      และคมทุกความละเอียด ไม่ขึ้นกับฟอนต์ที่เครื่องนั้นมี
+
+   🔴 สาเหตุที่ปุ่มท้ายฟอร์มทับข้อมูล — .sheet-actions ไม่มี margin-top เลย
+      (ดูบรรทัดเดียวยาว ๆ ด้านบนของไฟล์นี้) ปุ่มจึงชนช่องสุดท้ายพอดี
+      แล้วเงาของ .primary-btn (0 6px 15px) ยังฟุ้งขึ้นไปทับอีก
+      แก้ครั้งเดียวที่นี่ = ทุก dialog/sheet ในแอปหายพร้อมกัน */
+.dialog-close,
+.sheet-close{display:grid;place-items:center;line-height:1;padding:0;cursor:pointer;
+  font-size:0;                     /* กันข้อความเก่าที่อาจหลงเหลือไม่ให้ดันขนาดปุ่ม */
+  transition:background .15s ease}
+.dialog-close:hover,
+.sheet-close:hover{filter:brightness(.95)}
+.ico-x{width:15px;height:15px;stroke:currentColor;stroke-width:2.2;
+  stroke-linecap:round;fill:none;display:block}
+.remove-split{display:grid;place-items:center;line-height:1;font-size:0}
+#removeReceipt{display:grid;place-items:center;line-height:1;font-size:0}
+
+/* แถวปุ่มท้ายฟอร์ม — เว้นระยะจากเนื้อหาเสมอ และมีเส้นคั่นบาง ๆ ให้เห็นว่าคนละส่วน
+   flex-wrap กันปุ่มเบียดจนล้นออกนอกกรอบเมื่อชื่อปุ่มยาวหรือจอแคบ */
+.dialog .sheet-actions,
+.bottom-sheet .sheet-actions,
+.sheet-step .sheet-actions{margin-top:18px;padding-top:14px;border-top:1px solid #eef1f6;
+  flex-wrap:wrap;align-items:center}
+/* กล่องรายละเอียดบิลจัดระยะเองอยู่แล้ว (v29) ไม่ต้องซ้อนเส้นอีกเส้น */
+.bill-detail .sheet-actions{margin-top:0;border-top:0}
+
+/* 🔴 ปุ่มลบต้องอยู่ซ้ายสุด แยกจากปุ่มยืนยันให้ไกลที่สุดเท่าที่แถวจะให้ได้
+   ปุ่มลบที่อยู่ติดปุ่มยืนยันคือเหตุผลอันดับหนึ่งที่คนกดลบโดยไม่ตั้งใจ */
+.dialog .sheet-actions .danger-btn{margin-right:auto}
+
+/* ป้องกัน dialog สูงเกินจอบนเดสก์ท็อป (เดิมกันไว้เฉพาะจอ ≤640px)
+   ฟอร์มยาว ๆ อย่างฟอร์มสมาชิกหรือฟอร์มสถานที่จะล้นออกนอกจอโดยไม่มี scroll */
+.dialog{max-height:calc(100vh - 40px);overflow:auto}
+
+@media(max-width:640px){
+  /* จอแคบ: ปุ่มยืนยันกินเต็มแถว กดด้วยนิ้วโป้งไม่พลาด */
+  .dialog .sheet-actions{gap:8px}
+  .dialog .sheet-actions .primary-btn{flex:1;min-width:140px}
+  .dialog .sheet-actions .danger-btn{flex-basis:100%;margin-right:0;order:9}
+}
+
+/* ── v38 · ช่องกรอกในกล่องโต้ตอบทุกใบ (2026-08-23) ────────────────────
+   North: "กรอบชื่อรายการ ให้เป็นกรอบมน แบบทั่วไป ตัวอักษรให้ใหญ่ขึ้นอีกนิด"
+
+   🔴 สาเหตุ — สไตล์ช่องกรอกเดิมผูกกับ .editor-grid เท่านั้น
+      ฟอร์มไหนที่ไม่ได้ใช้คลาสนั้น (เช่น #presetForm ที่เขียน
+      style="display:grid" ติดมากับแท็ก) จะได้ช่องกรอกดิบ ๆ ของเบราว์เซอร์
+      — กรอบเหลี่ยม ป้ายชื่อไปอยู่ข้างซ้าย ไม่ตรงกับช่องเลือกที่อยู่ใต้กัน
+      กฎชุดนี้ครอบ "ทุกฟอร์มในทุก dialog" จึงไม่มีฟอร์มไหนหลุดอีก
+
+   ⚠️ ห้ามผูกกับชื่อฟอร์มทีละอัน — ฟอร์มใหม่ที่เพิ่มทีหลังจะหลุดทันที
+      แล้วจะกลับมาเป็นแบบนี้อีกโดยไม่มีใครสังเกต */
+.dialog form label,
+.dialog > label{display:grid;gap:6px;font:700 13.5px Anuphan,sans-serif;color:#3d5875}
+.dialog input:not([type=checkbox]):not([type=radio]),
+.dialog textarea{width:100%;border:1px solid #d9e4f0;background:#fff;border-radius:12px;
+  padding:11px 13px;font:15px Anuphan,Sarabun,sans-serif;color:#26405e}
+.dialog textarea{resize:vertical}
+.dialog input:not([type=checkbox]):not([type=radio]):focus,
+.dialog textarea:focus{outline:2px solid #b6d1ec;outline-offset:1px;border-color:#9dbfe0}
+.dialog input::placeholder,
+.dialog textarea::placeholder{color:#a8bccf}
+/* ช่องเลือกใช้ขนาดตัวอักษรเดียวกับช่องกรอก จะได้ดูเป็นชุดเดียวกัน */
+.dialog select{font-size:15px}
+
+/* ป้ายกำกับต้องอยู่ "เหนือ" ช่องเสมอ ไม่ใช่ข้าง ๆ
+   ป้ายที่อยู่ข้างทำให้ความกว้างของช่องไม่เท่ากันในแต่ละแถว อ่านแล้วรก */
+.dialog .field-wide{grid-column:1/-1}
+
+/* ฟอร์มแบบเรียงลง — เดิมเขียน style="display:grid;gap:12px" ติดมากับแท็ก <form>
+   ซึ่งทำให้แก้ยากและมองไม่เห็นตอนไล่อ่าน CSS · ย้ายมาเป็นคลาสที่นี่ */
+.stack-form{display:grid;gap:12px}
+
+/* ── v39 · รูปประจำตัวสมาชิก (2026-08-23) ─────────────────────────────
+   North: "คนและสิทธิ์ส่วนนี้ ให้เพิ่ม icon คนแทนตัวอักษร"
+
+   ⚠️ ยังไม่มีรูปก็ต้องแสดงอะไรที่แยกคนออกจากกันได้ จึงถอยไปใช้ตัวอักษรตัวแรก
+      + สีประจำตัวเหมือนเดิม ไม่ใช่ขึ้นวงกลมว่าง — คนที่ยังไม่ตั้งรูปมักเป็น
+      คนที่เพิ่งถูกเพิ่มเข้ามา ซึ่งเป็นตอนที่ต้องแยกให้ออกมากที่สุดพอดี */
+.face.photo,
+.face-dot.photo,
+.person-face.photo{object-fit:cover;background:#eef4fb;padding:0;border:0;display:block}
+.face.photo{width:26px;height:26px;border-radius:50%}
+#screen-more .member-face .face.photo{width:34px;height:34px}
+.face-dot.photo{width:22px;height:22px;border-radius:50%}
+.person-face.photo{width:44px;height:44px;border-radius:50%}
+
+/* แถวเลือกรูปในฟอร์มสมาชิก */
+.avatar-field{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:#f6faff;border:1px solid #e2ecf8;border-radius:14px;padding:12px 13px}
+.avatar-field>div{flex:1;min-width:130px;display:flex;flex-direction:column;gap:1px}
+.avatar-field b{font:700 13.5px Anuphan,sans-serif;color:#26405e}
+.avatar-field small{font:500 11.5px Anuphan,sans-serif;color:#8aa2bd}
+.avatar-preview{width:52px;height:52px;border-radius:50%;flex:none;overflow:hidden;
+  background:#e6f0fa;display:grid;place-items:center}
+.avatar-preview img{width:100%;height:100%;object-fit:cover;display:block}
+.avatar-preview i{font-style:normal;font:700 21px Anuphan,sans-serif;color:#5c86b4}
+#clearMemberAvatar[hidden]{display:none}
+
+/* ── v40 · หัวข้อ "การสร้างภาพ" ในหน้าจัดการ (2026-08-23) ────────────
+   North: "เพิ่มข้อมูล icon prompt นี้ไว้ใน เพิ่มเติม ในหัวข้อ การสร้างภาพ" */
+#screen-more .mrail-item[data-panel="art"]{background:#e7f3f6;border-color:#c6e2e8}
+#screen-more .mrail-item[data-panel="art"] b{color:#0b4750}
+#screen-more .mrail-item[data-panel="art"] small{color:#12707f}
+
+#artGuide .art-lead{margin:0 0 14px;font:500 13.5px/1.7 Anuphan,sans-serif;color:#5c7d9e}
+#artGuide .art-rules,
+#artGuide .art-sizes{background:#f6faff;border:1px solid #e2ecf8;border-radius:14px;
+  padding:13px 15px;margin:0 0 12px}
+#artGuide .art-rules>b,
+#artGuide .art-sizes>b,
+#artGuide .art-prompts>b{display:block;font:700 14px Anuphan,sans-serif;color:#26405e;margin-bottom:9px}
+#artGuide .art-rules ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:7px}
+#artGuide .art-rules li{font:500 13px/1.65 Anuphan,sans-serif;color:#456a94}
+#artGuide .art-rules b{color:#26405e}
+
+#artGuide .art-sizes table{width:100%;border-collapse:collapse;margin-bottom:9px}
+#artGuide .art-sizes th{text-align:left;font:700 11.5px Anuphan,sans-serif;color:#7e97b3;
+  padding:0 8px 7px 0;border-bottom:1px solid #e2ecf8}
+#artGuide .art-sizes td{font:500 13px Anuphan,sans-serif;color:#456a94;
+  padding:8px 8px 8px 0;border-bottom:1px solid #eef4fb}
+#artGuide .art-sizes tr:last-child td{border-bottom:0}
+#artGuide .art-sizes td b{color:#26405e;font-variant-numeric:tabular-nums}
+#artGuide .art-sizes small{display:block;font:500 11.5px/1.6 Anuphan,sans-serif;color:#8aa2bd}
+
+#artGuide .art-prompts{margin-bottom:12px}
+#artGuide .art-prompt{border:1px solid #e2ecf8;border-radius:13px;margin-bottom:8px;
+  background:#fff;overflow:hidden}
+#artGuide .art-prompt summary{display:flex;align-items:center;gap:11px;padding:11px 13px;
+  cursor:pointer;list-style:none}
+#artGuide .art-prompt summary::-webkit-details-marker{display:none}
+#artGuide .art-prompt summary>span{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
+#artGuide .art-prompt summary b{font:700 13.5px Anuphan,sans-serif;color:#26405e}
+#artGuide .art-prompt summary small{font:500 11.5px Anuphan,sans-serif;color:#8aa2bd}
+#artGuide .art-prompt[open] summary{border-bottom:1px solid #eef4fb}
+#artGuide .art-copy{border:1px solid #cfe0f2;background:#f4f9ff;border-radius:999px;
+  padding:6px 14px;font:700 12px Anuphan,sans-serif;color:#2b5fa8;cursor:pointer;flex:none}
+#artGuide .art-copy:hover{background:#e6f0fb}
+/* prompt เป็นภาษาอังกฤษล้วน ใช้ฟอนต์ monospace เพื่อให้เห็นย่อหน้าและช่องว่างตามจริง
+   ⚠️ ต้อง white-space:pre-wrap ไม่ใช่ pre — ไม่งั้นบรรทัดยาวจะดันกล่องล้นออกนอกจอมือถือ */
+#artGuide .art-prompt pre{margin:0;padding:12px 13px;background:#fbfdff;
+  font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:#3d5875;
+  white-space:pre-wrap;word-break:break-word;max-height:320px;overflow:auto}
+#artGuide .art-foot{margin:0;font:500 12.5px/1.65 Anuphan,sans-serif;color:#8aa2bd}
+#artGuide .art-foot b{color:#456a94}
+
+/* ── v41 · คลังรูปที่อัปโหลดเอง + ปุ่มลบ (2026-08-23) ────────────────
+   North: "ลบภาพที่ไม่เอา จากการเลือกรูป ออกจากระบบ เฉพาะผู้ดูแลเท่านั้น"
+
+   🔴 ปุ่มลบโผล่เฉพาะเมื่อเซิร์ฟเวอร์ตอบ can_delete = true
+      รูปเป็นของใช้ร่วมกันทั้งครอบครัว คนที่ลบได้คือผู้ดูแลระบบครอบครัว
+      ไม่ใช่ผู้ดูแลทริป — ถ้าใครก็ลบได้ คนหนึ่งลบทิ้ง ไอคอนของอีกคนที่ใช้อยู่
+      จะกลายเป็นรูปแตกทันที */
+#assetGrid .asset-divider{grid-column:1/-1;margin:10px 0 2px;
+  font:700 12px Anuphan,sans-serif;color:#7e97b3}
+#assetGrid .asset-option.uploaded{position:relative;padding:0;border:0;background:transparent}
+#assetGrid .asset-pick{display:block;width:100%;border:0;background:transparent;
+  padding:0;cursor:pointer;font:inherit;color:inherit}
+#assetGrid .asset-del{position:absolute;right:4px;top:4px;width:26px;height:26px;
+  padding:0;border:1px solid #f3ccd6;border-radius:50%;background:#fdf1f4;
+  font-size:12px;line-height:1;cursor:pointer;display:grid;place-items:center;z-index:1}
+#assetGrid .asset-del:hover{background:#fbe2e7}
+
+/* ── v42 · แบ่งกลุ่มสมาชิก + ผูกบัญชี + ผู้ดูแลรายคน (2026-08-23) ────
+   North: "แยก บัญชีหลัก / เฉพาะทริป"
+
+   🔴 ต้องแยกให้เห็นชัด เพราะเป็นความต่างที่ "มีผลกับเงินจริง" แต่มองไม่เห็น
+      จากหน้าตาแถว — ตั้งผิดกลุ่มแล้วรู้ตัวอีกทีตอนปิดทริป ซึ่งสายไปแล้ว */
+#screen-more .member-group+.member-group{margin-top:16px;padding-top:14px;border-top:1px dashed #e2ecf8}
+#screen-more .member-group-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+#screen-more .member-group-head b{font:700 13px Anuphan,sans-serif;color:#26405e}
+#screen-more .member-group-head small{font:500 11.5px Anuphan,sans-serif;color:#8aa2bd;flex:1;min-width:120px}
+#screen-more .member-group-head em{font-style:normal;font:600 11px Anuphan,sans-serif;color:#7e97b3;
+  background:#f2f7fd;border-radius:999px;padding:3px 9px;white-space:nowrap}
+
+/* 🔴 [hidden] ต้องมี display:none ตรงนี้ด้วย เพราะ .dialog form label
+   ตั้ง display:grid ไว้ ซึ่งชนะ [hidden] ของเบราว์เซอร์ — ช่องจะยังโผล่อยู่ */
+#memberUserField[hidden]{display:none}
+.field-hint{font:500 11.5px Anuphan,sans-serif;color:#8aa2bd}
+
+/* ── v43 · บัตรเครดิต: ยอดบาทจริงตอนปิดทริป (2026-08-23) ─────────────
+   🔴 ยอดบาทของบัตรเครดิตไม่มีทางรู้จนกว่าบิลจะเรียกเก็บ
+      ถ้าปล่อยให้ปิดด้วยเรทประมาณการ ยอดในสมุดบัญชีจะไม่ตรงกับที่จ่ายจริง
+      และไม่มีใครรู้ตัว เพราะตัวเลขที่ได้ก็ดูสมเหตุสมผลทุกประการ
+   กล่องนี้จึงต้องเด่นกว่าส่วนอื่นในหน้าปิดทริป — เป็นด่านบังคับ ไม่ใช่ตัวเลือก */
+#creditSettlement{background:#fff6e6;border:1px solid #f2ddb4;border-radius:15px;
+  padding:13px 15px;margin:0 0 14px}
+#creditSettlement[hidden]{display:none}
+#creditSettlement .credit-lead{margin:0 0 11px}
+#creditSettlement .credit-lead b{font:700 14px Anuphan,sans-serif;color:#8a6410}
+#creditSettlement .credit-lead small{display:block;margin-top:3px;
+  font:500 12px/1.6 Anuphan,sans-serif;color:#a1834a}
+#creditSettlement .credit-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:#fff;border:1px solid #f2e3c5;border-radius:12px;padding:10px 12px}
+#creditSettlement .credit-row+.credit-row{margin-top:7px}
+#creditSettlement .credit-row.done{background:#f2fbf6;border-color:#c9e8d8}
+#creditSettlement .credit-row>span{display:flex;flex-direction:column;gap:1px;flex:1;min-width:150px}
+#creditSettlement .credit-row b{font:700 13.5px Anuphan,sans-serif;color:#26405e}
+#creditSettlement .credit-row small{font:500 11.5px Anuphan,sans-serif;color:#8aa2bd}
+#creditSettlement .credit-row label{display:flex;flex-direction:column;gap:4px;
+  font:600 11.5px Anuphan,sans-serif;color:#8a6410}
+#creditSettlement .credit-row input{width:150px;border:1px solid #e0cfa8;border-radius:11px;
+  padding:9px 11px;font:15px Anuphan,sans-serif;color:#26405e;text-align:right}
+#creditSettlement .credit-row input:focus{outline:2px solid #f0d79a;outline-offset:1px}
+
+/* ── v44 · บัญชี/หมวดของกำไร-ขาดทุนอัตราแลกเปลี่ยน (2026-08-23) ──────
+   North: "ต้องกำหนดไว้ด้วยให้ลงบัญชีหลักบัญชีไหน เหมือนค่าใช้จ่าย"
+
+   🔴 ลงเป็น Transaction คนละใบกับค่าใช้จ่าย เพราะหนึ่งใบผูกได้บัญชีเดียว
+      และเป็นเหตุการณ์คนละอันจริง ๆ — ค่าใช้จ่ายคือเงินออกจากบัญชีที่เติมกระเป๋า
+      ส่วนกำไร/ขาดทุนเกิดตอนแลกเงินที่เหลือกลับ ซึ่งเข้าบัญชีที่รับเงินคืน */
+#fxPosting{background:#f2f7ff;border:1px solid #cfe0f2;border-radius:15px;
+  padding:13px 15px;margin:0 0 14px}
+#fxPosting[hidden]{display:none}
+#fxPosting .fx-lead{margin:0 0 11px}
+#fxPosting .fx-lead b{font:700 14px Anuphan,sans-serif;color:#26405e}
+#fxPosting .fx-lead small{display:block;margin-top:3px;
+  font:500 12px/1.6 Anuphan,sans-serif;color:#7195c2}
+/* 🔴 หนึ่งกระเป๋าที่มีผลต่าง = หนึ่งแถว = หนึ่งรายการในสมุดบัญชี
+   ห้ามรวมข้ามกระเป๋า — แต่ละใบแลกคืนเข้าคนละบัญชีได้ ถ้ารวมเป็นก้อนเดียว
+   ยอดคงเหลือของแต่ละบัญชีจะไม่ตรงกับความจริง โดยไม่มีอะไรฟ้อง */
+#fxPosting .fx-row{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr 1fr;gap:10px;
+  align-items:end;background:#fff;border:1px solid #dbe8f7;border-radius:13px;padding:11px 13px}
+#fxPosting .fx-row+.fx-row{margin-top:8px}
+#fxPosting .fx-who{display:flex;flex-direction:column;gap:1px;min-width:0}
+#fxPosting .fx-who b{font:700 13.5px Anuphan,sans-serif;color:#26405e}
+#fxPosting .fx-who small{font:500 11.5px Anuphan,sans-serif;color:#8aa2bd}
+#fxPosting .fx-who em{font-style:normal;font:700 13px Anuphan,sans-serif;margin-top:2px}
+#fxPosting .fx-row.gain .fx-who em{color:#1f7a4d}
+#fxPosting .fx-row.loss .fx-who em{color:#c0392f}
+#fxPosting label{display:flex;flex-direction:column;gap:5px;
+  font:600 11.5px Anuphan,sans-serif;color:#5c86b4}
+@media(max-width:640px){ #fxPosting .fx-row{grid-template-columns:1fr} }
+
+/* ── v45 · รวมการเข้าใช้งานเข้ากับแถวสมาชิก (2026-08-23) ─────────────
+   North: "ไปรวมกับส่วนของ member ให้แก้ไข ถอนสิทธิ์ คืนสิทธิ์ ได้"
+
+   🔴 เดิมมีรายชื่อสองชุดในหน้าเดียว (สมาชิก + ให้ผู้ร่วมทริปเข้าใช้งาน)
+      แก้คนละที่ ซึ่งเป็นที่มาของความสับสน · และของเดิมยังโชว์ปุ่ม "ถอนสิทธิ์"
+      ให้คนที่เข้าผ่านบัญชีครอบครัวด้วย ซึ่งกดไปก็ไม่มีผลอะไรเลย
+      เพราะระบบหาตัวตนจาก user_id ไม่ใช่จากรหัส */
+#screen-more .join-link-box{background:#f6faff;border:1px solid #e2ecf8;border-radius:14px;
+  padding:12px 14px;margin:0 0 14px}
+#screen-more .join-link-box>b{display:block;font:700 13.5px Anuphan,sans-serif;color:#26405e}
+#screen-more .join-link-box .field-note{margin:3px 0 9px}
+
+#screen-more .access-tag{font-style:normal;font:600 10.5px Anuphan,sans-serif;
+  border-radius:999px;padding:3px 9px;white-space:nowrap}
+#screen-more .access-tag.own{background:#e8f1fc;color:#2b5fa8}
+#screen-more .access-tag.ok{background:#e4f7ec;color:#1f7a4d}
+#screen-more .access-tag.off{background:#f2f4f7;color:#8aa2bd}
+#screen-more .member-key{border:1px solid #cfe0f2;background:#f4f9ff;border-radius:999px;
+  padding:5px 11px;font:600 11px Anuphan,sans-serif;color:#2b5fa8;cursor:pointer;white-space:nowrap}
+#screen-more .member-key:hover{background:#e6f0fb}
+#screen-more .member-tools{flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:640px){
+  #screen-more .member-row{flex-wrap:wrap}
+  #screen-more .member-tools{flex-basis:100%;justify-content:flex-start;margin-top:6px}
+}
+
+/* ── ส่วน "การเข้าใช้งาน" ในฟอร์มแก้ไขสมาชิก (North 2026-08-23) ──────
+   แยกออกจากช่องกรอกอื่นด้วยพื้นหลังกับเส้นขอบ เพราะเป็นคนละเรื่องกับ
+   ชื่อ/บทบาท/บัญชี — และเป็นเรื่องที่ "มีผลกับความปลอดภัย" ต้องมองออกทันที
+   ว่ากำลังแตะของกลุ่มนี้อยู่ ไม่ใช่กลมกลืนไปกับช่องกรอกธรรมดา */
+.access-block{background:#f6faff;border:1px solid #e2ecf8;border-radius:14px;padding:13px 14px 12px}
+.access-block[hidden]{display:none}
+.access-head{display:block;font:700 13.5px Anuphan,sans-serif;color:#26405e;margin-bottom:7px}
+.access-line{margin:0 0 6px;font:400 12px Sarabun,sans-serif;line-height:1.55;color:#4a5a70;
+  padding-left:2px}
+.access-line b{font-weight:700}
+.access-line.own b{color:#2b5fa8}
+.access-line.trip b{color:#7a5a1f}
+.access-line.ok b{color:#1f7a4d}
+.access-line.off b{color:#8395ab}
+.access-line.new{color:#6b7c92}
+/* สองช่องคู่กันบนจอกว้าง — พิมพ์รหัสแล้วยืนยันติดกันเทียบง่ายกว่าเรียงบนล่าง */
+.access-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:9px}
+.access-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.access-actions .soft-btn{flex:1 1 auto;min-width:150px}
+@media(max-width:520px){
+  .access-fields{grid-template-columns:1fr}
 }
