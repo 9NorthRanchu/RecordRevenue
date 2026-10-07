@@ -67,6 +67,19 @@ function stopPicture(stop, index) {
   return ['📍', '🏔️', '🚂', '⛩️', '🍜'][index % 5];
 }
 
+/* วันที่ของ Stop เป็นข้อมูลแผน ไม่ใช่วันที่ของทั้งทริป: การ์ดรวมจึงต้องแสดง
+   แยกใต้แต่ละจุด มิฉะนั้นทริปที่มีหลายวันจะดูเหมือนเรียงสถานที่ลอย ๆ โดยไม่รู้
+   ว่าต้องไปวันไหน · รับเฉพาะ ISO เพื่อไม่ให้ข้อมูลเก่าหรือวันที่พังแสดง Invalid Date */
+function stopDateLabel(value) {
+  const iso = String(value || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 'ยังไม่กำหนดวัน';
+  const date = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return 'ยังไม่กำหนดวัน';
+  return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' })
+    .format(date)
+    .replace(/\.$/, '');
+}
+
 function renderStops(trip) {
   const stops = trip.stops || [];
   if (!stops.length) return '<div class="trip-stop-empty">ยังไม่ได้เพิ่มสถานที่ในทริปนี้</div>';
@@ -79,6 +92,7 @@ function renderStops(trip) {
           <div class="trip-stop">
             <span class="trip-stop-picture">${stopPicture(stop, index)}</span>
             <small>${escapeHtml(stop.name || 'จุดแวะ')}</small>
+            <time class="trip-stop-date" datetime="${escapeHtml(stop.stop_date || '')}">${escapeHtml(stopDateLabel(stop.stop_date))}</time>
           </div>`).join('')}
       </div>
       <button class="trip-stop-slide" type="button" data-scroll="1" aria-label="เลื่อนจุดแวะไปทางขวา" hidden>›</button>

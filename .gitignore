@@ -16,3 +16,10 @@ venv/
 backup-before-trip-finance.sql
 backend/db/live_backup.sql
 backend/db/seed_historical_data.sql
+
+# ข้อมูลการเงินจริง — ห้ามขึ้น GitHub (เพิ่ม 2026-10-07)
+import-expense2/sql/
+import-expense2/*.sql
+import-expense2/*.xlsx
+import-expense2/*.json
+trip-import/*.xlsx

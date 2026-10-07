@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>พิมพ์แผนเที่ยว — Enjoy Life Trip</title>
+  <link rel="icon" type="image/png" href="art/enjoy-life-trip-icon-v1.png">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- หน้าพิมพ์แผนเที่ยว (North 2026-09-15 · จาก Trip.xlsx)
+       เปิดด้วย print.html?live=1&projectId=… (ปุ่ม "พิมพ์แผน" ในหน้าแผนส่งมาให้เอง)
+       อ่านข้อมูลชุดเดียวกับหน้าแผน (TripApi.fetchTrip) · ไม่มีการเขียนกลับ
+       A4 แนวตั้ง ขาวดำอ่านง่าย · Cmd/Ctrl+P หรือ "บันทึกเป็น PDF" -->
+  <style>
+    :root{--ink:#111;--muted:#555;--line:#d8d8d8;--soft:#f3f4f6}
+    *{box-sizing:border-box}
+    body{margin:0;background:#e5e7eb;color:var(--ink);font-family:Sarabun,"Noto Sans Thai",system-ui,sans-serif;font-size:11.5px;line-height:1.45}
+    .toolbar{position:sticky;top:0;z-index:5;background:#1f2937;color:#fff;display:flex;gap:10px;align-items:center;padding:10px 16px;flex-wrap:wrap}
+    .toolbar b{font-size:14px}
+    .toolbar small{color:#cbd5e1}
+    .toolbar .spacer{flex:1}
+    .toolbar button,.toolbar a{border:0;border-radius:10px;padding:8px 14px;font:700 13px Sarabun,sans-serif;cursor:pointer;text-decoration:none}
+    .toolbar .pri{background:#3b82f6;color:#fff}
+    .toolbar .sec{background:#374151;color:#fff}
+    .toolbar label{display:flex;align-items:center;gap:5px;font-size:12px;color:#e5e7eb;cursor:pointer}
+    .sheet{width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:16mm 15mm 14mm;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+    h1{font-size:23px;margin:0;font-weight:800}
+    .meta{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);margin:4px 0 12px;font-size:11px}
+    h2{font-size:13.5px;margin:16px 0 6px;padding-bottom:3px;border-bottom:1.5px solid var(--ink);display:flex;justify-content:space-between;align-items:baseline;break-after:avoid}
+    h2 small{font-weight:400;color:var(--muted);font-size:10.5px}
+    table{width:100%;border-collapse:collapse;break-inside:auto}
+    tr{break-inside:avoid}
+    th,td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}
+    th{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.03em;border-bottom:1px solid #999}
+    td.r,th.r{text-align:right;white-space:nowrap}
+    td.tm{white-space:nowrap;font-weight:700;width:52px}
+    td.ty{width:18px;text-align:center}
+    td.d{white-space:nowrap}
+    .book{color:#444;font-size:10.5px;margin-top:1px}
+    .book b{color:var(--ink)}
+    .mono{font-family:ui-monospace,Menlo,monospace;font-size:10.5px}
+    .icons{letter-spacing:.06em;white-space:nowrap}
+    .muted{color:var(--muted)}
+    .note td{height:24px;border-bottom:1px dotted #bbb}
+    .backup{color:#777}
+    .backup .stop{font-weight:400}
+    .stop{font-weight:700}
+    .day{break-inside:avoid-page}
+    .hl{font-size:10.5px;color:#333}
+    .status-paid{color:#2f6f45}
+    .status-unpaid{color:#8a5a00;font-weight:700}
+    .foot{margin-top:18px;color:#888;font-size:9.5px;display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:6px}
+    .empty{padding:14px;color:var(--muted);text-align:center}
+    .err{margin:30px auto;max-width:520px;background:#fee2e2;color:#991b1b;padding:14px 16px;border-radius:12px;font-weight:700}
+    .hidden{display:none!important}
+    @media print{
+      @page{size:A4 portrait;margin:12mm 12mm 14mm}
+      body{background:#fff}
+      .toolbar{display:none}
+      .sheet{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}
+      a{color:inherit;text-decoration:none}
+    }
+    @media(max-width:700px){.sheet{width:auto;margin:8px;padding:14px}}
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <b>🖨 พิมพ์แผนเที่ยว</b><small id="tbHint">กำลังโหลด…</small>
+    <span class="spacer"></span>
+    <label><input type="checkbox" id="optBackup" checked> รวมที่พักสำรอง</label>
+    <label><input type="checkbox" id="optNotes" checked> เว้นบรรทัดจดมือ</label>
+    <label><input type="checkbox" id="optMoney" checked> ปฏิทินเงิน</label>
+    <a class="sec" id="backLink" href="#">‹ กลับหน้าแผน</a>
+    <button class="pri" id="printBtn" type="button">พิมพ์ / บันทึก PDF</button>
+  </div>
+  <div id="error" class="err hidden"></div>
+  <div class="sheet" id="sheet"></div>
+
+  <script src="api.js?v=53"></script>
+  <script>
+  (() => {
+    const $ = (s, r = document) => r.querySelector(s);
+    const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+    const SYM = { THB:'฿', JPY:'¥', CNY:'¥', KRW:'₩', USD:'$', EUR:'€', GBP:'£', TWD:'NT$', VND:'₫', SGD:'S$', HKD:'HK$', AUD:'A$', MYR:'RM', PHP:'₱', INR:'₹' };
+    const MONTH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    const WD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+    const parse = iso => { const d = new Date(`${iso}T12:00:00`); return Number.isNaN(d.getTime()) ? null : d; };
+    const dShort = iso => { const d = parse(iso); return d ? `${d.getDate()} ${MONTH[d.getMonth()]}` : (iso || '—'); };
+    const dFull = iso => { const d = parse(iso); return d ? `${WD[d.getDay()]} ${d.getDate()} ${MONTH[d.getMonth()]} ${d.getFullYear()}` : (iso || '—'); };
+    const nights = b => { const a = parse(b?.check_in), c = parse(b?.check_out); return a && c ? Math.max(0, Math.round((c - a) / 864e5)) : 0; };
+    const money = (n, cur) => n == null ? '' : `${SYM[cur] || `${cur || ''} `}${Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+    const ICON = { 'การเดินทาง':'✈', 'ที่พัก':'🛏', 'อาหาร':'🍜', 'สถานที่หลัก':'📍', 'กิจกรรมย่อย':'•' };
+    const AMEN = { inc_breakfast:'🍳', inc_lunch:'🍱', inc_dinner:'🍽', has_parking:'🅿', has_laundry:'🧺' };
+    const amen = b => Object.keys(AMEN).filter(k => b?.[k] === 1).map(k => AMEN[k]).join(' ');
+    const PAY = { PAID:'จ่ายแล้ว', UNPAID:'ยังไม่จ่าย', PAY_AT_VENUE:'จ่ายหน้างาน' };
+    const payText = b => b.pay_status === 'PAID'
+      ? `<span class="status-paid">✓ จ่ายแล้ว${b.pay_date ? ` ${dShort(b.pay_date)}` : ''}${b.pay_method ? ` (${esc(b.pay_method)})` : ''}</span>`
+      : `<span class="${b.pay_status === 'UNPAID' ? 'status-unpaid' : ''}">${PAY[b.pay_status] || ''}${b.pay_date ? ` ${dShort(b.pay_date)}` : ''}${b.pay_method ? ` (${esc(b.pay_method)})` : ''}</span>`;
+
+    let state = null;
+    const opts = () => ({ backup: $('#optBackup').checked, notes: $('#optNotes').checked, money: $('#optMoney').checked });
+
+    function bookingLine(b) {
+      if (!b) return '';
+      const parts = [];
+      if (b.vendor || b.ref_no) parts.push(`${esc(b.vendor || '')}${b.ref_no ? ` <b class="mono">#${esc(b.ref_no)}</b>` : ''}`);
+      if (b.kind === 'HOTEL') {
+        const n = nights(b);
+        if (b.check_out) parts.push(`${n} คืน → ${dShort(b.check_out)}`);
+        if (b.room_desc) parts.push(esc(b.room_desc));
+        if (b.view_desc) parts.push(`${esc(b.view_desc)} view`);
+        if (b.size_sqm) parts.push(`${b.size_sqm} ตรม.`);
+        if (b.travelers) parts.push(esc(b.travelers));
+        const a = amen(b); if (a) parts.push(`<span class="icons">${a}</span>`);
+      } else {
+        if (b.depart_from || b.arrive_to) parts.push(`${esc(b.depart_from || '?')} → ${esc(b.arrive_to || '?')}`);
+        if (b.arrive_time) parts.push(`ถึง ${esc(b.arrive_time)}`);
+        if (b.travelers) parts.push(esc(b.travelers));
+      }
+      if (b.status === 'BACKUP') parts.push('<i>(สำรอง)</i>');
+      if (b.status === 'CANCELLED') parts.push('<i>(ยกเลิกแล้ว)</i>');
+      return parts.length ? `<div class="book">${parts.join(' · ')}</div>` : '';
+    }
+    const payCell = b => {
+      if (!b || b.status === 'CANCELLED') return '';
+      const bits = [payText(b)];
+      if (b.cancel_deadline) bits.push(`ยกเลิกฟรีถึง ${dShort(b.cancel_deadline)}`);
+      return bits.join(' · ');
+    };
+
+    function render() {
+      if (!state) return;
+      const o = opts();
+      const days = state.planDays;
+      const show = act => act.visitStatus !== 'SKIPPED' && (o.backup || act.booking?.status !== 'BACKUP') && act.booking?.status !== 'CANCELLED';
+      const dayTitle = day => day.title || '';
+      const allRows = days.flatMap(day => day.activities.filter(show).map(act => ({ day, act, b: act.booking })));
+      const hotels = allRows.filter(r => r.b?.kind === 'HOTEL');
+      const flights = allRows.filter(r => r.b && (r.b.kind === 'FLIGHT' || r.b.kind === 'TRANSPORT'));
+      const confirmedHotels = hotels.filter(r => r.b.status === 'CONFIRMED');
+      const totalNights = confirmedHotels.reduce((s, r) => s + (nights(r.b) || 1), 0);
+      const totals = {};
+      confirmedHotels.forEach(r => { if (r.act.plannedCost != null) { const c = r.act.plannedCurrency || 'THB'; totals[c] = (totals[c] || 0) + Number(r.act.plannedCost); } });
+      const totalText = Object.entries(totals).map(([c, n]) => money(n, c)).join(' + ');
+
+      const dayBlocks = days.map(day => {
+        const rows = day.activities.filter(show);
+        const carried = days.flatMap(d => d.activities.filter(show).filter(a => a.booking?.kind === 'HOTEL' && a.booking.check_out
+          && (a.booking.check_in || d.date) < day.date && day.date < a.booking.check_out)
+          .map(a => `<tr class="muted"><td class="tm">🛏</td><td class="ty"></td><td colspan="3">พักต่อที่ <b>${esc(a.name)}</b> · เช็กเอาต์ ${dShort(a.booking.check_out)}</td><td></td></tr>`)).join('');
+        const body = rows.map(act => `
+          <tr class="${act.booking?.status === 'BACKUP' ? 'backup' : ''}">
+            <td class="tm">${esc(act.time || '')}${act.endTime ? `<div class="muted" style="font-weight:400;font-size:10px">–${esc(act.endTime)}</div>` : ''}</td>
+            <td class="ty">${ICON[act.tag] || '•'}</td>
+            <td><span class="stop">${esc(act.name)}</span>${bookingLine(act.booking)}</td>
+            <td>${esc(act.city || '')}</td>
+            <td class="hl">${[act.highlight && `✨ ${esc(act.highlight)}`, act.openTime && act.closeTime && `เปิด ${act.openTime}–${act.closeTime}`,
+                act.mapcode && `MC ${esc(act.mapcode)}`, act.detail && esc(act.detail), payCell(act.booking)].filter(Boolean).join('<br>')}</td>
+            <td class="r">${money(act.plannedCost, act.plannedCurrency)}</td>
+          </tr>`).join('');
+        return `<section class="day">
+          <h2>${dFull(day.date)}${dayTitle(day) ? ` · ${esc(dayTitle(day))}` : ''}<small>Day ${String(day.day).padStart(2, '0')} · ${rows.length} จุด</small></h2>
+          <table>
+            <colgroup><col style="width:52px"><col style="width:18px"><col style="width:40%"><col style="width:13%"><col><col style="width:72px"></colgroup>
+            <thead><tr><th>เวลา</th><th></th><th>สถานที่ / การจอง</th><th>เมือง</th><th>ไฮไลต์ · รายละเอียด · การจ่าย</th><th class="r">ค่าใช้จ่าย</th></tr></thead>
+            <tbody>${carried}${body || '<tr><td colspan="6" class="empty">ยังไม่มีกิจกรรม</td></tr>'}${o.notes ? '<tr class="note"><td colspan="6"></td></tr>' : ''}</tbody>
+          </table>
+        </section>`;
+      }).join('');
+
+      const hotelTable = hotels.length ? `
+        <h2>ที่พักทั้งทริป<small>${totalNights} คืน${totalText ? ` · ${totalText}` : ''}${hotels.length !== confirmedHotels.length ? ` · สำรอง ${hotels.length - confirmedHotels.length} (ไม่นับรวม)` : ''}</small></h2>
+        <table>
+          <thead><tr><th>วัน</th><th>โรงแรม · เมือง</th><th>ห้อง</th><th>บริการ</th><th>จอง</th><th>จ่าย</th><th>ยกเลิกฟรีถึง</th><th class="r">ราคา</th></tr></thead>
+          <tbody>${hotels.map(({ day, act, b }) => `
+            <tr class="${b.status === 'BACKUP' ? 'backup' : ''}">
+              <td class="d">${dShort(b.check_in || day.date)}${nights(b) > 1 ? `<div class="muted">${nights(b)} คืน</div>` : ''}</td>
+              <td><span class="stop">${esc(act.name)}</span>${act.city ? ` · ${esc(act.city)}` : ''}${b.status === 'BACKUP' ? ' <i>(สำรอง)</i>' : ''}</td>
+              <td>${[b.room_desc, b.view_desc, b.size_sqm && `${b.size_sqm} ตรม.`, b.travelers].filter(Boolean).map(esc).join(' · ')}</td>
+              <td class="icons">${amen(b)}</td>
+              <td class="mono">${esc(b.vendor || '')} ${esc(b.ref_no || '')}</td>
+              <td>${payText(b)}</td>
+              <td class="d">${b.cancel_deadline ? dShort(b.cancel_deadline) : ''}</td>
+              <td class="r">${money(act.plannedCost, act.plannedCurrency)}</td>
+            </tr>`).join('')}</tbody>
+        </table>` : '';
+
+      const flightTable = flights.length ? `
+        <h2>การเดินทาง<small>${flights.length} รายการ</small></h2>
+        <table>
+          <thead><tr><th>วัน</th><th>เที่ยว / เลขจอง</th><th>เส้นทาง</th><th>ออก</th><th>ถึง</th><th>ผู้เดินทาง</th><th>จ่าย</th><th class="r">ราคา</th></tr></thead>
+          <tbody>${flights.map(({ day, act, b }) => `
+            <tr>
+              <td class="d">${dShort(day.date)}</td>
+              <td><span class="stop">${esc(b.vendor || '')}</span> <span class="mono">${esc(b.ref_no || '')}</span><div class="muted">${esc(act.name)}</div></td>
+              <td>${esc(b.depart_from || '')} → ${esc(b.arrive_to || '')}</td>
+              <td>${esc(act.time || '')}</td>
+              <td>${esc(b.arrive_time || '')}</td>
+              <td>${esc(b.travelers || '')}</td>
+              <td>${payText(b)}</td>
+              <td class="r">${money(act.plannedCost, act.plannedCurrency)}</td>
+            </tr>`).join('')}</tbody>
+        </table>` : '';
+
+      let moneyTable = '';
+      if (o.money) {
+        const events = [];
+        allRows.filter(r => r.b && r.b.status !== 'CANCELLED').forEach(({ act, b }) => {
+          if (b.pay_status !== 'PAID' && b.pay_date) events.push({ date: b.pay_date, kind: '💳 กำหนดจ่าย', name: act.name, amount: money(act.plannedCost, act.plannedCurrency), via: b.pay_method || '', box: '☐' });
+          if (b.pay_status === 'PAID' && b.pay_date) events.push({ date: b.pay_date, kind: '✓ จ่ายแล้ว', name: act.name, amount: money(act.plannedCost, act.plannedCurrency), via: b.pay_method || '', box: '☑' });
+          if (b.cancel_deadline) events.push({ date: b.cancel_deadline, kind: `⚠ ยกเลิกฟรีวันสุดท้าย${b.status === 'BACKUP' ? ' (สำรอง — ตัดสินใจ)' : ''}`, name: act.name, amount: '', via: '', box: '' });
+        });
+        events.sort((a, b) => a.date.localeCompare(b.date));
+        moneyTable = events.length ? `
+          <h2>ปฏิทินเงิน<small>เรียงตามวัน · ไล่จ่าย / ตัดสินใจก่อนเดินทาง</small></h2>
+          <table>
+            <thead><tr><th>วัน</th><th>รายการ</th><th>สำหรับ</th><th class="r">ยอด</th><th>จ่ายด้วย</th><th>✓</th></tr></thead>
+            <tbody>${events.map(e => `<tr><td class="d">${dShort(e.date)}</td><td>${e.kind}</td><td>${esc(e.name)}</td><td class="r">${e.amount}</td><td>${esc(e.via)}</td><td>${e.box}</td></tr>`).join('')}</tbody>
+          </table>` : '';
+      }
+
+      const printed = new Date();
+      $('#sheet').innerHTML = `
+        <h1>${esc(state.tripName || 'แผนเที่ยว')}</h1>
+        <div class="meta">
+          <span>${dFull(state.tripStartDate)} – ${dFull(state.tripEndDate)} · ${days.length} วัน</span>
+          <span>${state.members.map(m => esc(m.name)).join(' · ')}</span>
+          <span>พิมพ์ ${printed.getDate()} ${MONTH[printed.getMonth()]} ${printed.getFullYear()}</span>
+        </div>
+        ${dayBlocks || '<div class="empty">ยังไม่มีวันในแผน</div>'}
+        ${hotelTable}${flightTable}${moneyTable}
+        <div class="foot"><span>Enjoy Life Trip · ${esc(state.tripName || '')}</span><span>ข้อมูล ณ วันที่พิมพ์ · แก้ไขได้ในหน้าแผน</span></div>`;
+      $('#tbHint').textContent = `${state.tripName} · ${days.length} วัน · ${hotels.length} ที่พัก · ${flights.length} การเดินทาง`;
+    }
+
+    async function boot() {
+      $('#backLink').href = `index.html${location.search}`;
+      $('#printBtn').addEventListener('click', () => window.print());
+      ['#optBackup', '#optNotes', '#optMoney'].forEach(s => $(s).addEventListener('change', render));
+      if (!TripApi.config.enabled) {
+        $('#error').textContent = 'เปิดหน้านี้จากปุ่ม "พิมพ์แผน" ในหน้าแผนเที่ยว (ต้องมี ?live=1&projectId=…)';
+        $('#error').classList.remove('hidden');
+        return;
+      }
+      try {
+        state = await TripApi.fetchTrip();
+        document.title = `พิมพ์ · ${state.tripName}`;
+        render();
+      } catch (err) {
+        $('#error').textContent = err.message || String(err);
+        $('#error').classList.remove('hidden');
+        $('#tbHint').textContent = 'โหลดไม่สำเร็จ';
+      }
+    }
+    boot();
+  })();
+  </script>
+</body>
+</html>

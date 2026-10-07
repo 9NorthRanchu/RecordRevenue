@@ -6,6 +6,83 @@ const $ = (selector, root = document) => root.querySelector(selector);
    renderPlanWorkspace(), which usually runs while the screen is still hidden. */
 function scrollActiveDayTab() {
   $('#planDayTabs .active')?.scrollIntoView({ block:'nearest', inline:'center', behavior:'smooth' });
+  updateDayStrip();
+}
+
+/* ── แถบวันเลื่อนซ้ายขวาได้ (North 2026-09-07) ─────────────────────────
+   ทริป 11 วันทำให้แถบวันยาวเกินจอ · สกรอลบาร์ถูกซ่อนไว้ตั้งแต่ต้น (ขี้เหร่)
+   ผลคือบนจอมีการ์ดวันแรกโดนตัดครึ่งค้างอยู่ ไม่มีอะไรบอกว่าเลื่อนได้
+   จึงเปิดทางไว้ให้ครบทุกแบบที่คนจะลอง: ปุ่มลูกศร · ลากด้วยเมาส์ · หมุนล้อ
+   (บนมือถือปัดนิ้วได้อยู่แล้ว — ปุ่มลูกศรจึงถูกซ่อนด้วย CSS) */
+function updateDayStrip() {
+  const strip = $('#planDayStrip');
+  const rail = $('#planDayTabs');
+  if (!strip || !rail) return;
+  const room = rail.scrollWidth - rail.clientWidth;
+  strip.classList.toggle('can-prev', rail.scrollLeft > 4);
+  strip.classList.toggle('can-next', room > 4 && rail.scrollLeft < room - 4);
+}
+
+{
+  const rail = $('#planDayTabs');
+  if (rail) {
+    /* เลื่อนทีละ 80% ของหน้าจอ — เหลือการ์ดเดิมค้างไว้ให้เห็นว่าเลื่อนมาจากไหน
+       ถ้าเลื่อนเต็มจอพอดี คนจะหลงว่ากระโดดไปคนละที่ */
+    const step = () => Math.max(180, Math.round(rail.clientWidth * 0.8));
+    const slide = direction => rail.scrollBy({ left: direction * step(), behavior: 'smooth' });
+    $('#dayScrollPrev')?.addEventListener('click', () => slide(-1));
+    $('#dayScrollNext')?.addEventListener('click', () => slide(1));
+    rail.addEventListener('scroll', updateDayStrip, { passive: true });
+    window.addEventListener('resize', updateDayStrip);
+
+    /* หมุนล้อเมาส์บนแถบ = เลื่อนแนวนอน · แต่ถ้าสุดทางแล้วต้องปล่อยให้หน้าเลื่อนลง
+       ตามปกติ ไม่งั้นเมาส์จะไปค้างอยู่ตรงนี้แล้วเลื่อนหน้าไม่ลงเลย */
+    rail.addEventListener('wheel', event => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const room = rail.scrollWidth - rail.clientWidth;
+      if (room <= 0) return;
+      const next = rail.scrollLeft + event.deltaY;
+      if (next < 0 || next > room) return;
+      event.preventDefault();
+      rail.scrollLeft = next;
+    }, { passive: false });
+
+    /* ลากด้วยเมาส์ (เฉพาะเมาส์ — นิ้วปัดได้เองอยู่แล้ว ถ้าดักด้วยจะไปสู้กับระบบ)
+       🔴 ลากเสร็จต้องกลืน click ทิ้งหนึ่งครั้ง ไม่งั้นปล่อยมือตรงการ์ดไหน
+          ก็กลายเป็นกดเปลี่ยนวัน (หรือเปิดฟอร์มแก้ไขวัน) โดยไม่ได้ตั้งใจ */
+    let drag = null;
+    let swallowClick = false;
+    rail.addEventListener('pointerdown', event => {
+      swallowClick = false;
+      if (event.pointerType !== 'mouse' || event.button !== 0) return;
+      drag = { x: event.clientX, from: rail.scrollLeft, moved: false, id: event.pointerId };
+    });
+    rail.addEventListener('pointermove', event => {
+      if (!drag) return;
+      const dx = event.clientX - drag.x;
+      if (!drag.moved) {
+        if (Math.abs(dx) < 6) return;   // กันสั่นมือตอนกดปุ่มธรรมดา
+        drag.moved = true;
+        rail.classList.add('dragging');
+        try { rail.setPointerCapture(drag.id); } catch { /* jsdom ไม่มีตัวนี้ */ }
+      }
+      rail.scrollLeft = drag.from - dx;
+    });
+    const endDrag = () => {
+      if (!drag) return;
+      swallowClick = drag.moved;
+      drag = null;
+      rail.classList.remove('dragging');
+      updateDayStrip();
+    };
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(name => rail.addEventListener(name, endDrag));
+    rail.addEventListener('click', event => {
+      if (!swallowClick) return;
+      swallowClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+  }
 }
 
 function showScreen(name) {
@@ -51,7 +128,7 @@ function openExpenseForEdit(bill) {
   openSheet();
   editingBillId = bill.id;
 
-  $('#expenseAmount').value = bill.amount || '';
+  paintMoneyInput('#expenseAmount', bill.amount || '');
   $('#expenseDate').value = bill.date || '';
   $('#expenseDescription').value = bill.title === 'ค่าใช้จ่ายใหม่' ? '' : bill.title;
   if ($('#expenseActivity')) $('#expenseActivity').value = bill.activityId || '';
@@ -73,7 +150,7 @@ function closeLayers() {
    $('#fundDialog'), $('#walletDialog'), $('#reopenDialog'), $('#presetDialog'),
    $('#copyPresetDialog'), $('#docDialog'), $('#iconSlicer'),
    $('#walletTotalsDialog'), $('#walletInfoDialog'), $('#memberDialog'),
-   $('#imageViewer')].forEach(layer => {
+   $('#dayDialog'), $('#imageViewer')].forEach(layer => {
     layer.classList.remove('open');
     layer.setAttribute('aria-hidden', 'true');
   });
@@ -260,24 +337,58 @@ const signedBahtHtml = (value, plus = true) => {
   return `<span class="signed ${row.cls}">${plus ? row.text : row.text.replace(/^\+/, '')}</span>`;
 };
 
-/* จำนวนเงินสกุลต่างประเทศ · หน่วยต่อท้าย ทศนิยม 2 ตำแหน่ง ติดลบใส่วงเล็บ
-   วางหน่วยไว้หลังตัวเลขให้เหมือนฝั่งบาท ตาจะได้กวาดคอลัมน์เดียวกันได้ */
-/* จำนวนเงินแบบไม่มีทศนิยม หน่วยต่อท้าย ติดลบใส่วงเล็บ — ใช้บนการ์ดกระเป๋า
-   แยกจาก nativeAmount เพราะบนการ์ดไม่ต้องการ .00 ต่อท้ายทุกตัว
-   (¥5,000.00 อ่านช้ากว่า ¥5,000 และเยนไม่มีหน่วยย่อยอยู่แล้ว) */
-function unitAmount(value, symbol) {
-  const numeric = Number(value) || 0;
-  const body = `${Math.round(Math.abs(numeric)).toLocaleString('en-US')} ${symbol}`;
-  return numeric < 0 ? `(${body})` : body;
-}
-const unitBaht = value => unitAmount(value, '฿');
+/* จำนวนเงิน · คั่นหลักพัน · **ทศนิยม 2 ตำแหน่งเสมอ** · หน่วยต่อท้าย · ติดลบใส่วงเล็บ
+   วางหน่วยไว้หลังตัวเลขให้เหมือนฝั่งบาท ตาจะได้กวาดคอลัมน์เดียวกันได้
 
-function nativeAmount(value, symbol) {
+   🔴 เดิมตัวนี้ปัดเศษทิ้งทั้งหมด (¥5,000 ไม่ใช่ ¥5,000.00) ด้วยเหตุผลว่าอ่านเร็วกว่า
+      North สั่งเปลี่ยน 2026-08-23: ยอดเงินทุกที่ต้องมีจุลภาคและทศนิยม 2 หลัก
+      เหตุผลคือมันคือ "เงิน" — ตัวเลขที่ปัดแล้วกับตัวเลขจริงต่างกันได้ถึงหนึ่งบาท
+      ต่อรายการ และเวลาเอาไปเทียบกับสมุดบัญชีหลักจะหาไม่เจอว่าต่างตรงไหน
+
+   ⚠️ ใช้กับ "เงิน" เท่านั้น · จำนวนบิล/จำนวนวันใช้ fmtAmount ซึ่งไม่มีทศนิยม
+      และ "เรท" ใช้ toFixed(4) เพราะเป็นอัตรา ไม่ใช่ยอดเงิน */
+function unitAmount(value, symbol) {
   const numeric = Number(value) || 0;
   const body = `${Math.abs(numeric).toLocaleString('en-US', {
     minimumFractionDigits: 2, maximumFractionDigits: 2
-  })} ${symbol}`;
+  })}${symbol ? ` ${symbol}` : ''}`;
   return numeric < 0 ? `(${body})` : body;
+}
+const unitBaht = value => unitAmount(value, '฿');
+// เดิมเป็นคนละตัวเพราะทศนิยมต่างกัน · ตอนนี้กติกาเดียวกันแล้ว จึงเป็นชื่อพ้อง
+const nativeAmount = (value, symbol) => unitAmount(value, symbol);
+
+/* ── ช่องกรอกเงิน: คั่นหลักพันให้เอง ──────────────────────────────────
+   พิมพ์ 56000 แล้วออกจากช่อง → เห็น 56,000.00 · กลับเข้าไปแก้ → กลับเป็น 56000
+   ทำตอน blur ไม่ใช่ตอนพิมพ์ เพราะแทรกจุลภาคระหว่างพิมพ์จะทำให้ตำแหน่ง
+   เคอร์เซอร์กระโดด ซึ่งพิมพ์ผิดง่ายกว่าเดิมมาก
+
+   ทุกจุดที่อ่านค่ากลับใช้ `.replace(/[^\d.]/g, '')` อยู่แล้ว จุลภาคจึงไม่กระทบ */
+const parseMoneyInput = text => Number(String(text ?? '').replace(/[^\d.]/g, '')) || 0;
+
+function attachMoneyInput(selector) {
+  const node = typeof selector === 'string' ? $(selector) : selector;
+  if (!node || node.dataset.moneyInput) return;
+  node.dataset.moneyInput = '1';
+  node.addEventListener('focus', () => {
+    const raw = parseMoneyInput(node.value);
+    node.value = raw ? String(raw) : '';
+  });
+  node.addEventListener('blur', () => {
+    const raw = parseMoneyInput(node.value);
+    node.value = raw ? raw.toLocaleString('en-US', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2
+    }) : '';
+  });
+}
+// เรียกหลังใส่ค่าลงช่องด้วยโปรแกรม (เปิดฟอร์มแก้ไข) เพราะ blur ไม่เกิดเอง
+function paintMoneyInput(selector, value) {
+  const node = typeof selector === 'string' ? $(selector) : selector;
+  if (!node) return;
+  const numeric = Number(value);
+  node.value = Number.isFinite(numeric) && numeric
+    ? numeric.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '';
 }
 
 const yen = value => fmtAmount(value, '¥');
@@ -357,6 +468,8 @@ let liveMode = false;
 let liveTripEndDate = '';
 // สิทธิ์จัดการทริปจากเซิร์ฟเวอร์ — รวมผู้ดูแลระบบครอบครัวที่ไม่ได้เป็นสมาชิกทริป
 let liveCanManage = false;
+let liveCanManageMembers = false;
+let liveCanManageSharedSettings = false;
 
 const currencyByCode = code => tripCurrencies.find(row => row.code === code);
 
@@ -939,6 +1052,18 @@ function walletHistoryHtml(wallet) {
     <small>เรทเฉลี่ยคิดจากผลรวมทั้งหมดหารกัน ไม่ใช่เฉลี่ยเรทรายครั้ง — เติมย้อนหลังจึงไม่ทำให้ตัวเลขเก่าเพี้ยน</small></p>`;
 }
 
+/* ── ใครเห็นกระเป๋าใบไหน ────────────────────────────────────────────────
+   ต้องตรงกับกติกาฝั่งเซิร์ฟเวอร์ (walletVisible ใน unified-trip.js) เป๊ะ ๆ
+   ไม่งั้นจะได้อาการ "เห็นแต่กดไม่ได้" หรือ "กดได้แต่ของไม่โผล่"
+
+   North 2026-08-23: ผู้ดูแลทริป "แก้ไข เปลี่ยนแปลง ลบ เพิ่ม ได้ทั้งหมด"
+   ส่วนคนที่เจ้าของตั้งให้เป็นผู้ดูแลของตัวเอง (managedBy) ก็เห็นเฉพาะของคนนั้น */
+const canSeeWallet = wallet =>
+  !wallet.ownerId
+  || wallet.ownerId === viewerId
+  || isAdmin(viewerId)
+  || memberById(wallet.ownerId)?.managedBy === viewerId;
+
 function renderWallets() {
   /* viewer หาไม่เจอได้จริง — ทริปเก่าที่สมาชิกยังไม่ถูกผูกกับบัญชีล็อกอิน
      (TripMembers.user_id เป็น NULL) เซิร์ฟเวอร์จะตอบ viewer = null
@@ -951,11 +1076,14 @@ function renderWallets() {
     $('#walletActivity').innerHTML = '';
     return;
   }
-  const owned = wallets.filter(wallet => wallet.ownerId === viewerId);
-  $('#walletHeading').textContent = `กระเป๋าของ ${viewer.name}`;
-  $('#walletPrivacy').innerHTML = owned.length
-    ? `🔒 ยอดนี้เห็นเฉพาะคุณ · คนอื่นเห็นแค่บิลที่แชร์`
-    : `🔒 ยังไม่มีกระเป๋า · ยอดของคนอื่นถูกซ่อนไว้`;
+  const owned = wallets.filter(canSeeWallet);
+  const seeingOthers = owned.some(wallet => wallet.ownerId && wallet.ownerId !== viewerId);
+  $('#walletHeading').textContent = seeingOthers ? 'กระเป๋าทั้งทริป' : `กระเป๋าของ ${viewer.name}`;
+  $('#walletPrivacy').innerHTML = !owned.length
+    ? `🔒 ยังไม่มีกระเป๋า · ยอดของคนอื่นถูกซ่อนไว้`
+    : (seeingOthers
+      ? `👑 คุณเป็นผู้ดูแลทริป จึงเห็นและแก้กระเป๋าของทุกคนได้ · สมาชิกคนอื่นเห็นแค่ของตัวเอง`
+      : `🔒 ยอดนี้เห็นเฉพาะคุณกับผู้ดูแลทริป · สมาชิกคนอื่นเห็นแค่บิลที่แชร์`);
 
   /* แถบสรุปบนสุด — รวมทุกใบของเราแยกตามสกุล ไม่บวกข้ามสกุล
      ⚠️ บาทรวมนับเฉพาะใบที่ตีเป็นบาทได้ ใบที่ยังไม่มีเรทต้องไม่ถูกนับเป็น 0
@@ -1030,6 +1158,11 @@ function renderWallets() {
           <small>${wallet.currency} · ${rateShort}
             ${info.source === 'base' ? '' : infoBtn('rate', 'ⓘ', 'เรทนี้มาจากไหน')}</small>
         </span>
+        ${wallet.ownerId && wallet.ownerId !== viewerId
+          /* ผู้ดูแลเห็นกระเป๋าของทุกคน จึงต้องบอกให้ชัดว่าใบนี้ของใคร
+             ไม่งั้นเติมเงินหรือลบผิดใบโดยไม่รู้ตัว — ทุกใบหน้าตาเหมือนกันหมด */
+          ? `<em class="wcard-owner" title="กระเป๋าของ ${memberName(wallet.ownerId)}">👤 ${memberName(wallet.ownerId)}</em>`
+          : ''}
       </header>
 
       <div class="wcard-balance">
@@ -1143,6 +1276,18 @@ function renderWallets() {
       ? (info.rate === null ? 'ยังตีเป็นบาทไม่ได้' : `≈ ${unitBaht(row.bill.amount * info.rate)}`)
       : `จ่ายไป ${unitBaht(row.lot.thb)}`;
 
+    /* ปุ่มแก้ไข/ลบของล็อตเติมเงิน — มีเฉพาะแถวเติมเงิน (North 2026-08-23)
+       เดิมลบได้เฉพาะในประวัติที่ซ่อนอยู่ในการ์ดกระเป๋า ซึ่งต้องกดเข้าไปอีกชั้น
+       ทั้งที่รายการนี้คือที่ที่คนเห็นมันบ่อยที่สุด · บิลมีหน้าแก้ของตัวเองอยู่แล้ว */
+    const lotActions = row.kind === 'fund' && !financeLocked('fundings')
+      ? `<div class="wact-actions">
+          <button type="button" class="wico blue" data-edit-lot="${row.lot.id}"
+            title="แก้ไขการเติมเงินครั้งนี้" aria-label="แก้ไขการเติมเงิน ${thaiDateShort(row.date)}">✏️</button>
+          <button type="button" class="wico pink" data-del-lot="${row.lot.id}"
+            title="ลบการเติมเงินครั้งนี้" aria-label="ลบการเติมเงิน ${thaiDateShort(row.date)}">🗑️</button>
+        </div>`
+      : '';
+
     return `${dateHead}
     <article class="bill-row wact-row ${row.kind}" draggable="true"
       data-act-id="${row.id}" data-act-kind="${row.kind}" data-act-date="${row.date}">
@@ -1151,6 +1296,7 @@ function renderWallets() {
       <div class="bill-main"><b>${row.title}</b><div class="bill-chips">${chips}</div></div>
       <div class="bill-side">
         <div class="bill-money"><b class="${row.value < 0 ? 'minus' : 'plus'}">${unitAmount(row.value, symbol)}</b><small>${sub}</small></div>
+        ${lotActions}
       </div>
     </article>`;
   }).join('') : `<div class="bill-empty">${activeWalletId
@@ -1358,7 +1504,7 @@ $('#walletGrid').addEventListener('click', event => {
       ฿0 แปลว่าไม่มีเงิน ซึ่งคนละเรื่องกับ "มีเงินแต่ยังไม่รู้ว่าเท่าไร"
       และห้ามถูกนับรวมในยอดล่างสุดด้วย */
 function openWalletTotals() {
-  const owned = wallets.filter(wallet => wallet.ownerId === viewerId);
+  const owned = wallets.filter(canSeeWallet);
   const groups = new Map();
   let bahtTotal = 0;
   let unpriced = 0;
@@ -1472,17 +1618,15 @@ $('#walletGrid').addEventListener('click', event => {
   openWalletDialog(walletById(button.dataset.editWallet));
 });
 
-/* แก้ไข/ลบล็อตเติมเงินรายครั้ง */
-$('#walletGrid').addEventListener('click', event => {
-  const edit = event.target.closest('[data-edit-lot]');
-  if (edit) { openFundDialog(null, fundings.find(row => row.id === edit.dataset.editLot)); return; }
-
-  const del = event.target.closest('[data-del-lot]');
-  if (!del) return;
-  const lot = fundings.find(row => row.id === del.dataset.delLot);
+/* แก้ไข/ลบล็อตเติมเงินรายครั้ง
+   🔴 อยู่ในฟังก์ชันแยก เพราะมีสองที่ที่ลบได้: ประวัติในการ์ดกระเป๋า
+      และรายการล่าสุด · ถ้าเขียนสองชุด วันหนึ่งจะมีที่หนึ่งลืมถามยืนยัน
+      หรือลืมเช็คว่าทริปปิดอยู่ ซึ่งเป็นการลบเงินโดยไม่มีใครตั้งใจ */
+function deleteFundingLot(lotId) {
+  const lot = fundings.find(row => row.id === lotId);
   if (!lot || blockedByClose('fundings')) return;
   const symbol = symbolFor(walletById(lot.walletId)?.currency);
-  if (!window.confirm(`ลบการเติมเงิน ${fmtAmount(lot.foreign, symbol)} เมื่อ ${thaiDateShort(lot.date)} ?`
+  if (!window.confirm(`ลบการเติมเงิน ${unitAmount(lot.foreign, symbol)} เมื่อ ${thaiDateShort(lot.date)} ?`
     + `\n\nเรทเฉลี่ยของกระเป๋าใบนี้จะถูกคิดใหม่ · ยอดบาทของบิลที่ใช้กระเป๋านี้จะขยับตาม`)) return;
 
   if (liveMode) {
@@ -1495,7 +1639,20 @@ $('#walletGrid').addEventListener('click', event => {
   fundings = fundings.filter(row => row.id !== lot.id);
   renderBills();
   showPrototypeToast('ลบรายการเติมเงินแล้ว · เรทเฉลี่ยคำนวณใหม่');
-});
+}
+
+function bindLotActions(container) {
+  const node = typeof container === 'string' ? $(container) : container;
+  if (!node) return;
+  node.addEventListener('click', event => {
+    const edit = event.target.closest('[data-edit-lot]');
+    if (edit) { openFundDialog(null, fundings.find(row => row.id === edit.dataset.editLot)); return; }
+    const del = event.target.closest('[data-del-lot]');
+    if (del) deleteFundingLot(del.dataset.delLot);
+  });
+}
+bindLotActions('#walletGrid');
+bindLotActions('#walletActivity');
 
 /* ── การ์ด "กิจกรรมถัดไป" (2026-08-18) ────────────────────────────────
    เดิมเป็นข้อความตายตัวใน index.html ทุกทริปจึงเห็น "14:30 · Akanko Ainu Kotan
@@ -1643,7 +1800,7 @@ function renderMembers() {
   /* แถวสมาชิกทำสองหน้าที่: กดที่ตัวแถว = สลับมุมมอง · กดปุ่ม ✏️ = แก้ข้อมูลคนนั้น
      🔴 ปุ่มซ้อนในปุ่มเป็น HTML ที่ไม่ถูกต้อง เบราว์เซอร์จะย้ายมันออกมาเอง
         แล้ว layout เพี้ยนแบบหาสาเหตุยาก — แถวจึงเป็น <div> แล้วให้ปุ่มอยู่ข้างใน */
-  const canManage = !liveMode || Boolean(memberById(viewerId)?.admin) || liveCanManage;
+  const canManage = !liveMode || liveCanManageMembers;
 
   /* ── สถานะการเข้าใช้งาน — "แสดงข้อมูลไว้" ตามที่ North สั่ง (2026-08-23) ──
      ป้ายบอกสองเรื่องแยกกัน เพราะเป็นคนละเรื่องจริง ๆ:
@@ -2028,6 +2185,7 @@ function walletsUsing(code) {
 }
 
 function renderCurrencies() {
+  const canManageCurrencies = !liveMode || liveCanManageSharedSettings;
   $('#currencyRows').innerHTML = tripCurrencies.map(currency => {
     const used = walletsUsing(currency.code);
     const funded = used.some(wallet => walletRate(wallet.id) !== null);
@@ -2039,11 +2197,12 @@ function renderCurrencies() {
       <span class="currency-main"><b>${currency.code} · ${currency.label}</b><small>${state}</small></span>
       <span class="currency-rate">${currency.base ? '—' : `฿${Number(currency.planRate).toFixed(4)}`}<small>${used.length} กระเป๋า</small></span>
       <span class="currency-actions">
-        ${currency.base ? '' : `<button type="button" data-edit-currency="${currency.code}" ${tripClosed ? `disabled title="${TRIP_LOCK_REASON}"` : ''}>แก้ไข</button>
+        ${currency.base || !canManageCurrencies ? '' : `<button type="button" data-edit-currency="${currency.code}" ${tripClosed ? `disabled title="${TRIP_LOCK_REASON}"` : ''}>แก้ไข</button>
         <button type="button" data-remove-currency="${currency.code}" ${tripClosed ? `disabled title="${TRIP_LOCK_REASON}"` : (used.length ? 'disabled title="ยังมีกระเป๋าใช้สกุลนี้อยู่"' : '')}>ลบ</button>`}
       </span>
     </div>`;
   }).join('');
+  $('#addCurrency').hidden = !canManageCurrencies;
 }
 
 /* ── ให้ผู้ร่วมทริปเข้าใช้งานด้วยรหัสของตัวเอง (2026-08-11) ────────────
@@ -2823,10 +2982,22 @@ document.addEventListener('click', event => {
   if (!remove) return;
   const doc = tripDocuments.find(item => item.id === remove.dataset.removeDoc);
   if (!doc || !confirm(`ลบเอกสาร "${doc.name}" ?`)) return;
+  remove.disabled = true;
   TripApi.removeDocument(doc.id)
-    .then(() => refreshFromServer())
-    .then(() => showPrototypeToast('ลบเอกสารแล้ว'))
-    .catch(error => showPrototypeToast(`ลบไม่สำเร็จ: ${error.message}`));
+    .then(() => {
+      /* เอกสารไม่มีตัวเลขยอด/เรทที่เซิร์ฟเวอร์ต้องคำนวณกลับมา จึงตัดออกจาก state
+         ทันทีหลัง API ยืนยันสำเร็จ ไม่รอ refresh ทั้งทริป — ก่อนหน้านี้รายการค้าง
+         บนจอจนผู้ใช้ reload แม้ฐานลบสำเร็จแล้ว */
+      tripDocuments = tripDocuments.filter(item => item.id !== doc.id);
+      renderDocumentLibrary();
+      renderStopDocuments(doc.stopId);
+      renderManageSummary();
+      showPrototypeToast('ลบเอกสารแล้ว');
+    })
+    .catch(error => {
+      remove.disabled = false;
+      showPrototypeToast(`ลบไม่สำเร็จ: ${error.message}`);
+    });
 });
 
 $('#documentLibrary')?.addEventListener('click', event => {
@@ -3057,6 +3228,10 @@ $('#presetForm')?.addEventListener('submit', event => {
 });
 
 function openCurrencyDialog(code = null) {
+  if (liveMode && !liveCanManageSharedSettings) {
+    showPrototypeToast('แก้สกุลเงินได้เฉพาะผู้ดูแลทริป');
+    return;
+  }
   if (blockedByClose('currencies')) return;
   closeLayers();
   editingCurrency = code;
@@ -3217,14 +3392,18 @@ $('#deleteTripBtn')?.addEventListener('click', async () => {
    ล้มเหลว = ไม่ปิดฟอร์ม และแสดงเหตุผลจากเซิร์ฟเวอร์ตามจริง ไม่แปลงเป็น
    ข้อความกลาง ๆ เพราะฝั่งเซิร์ฟเวอร์บอกสาเหตุละเอียดกว่าที่หน้าจอเดาเองได้
    เช่น "ยังมีกระเป๋า 2 ใบใช้สกุล JPY อยู่" ซึ่งบอกทางแก้ไปในตัว */
+/* successMessage รับได้ทั้งข้อความตรง ๆ และฟังก์ชันที่รับผลลัพธ์จากเซิร์ฟเวอร์
+   🔴 ข้อความยืนยันต้องพูดสิ่งที่เกิดขึ้นจริง ไม่ใช่สิ่งที่ตั้งใจให้เกิด
+      ตัวอย่างที่เคยหลอกมาแล้ว: ปิดทริปขึ้นว่า "ยอดถูกบันทึกเข้าบัญชีจริง"
+      ทั้งที่ไม่มีอะไรถูกเขียนลงสมุดบัญชีเลยสักบรรทัด */
 async function submitLive(errorSelector, action, successMessage) {
   const errorBox = $(errorSelector);
   if (errorBox) errorBox.textContent = 'กำลังบันทึก…';
   try {
-    await action();
+    const result = await action();
     await refreshFromServer();
     closeLayers();
-    showPrototypeToast(successMessage);
+    showPrototypeToast(typeof successMessage === 'function' ? successMessage(result) : successMessage);
     return true;
   } catch (error) {
     if (errorBox) errorBox.textContent = error.message;
@@ -3313,8 +3492,8 @@ function openFundDialog(walletId, lot = null) {
   $('#fundWalletInfo').innerHTML = `
     <img src="${wallet.icon || DEFAULT_ICONS.wallet}" alt="">
     <span><b>${wallet.label}</b><small>${wallet.currency} · ${info.rate === null ? 'ยังไม่มีเรท' : `เรทตอนนี้ ${info.rate.toFixed(4)} ฿`} ${info.source === 'planned' ? '(ประมาณการ)' : ''}</small></span>`;
-  $('#fundThb').value = lot ? lot.thb : '';
-  $('#fundForeign').value = lot ? lot.foreign : '';
+  paintMoneyInput('#fundThb', lot ? lot.thb : '');
+  paintMoneyInput('#fundForeign', lot ? lot.foreign : '');
   $('#fundNote').value = lot ? (lot.note || '') : '';
   $('#fundDate').value = lot ? lot.date : new Date().toISOString().slice(0, 10);
   $('#fundError').textContent = '';
@@ -3345,7 +3524,11 @@ function updateFundPreview() {
     <span>เรทของล็อตนี้<b>${lotRate.toFixed(4)} ฿/${symbolFor(wallet.currency)}</b></span>
     <span>เรทเฉลี่ยหลังเติม<b>${after.toFixed(4)} ฿</b>${before === null ? '<small>เดิมยังไม่มีเรทจริง</small>' : `<small>เดิม ${before.toFixed(4)} ฿</small>`}</span>`;
 }
-['#fundThb', '#fundForeign'].forEach(id => $(id).addEventListener('input', updateFundPreview));
+['#fundThb', '#fundForeign'].forEach(id => {
+  $(id).addEventListener('input', updateFundPreview);
+  attachMoneyInput(id);          // คั่นหลักพันให้เองตอนออกจากช่อง
+});
+attachMoneyInput('#expenseAmount');
 
 $('#fundForm').addEventListener('submit', event => {
   event.preventDefault();
@@ -3451,13 +3634,23 @@ function paintWalletAccountPicker(wallet) {
       `<option value="${row.account_id}"${picked === row.account_id ? ' selected' : ''}>${row.entity_name} · ${row.name}</option>`).join('');
 }
 
-/* บัตรเครดิตไม่ผูกบัญชีเงินฝาก — ยอดบาทจริงมาตอนบิลเรียกเก็บ
-   🔴 ซ่อนช่องบัญชีไปเลย ไม่ใช่ปล่อยให้เลือกแล้วเซิร์ฟเวอร์ทิ้งค่าเงียบ ๆ
-      ช่องที่กรอกแล้วไม่มีผลคือช่องที่ทำให้คนไม่เชื่อช่องอื่นในฟอร์มเดียวกัน */
+/* 🔴 บัตรเครดิตก็ต้องผูกบัญชี (แก้ 2026-08-23 รอบสอง)
+   เดิมซ่อนช่องบัญชีเมื่อเลือกบัตรเครดิต ด้วยเหตุผลว่า "ไม่ผูกบัญชีเงินฝาก"
+   แต่ผลจริงคือบิลที่จ่ายด้วยบัตร **ไม่มีบัญชีปลายทางตอนปิดทริป จึงลงสมุด
+   บัญชีไม่ได้เลย** — ยอดทั้งก้อนหายไปโดยไม่มีอะไรฟ้อง
+
+   บัญชีบัตรเครดิตในสมุดบัญชีหลักมีอยู่จริง และเป็นที่ที่ยอดถูกเรียกเก็บจริง
+   จึงเป็นปลายทางที่ถูกต้อง · ช่องนี้จึงแสดงเสมอ เปลี่ยนแค่คำอธิบายให้ตรงชนิด */
 function syncWalletKindFields() {
   const isCredit = $('#walletKind').value === 'CREDIT';
   const field = $('#walletAccountField');
-  if (field) field.hidden = isCredit;
+  if (field) field.hidden = false;
+  const hint = $('#walletAccountHint');
+  if (hint) {
+    hint.textContent = isCredit
+      ? 'บัญชีบัตรเครดิตที่ยอดนี้จะถูกเรียกเก็บ — ตอนปิดทริปค่าใช้จ่ายจะลงบัญชีนี้'
+      : 'บัญชีที่เงินก้อนนี้ออกไป (เช่น "เงินรอเที่ยว") — ตอนปิดทริปค่าใช้จ่ายจะถูกตัดออกจากบัญชีนี้';
+  }
   const note = $('#walletKindNote');
   if (note) note.hidden = !isCredit;
 }
@@ -3518,8 +3711,8 @@ $('#walletForm').addEventListener('submit', event => {
     icon: newWalletIcon,
     colorHue: newWalletHue,
     kind: $('#walletKind').value === 'CREDIT' ? 'CREDIT' : 'CASH',
-    // บัตรเครดิตไม่ผูกบัญชี — ส่งค่าว่างไปเลย ไม่ใช่ส่งค่าเก่าค้าง
-    accountId: $('#walletKind').value === 'CREDIT' ? '' : $('#walletAccount').value
+    // ทั้งเงินสดและบัตรเครดิตผูกบัญชีได้ — ไม่มีบัญชี = ปิดทริปแล้วยอดลงสมุดบัญชีไม่ได้
+    accountId: $('#walletAccount').value
   };
   const message = editing ? `แก้ไขกระเป๋า ${label} แล้ว` : `สร้างกระเป๋า ${label} แล้ว`;
 
@@ -3549,6 +3742,12 @@ $('#walletForm').addEventListener('submit', event => {
 $('#memberRows').addEventListener('click', event => {
   const row = event.target.closest('[data-view-as]');
   if (!row || row.dataset.viewAs === viewerId) return;
+  /* โหมดข้อมูลจริงห้ามเปลี่ยน viewerId จากการคลิกชื่อคนอื่น เพราะ viewerId คือ
+     ตัวตนที่เซิร์ฟเวอร์ยืนยันแล้ว ไม่ใช่ตัวกรองสำหรับทดลองดูหน้าจอ */
+  if (liveMode) {
+    showPrototypeToast(`คุณเข้าสู่ระบบในชื่อ ${memberName(viewerId)} · ไม่สามารถสลับเป็น ${memberName(row.dataset.viewAs)} ได้`);
+    return;
+  }
   viewerId = row.dataset.viewAs;
   renderBills();
   renderMembers();   // ป้าย "กำลังดูอยู่" ต้องย้ายตามคนที่เลือก
@@ -4230,19 +4429,85 @@ const LIVE_LOCK_REASON = 'โหมดข้อมูลจริง · อ่�
 // ทุกส่วนเขียนลงฐานจริงได้แล้ว · plan ไม่ผูกกับการปิดทริป (ดู financeLocked)
 const LIVE_WRITABLE = { expenses: true, wallets: true, currencies: true, fundings: true, closing: true, plan: true };
 
-const lockReason = () => (liveMode ? LIVE_LOCK_REASON : TRIP_LOCK_REASON);
-/* area = ส่วนที่กำลังจะแก้ · ไม่ระบุ = ถือว่ายังไม่เปิดในโหมดข้อมูลจริง */
-/* แผนเที่ยวเป็นข้อยกเว้นเดียวที่ไม่ถูกล็อกตอนปิดทริป — การปิดทริปล็อกตัวเลข
-   ที่รายงานเข้าบัญชีไปแล้ว ไม่ควรห้ามแก้บันทึกการเดินทางย้อนหลัง
-   (ฝั่งเซิร์ฟเวอร์ก็ปล่อยผ่าน /stops เหมือนกัน สองฝั่งจึงตรงกัน) */
-const financeLocked = (area) =>
-  (area === 'plan' ? false : tripClosed) || (liveMode && !LIVE_WRITABLE[area]);
+/* ผู้ร่วมทริป (เข้าด้วยรหัสจากลิงก์ ไม่ใช่ล็อกอินบัญชีครอบครัว) ทำได้แค่
+   "จดค่าใช้จ่ายของตัวเอง" กับ "เช็กอิน" — ตรงกับ GUEST_WRITABLE ฝั่งเซิร์ฟเวอร์
+   🔴 สองฝั่งต้องตรงกันเสมอ ถ้าหน้าจอเปิดกว้างกว่า คนจะกรอกฟอร์มจนเสร็จ
+      แล้วไปเจอ 403 ตอนกดบันทึก ซึ่งเสียเวลาและอ่านเหมือนแอปพัง
+      (เกิดจริง 3 ก.ย.: North เป็นผู้ดูแลทริป แต่เปิดจากลิงก์+รหัส จึงถูกนับเป็น
+       ผู้ร่วมทริป · กดเพิ่มจุดท่องเที่ยว ฟอร์มเปิดปกติ กรอกเสร็จแล้วขึ้นว่า
+       "ผู้ร่วมทริปทำรายการนี้ไม่ได้") */
+const GUEST_WRITABLE = { expenses: true };
+const GUEST_LOCK_REASON = 'คุณเข้าใช้ในฐานะผู้ร่วมทริป · จดค่าใช้จ่ายของตัวเองได้เท่านั้น'
+  + ' — ถ้าคุณเป็นผู้ดูแล ให้กดออกจากระบบผู้ร่วมทริปแล้วล็อกอินด้วยบัญชีครอบครัว';
+
+const lockReason = (area) => {
+  if (liveMode && liveIsGuest && !GUEST_WRITABLE[area]) return GUEST_LOCK_REASON;
+  if (tripClosed) return TRIP_LOCK_REASON;
+  return liveMode ? LIVE_LOCK_REASON : TRIP_LOCK_REASON;
+};
+
+/* area = ส่วนที่กำลังจะแก้ · **ต้องเป็นชื่อที่มีอยู่ใน LIVE_WRITABLE เท่านั้น**
+
+   🔴 เคยพังมาแล้วสองรอบด้วยสาเหตุเดียวกัน — ชื่อพื้นที่ที่ระบบไม่รู้จัก
+      (พิมพ์ผิด เช่น 'bills' ที่จริงคือ 'expenses' · หรือ **ลืมใส่ไปเลย**)
+      ทำให้ `LIVE_WRITABLE[area]` เป็น undefined → `!undefined` = true
+      → ล็อกทุกอย่างเสมอในโหมดข้อมูลจริง **โดยไม่มี error ให้เห็นสักตัว**
+
+      รอบล่าสุด (3 ก.ย.): `applyTripLock()` เรียก `financeLocked()` เปล่า ๆ
+      เพื่อถามว่า "ทริปปิดหรือยัง" แต่ได้ true ตลอดในโหมดข้อมูลจริง
+      → body ติดคลาส trip-closed ค้าง → CSS ดับปุ่ม ＋ ลอยบนมือถือทั้งแอป
+
+   ตอนนี้แยกให้ชัด: ไม่ส่ง area = ถามว่า "ทริปปิดหรือยัง" เท่านั้น
+   และชื่อที่ไม่รู้จักจะ **ร้องออกทาง console** แทนที่จะเงียบแล้วล็อกทิ้ง */
+const financeLocked = (area) => {
+  if (area === undefined) return tripClosed;
+  if (!Object.prototype.hasOwnProperty.call(LIVE_WRITABLE, area)) {
+    console.error(`financeLocked: ไม่รู้จักพื้นที่ "${area}" — ต้องเป็นชื่อใน LIVE_WRITABLE`);
+    return tripClosed;
+  }
+  /* แผนเที่ยวเป็นข้อยกเว้นเดียวที่ไม่ถูกล็อกตอนปิดทริป — การปิดทริปล็อกตัวเลข
+     ที่รายงานเข้าบัญชีไปแล้ว ไม่ควรห้ามแก้บันทึกการเดินทางย้อนหลัง
+     (ฝั่งเซิร์ฟเวอร์ก็ปล่อยผ่าน /stops เหมือนกัน สองฝั่งจึงตรงกัน) */
+  if (area !== 'plan' && tripClosed) return true;
+  if (!liveMode) return false;
+  if (liveIsGuest && !GUEST_WRITABLE[area]) return true;
+  return !LIVE_WRITABLE[area];
+};
 
 function blockedByClose(area) {
   if (!financeLocked(area)) return false;
-  showPrototypeToast(lockReason());
+  showPrototypeToast(lockReason(area));
   return true;
 }
+
+/* ── บอกให้ชัดว่ากำลังเข้าใช้ในฐานะ "ผู้ร่วมทริป" (2026-09-03) ──────────
+   🔴 เซิร์ฟเวอร์ส่ง is_guest มาตั้งแต่แรกและแอปก็เก็บใส่ liveIsGuest แล้ว
+      **แต่ไม่มีใครอ่านมันเลยสักบรรทัด** — ค่าที่ส่งมาแล้วไม่มีใครใช้
+      ผลคือผู้ดูแลที่เผลอเข้าทางลิงก์+รหัส จะเห็นแต่ปุ่มที่กดแล้วไม่เกิดอะไร
+      โดยไม่มีที่ไหนบนจอบอกว่าทำไม (เกิดกับ North จริง 3 ก.ย.)
+
+   ⚠️ ต้องมีทางออกด้วย ไม่ใช่แค่บอกว่าเข้าไม่ได้ — signOutMember() เขียนไว้
+      ใน api.js นานแล้วแต่ไม่มีปุ่มไหนเรียกเลย เข้าไปแล้วออกไม่ได้ */
+function renderGuestNote() {
+  const note = $('#guestNote');
+  if (!note) return;
+  const on = liveMode && liveIsGuest;
+  note.hidden = !on;
+  if (!on) return;
+  const who = memberName(viewerId) || 'ผู้ร่วมทริป';
+  $('#guestNoteText').textContent =
+    `👤 คุณเข้าใช้ในฐานะผู้ร่วมทริป (${who}) · จดค่าใช้จ่ายของตัวเองและเช็กอินได้เท่านั้น`
+    + ' — เพิ่มสถานที่ แก้แผน หรือจัดการสมาชิกไม่ได้ แม้จะเป็นผู้ดูแลทริปก็ตาม';
+}
+
+$('#guestSignOut')?.addEventListener('click', () => {
+  if (!window.confirm('ออกจากระบบผู้ร่วมทริป?\n\nหลังจากนี้ให้ล็อกอินด้วยบัญชีครอบครัว'
+    + ' เพื่อใช้สิทธิ์ผู้ดูแลตามปกติ')) return;
+  TripApi.signOutMember();
+  /* โหลดหน้าเดิมซ้ำ ไม่ใช่เด้งไปหน้าอื่น — พอไม่มี token ผู้ร่วมทริปแล้ว
+     แอปจะเลือกตัวตนใหม่เอง (บัญชีครอบครัวถ้ามี · ไม่มีก็เด้งไปหน้าใส่รหัส) */
+  location.reload();
+});
 
 function applyTripLock() {
   // ปุ่มแต่ละตัวผูกกับส่วนของตัวเอง ไม่ใช่สถานะรวมของทั้งหน้า
@@ -4251,15 +4516,18 @@ function applyTripLock() {
     [$$('.add-expense'), 'expenses'],
     [[$('#addWallet')], 'wallets'],
     [[$('#addCurrency')], 'currencies'],
-    [[$('#addPlace')], 'plan']
+    /* ปุ่มเพิ่มสถานที่มีสองที่ (หัวรายการ + ท้ายรายการ) ต้องล็อกพร้อมกัน
+       ไม่งั้นตัวที่หลุดจะพาไปกรอกฟอร์มที่บันทึกไม่ได้ */
+    [[$('#addPlace'), $('#addPlaceFoot')], 'plan']
   ];
   byArea.forEach(([buttons, area]) => {
     const off = financeLocked(area);
     [...buttons].filter(Boolean).forEach(button => {
       button.disabled = off;
-      button.title = off ? lockReason() : '';
+      button.title = off ? lockReason(area) : '';
     });
   });
+  renderGuestNote();
   const locked = financeLocked();
   $$('.trip-locked-note').forEach(note => {
     /* โชว์เฉพาะตอนทริปปิดจริง ๆ เท่านั้น (2026-08-10)
@@ -4435,14 +4703,22 @@ $('#postingDate').addEventListener('input', updatePostingNote);
    ¥10,000 that cost ฿2,320 might return ฿2,250 — that ฿70 is a realised FX
    loss belonging to this trip, not a rounding error to bury. Carrying the
    money instead touches no baht at all, so its cost simply travels with it
-   and nothing is realised. */
+   and nothing is realised.
+
+   🔴 ค่าเริ่มต้นคือ "ปล่อยไว้" (North 2026-08-23 รอบสอง)
+      North: "เงินที่เหลือในทริป ก็ไม่ต้องทำอะไร ปล่อยเป็นยอดไว้"
+      ญี่ปุ่นไปบ่อย เยนที่เหลือค้างไว้ใช้ทริปหน้าได้เลย · การแลกคืนเป็นการ
+      ตัดสินใจ **หลังจบทริป** ไม่ใช่เงื่อนไขที่ต้องตอบก่อนจึงจะปิดทริปได้
+
+      และมันถูกต้องด้วยตัวมันเอง: ตอนปิดทริปเราตัดออกจากบัญชีเฉพาะยอดที่ใช้จริง
+      เงินที่เหลือจึงยังค้างเป็นยอดคงเหลือของบัญชี "เงินรอเที่ยว" อยู่แล้ว */
 let settlementPlan = {};
 
 function resetSettlementPlan() {
   settlementPlan = {};
   computeCloseSummary().leftovers.forEach(row => {
     settlementPlan[row.wallet.id] = {
-      mode: row.wallet.excludeOnClose ? 'carry' : 'return',
+      mode: row.wallet.excludeOnClose ? 'carry' : 'keep',
       receivedThb: row.thb === null ? '' : String(Math.round(row.thb)),
       carryCurrency: row.wallet.currency,
       carryAmount: String(Math.round(row.foreign))
@@ -4601,8 +4877,13 @@ $('#fxPosting')?.addEventListener('change', event => {
 function settlementResults() {
   const s = computeCloseSummary();
   return s.leftovers.map(row => {
-    const plan = settlementPlan[row.wallet.id] || { mode:'return' };
+    const plan = settlementPlan[row.wallet.id] || { mode:'keep' };
     const cost = row.thb ?? 0;
+    /* ปล่อยไว้ = ไม่แตะเงินเลย จึงไม่มีกำไร/ขาดทุนให้รับรู้
+       ต้นทุนบาทของมันยังค้างอยู่ในบัญชีที่ผูกกับกระเป๋าตามเดิม */
+    if (plan.mode === 'keep') {
+      return { ...row, plan, cost, received: 0, fx: 0, realised: false };
+    }
     if (plan.mode === 'return') {
       const received = Number(String(plan.receivedThb).replace(/[^\d.]/g, '')) || 0;
       return { ...row, plan, cost, received, fx: received - cost, realised: true };
@@ -4630,10 +4911,15 @@ function renderSettlement() {
         <span>${fmtAmount(row.foreign, symbol)} · ต้นทุน ${fmtAmount(row.cost, '฿')}</span>
       </div>
       <div class="settle-modes">
+        <label><input type="radio" name="mode-${row.wallet.id}" value="keep" ${row.plan.mode === 'keep' ? 'checked' : ''}> ปล่อยไว้</label>
         <label><input type="radio" name="mode-${row.wallet.id}" value="return" ${row.plan.mode === 'return' ? 'checked' : ''}> แลกคืนเข้าบัญชี</label>
         <label><input type="radio" name="mode-${row.wallet.id}" value="carry" ${row.plan.mode === 'carry' ? 'checked' : ''}> ยกไปทริปหน้า</label>
       </div>
-      ${row.plan.mode === 'return' ? `
+      ${row.plan.mode === 'keep' ? `
+        <div class="settle-input">
+          <p class="fx-line neutral">ยังไม่แลกคืน · เงิน ${fmtAmount(row.foreign, symbol)} ค้างไว้เป็นยอดต้นทุน ${fmtAmount(row.cost, '฿')}
+            ในบัญชีที่ผูกกับกระเป๋าใบนี้ ไว้ใช้ทริปหน้า · กำไร/ขาดทุนอัตราแลกเปลี่ยนจะเกิดตอนแลกคืนจริงเท่านั้น</p>
+        </div>` : row.plan.mode === 'return' ? `
         <div class="settle-input">
           <label>ได้รับกลับมาจริง<div class="settle-amount"><span>฿</span><input class="settle-received" inputmode="decimal" value="${row.plan.receivedThb}"></div></label>
           <p class="fx-line ${row.fx < 0 ? 'loss' : (row.fx > 0 ? 'gain' : '')}">${
@@ -4655,7 +4941,9 @@ function renderSettlement() {
   const fx = results.reduce((total, row) => total + row.fx, 0);
   const returned = results.filter(row => row.plan.mode === 'return');
   const carried = results.filter(row => row.plan.mode === 'carry');
+  const kept = results.filter(row => row.plan.mode === 'keep');
   $('#fxSummary').innerHTML = `
+    <span>ปล่อยไว้ <b>${kept.length} กระเป๋า</b> · ต้นทุนรวม ${fmtAmount(kept.reduce((t, row) => t + row.cost, 0), '฿')}</span>
     <span>แลกคืนเข้าบัญชี <b>${fmtAmount(returned.reduce((t, row) => t + row.received, 0), '฿')}</b> จาก ${returned.length} กระเป๋า</span>
     <span>ยกไปทริปหน้า <b>${carried.length} กระเป๋า</b> · ต้นทุนรวม ${fmtAmount(carried.reduce((t, row) => t + row.cost, 0), '฿')}</span>
     <span class="fx-total ${fx < 0 ? 'loss' : (fx > 0 ? 'gain' : '')}">${
@@ -4799,7 +5087,15 @@ $('#confirmClose').addEventListener('click', () => {
       postingDate: posting, lines,
       settlements: settlements.map(row => ({ expense_id: row.expenseId, settled_thb: row.settledThb }))
     }),
-      'ปิดทริปแล้ว · ยอดถูกบันทึกเข้าบัญชีจริง')
+      /* บอกจำนวนรายการที่เขียนลงสมุดบัญชีจริง — ตัวเลขที่ตรวจสอบได้
+         ดีกว่าคำรับรองลอย ๆ ที่ครั้งหนึ่งเคยไม่เป็นความจริงเลย */
+      result => {
+        const spent = (result?.transaction_ids || []).length;
+        const fx = (result?.fx_transaction_ids || []).length;
+        const amount = fmtAmount(Math.abs(result?.transaction_total || 0), '฿');
+        return `ปิดทริปแล้ว · ตัดค่าใช้จ่าย ${amount} เข้าสมุดบัญชี ${spent} รายการ`
+          + (fx ? ` · กำไร/ขาดทุนค่าเงินอีก ${fx} รายการ` : '');
+      })
       .then(ok => { if (!ok) showPrototypeToast('ปิดทริปไม่สำเร็จ — ดูเหตุผลในกล่อง'); });
     return;
   }
@@ -4933,6 +5229,9 @@ let previewJourneyIndex = actualJourneyIndex;
    ตรงนี้จึงสร้างตารางใหม่จากวันจริงของทริป */
 function buildLiveJourney() {
   if (!planDays.length) return;
+  /* แถบสรุปใต้แบนเนอร์ก็เด้งกลับ "วันนี้" ทุกครั้งที่บันทึกเหมือนกัน —
+     จำวันที่กำลังเปิดดูไว้ก่อน แล้วค่อยกลับไปหาให้ถ้ามันยังอยู่ */
+  const wasViewing = journeyStops[previewJourneyIndex]?.dayId || '';
   journeyStops = planDays.map((day, index) => {
     const spots = (day.activities || []).filter(act => act.visitStatus !== 'SKIPPED').map(act => act.name).filter(Boolean);
     return {
@@ -4951,7 +5250,8 @@ function buildLiveJourney() {
   const today = new Date().toISOString().slice(0, 10);
   const match = planDays.findIndex(day => day.date === today);
   actualJourneyIndex = match >= 0 ? match : 0;
-  previewJourneyIndex = actualJourneyIndex;
+  const stillThere = wasViewing ? journeyStops.findIndex(stop => stop.dayId === wasViewing) : -1;
+  previewJourneyIndex = stillThere >= 0 ? stillThere : actualJourneyIndex;
 
   /* หมุด SVG 11 จุดวางตามพิกัดของภาพวาดฮอกไกโดโดยเฉพาะ — ถ้าแบนเนอร์เป็น
      ภาพอื่นแล้ว หมุดจะลอยมั่ว ๆ ทับภาพ ต้องซ่อน · อยากเห็นเส้นทางจริงให้กด 🗺️ */
@@ -5516,6 +5816,37 @@ let activePlanDayId = 'day3';
 let selectedActivityId = null;
 let draggedActivityId = null;
 
+/* ── อยู่วันเดิมหลังบันทึก (North 2026-09-07) ───────────────────────────
+   ทุกการบันทึกจบด้วย refreshFromServer() ซึ่งสร้าง planDays ใหม่ทั้งชุด
+   ถ้าไม่จำอะไรไว้เลย จอจะเด้งกลับวันแรกทุกครั้ง
+
+   สองกรณีที่ "วันเดิม" ไม่ใช่วันเดิมตรง ๆ จึงต้องมีตัวใบ้:
+   · ย้ายวัน 19 → 25 ธ.ค. — id เดิม (stop-day-2026-12-19) หายไปจากชุดใหม่
+     ต้องตามไปวันที่ปลายทาง ไม่ใช่ตกกลับวันแรก
+   · เพิ่มสถานที่ลงวันอื่นจากฟอร์ม — ควรไปยืนที่วันที่เพิ่งเพิ่มของเข้าไป
+   ตัวใบ้ใช้ครั้งเดียวแล้วล้างทิ้ง เพื่อไม่ให้ค้างไปมีผลกับ refresh รอบถัดไป */
+let planFocusDate = '';
+const focusPlanDate = date => { planFocusDate = String(date || ''); };
+const takePlanFocusDate = () => { const date = planFocusDate; planFocusDate = ''; return date; };
+
+/* วันที่ขอไว้หายไปเลย (เช่นเพิ่งลบวันนั้นทิ้ง) ให้ไปวันที่ใกล้เคียงที่สุด
+   ดีกว่าโยนกลับวันแรกซึ่งอาจห่างจากที่กำลังดูอยู่เป็นสัปดาห์ */
+function pickPlanDayId(wantedDate) {
+  if (!planDays.length) return activePlanDayId;
+  if (!wantedDate) return planDays[0].id;
+  const exact = planDays.find(day => day.date === wantedDate);
+  if (exact) return exact.id;
+  const want = Date.parse(wantedDate);
+  if (Number.isNaN(want)) return planDays[0].id;
+  let best = planDays[0];
+  let bestGap = Infinity;
+  planDays.forEach(day => {
+    const gap = Math.abs(Date.parse(day.date) - want);
+    if (!Number.isNaN(gap) && gap < bestGap) { bestGap = gap; best = day; }
+  });
+  return best.id;
+}
+
 function activePlanDay() {
   return planDays.find(day => day.id === activePlanDayId);
 }
@@ -5609,6 +5940,15 @@ function nextPlanDate() {
   return Number.isNaN(next.getTime()) ? today() : next.toISOString().slice(0, 10);
 }
 const nextDayLabel = () => thaiDate(nextPlanDate()) || 'วันถัดไป';
+/* ป้ายของ "วัน" ที่ใช้ร่วมกันทุกที่ที่ให้เลือกวัน (2026-09-07)
+   🔴 วันที่จริงมาก่อน เลข Day เป็นตัวรอง — North: "ให้ระบุด้วยว่าเป็นวันที่เท่าไร
+      แทน Day 1 Day 2" · "Day 03" ลอย ๆ ไม่ได้บอกว่าคือวันไหน ต้องไปเทียบเอง */
+const dayOptionLabel = day => {
+  const date = thaiDate(day?.date);
+  const num = `Day ${String(day?.day ?? 1).padStart(2, '0')}`;
+  const where = day?.city && day.city !== '—' ? ` · ${day.city}` : '';
+  return date ? `${date} · ${num}${where}` : `${num}${where}`;
+};
 /* แปลง 'HH:MM' เป็นจำนวนนาทีจากเที่ยงคืน · คืน null ถ้าไม่ได้ระบุเวลา
 
    🔴 ต้องเช็ค /^\d{1,2}:\d{2}$/ ก่อน ห้ามพึ่ง Number.isFinite อย่างเดียว
@@ -5657,6 +5997,133 @@ function stopWarnings(activity, dayDate, weather) {
   return warnings;
 }
 
+/* ── ป้ายการจองบนการ์ด (North 2026-09-15) ──────────────────────────────
+   เลขจอง · จ่ายแล้ว/ยังไม่จ่าย · ยกเลิกฟรีถึง (เตือนสีเมื่อเหลือ ≤ 3 วัน) · บริการที่รวม
+   สำรอง = การ์ดเส้นประจาง + ริบบิ้น (ให้เห็นว่ายังไม่ตัดสินใจ) · ยกเลิก = ขีดฆ่า */
+const daysBetween = (a, b) => {
+  const d1 = new Date(`${a}T00:00:00`), d2 = new Date(`${b}T00:00:00`);
+  if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return null;
+  return Math.round((d2 - d1) / 86400000);
+};
+// วันนี้ตามเวลาเครื่อง (ไม่ใช่ UTC) — เที่ยงคืนไทยต้องนับเป็นวันใหม่แล้ว
+const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const AMEN_ICON = { inc_breakfast: '🍳', inc_lunch: '🍱', inc_dinner: '🍽️', has_parking: '🅿️', has_laundry: '🧺' };
+const amenityChip = booking => {
+  const icons = Object.keys(AMEN_ICON).filter(key => booking?.[key] === 1).map(key => AMEN_ICON[key]).join('');
+  return icons ? `<em class="amen" title="บริการที่รวม">${icons}</em>` : '';
+};
+const PAY_LABEL = { PAID: 'จ่ายแล้ว', UNPAID: 'ยังไม่จ่าย', PAY_AT_VENUE: 'จ่ายหน้างาน' };
+const bookingNights = booking => {
+  if (!booking?.check_in || !booking?.check_out) return 0;
+  const n = Math.round((new Date(`${booking.check_out}T00:00:00`) - new Date(`${booking.check_in}T00:00:00`)) / 86400000);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+const daysUntil = iso => (iso ? daysBetween(todayISO(), iso) : null);
+
+function bookingTags(activity) {
+  const b = activity.booking;
+  if (!b) return [];
+  const tags = [];
+  if (b.vendor || b.ref_no) tags.push(`<em class="ref">${b.vendor || ''}${b.ref_no ? ` #${b.ref_no}` : ''}</em>`);
+  if (b.kind === 'HOTEL') {
+    const nights = bookingNights(b);
+    if (nights > 1) tags.push(`<em class="stay">${nights} คืน → ${thaiDateShort(b.check_out)}</em>`);
+    const room = [b.room_desc, b.view_desc && `${b.view_desc} view`, b.size_sqm && `${b.size_sqm} ตรม.`].filter(Boolean).join(' · ');
+    if (room) tags.push(`<em class="room">🛏 ${room}</em>`);
+  } else if (b.depart_from || b.arrive_to) {
+    tags.push(`<em class="room">${b.depart_from || '?'} → ${b.arrive_to || '?'}${b.arrive_time ? ` · ถึง ${b.arrive_time}` : ''}</em>`);
+  }
+  if (b.travelers) tags.push(`<em>👥 ${b.travelers}</em>`);
+  if (b.status === 'CANCELLED') tags.push('<em class="over">ยกเลิกแล้ว</em>');
+  else {
+    tags.push(`<em class="${b.pay_status === 'PAID' ? 'paid' : b.pay_status === 'PAY_AT_VENUE' ? 'venue' : 'due'}">${
+      b.pay_status === 'PAID' ? '✓ ' : ''}${PAY_LABEL[b.pay_status] || b.pay_status}${b.pay_date ? ` ${thaiDateShort(b.pay_date)}` : ''}${b.pay_method ? ` · ${b.pay_method}` : ''}</em>`);
+    if (b.cancel_deadline) {
+      const left = daysUntil(b.cancel_deadline);
+      tags.push(`<em class="${left != null && left <= 3 ? 'over' : 'cancel'}">ยกเลิกฟรีถึง ${thaiDateShort(b.cancel_deadline)}${
+        left != null && left >= 0 && left <= 7 ? ` · อีก ${left} วัน` : left != null && left < 0 ? ' · หมดเขตแล้ว' : ''}</em>`);
+    }
+  }
+  const amen = amenityChip(b);
+  if (amen) tags.push(amen);
+  return tags;
+}
+const bookingCardClass = activity => activity.booking?.status === 'BACKUP' ? 'booking-backup'
+  : activity.booking?.status === 'CANCELLED' ? 'booking-cancelled' : '';
+
+/* ที่พักของวันอื่นที่ยังพักอยู่ในวันนี้ (check_in < วันนี้ < check_out) */
+function carriedStays(date) {
+  if (!date) return [];
+  const rows = [];
+  planDays.forEach(day => day.activities.forEach(activity => {
+    const b = activity.booking;
+    if (!b || b.kind !== 'HOTEL' || b.status === 'CANCELLED' || activity.visitStatus === 'SKIPPED') return;
+    const checkIn = b.check_in || day.date;
+    if (!b.check_out || !(checkIn < date && date < b.check_out)) return;
+    const nights = bookingNights({ check_in: checkIn, check_out: b.check_out });
+    const night = Math.round((new Date(`${date}T00:00:00`) - new Date(`${checkIn}T00:00:00`)) / 86400000) + 1;
+    rows.push({ activity, day, night, nights });
+  }));
+  return rows;
+}
+
+/* ทุกการจองในทริป พร้อมวันที่/จุดแวะ — ใช้ทั้งแถบเตือน สรุป และหน้าพิมพ์ */
+const allBookings = () => planDays.flatMap(day => day.activities
+  .filter(act => act.booking)
+  .map(act => ({ activity: act, day, booking: act.booking })));
+
+/* แถบเตือนบนสุด: เส้นตายยกเลิกฟรีที่ใกล้ที่สุด (รวมของสำรอง — ต้องตัดสินใจก่อนหมดเขต)
+   โชว์เมื่อเหลือ ≤ 14 วัน หรือเลยมาไม่เกิน 3 วัน · แตะแล้วกระโดดไปการ์ดนั้น */
+function renderBookingAlert() {
+  const el = $('#bookingAlert');
+  if (!el) return;
+  const candidates = allBookings()
+    .filter(({ booking }) => booking.cancel_deadline && booking.status !== 'CANCELLED')
+    .map(row => ({ ...row, left: daysUntil(row.booking.cancel_deadline) }))
+    .filter(row => row.left != null && row.left >= -3 && row.left <= 14)
+    .sort((a, b) => a.left - b.left);
+  const hit = candidates[0];
+  el.hidden = !hit;
+  if (!hit) return;
+  el.dataset.day = hit.day.id;
+  el.dataset.stop = hit.activity.id;
+  el.className = `booking-alert ${hit.left <= 3 ? 'urgent' : ''}`;
+  el.innerHTML = `⚠️ ยกเลิกฟรี <b>${hit.activity.name}</b>${hit.booking.status === 'BACKUP' ? ' (สำรอง)' : ''} หมดเขต ${thaiDateShort(hit.booking.cancel_deadline)}
+    <small>${hit.left < 0 ? `เลยมา ${-hit.left} วัน` : hit.left === 0 ? 'วันนี้!' : `อีก ${hit.left} วัน`}${candidates.length > 1 ? ` · +${candidates.length - 1}` : ''}</small>`;
+}
+
+/* กล่องสรุปการจองทั้งทริป — นับเฉพาะ "ยืนยัน" (สำรองไม่รวม ยกเลิกไม่รวม)
+   ยอดจองแยกตามสกุล เพราะบวกข้ามสกุลตรง ๆ ไม่ได้ */
+function renderBookingSummary() {
+  const el = $('#bookingSummary');
+  if (!el) return;
+  const rows = allBookings();
+  el.hidden = !rows.length;
+  if (!rows.length) return;
+  const confirmed = rows.filter(r => r.booking.status === 'CONFIRMED');
+  const nights = confirmed.filter(r => r.booking.kind === 'HOTEL').reduce((sum, r) => sum + (bookingNights(r.booking) || 1), 0);
+  const flights = confirmed.filter(r => r.booking.kind === 'FLIGHT').length;
+  const paid = confirmed.filter(r => r.booking.pay_status === 'PAID').length;
+  const unpaid = confirmed.filter(r => r.booking.pay_status === 'UNPAID').length;
+  const backup = rows.filter(r => r.booking.status === 'BACKUP').length;
+  const totals = {};
+  confirmed.forEach(r => {
+    if (r.activity.plannedCost == null) return;
+    const cur = r.activity.plannedCurrency || 'THB';
+    totals[cur] = (totals[cur] || 0) + Number(r.activity.plannedCost);
+  });
+  const totalText = Object.entries(totals).map(([cur, sum]) => `${symbolFor(cur)}${fmtAmount(sum)}`).join(' + ') || '—';
+  el.innerHTML = `
+    <div class="bs-head"><b>🧾 การจองทั้งทริป</b><a class="soft-btn" href="print.html${location.search}" target="_blank" rel="noopener">🖨 พิมพ์แผน</a></div>
+    <div class="bs-grid">
+      <div><strong>${nights}</strong><small>คืน</small></div>
+      <div><strong>${flights}</strong><small>ไฟลท์</small></div>
+      <div><strong>${paid}/${confirmed.length}</strong><small>จ่ายแล้ว</small></div>
+      <div class="wide"><strong>${totalText}</strong><small>ยอดจองที่ยืนยัน</small></div>
+    </div>
+    <div class="bs-chips">${unpaid ? `<em class="due">ค้างจ่าย ${unpaid}</em>` : ''}${backup ? `<em class="backup">สำรอง ${backup} · รอเลือก</em>` : ''}</div>`;
+}
+
 function renderPlanWorkspace() {
   const activeDay = activePlanDay();
   const activeCount = day => day.activities.filter(act => act.visitStatus !== 'SKIPPED').length;
@@ -5668,10 +6135,14 @@ function renderPlanWorkspace() {
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? '' : `${d.getDate()} ${['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][d.getMonth()]}`;
   };
+  const canEditDays = !financeLocked('plan');
   $('#planDayTabs').innerHTML = planDays.map(day => `
     <button class="${day.id === activePlanDayId ? 'active' : ''}" data-plan-day="${day.id}">
       <b>Day ${String(day.day).padStart(2, '0')}</b>
       <small>${activeCount(day)} จุด${skippedCount(day) ? ` · ข้าม ${skippedCount(day)}` : ''} · ${shortDate(day.date)}</small>
+      ${day.title ? `<em class="day-tab-title">${day.title}</em>` : ''}
+      ${canEditDays ? `<span class="day-tab-edit" data-edit-day="${day.id}" role="button" tabindex="0"
+        title="แก้ไขหรือลบวันนี้" aria-label="แก้ไข Day ${String(day.day).padStart(2, '0')}">✏️</span>` : ''}
     </button>`).join('')
     + `<button class="add-day" id="addPlanDay"><b>＋ เพิ่มวัน</b><small>${nextDayLabel()}</small></button>`;
 
@@ -5723,7 +6194,20 @@ function renderPlanWorkspace() {
 
   if (!legsLoaded) loadTripLegs();   // โหลดครั้งเดียวต่อการเปิดหน้า แล้ววาดใหม่เอง
 
-  $('#planList').innerHTML = activeDay.activities.length ? activeDay.activities.map((activity, index) => {
+  /* ที่พักหลายคืนโผล่ทุกวันที่พัก (เงา · ไม่ใช่จุดแวะซ้ำ · แก้ที่วันเช็กอิน) */
+  const ghostStays = carriedStays(activeDay.date).map(({ activity, night, nights, day }) => `
+    <div class="plan-ghost" data-ghost-for="${activity.id}" data-ghost-day="${day.id}" title="แตะเพื่อไปวันเช็กอิน">
+      <div class="plan-time"><b>🛏</b><small>คืนที่ ${night}/${nights}</small></div>
+      <img src="${activity.image || `${ART}st_camera2.png`}" alt="">
+      <div class="plan-place-copy"><b class="stop-name">${activity.name}</b>
+        <small>พักต่อ · เช็กอิน ${thaiDateShort(activity.booking.check_in || day.date)} · เช็กเอาต์ ${thaiDateShort(activity.booking.check_out)}</small>
+        <div class="plan-tags"><em class="stay">ที่พัก</em>${amenityChip(activity.booking)}</div>
+      </div>
+    </div>`).join('');
+  renderBookingAlert();
+  renderBookingSummary();
+
+  $('#planList').innerHTML = ghostStays + (activeDay.activities.length ? activeDay.activities.map((activity, index) => {
     const prev = activeDay.activities[index - 1];
     /* ป้ายระหว่างจุด — เวลาขับจริงจาก OSRM ถ้ามี ไม่มีก็ถอยไประยะเส้นตรง
        และเขียนต่างกันให้ชัด ("ขับรถ 25 นาที" vs "ห่าง 18 กม. วัดเส้นตรง") */
@@ -5754,6 +6238,7 @@ function renderPlanWorkspace() {
       activity.tag === 'ที่พัก' ? '<em class="stay">ที่พัก</em>' : '',
       activity.highlight ? `<em class="star">✨ ${activity.highlight}</em>` : '',
       ...stopMoneyTags(activity),
+      ...bookingTags(activity),
       ...docs.slice(0, 2).map(doc => `<em class="doc">📎 ${doc.name}</em>`),
       docs.length > 2 ? `<em class="doc">+${docs.length - 2}</em>` : '',
       activity.visitStatus === 'SKIPPED'
@@ -5762,7 +6247,7 @@ function renderPlanWorkspace() {
 
     const stay = stayLength(activity);
     return `${leg}
-    <article class="plan-item ${activity.id === selectedActivityId ? 'selected' : ''} ${activity.visitStatus === 'SKIPPED' ? 'skipped' : ''}" draggable="${activity.visitStatus === 'SKIPPED' ? 'false' : 'true'}" data-activity="${activity.id}">
+    <article class="plan-item ${activity.id === selectedActivityId ? 'selected' : ''} ${activity.visitStatus === 'SKIPPED' ? 'skipped' : ''} ${bookingCardClass(activity)}" draggable="${activity.visitStatus === 'SKIPPED' ? 'false' : 'true'}" data-activity="${activity.id}">
       <span class="drag" title="ลากเพื่อจัดลำดับ">⠿</span>
       <div class="plan-time"><b>${activity.time || '—'}</b><small>${stay || (activity.endTime ? `ถึง ${activity.endTime}` : '')}</small></div>
       <img src="${activity.image || `${ART}st_camera2.png`}" alt="">
@@ -5772,17 +6257,25 @@ function renderPlanWorkspace() {
         <button type="button" class="skip-plan-item" data-skip="${activity.id}" title="${activity.visitStatus === 'SKIPPED' ? 'นำกลับเข้าแผน' : 'ข้ามสถานที่นี้'}" aria-label="${activity.visitStatus === 'SKIPPED' ? 'นำ ' + activity.name + ' กลับเข้าแผน' : 'ข้าม ' + activity.name}">${activity.visitStatus === 'SKIPPED' ? '↩️' : '🚫'}</button>
         <button type="button" data-move="up" title="เลื่อนขึ้น" aria-label="เลื่อน ${activity.name} ขึ้น" ${activity.visitStatus === 'SKIPPED' ? 'disabled' : ''}>▲</button>
         <button type="button" data-move="down" title="เลื่อนลง" aria-label="เลื่อน ${activity.name} ลง" ${activity.visitStatus === 'SKIPPED' ? 'disabled' : ''}>▼</button>
+        ${/* 🔴 ย้ายไปวันอื่นต้องอยู่ "บนการ์ด" (North 2026-09-07)
+              ความสามารถนี้มีมาก่อนแล้ว แต่ซ่อนอยู่ท้ายหน้าและต้องแตะการ์ดเพื่อ
+              เลือกก่อนถึงจะกดได้ — สองจังหวะที่ไม่มีอะไรบนการ์ดบอกใบ้เลย
+              คนจึงหาไม่เจอและคิดว่าย้ายวันไม่ได้ · ปุ่มที่มีอยู่แต่หาไม่เจอ
+              เท่ากับไม่มี */''}
+        <button type="button" class="moveday-plan-item" data-move-day-for="${activity.id}"
+          title="ย้ายไปวันอื่น" aria-label="ย้าย ${activity.name} ไปวันอื่น"
+          ${planDays.length < 2 ? 'disabled title="ทริปนี้มีวันเดียว"' : ''}>📅</button>
         <button type="button" class="delete-plan-item danger" data-delete="${activity.id}" title="ลบถาวร" aria-label="ลบ ${activity.name} ถาวร">🗑️</button>
       </div>
     </article>`;
-  }).join('') : `<div class="plan-empty">ยังไม่มีกิจกรรมในวันนี้</div>`;
+  }).join('') : (ghostStays ? '' : `<div class="plan-empty">ยังไม่มีกิจกรรมในวันนี้</div>`));
 
   /* แผนสำรอง = จุดที่ถูกข้ามไว้ ยังเก็บไว้ในแผนเผื่อเปลี่ยนใจ */
   const backup = activeDay.activities.filter(act => act.visitStatus === 'SKIPPED');
   /* ปุ่มล่างกับปุ่มบนทำงานเหมือนกันทุกประการ (เพิ่มลงวันที่เปิดอยู่)
      มีสองที่เพราะแผนยาวเกินหนึ่งจอ — แต่ต้องเขียนวันกำกับ ไม่งั้นคนเข้าใจว่า
      "เพิ่ม Stop วันนี้" หมายถึงวันตามปฏิทินจริง ซึ่งไม่ใช่ */
-  $('#addPlaceFoot').textContent = `＋ เพิ่มสถานที่ใน Day ${String(activeDay.day).padStart(2, '0')}`;
+  $('#addPlaceFoot').textContent = `＋ เพิ่มสถานที่ใน ${thaiDate(activeDay.date) || `Day ${String(activeDay.day).padStart(2, '0')}`}`;
   $('#planBackup').hidden = !backup.length;
   $('#planBackup').textContent = backup.length
     ? `💡 แผนสำรอง ${backup.length} จุด: ${backup.map(act => act.name).join(', ')}`
@@ -5799,7 +6292,7 @@ function renderPlanWorkspace() {
     ? `ย้าย "${picked.name}" ไปวัน`
     : 'แตะการ์ดสถานที่เพื่อเลือกก่อน แล้วเลือกวันปลายทาง';
   $('#moveDayTargets').innerHTML = otherDays.map(day => `
-    <button data-move-day="${day.id}" ${picked ? '' : 'disabled'}>Day ${String(day.day).padStart(2, '0')} · ${day.city}</button>`).join('');
+    <button data-move-day="${day.id}" ${picked ? '' : 'disabled'}>${dayOptionLabel(day)}</button>`).join('');
   bindPlanInteractions();
   $('#editDayTitle')?.addEventListener('click', editActiveDayTitle);
   scrollActiveDayTab();
@@ -5884,10 +6377,28 @@ function bindPlanInteractions() {
     selectedActivityId = null;
     renderPlanWorkspace();
   }));
+  $$('.plan-ghost').forEach(ghost => ghost.addEventListener('click', () => {
+    activePlanDayId = ghost.dataset.ghostDay;
+    selectedActivityId = ghost.dataset.ghostFor;
+    renderPlanWorkspace();
+  }));
+  $('#bookingAlert')?.addEventListener('click', () => {
+    const target = $('#bookingAlert').dataset.day;
+    if (target) { activePlanDayId = target; selectedActivityId = $('#bookingAlert').dataset.stop || null; renderPlanWorkspace(); }
+  });
 
-  /* เพิ่มวัน — ต่างจากอีกสองปุ่มตรงที่ตั้งวันเป็น "วันใหม่" ให้ ไม่ใช่วันที่เปิดอยู่
-     ที่เหลือคือฟอร์มเดียวกัน เพราะวันจะมีจริงก็ต่อเมื่อมีจุดแวะอย่างน้อยหนึ่งจุด */
-  $('#addPlanDay')?.addEventListener('click', () => openPlanEditor(null, nextPlanDate()));
+  /* 🔴 เพิ่มวัน = ฟอร์มของ "วัน" จริง ๆ แล้ว ไม่ใช่ฟอร์มเพิ่มสถานที่อีกต่อไป
+     (North 2026-09-07: "เพิ่มวัน เพิ่มสถานที่ ต่างกันอย่างไร · ถ้าเพิ่มวันเฉย ๆ
+      ให้ลบการตั้งค่าในส่วนอื่นออก")
+     เดิมสองปุ่มนี้เปิดฟอร์มเดียวกัน ต่างแค่ตั้งวันให้ล่วงหน้า — คนจึงแยกไม่ออก
+     ว่าต่างกันตรงไหน และถูกบังคับกรอกชื่อสถานที่ทั้งที่แค่อยากเพิ่มวัน */
+  $('#addPlanDay')?.addEventListener('click', () => openDayDialog());
+
+  // แก้ไข/ลบวัน — ปุ่มดินสอเล็กบนแท็บวัน
+  $$('[data-edit-day]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();          // ไม่ให้ไปโดนปุ่มสลับวันที่ครอบอยู่
+    openDayDialog(planDays.find(day => day.id === button.dataset.editDay));
+  }));
 
   $$('.plan-item').forEach(item => {
     item.addEventListener('click', event => {
@@ -5969,6 +6480,19 @@ function bindPlanInteractions() {
     });
   });
 
+  /* ปุ่ม 📅 บนการ์ด = เลือกสถานที่นี้แล้วพาไปที่แถบเลือกวันปลายทางให้เลย
+     ใช้กลไกเดิมทั้งหมด ไม่เพิ่มสถานะใหม่ — แค่ทำให้ "หาเจอ" ซึ่งเป็นปัญหาจริง */
+  $$('[data-move-day-for]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    if (blockedByClose('plan')) return;
+    selectedActivityId = button.dataset.moveDayFor;
+    renderPlanWorkspace();
+    const box = $('#crossDayMove');
+    box?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    box?.classList.add('flash');
+    setTimeout(() => box?.classList.remove('flash'), 1200);
+  }));
+
   $$('[data-move-day]').forEach(button => button.addEventListener('click', () => {
     if (!selectedActivityId) return;
     const sourceDay = activePlanDay();
@@ -6045,20 +6569,305 @@ function setTimeValue(id, value) {
   $('.tp-m', wrap).value = m;
 }
 
+/* ── ฟอร์มของ "วัน" (2026-09-07) ───────────────────────────────────────
+   มีแค่สองช่อง: วันที่ กับ ชื่อวัน — ตั้งใจไม่ให้มีช่องของสถานที่มาปน
+   เพราะสองเรื่องนี้คนละระดับกัน (วัน = ภาชนะ · สถานที่ = ของข้างใน)
+
+   🔴 "วัน" เพิ่งมีตัวตนของตัวเองในฐาน (TripDayPlans) — ก่อนหน้านี้เกิดจาก
+      วันที่ของจุดแวะล้วน ๆ จึงเพิ่มวันเปล่าไม่ได้ แก้ไม่ได้ ลบไม่ได้ */
+let editingDayDate = '';
+
+function openDayDialog(day = null) {
+  if (blockedByClose('plan')) return;
+  closeLayers();
+  editingDayDate = day?.date || '';
+  const editing = Boolean(editingDayDate);
+  const stops = day ? day.activities.length : 0;
+
+  $('#dayDialogTitle').textContent = editing
+    ? `แก้ไข Day ${String(day.day).padStart(2, '0')}`
+    : 'เพิ่มวันในแผน';
+  $('#dayDate').value = editing ? day.date : nextPlanDate();
+  $('#dayTitle').value = editing ? (day.title || '') : '';
+  $('#dayError').textContent = '';
+  $('#daySubmit').textContent = editing ? 'บันทึกการแก้ไข' : 'เพิ่มวัน';
+
+  /* ปุ่มลบโผล่เฉพาะตอนแก้ไข · และบอกไปเลยตั้งแต่ตอนนี้ว่าลบไม่ได้เพราะอะไร
+     ดีกว่าให้กดแล้วค่อยเจอ error — North เลือกกติกา "ลบไม่ได้ถ้ายังมีสถานที่" */
+  const del = $('#deleteDayBtn');
+  del.hidden = !editing;
+  del.disabled = stops > 0;
+  del.title = stops > 0 ? `ลบไม่ได้ · ยังมีสถานที่อยู่ ${stops} จุด` : '';
+  del.textContent = stops > 0 ? `ลบไม่ได้ · มี ${stops} สถานที่` : 'ลบวันนี้';
+
+  mask.classList.add('open');
+  $('#dayDialog').classList.add('open');
+  $('#dayDialog').setAttribute('aria-hidden', 'false');
+}
+
+$$('[data-close-day]').forEach(button => button.addEventListener('click', closeLayers));
+
+$('#dayForm')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const date = $('#dayDate').value;
+  const title = $('#dayTitle').value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { $('#dayError').textContent = 'เลือกวันที่ก่อน'; return; }
+
+  if (!liveMode) {
+    $('#dayError').textContent = 'โหมดข้อมูลตัวอย่างยังเพิ่มวันไม่ได้ — เปิดด้วย ?live=1';
+    return;
+  }
+  const editing = Boolean(editingDayDate);
+  const moving = editing && date !== editingDayDate;
+  /* เพิ่มวันใหม่ก็ดี ย้ายวันก็ดี ปลายทางคือวันที่ในช่องนี้เสมอ — ไปยืนที่นั่น */
+  focusPlanDate(date);
+  submitLive('#dayError',
+    () => TripApi.saveDay({ date: editing ? editingDayDate : date, title, newDate: moving ? date : '' }),
+    result => {
+      if (!editing) return `เพิ่ม ${thaiDate(date)} ในแผนแล้ว`;
+      if (moving) {
+        const moved = result?.moved_stops || 0;
+        return `ย้ายไป ${thaiDate(date)} แล้ว${moved ? ` · พาสถานที่ ${moved} จุดไปด้วย` : ''}`;
+      }
+      return `บันทึก ${thaiDate(date)} แล้ว`;
+    })
+    .then(() => showScreen('plan'));
+});
+
+$('#deleteDayBtn')?.addEventListener('click', () => {
+  if (!editingDayDate) return;
+  const day = planDays.find(row => row.date === editingDayDate);
+  if (day?.activities.length) {
+    // เผื่อสถานะบนจอไม่ทันของจริง — เซิร์ฟเวอร์ตรวจซ้ำอีกชั้นอยู่แล้ว
+    $('#dayError').textContent = `ลบไม่ได้ · ยังมีสถานที่อยู่ ${day.activities.length} จุด`;
+    return;
+  }
+  if (!window.confirm(`ลบ ${thaiDate(editingDayDate)} ออกจากแผน?`)) return;
+  submitLive('#dayError', () => TripApi.removeDay(editingDayDate),
+    `ลบ ${thaiDate(editingDayDate)} ออกจากแผนแล้ว`)
+    .then(() => showScreen('plan'));
+});
+
+/* ── สกุลเงินต่อจุด (North 2026-09-15) ─────────────────────────────────
+   รายการ = สกุลที่เพิ่มไว้ในทริป + THB เสมอ (โรงแรมจองล่วงหน้าเป็นบาท)
+   ค่าตั้งต้น = สกุลต่างประเทศตัวแรก เหมือนพฤติกรรมเดิมก่อนมีตัวเลือก */
+function fillCurrencySelect(current) {
+  const select = $('#activityCurrency');
+  if (!select) return;
+  const codes = [];
+  tripCurrencies.forEach(c => { if (!codes.includes(c.code)) codes.push(c.code); });
+  if (!codes.includes('THB')) codes.push('THB');
+  if (current && !codes.includes(current)) codes.push(current);
+  select.innerHTML = codes.map(code => `<option value="${code}">${code}</option>`).join('');
+  select.value = current || tripCurrencies.find(c => !c.base)?.code || codes[0] || '';
+}
+
+/* ── ฟอร์มการจอง (North 2026-09-15 · จาก Trip.xlsx) ──────────────────────
+   ค่าในฟอร์ม ↔ object แบบเดียวกับตาราง TripBookings (snake_case)
+   ชนิด (kind) ตามประเภทของจุดแวะ: ที่พัก→HOTEL · การเดินทาง→FLIGHT · อื่น→TICKET
+   ช่องที่โชว์เปลี่ยนตามชนิด: HOTEL = ห้อง/วิว/ตรม./ผู้เข้าพัก/บริการ · เดินทาง = จาก/ถึง/เวลาถึง */
+const BOOKING_AMEN = ['inc_breakfast', 'inc_lunch', 'inc_dinner', 'has_parking', 'has_laundry'];
+const kindForTag = tag => tag === 'ที่พัก' ? 'HOTEL' : tag === 'การเดินทาง' ? 'FLIGHT' : 'TICKET';
+const isTravelKind = kind => kind === 'FLIGHT' || kind === 'TRANSPORT';
+
+function syncBookingKindFields() {
+  const kind = $('#bookingKind').value;
+  const hotel = kind === 'HOTEL';
+  const travel = isTravelKind(kind);
+  $$('#bookingBox .bk-hotel').forEach(el => { el.hidden = !hotel; });
+  $$('#bookingBox .bk-travel').forEach(el => { el.hidden = !travel; });
+  $('#bookingVendorLabel').firstChild.textContent = travel ? 'สายการบิน / ผู้ให้บริการ' : 'ผู้ขาย';
+  $('#bookingRefLabel').firstChild.textContent = kind === 'FLIGHT' ? 'เที่ยวบิน / เลขจอง' : 'เลขจอง';
+  updateBookingHints();
+}
+
+function updateBookingHints() {
+  const nights = daysBetween($('#bookingCheckIn').value, $('#bookingCheckOut').value);
+  $('#bookingNights').textContent = nights == null ? '' : nights > 0 ? `${nights} คืน` : nights === 0 ? 'วันเดียวกัน' : 'ก่อนเช็กอิน!';
+  const left = $('#bookingCancel').value ? daysBetween(todayISO(), $('#bookingCancel').value) : null;
+  $('#bookingCancelHint').textContent = left == null ? '' : left < 0 ? `หมดเขตแล้ว ${-left} วัน` : left === 0 ? 'วันนี้วันสุดท้าย!' : `อีก ${left} วัน`;
+  $('#bookingCancelHint').classList.toggle('warn', left != null && left <= 3);
+  // บรรทัดสรุปตอนพับ — พอเห็นว่ามีอะไรอยู่ข้างในโดยไม่ต้องกาง
+  const b = readBookingForm();
+  const hint = $('#bookingHint');
+  if (!b) { hint.textContent = 'ผู้ขาย · เลขจอง · เช็กเอาต์ · การจ่าย'; hint.classList.remove('has'); return; }
+  const parts = [];
+  if (b.vendor || b.ref_no) parts.push(`${b.vendor || ''}${b.ref_no ? ` #${b.ref_no}` : ''}`.trim());
+  if (b.status === 'BACKUP') parts.push('สำรอง');
+  if (b.status === 'CANCELLED') parts.push('ยกเลิกแล้ว');
+  if (nights > 0) parts.push(`${nights} คืน`);
+  parts.push(b.pay_status === 'PAID' ? 'จ่ายแล้ว' : b.pay_status === 'PAY_AT_VENUE' ? 'จ่ายหน้างาน' : 'ยังไม่จ่าย');
+  hint.textContent = parts.join(' · ');
+  hint.classList.add('has');
+}
+
+function setAmenState(button, state) {
+  button.dataset.state = state;
+  button.classList.toggle('yes', state === '1');
+  button.classList.toggle('no', state === '0');
+  button.setAttribute('aria-label', `${button.textContent.trim()}: ${state === '1' ? 'มี' : state === '0' ? 'ไม่มี' : 'ไม่ทราบ'}`);
+}
+
+function fillBookingForm(booking, tag) {
+  const box = $('#bookingBox');
+  if (!box) return;
+  const b = booking || {};
+  box.open = Boolean(booking);
+  box.dataset.existing = booking ? '1' : '';
+  $('#bookingKind').value = b.kind || kindForTag(tag);
+  $$('#bookingStatus input').forEach(r => { r.checked = r.value === (b.status || 'CONFIRMED'); });
+  $('#bookingVendor').value = b.vendor || '';
+  $('#bookingRef').value = b.ref_no || '';
+  $('#bookingCheckIn').value = b.check_in || '';
+  $('#bookingCheckOut').value = b.check_out || '';
+  $('#bookingRoom').value = b.room_desc || '';
+  $('#bookingView').value = b.view_desc || '';
+  $('#bookingSize').value = b.size_sqm == null ? '' : String(b.size_sqm);
+  $('#bookingTravelers').value = b.travelers || '';
+  $('#bookingTravelers2').value = b.travelers || '';
+  $('#bookingFrom').value = b.depart_from || '';
+  $('#bookingTo').value = b.arrive_to || '';
+  setTimeValue('bookingArrive', b.arrive_time || '');
+  $$('#bookingAmenities button').forEach(button => {
+    const v = b[button.dataset.amen];
+    setAmenState(button, v === 1 ? '1' : v === 0 ? '0' : '');
+  });
+  $$('#bookingPayStatus input').forEach(r => { r.checked = r.value === (b.pay_status || 'UNPAID'); });
+  $('#bookingPayDate').value = b.pay_date || '';
+  $('#bookingPayMethod').value = b.pay_method || '';
+  $('#bookingCancel').value = b.cancel_deadline || '';
+  /* รายการแนะนำ: ค่าที่เคยพิมพ์ในทริปนี้ — พิมพ์ครั้งเดียว เลือกได้ตลอด */
+  const all = planDays.flatMap(day => day.activities.map(act => act.booking).filter(Boolean));
+  const uniq = key => [...new Set(all.map(x => x[key]).filter(Boolean))];
+  $('#bookingVendors').innerHTML = [...new Set([...uniq('vendor'), 'Agoda', 'Booking.com', 'Trip.com', 'Klook', 'ANA', 'JAL', 'Thai Airways'])]
+    .map(v => `<option value="${v}">`).join('');
+  $('#bookingPayMethods').innerHTML = uniq('pay_method').map(v => `<option value="${v}">`).join('');
+  // ที่พักใหม่: เช็กอิน = วันของจุดแวะ (เซิร์ฟเวอร์ก็ทำให้ แต่โชว์ในฟอร์มให้เห็นก่อน)
+  if (!booking && $('#bookingKind').value === 'HOTEL') $('#bookingCheckIn').value = editorSelectedDate();
+  syncBookingKindFields();
+}
+
+const editorSelectedDate = () => {
+  const chosen = $('#activityDay')?.value || '';
+  return chosen.startsWith('new:') ? chosen.slice(4) : (planDays.find(day => day.id === chosen)?.date || '');
+};
+
+/* แปลงหลังผู้ใช้กรอก "2A 1C(7)" → ผู้ใหญ่ 2 · เด็ก 1 · อายุ 7 (ไม่บังคับรูปแบบ พังก็แค่ไม่แยก) */
+function parseTravelers(text) {
+  const m = /(\d+)\s*A(?:\s*(\d+)\s*C(?:\s*\(([\d,\s]+)\))?)?/i.exec(text || '');
+  if (!m) return { adults: null, children: null, child_ages: null };
+  return { adults: Number(m[1]), children: m[2] ? Number(m[2]) : 0, child_ages: m[3] ? m[3].replace(/\s/g, '') : null };
+}
+
+/* คืน: object = บันทึก · null = ลบการจองเดิม (ล้างหมดแล้ว) · undefined = ไม่แตะ (ไม่เคยมีและไม่ได้กรอก) */
+function readBookingForm() {
+  const box = $('#bookingBox');
+  if (!box) return undefined;
+  const kind = $('#bookingKind').value;
+  const travel = isTravelKind(kind);
+  const travelers = (travel ? $('#bookingTravelers2') : $('#bookingTravelers')).value.trim();
+  const b = {
+    kind,
+    status: $('#bookingStatus input:checked')?.value || 'CONFIRMED',
+    vendor: $('#bookingVendor').value.trim(),
+    ref_no: $('#bookingRef').value.trim(),
+    check_in: kind === 'HOTEL' ? $('#bookingCheckIn').value : '',
+    check_out: kind === 'HOTEL' ? $('#bookingCheckOut').value : '',
+    room_desc: kind === 'HOTEL' ? $('#bookingRoom').value.trim() : '',
+    view_desc: kind === 'HOTEL' ? $('#bookingView').value.trim() : '',
+    size_sqm: kind === 'HOTEL' ? $('#bookingSize').value.trim() : '',
+    travelers,
+    ...parseTravelers(travelers),
+    depart_from: travel ? $('#bookingFrom').value.trim() : '',
+    arrive_to: travel ? $('#bookingTo').value.trim() : '',
+    arrive_time: travel ? timeValue('bookingArrive') : '',
+    pay_status: $('#bookingPayStatus input:checked')?.value || 'UNPAID',
+    pay_date: $('#bookingPayDate').value,
+    pay_method: $('#bookingPayMethod').value.trim(),
+    cancel_deadline: $('#bookingCancel').value
+  };
+  $$('#bookingAmenities button').forEach(button => {
+    b[button.dataset.amen] = kind !== 'HOTEL' ? null : button.dataset.state === '1' ? 1 : button.dataset.state === '0' ? 0 : null;
+  });
+  const empty = !b.vendor && !b.ref_no && !b.check_out && !b.room_desc && !b.view_desc && !b.size_sqm
+    && !b.travelers && !b.depart_from && !b.arrive_to && !b.arrive_time && !b.pay_date && !b.pay_method
+    && !b.cancel_deadline && b.pay_status === 'UNPAID' && b.status === 'CONFIRMED'
+    && BOOKING_AMEN.every(key => b[key] == null);
+  if (empty) return box.dataset.existing ? null : undefined;
+  return b;
+}
+
+$('#bookingKind')?.addEventListener('change', syncBookingKindFields);
+$('#activityTag')?.addEventListener('change', () => {
+  const tag = $('#activityTag').value;
+  /* ของใหม่: เปลี่ยนประเภทแล้วชนิดการจองกับเวลาตั้งต้นตามไปด้วย · ของเดิมไม่แตะเวลา */
+  if (!$('#bookingBox').dataset.existing) {
+    $('#bookingKind').value = kindForTag(tag);
+    if (tag === 'ที่พัก' && !$('#bookingCheckIn').value) $('#bookingCheckIn').value = editorSelectedDate();
+    syncBookingKindFields();
+  }
+  if (!editingActivityId) {
+    const now = timeValue('activityTime');
+    if (tag === 'ที่พัก' && now === '09:00') setTimeValue('activityTime', '15:00');
+    if (tag !== 'ที่พัก' && now === '15:00') setTimeValue('activityTime', '09:00');
+  }
+});
+$('#bookingAmenities')?.addEventListener('click', event => {
+  const button = event.target.closest('button[data-amen]');
+  if (!button) return;
+  const next = { '': '1', '1': '0', '0': '' }[button.dataset.state] ?? '';
+  setAmenState(button, next);
+  updateBookingHints();
+});
+['#bookingCheckIn', '#bookingCheckOut', '#bookingCancel', '#bookingVendor', '#bookingRef', '#bookingPayDate']
+  .forEach(sel => $(sel)?.addEventListener('input', updateBookingHints));
+$$('#bookingStatus input, #bookingPayStatus input').forEach(r => r.addEventListener('change', updateBookingHints));
+$('#bookingCheckIn')?.addEventListener('change', () => {
+  // เช็กเอาต์ยังว่าง = เดาให้ 1 คืน · แก้ต่อได้
+  if ($('#bookingCheckIn').value && !$('#bookingCheckOut').value) {
+    const d = new Date(`${$('#bookingCheckIn').value}T12:00:00`); d.setDate(d.getDate() + 1);
+    $('#bookingCheckOut').value = d.toISOString().slice(0, 10);
+  }
+  updateBookingHints();
+});
+$('#bookingClear')?.addEventListener('click', () => {
+  const existing = $('#bookingBox').dataset.existing;
+  fillBookingForm(null, $('#activityTag').value);
+  $('#bookingBox').dataset.existing = existing;   // ยังจำว่าเคยมี → บันทึก = ลบ
+  $('#bookingBox').open = true;
+  updateBookingHints();
+});
+/* วันที่ของจุดแวะเปลี่ยน = เช็กอินของที่พักตามไปด้วย (ถ้ายังไม่ได้ตั้งเอง) */
+$('#activityDay')?.addEventListener('change', () => {
+  const date = editorSelectedDate();
+  if (date && $('#bookingKind').value === 'HOTEL' && !$('#bookingBox').dataset.existing) {
+    $('#bookingCheckIn').value = date; updateBookingHints();
+  }
+});
+
 function openPlanEditor(activity = null, newDate = '') {
+  /* 🔴 ตรวจซ้ำในตัวจัดการ ไม่ใช่พึ่งแค่ปุ่มที่ถูก disable — เข้าฟอร์มได้หลายทาง
+     (ปุ่มหัวรายการ · ท้ายรายการ · เพิ่มวัน · กดที่รายการเพื่อแก้)
+     ถ้าไม่ตรวจ ผู้ร่วมทริปจะกรอกจนเสร็จแล้วไปเจอ 403 ตอนกดบันทึก */
+  if (blockedByClose('plan')) return;
   editingActivityId = activity?.id || null;
   /* หัวเรื่องต้องบอกปลายทางเสมอ — ทั้งสามปุ่มเปิดฟอร์มเดียวกัน ต่างกันแค่วันที่
      ตั้งไว้ให้ ถ้าหัวเรื่องเหมือนกันหมด คนกด "เพิ่มวัน" จะไม่รู้ว่ากำลังสร้างวันใหม่ */
+  /* 🔴 บอก "วันที่" เสมอ ไม่ใช่แค่ Day 01 (North 2026-09-07)
+     "Day 03" ไม่ได้บอกอะไรเลยว่าคือวันไหนของจริง คนต้องเลื่อนไปดูแท็บวันเทียบเอง
+     ทุกที่ที่ให้เลือก/บอกวัน ต้องมีวันที่จริงกำกับ */
+  const activeDayRow = planDays.find(day => day.id === activePlanDayId);
   const dayLabel = newDate
     ? `วันใหม่ · ${thaiDate(newDate)}`
-    : `Day ${String(planDays.find(day => day.id === activePlanDayId)?.day ?? 1).padStart(2, '0')}`;
+    : `${thaiDate(activeDayRow?.date) || `Day ${String(activeDayRow?.day ?? 1).padStart(2, '0')}`}`;
   $('#planEditorTitle').textContent = activity
     ? `แก้ไข ${activity.name}`
     : `เพิ่มสถานที่ใน ${dayLabel}`;
   /* วันในแผนเกิดจากวันที่ของจุดแวะ ไม่มีตาราง "วัน" แยกต่างหาก
      "เพิ่มวัน" จึงคือการเพิ่มตัวเลือกวันใหม่เข้ามาชั่วคราว แล้วรอให้บันทึกจุดแรก
      ของวันนั้น วันถึงจะมีจริง — ถ้าสร้างวันเปล่าไว้ก่อนจะได้วันร้างที่ลบไม่ได้ */
-  $('#activityDay').innerHTML = planDays.map(day => `<option value="${day.id}">Day ${day.day} · ${day.city}</option>`).join('')
+  $('#activityDay').innerHTML = planDays.map(day =>
+    `<option value="${day.id}">${dayOptionLabel(day)}</option>`).join('')
     + (newDate ? `<option value="new:${newDate}">วันใหม่ · ${thaiDate(newDate)}</option>` : '');
   $('#activityDay').value = newDate ? `new:${newDate}`
     : (activity
@@ -6067,11 +6876,24 @@ function openPlanEditor(activity = null, newDate = '') {
   $('#activityName').value = activity?.name || '';
   setTimeValue('activityTime', activity?.time === '—' ? '' : (activity?.time || '09:00'));
   setTimeValue('activityEndTime', activity?.endTime || '');
-  $('#activityTag').value = activity?.tag === 'รอจัดแผน' ? 'กิจกรรมย่อย' : (activity?.tag || 'กิจกรรมย่อย');
+  /* 🔴 ค่าที่ไม่ตรงกับตัวเลือกสักอัน ทำให้ select กลายเป็นช่องว่างเปล่าเงียบ ๆ
+     (เกิดจริง: ฐานส่ง 'สถานที่' แต่ลิสต์เขียนว่า 'สถานที่หลัก' — North เจอ 2026-09-07)
+     ข้อมูลเก่าจากรุ่นไหนก็ได้ จึงต้องกันไว้ตรงนี้ด้วย ไม่ใช่แค่แก้ที่ api.js */
+  const tagOptions = [...$('#activityTag').options].map(option => option.value);
+  const wantTag = activity?.tag === 'รอจัดแผน' ? 'กิจกรรมย่อย' : (activity?.tag || 'กิจกรรมย่อย');
+  $('#activityTag').value = tagOptions.includes(wantTag) ? wantTag : 'สถานที่หลัก';
   $('#activityCost').value = activity?.plannedCost == null ? '' : String(activity.plannedCost);
+  fillCurrencySelect(activity?.plannedCurrency || '');
   $('#activityMapcode').value = activity?.mapcode || '';
-  setTimeValue('activityOpen', activity?.openTime || '');
-  setTimeValue('activityClose', activity?.closeTime || '');
+  /* ที่พัก: เวลาตั้งต้น 15:00 = เวลาไปถึงโดยประมาณ (North 2026-09-15) เฉพาะของใหม่ */
+  if (!activity && $('#activityTag').value === 'ที่พัก') setTimeValue('activityTime', '15:00');
+  fillBookingForm(activity?.booking || null, activity?.tag || $('#activityTag').value);
+  /* 🔴 ค่าตั้งต้นของ "เวลาเปิด–ปิด" ใส่ให้เฉพาะตอนเพิ่มสถานที่ใหม่ (North 2026-09-07)
+     ของเดิมที่บันทึกไว้แล้วต้องเคารพค่าเดิมเสมอ — ถ้าใครตั้งใจล้างเวลาเปิดปิดทิ้ง
+     แล้วเรากรอก 09:00–18:00 กลับให้ทุกครั้งที่เปิดฟอร์ม ก็เท่ากับลบเจตนาเขา */
+  const brandNew = !activity;
+  setTimeValue('activityOpen', activity?.openTime || (brandNew ? '09:00' : ''));
+  setTimeValue('activityClose', activity?.closeTime || (brandNew ? '18:00' : ''));
   const closed = new Set(activity?.closedDays || []);
   $$('#activityClosedDays input').forEach(box => { box.checked = closed.has(Number(box.value)); });
   $('#activityDetail').value = activity?.detail || '';
@@ -6108,6 +6930,9 @@ function savePlanItemLive() {
   const name = $('#activityName').value.trim();
   if (!name) { $('#planEditorError') && ($('#planEditorError').textContent = 'ตั้งชื่อสถานที่ก่อน'); return; }
 
+  /* บันทึกเสร็จให้ยืนอยู่วันที่ของสถานที่นั้น ไม่ใช่วันที่เปิดฟอร์มมา
+     (ในฟอร์มเปลี่ยนวันได้ · และ 'new:' คือวันที่ยังไม่มีจุดแวะเลย) */
+  focusPlanDate(targetDay?.date || '');
   submitLive('#planEditorError', () => TripApi.saveStop({
     id: editingActivityId || '',
     dayDate: targetDay?.date || '',
@@ -6119,9 +6944,11 @@ function savePlanItemLive() {
     icon: activityIcon,
     highlight: $('#activityHighlight').value.trim(),
     // ช่อง "งบ" เคยกรอกได้แต่ไม่เคยถูกบันทึกที่ไหนเลย — ตอนนี้ลงฐานจริงแล้ว
-    plannedCost: $('#activityCost').value.replace(/\D/g, ''),
-    plannedCurrency: tripCurrencies.find(c => !c.base)?.code || tripCurrencies[0]?.code || '',
+    // รับทศนิยมได้ (ราคาโรงแรม 8,141.80) · ตัดจุลภาคกับช่องว่างทิ้ง
+    plannedCost: $('#activityCost').value.replace(/[^\d.]/g, ''),
+    plannedCurrency: $('#activityCurrency').value || tripCurrencies.find(c => !c.base)?.code || tripCurrencies[0]?.code || '',
     mapcode: $('#activityMapcode').value.trim(),
+    booking: readBookingForm(),
     openTime: timeValue('activityOpen'),
     closeTime: timeValue('activityClose'),
     closedDays: $$('#activityClosedDays input:checked').map(box => Number(box.value))
@@ -7402,12 +8229,20 @@ function applyLiveState(state) {
   postingDate = state.postingDate;
   liveTripEndDate = state.tripEndDate || '';
   liveCanManage = Boolean(state.canManageTrip);
+  liveCanManageMembers = Boolean(state.canManageMembers);
+  liveCanManageSharedSettings = Boolean(state.canManageSharedSettings);
   /* มีจุดแวะจริงถึงจะทับแผนตัวอย่าง — ทริปที่ยังไม่ได้วางแผนจะได้ไม่เห็นหน้าว่างเปล่า
      planDays เป็น const จึงต้องเปลี่ยนของในอาร์เรย์เดิม */
   if (state.planDays.length) {
+    /* 🔴 อย่าเด้งกลับวันแรก (North 2026-09-07)
+       ทุกครั้งที่บันทึกอะไรสักอย่าง submitLive จะโหลดของจริงกลับมาแล้ววิ่งผ่าน
+       ตรงนี้ — เดิมบรรทัดล่างสุดโยน activePlanDayId กลับไปเป็นวันแรกตายตัว
+       ผลคือแก้สถานที่ของวันที่ 5 เสร็จปุ๊บจอเด้งไปวันที่ 1 ทุกที ต้องเลื่อน
+       แท็บกลับมาเองใหม่ทุกรอบ · ตอนนี้ยึดวันเดิมไว้ก่อนเสมอ */
+    const stayDate = takePlanFocusDate() || planDays.find(day => day.id === activePlanDayId)?.date || '';
     planDays.length = 0;
     planDays.push(...state.planDays);
-    activePlanDayId = planDays[0].id;
+    activePlanDayId = pickPlanDayId(stayDate);
   }
   if (state.tripCurrencies.length) tripCurrencies = state.tripCurrencies;
   ledgerCategories = state.ledgerCategories || [];
@@ -7458,7 +8293,9 @@ function applyLiveState(state) {
      ของข้อมูลตัวอย่าง · ต้องเรียกก่อน renderMoneyStrip เพราะ "ใช้วันนี้" อ่าน
      dayId จาก journeyStops[actualJourneyIndex] ถ้ายังเป็นของเก่าจะได้ ฿0 เสมอ */
   buildLiveJourney();
-  renderJourneyPreview(actualJourneyIndex);   // เรียก renderTodayWeather ของวันนั้นให้ในตัว
+  /* buildLiveJourney เลือกไว้แล้วว่าควรยืนที่ช่องไหน (วันที่เพิ่งดูอยู่ ถ้ายังอยู่
+     ไม่งั้นค่อยเป็น "วันนี้") — ส่งค่านั้นต่อ อย่าบังคับกลับเป็น actual ทุกรอบ */
+  renderJourneyPreview(previewJourneyIndex);   // เรียก renderTodayWeather ของวันนั้นให้ในตัว
   renderPresence(); // renderJourneyPreview เพิ่งระบุ Stop ที่ปุ่มเช็กอินต้องใช้
   renderMoneyStrip();
   refreshTripMap();   // หมุดต้องเป็นของทริปจริง ไม่ใช่ของแผนตัวอย่างที่ค้างอยู่

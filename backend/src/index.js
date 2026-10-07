@@ -312,9 +312,23 @@ export default {
 
         if (request.method === 'GET') {
           const statusFilter = url.searchParams.get('status');
-          const startDate = url.searchParams.get('startDate');
-          const endDate = url.searchParams.get('endDate');
+          let startDate = url.searchParams.get('startDate');
+          let endDate = url.searchParams.get('endDate');
           const search = url.searchParams.get('search');
+          /* 2026-09-08 · ฟรีเทียร์ D1 เต็ม (5M rows_read/วัน) — หน้าประวัติส่ง ?month= มาตลอด
+             แต่ฝั่งนี้ไม่เคยอ่าน จึงดึง 14,143 รายการ + รายการย่อยทั้งหมดทุกครั้งที่เปิดหน้า
+             · รองรับ month=YYYY-MM (แปลงเป็นช่วงวันที่ให้ index ใช้ได้)
+             · ไม่ระบุช่วง/คำค้น → จำกัดเฉพาะ 500 รายการล่าสุด (limit= ปรับได้ · limit=0 = ทั้งหมด) */
+          const monthParam = url.searchParams.get('month');
+          if (monthParam && /^\d{4}-\d{2}$/.test(monthParam) && !startDate && !endDate) {
+            startDate = `${monthParam}-01`;
+            const [yy, mm] = monthParam.split('-').map(Number);
+            endDate = `${mm === 12 ? yy + 1 : yy}-${String(mm === 12 ? 1 : mm + 1).padStart(2, '0')}-01`;
+            endDate = new Date(new Date(endDate) - 86400000).toISOString().substring(0, 10);
+          }
+          const limitParam = url.searchParams.get('limit');
+          const noRange = !startDate && !endDate && !search;
+          const limit = limitParam !== null ? Math.max(0, parseInt(limitParam, 10) || 0) : (noRange ? 500 : 0);
           
           let query = `
             SELECT 
@@ -351,6 +365,17 @@ export default {
             params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
           }
 
+          if (limit > 0) {
+            /* จำกัดที่ "รายการ" ไม่ใช่ "แถวย่อย" — ไม่งั้นรายการที่มีหลายแถวย่อยจะถูกตัดขาดกลางคัน */
+            query += ` AND t.transaction_id IN (
+              SELECT t2.transaction_id FROM Transactions t2
+              JOIN Accounts a2 ON t2.account_id = a2.account_id
+              JOIN UserPermissions up2 ON a2.entity_id = up2.entity_id
+              WHERE up2.user_id = ?${statusFilter ? ' AND t2.status = ?' : ''}
+              ORDER BY t2.date DESC, t2.created_at DESC LIMIT ${limit})`;
+            params.push(userId);
+            if (statusFilter) params.push(statusFilter);
+          }
           query += ` ORDER BY t.date DESC, t.created_at DESC`;
           const txs = await env.DB.prepare(query).bind(...params).all();
 
@@ -2601,10 +2626,10 @@ export default {
             WHERE a.entity_id IN (${ph})
               AND t.status = 'CONFIRMED'
               AND IFNULL(d.wht,0) > 0
-              AND substr(t.date,1,7) = ?
+              AND t.date >= ? AND t.date < ?
               AND ${direction === 'withheld' ? 'd.amount < 0' : 'd.amount >= 0'}
             ORDER BY t.date DESC`
-        ).bind(...allowed, month).all();
+        ).bind(...allowed, `${month}-01`, (() => { const [yy, mm] = month.split('-').map(Number); return `${mm === 12 ? yy + 1 : yy}-${String(mm === 12 ? 1 : mm + 1).padStart(2, '0')}-01`; })()).all();
 
         const list = rows.results.map(r => ({
           date: (r.date || '').substring(0, 10),
@@ -2630,12 +2655,17 @@ export default {
         if (!u) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
         const fid    = u.family_id;
-        const month  = url.searchParams.get('month') || new Date().toISOString().substring(0, 7); // YYYY-MM
-        const year   = month.substring(0, 4);
-        // ตัวกรองหลัก = Member (สมาชิก) ไม่ใช่ Company
+        /* ช่วงเวลา (2026-09-08 · North: "หน้านี้ไม่แสดงผลลัพธ์")
+           เดิมดูได้ทีละเดือนเท่านั้น และเริ่มที่เดือนปัจจุบันเสมอ — ข้อมูลจริงที่นำเข้า
+           จบที่ พ.ย. 2025 หน้าแรกจึงว่างเปล่าทั้งที่มีรายการ 14,143 รายการ
+           · period = month (ค่าเริ่มต้น) | year | all
+           · month=latest → เดือนล่าสุดที่มีรายการจริง (ใช้ตอนเปิดหน้าครั้งแรก) */
+        const period = ['month', 'year', 'all'].includes(url.searchParams.get('period')) ? url.searchParams.get('period') : 'month';
+        let   month  = url.searchParams.get('month') || new Date().toISOString().substring(0, 7); // YYYY-MM
+        // ตัวกรองหลัก = Member (สมาชิก) ไม่ใช่ Company (ประกาศไว้ตรงนี้ก่อน เพราะ scope ใช้หา latest)
+        const member = url.searchParams.get('member') || url.searchParams.get('entity') || 'ALL';
         //   Member ↔ Company เป็น many-to-many ผ่าน UserPermissions
         //   1 สมาชิกเป็นเจ้าของหลายบริษัท หรือหลายสมาชิกร่วมกันเป็นเจ้าของบริษัทเดียวได้
-        const member = url.searchParams.get('member') || url.searchParams.get('entity') || 'ALL';
 
         // Entity ที่ผู้ดูปัจจุบันมีสิทธิ์เห็น (ขอบเขตความปลอดภัย)
         const permRows = await env.DB.prepare(
@@ -2667,19 +2697,42 @@ export default {
         }
         const ph = scope.map(() => '?').join(',');
 
+        // ── 0) ช่วงข้อมูลที่มีจริง + ตัวกรองวันที่ตามช่วงที่เลือก ──
+        const rangeRow = await env.DB.prepare(
+          `SELECT MIN(t.date) AS first_date, MAX(t.date) AS last_date, COUNT(*) AS n
+             FROM Transactions t JOIN Accounts a ON t.account_id = a.account_id
+            WHERE a.entity_id IN (${ph}) AND t.status = 'CONFIRMED'`
+        ).bind(...scope).first();
+        const range = { first_date: (rangeRow?.first_date || '').substring(0, 10) || null,
+                        last_date:  (rangeRow?.last_date  || '').substring(0, 10) || null,
+                        count: rangeRow?.n || 0 };
+        if (month === 'latest') month = range.last_date ? range.last_date.substring(0, 7) : new Date().toISOString().substring(0, 7);
+        const year = month.substring(0, 4);
+        // dateWhere/dateArgs ใช้กับทุก query ที่จำกัดช่วงเวลา
+        /* ใช้ช่วง >= / < แทน substr() เพื่อให้ idx_transactions_date ทำงาน — substr() บังคับสแกนทั้งตาราง
+           (14k แถวต่อ query × หลาย query ต่อการเปิดหน้า = ฟรีเทียร์ D1 เต็มใน 1 วัน · 2026-09-08) */
+        const nextMonth = (() => { const [yy, mm] = month.split('-').map(Number); return `${mm === 12 ? yy + 1 : yy}-${String(mm === 12 ? 1 : mm + 1).padStart(2, '0')}`; })();
+        const dateWhere = period === 'all' ? '' : ' AND t.date >= ? AND t.date < ?';
+        const dateArgs  = period === 'all' ? [] : (period === 'year' ? [`${year}-01-01`, `${Number(year) + 1}-01-01`] : [`${month}-01`, `${nextMonth}-01`]);
+
         // ── 1) บัญชี: แยก BANK/CASH กับ CREDIT ──
         // balance คำนวณสดจาก SUM(Transactions.total_amount) เหมือน /api/accounts
         // (คอลัมน์ Accounts.balance ไม่ได้ถูกอัปเดตที่ไหนเลย ใช้ไม่ได้)
+        /* รวมยอด/วันล่าสุด/จำนวน ด้วยการอ่าน Transactions รอบเดียว (GROUP BY) แทน subquery ต่อบัญชี 3 ชุด */
         const accounts = await env.DB.prepare(
           `SELECT a.account_id, a.name, a.bank_name,
-                  ROUND(COALESCE((SELECT SUM(t.total_amount) FROM Transactions t
-                                   WHERE t.account_id = a.account_id AND t.status = 'CONFIRMED'), 0), 2) AS balance,
+                  ROUND(COALESCE(s.bal, 0), 2) AS balance,
                   IFNULL(a.account_type,'BANK') AS account_type,
                   IFNULL(a.credit_limit,0)      AS credit_limit,
                   a.statement_day, a.due_day,
-                  a.entity_id, e.name AS entity_name
+                  a.entity_id, e.name AS entity_name,
+                  substr(s.last_date, 1, 10) AS last_date,
+                  IFNULL(s.n, 0) AS tx_count
              FROM Accounts a
              LEFT JOIN Entities e ON a.entity_id = e.entity_id
+             LEFT JOIN (SELECT t.account_id, SUM(t.total_amount) AS bal, MAX(t.date) AS last_date, COUNT(*) AS n
+                          FROM Transactions t WHERE t.status = 'CONFIRMED' GROUP BY t.account_id) s
+                    ON s.account_id = a.account_id
             WHERE a.entity_id IN (${ph})`
         ).bind(...scope).all();
 
@@ -2690,7 +2743,7 @@ export default {
           `SELECT t.transaction_id, t.date, t.statement_desc,
                   d.detail_id, d.amount, d.fee, d.wht, d.note,
                   d.category_id, c.name AS category_name,
-                  cp.behavior, cp.sub_behavior,
+                  cp.behavior, cp.sub_behavior, d.type AS dtype,
                   d.entity_id, e.name AS entity_name,
                   d.contact_id, co.name AS contact_name,
                   t.created_by_user_id AS user_id, ux.name AS user_name
@@ -2703,13 +2756,18 @@ export default {
              LEFT JOIN Contacts  co  ON d.contact_id  = co.contact_id
              LEFT JOIN Users     ux  ON t.created_by_user_id = ux.user_id
             WHERE a.entity_id IN (${ph})
-              AND t.status = 'CONFIRMED'
-              AND substr(t.date,1,7) = ?`
-        ).bind(...scope, month).all();
+              AND t.status = 'CONFIRMED'${dateWhere}`
+        ).bind(...scope, ...dateArgs).all();
 
+        /* จัดฝั่งรับ/จ่าย: ดู d.type ก่อน (INCOME · EXPENSE · TRANSFER · CREDIT_AR · DEBIT_AR)
+           เดิมดูแค่ Caption behavior → เงินโอนระหว่างบัญชี ยอดยกมา บัญชีพัก (Caption Asset)
+           ถูกนับเป็น "รายรับ" ทั้งหมด และเงินกู้ (Liability) ถูกนับเป็น "รายจ่าย"
+           ข้อมูลจริงมีรายการโอน 2,462 แถว — ถ้าไม่แยก ตัวเลขรายรับจะบวมหลายล้าน
+           แถวเก่าที่ไม่มี type ยังใช้กติกาเดิม (behavior) เหมือนเดิม */
         const income = [], expense = [], investment = [];
         for (const r of detailRows.results) {
           const isInv = r.sub_behavior === 'INVESTMENT';
+          const typ = String(r.dtype || '').toUpperCase();
           const row = {
             detail_id: r.detail_id, date: r.date, amount: r.amount,
             title: r.note || r.category_name || r.statement_desc || '-',
@@ -2719,6 +2777,9 @@ export default {
             user_id: r.user_id, user_name: r.user_name || '-'
           };
           if (isInv) investment.push(row);
+          else if (typ === 'INCOME' || typ === 'CREDIT_AR') income.push(row);
+          else if (typ === 'EXPENSE' || typ === 'DEBIT_AR') expense.push(row);
+          else if (typ === 'TRANSFER') continue;                 // โอน/ยกมา/บัญชีพัก/กู้-คืน ไม่ใช่รับหรือจ่าย
           else if (r.behavior === 'REVENUE' || r.behavior === 'ASSET') income.push(row);
           else if (r.behavior === 'EXPENSE' || r.behavior === 'LIABILITY') expense.push(row);
         }
@@ -2731,21 +2792,22 @@ export default {
              JOIN Transactions t ON d.transaction_id = t.transaction_id
              JOIN Categories c   ON d.category_id = c.category_id
              JOIN Captions  cp   ON c.caption_id  = cp.type_id
-            WHERE t.status = 'CONFIRMED'
-              AND substr(t.date,1,7) = ?
+            WHERE t.status = 'CONFIRMED'${dateWhere}
               AND cp.behavior IN ('EXPENSE','LIABILITY')
               AND IFNULL(cp.sub_behavior,'') != 'INVESTMENT'
+              AND IFNULL(d.type,'') NOT IN ('TRANSFER','INCOME','CREDIT_AR')
               AND c.family_id = ?
             GROUP BY d.category_id`
-        ).bind(month, fid).all();
+        ).bind(...dateArgs, fid).all();
 
-        const budgetRows = await env.DB.prepare(
-          `SELECT category_id, SUM(amount) AS budget
-             FROM CategoryBudgets
-            WHERE family_id = ?
-              AND ((period_type='MONTHLY' AND period = ?) OR (period_type='YEARLY' AND period = ?))
-            GROUP BY category_id`
-        ).bind(fid, month, year).all().catch(() => ({ results: [] }));
+        const budgetRows = period === 'all' ? { results: [] } : await env.DB.prepare(
+          period === 'year'
+            ? `SELECT category_id, SUM(amount) AS budget FROM CategoryBudgets
+                WHERE family_id = ? AND period_type='YEARLY' AND period = ? GROUP BY category_id`
+            : `SELECT category_id, SUM(amount) AS budget FROM CategoryBudgets
+                WHERE family_id = ? AND ((period_type='MONTHLY' AND period = ?) OR (period_type='YEARLY' AND period = ?))
+                GROUP BY category_id`
+        ).bind(...(period === 'year' ? [fid, year] : [fid, month, year])).all().catch(() => ({ results: [] }));
 
         const budMap = {};
         for (const b of budgetRows.results) budMap[b.category_id] = b.budget;
@@ -2780,6 +2842,7 @@ export default {
               AND t.status = 'CONFIRMED'
               AND cp.behavior IN ('ASSET','LIABILITY')
               AND IFNULL(cp.sub_behavior,'') != 'INVESTMENT'
+              AND NOT (cp.behavior = 'ASSET' AND IFNULL(d.type,'') = 'TRANSFER')
             GROUP BY cp.behavior, party, d.entity_id
            HAVING ABS(remaining) > 0.01`
         ).bind(...scope).all();
@@ -2815,9 +2878,9 @@ export default {
             WHERE a.entity_id IN (${ph})
               AND t.status = 'CONFIRMED'
               AND IFNULL(d.wht,0) > 0
-              AND substr(t.date,1,4) = ?
+              AND t.date >= ? AND t.date < ?
             ORDER BY t.date DESC`
-        ).bind(...scope, year).all();
+        ).bind(...scope, `${year}-01-01`, `${Number(year) + 1}-01-01`).all();
 
         const whtIn = [], whtOut = [];
         for (const r of whtRows.results) {
@@ -2842,7 +2905,7 @@ export default {
         const plans = planRows.results.filter(p => member === 'ALL' || !p.entity_id || scope.includes(p.entity_id));
 
         return new Response(JSON.stringify({
-          month, member,
+          month, period, range, member,
           members,
           entities: permRows.results,
           accounts: accounts.results,

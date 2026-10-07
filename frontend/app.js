@@ -79,7 +79,20 @@ function selectIcon(icon) {
 // app.js
 
 // API Base URL - ชี้ไปยัง Cloudflare Worker ของคุณที่ deploy สำเร็จแล้ว
-const API_BASE = "https://record-revenue.9nimz.workers.dev";
+/* API_BASE (2026-09-08): เปิดจาก localhost → ยิงไปที่ `npx wrangler dev` (พอร์ต 8787) อัตโนมัติ
+   ใช้ตอน D1 บน Cloudflare ถูกตัด (เกินฟรีเทียร์) หรือจะทดสอบโดยไม่แตะข้อมูลจริง
+   · ?api=http://... ก็ได้ (จำไว้แค่แท็บนั้น — sessionStorage — เพื่อไม่ให้ค้างไปโดนของจริง) */
+const API_BASE = (() => {
+    const PROD = "https://record-revenue.9nimz.workers.dev";
+    try {
+        const q = new URLSearchParams(location.search).get('api');
+        if (q) sessionStorage.setItem('api_base_override', q);
+        const o = sessionStorage.getItem('api_base_override');
+        if (o) return o.replace(/\/$/, '');
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787';
+    } catch (e) { /* sessionStorage ถูกปิด — ใช้ของจริง */ }
+    return PROD;
+})();
 
 /* ── แนบ session token ให้ทุกคำขอที่ยิงไปที่ API ────────────────────────
    ในไฟล์นี้มีจุดที่เรียก fetch พร้อม header x-user-id อยู่ 71 จุด การไล่แก้
@@ -1420,6 +1433,8 @@ async function updatePendingBadge() {
 const DashState = {
     month: null,             // '01'..'12'
     year: null,              // '2026'
+    period: 'month',         // 'month' | 'year' | 'all'  (2026-09-08)
+    range: null,             // {first_date,last_date,count} ช่วงข้อมูลที่มีจริง
     member: 'ALL',           // 'ALL' or user_id — ตัวกรองหลักคือ "สมาชิก" ไม่ใช่บริษัท
     data: null,              // last /api/dashboard/summary response
     openWht: { received: null, withheld: null },  // open month key 'YYYY-MM' per direction
@@ -1445,6 +1460,20 @@ function dv2MonthLabel(moStr) {
     if (!moStr) return '-';
     const [y, m] = moStr.split('-');
     return `${DV2_MONTH_TH[parseInt(m, 10) - 1]} ${y}`;
+}
+function dv2DateTH(iso) {
+    if (!iso) return '-';
+    const [y, m, d] = String(iso).substring(0, 10).split('-');
+    return `${parseInt(d, 10)} ${DV2_MONTH_TH[parseInt(m, 10) - 1]} ${y}`;
+}
+/* ป้ายช่วงเวลาที่กำลังดู — ใช้ทั้งแถบบน การ์ด และหน้าขยาย */
+function dv2PeriodLabel() {
+    if (DashState.period === 'all') {
+        const r = DashState.range || {};
+        return r.first_date ? `ทั้งหมด · ${dv2DateTH(r.first_date)} – ${dv2DateTH(r.last_date)}` : 'ทั้งหมด';
+    }
+    if (DashState.period === 'year') return `ปี ${DashState.year}`;
+    return dv2MonthLabel(`${DashState.year}-${DashState.month}`);
 }
 function dv2OwnerClass(entityId) {
     if (!entityId) return 'dv2-own-0';
@@ -1503,23 +1532,32 @@ function dv2StopSign(id) {
 
 async function loadDashboardV2Data() {
     const headers = { 'x-user-id': encodeURIComponent(getUserIdHeader()) };
-    const now = new Date();
-    if (!DashState.month) {
-        DashState.month = String(now.getMonth() + 1).padStart(2, '0');
-        DashState.year = String(now.getFullYear());
-    }
-    const monthStr = `${DashState.year}-${DashState.month}`;
-    const res = await fetch(`${API_BASE}/api/dashboard/summary?month=${monthStr}&member=${encodeURIComponent(DashState.member)}`, { headers });
+    /* เปิดครั้งแรก: ขอ "เดือนล่าสุดที่มีรายการ" แทนเดือนปัจจุบัน (2026-09-08)
+       เดิมเริ่มที่เดือนปัจจุบันเสมอ → ข้อมูลจริงจบ พ.ย. 2025 หน้าแรกเลยว่างเปล่า
+       ทั้งที่มีรายการหมื่นกว่ารายการ North เข้าใจว่าระบบไม่แสดงผล */
+    const monthStr = DashState.month ? `${DashState.year}-${DashState.month}` : 'latest';
+    const res = await fetch(`${API_BASE}/api/dashboard/summary?month=${monthStr}&period=${DashState.period}&member=${encodeURIComponent(DashState.member)}`, { headers });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     DashState.data = data;
+    DashState.range = data.range || null;
+    if (data.month && /^\d{4}-\d{2}$/.test(data.month)) {
+        DashState.year = data.month.substring(0, 4);
+        DashState.month = data.month.substring(5, 7);
+    }
 }
 
 function dv2SetMember(id) { DashState.member = id; loadDashboard(); }
+function dv2SetPeriod(p) { DashState.period = p; loadDashboard(); }
 function dv2ChangeMonth(delta) {
-    let m = parseInt(DashState.month, 10) + delta;
+    if (DashState.period === 'all') return;
+    let m = parseInt(DashState.month, 10);
     let y = parseInt(DashState.year, 10);
-    if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+    if (DashState.period === 'year') { y += delta; }
+    else {
+        m += delta;
+        if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+    }
     DashState.month = String(m).padStart(2, '0');
     DashState.year = String(y);
     loadDashboard();
@@ -1535,14 +1573,15 @@ function dv2Hero() {
     const tot = sIn + sOut;
     const pIn = tot ? (sIn / tot * 100) : 50;
     const pOut = 100 - pIn;
-    const mLabel = dv2MonthLabel(`${DashState.year}-${DashState.month}`);
+    const mLabel = dv2PeriodLabel();
     const memberChips = [`<span class="dv2-chip${DashState.member==='ALL'?' on':''}" onclick="dv2SetMember('ALL')">ทั้งครอบครัว</span>`]
         .concat((d.members || []).map(m => `<span class="dv2-chip${DashState.member===m.user_id?' on':''}" onclick="dv2SetMember('${m.user_id}')">${m.name}</span>`)).join('');
     return `<div class="dv2-hero">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:13px">
         <div><div class="dv2-sm">ยอดเงินคงเหลือรวม · เงินฝาก/เงินสด ${DashState.member==='ALL'?'· ทั้งครอบครัว':''}</div>
           <div class="dv2-big">${dv2F(sBal)}</div>
-          <div class="dv2-xs" style="margin-top:6px">กระแสเงินสด ${mLabel} · <b>${dv2F(sIn-sOut)}</b></div></div>
+          <div class="dv2-xs" style="margin-top:6px">กระแสเงินสด ${mLabel} · <b>${dv2F(sIn-sOut)}</b></div>
+          <div class="dv2-xs" style="margin-top:3px">📅 ข้อมูลถึง <b>${dv2DateTH(d.range?.last_date)}</b>${d.range?.count ? ` · ${d.range.count.toLocaleString('en-US')} รายการ` : ''}</div></div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">${memberChips}</div>
       </div>
       <div class="dv2-hgauge"><div class="dv2-hseg dv2-hin" style="width:${pIn}%"><span>รับ ${dv2F(sIn)}</span></div>
@@ -1551,6 +1590,25 @@ function dv2Hero() {
         <span>▲ รับเข้า ${pIn.toFixed(1)}%</span><span>${pOut.toFixed(1)}% จ่ายออก ▼</span></div></div>`;
 }
 
+/* สรุปตามหมวดหมู่ (2026-09-08 · North: "สินทรัพย์ investment รายรับ รายจ่าย อยากให้สรุปมาเป็นแบบ
+   Category ตอนนี้เหมือนแยกรายการออกมา") — การ์ดเดิมไล่รายการทีละแถว พอมีเดือนละหลายร้อยแถว
+   อ่านไม่รู้เรื่อง · ตอนนี้รวมเป็นหมวดก่อน กดที่หมวดในหน้าขยายถึงจะเห็นรายการข้างใน */
+function dv2ByCat(rows, valueFn) {
+    const map = new Map();
+    for (const x of rows || []) {
+        const key = x.category_id || x.category_name || '-';
+        if (!map.has(key)) map.set(key, { category_id: key, name: x.category_name || x.category_id || '-', n: 0, sum: 0, items: [] });
+        const g = map.get(key);
+        g.n += 1; g.sum += valueFn ? valueFn(x) : (Number(x.amount) || 0); g.items.push(x);
+    }
+    return [...map.values()].sort((a, b) => Math.abs(b.sum) - Math.abs(a.sum));
+}
+function dv2CatLI(groups, cls) {
+    return groups.map(g => `<div class="dv2-item">
+      <div class="dv2-itxt"><div class="dv2-iname">${g.name}</div>
+        <div class="dv2-imeta">${g.n} รายการ</div></div>
+      <div class="dv2-iamt ${cls}">${dv2F(g.sum)}</div></div>`).join('');
+}
 function dv2LI(arr, cls) {
     return arr.map(x => `<div class="dv2-item">
       <div class="dv2-itxt"><div class="dv2-iname">${x.title}</div>
@@ -1559,25 +1617,32 @@ function dv2LI(arr, cls) {
 }
 
 function dv2Income() {
-    const a = dv2Desc(DashState.data.income, x => x.amount);
-    return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">📥</span>รายรับ</span>
-      <span class="dv2-xs">${a.length} รายการ</span></h3>
+    const a = DashState.data.income || [];
+    const g = dv2ByCat(a, x => Number(x.amount) || 0);
+    return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">📥</span>รายรับ · ตามหมวด</span>
+      <span class="dv2-xs">${g.length} หมวด · ${a.length} รายการ</span><button class="dv2-zoombtn" onclick="dv2Zoom('income')" title="ขยายดูชัด ๆ">🔍</button></h3>
       <div class="dv2-mid dv2-pos" style="margin-bottom:9px">${dv2F(dv2Sum(a))}</div>
-      <div class="dv2-list">${a.length ? dv2LI(a,'dv2-pos') : '<div class="dv2-xs" style="text-align:center;padding:14px 0">ไม่มีรายการ</div>'}</div></div>`;
+      <div class="dv2-list">${g.length ? dv2CatLI(g,'dv2-pos') : '<div class="dv2-xs" style="text-align:center;padding:14px 0">ไม่มีรายการ</div>'}</div></div>`;
 }
 function dv2Expense() {
-    const a = dv2Desc(DashState.data.expense, x => x.amount);
-    return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">📤</span>รายจ่าย</span>
-      <span class="dv2-xs">${a.length} รายการ</span></h3>
-      <div class="dv2-mid dv2-neg" style="margin-bottom:9px">${dv2F(Math.abs(dv2Sum(a)))}</div>
-      <div class="dv2-list">${a.length ? dv2LI(a.map(x=>({...x,amount:Math.abs(x.amount)})),'dv2-neg') : '<div class="dv2-xs" style="text-align:center;padding:14px 0">ไม่มีรายการ</div>'}</div></div>`;
+    const a = DashState.data.expense || [];
+    const g = dv2ByCat(a, x => Math.abs(Number(x.amount) || 0));
+    return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">📤</span>รายจ่าย · ตามหมวด</span>
+      <span class="dv2-xs">${g.length} หมวด · ${a.length} รายการ</span><button class="dv2-zoombtn" onclick="dv2Zoom('expense')" title="ขยายดูชัด ๆ">🔍</button></h3>
+      <div class="dv2-mid dv2-neg" style="margin-bottom:9px">${dv2F(dv2Sum(a, x => Math.abs(x.amount)))}</div>
+      <div class="dv2-list">${g.length ? dv2CatLI(g,'dv2-neg') : '<div class="dv2-xs" style="text-align:center;padding:14px 0">ไม่มีรายการ</div>'}</div></div>`;
 }
 function dv2Avg() {
     const d = DashState.data;
-    const daysInMonth = new Date(parseInt(DashState.year), parseInt(DashState.month), 0).getDate();
+    let daysInMonth = new Date(parseInt(DashState.year), parseInt(DashState.month), 0).getDate();
     const today = new Date();
-    const isCurrentMonth = DashState.year === String(today.getFullYear()) && DashState.month === String(today.getMonth()+1).padStart(2,'0');
-    const dayOfMonth = isCurrentMonth ? today.getDate() : daysInMonth;
+    const isCurrentMonth = DashState.period === 'month' && DashState.year === String(today.getFullYear()) && DashState.month === String(today.getMonth()+1).padStart(2,'0');
+    let dayOfMonth = isCurrentMonth ? today.getDate() : daysInMonth;
+    // ดูทั้งปี/ทั้งหมด: เฉลี่ยตามจำนวนวันจริงของช่วงนั้น ไม่ใช่ 30 วัน
+    if (DashState.period === 'year') { const leap = (y => (y%4===0 && y%100!==0) || y%400===0)(parseInt(DashState.year)); daysInMonth = dayOfMonth = leap ? 366 : 365; }
+    if (DashState.period === 'all' && d.range?.first_date && d.range?.last_date) {
+        daysInMonth = dayOfMonth = Math.max(1, Math.round((new Date(d.range.last_date) - new Date(d.range.first_date)) / 86400000) + 1);
+    }
     const sOut = dv2Sum(d.expense, x => Math.abs(x.amount));
     const perDay = dayOfMonth ? sOut / dayOfMonth : 0;
     const worst = d.expense.length ? d.expense.reduce((m,x)=>Math.abs(x.amount)>Math.abs(m.amount)?x:m, d.expense[0]) : null;
@@ -1604,7 +1669,7 @@ function dv2Avg() {
 function dv2Stmt() {
     const a = dv2Desc((DashState.data.accounts||[]).filter(x=>x.account_type!=='CREDIT'), x=>x.balance);
     return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">🏦</span>Statement · เงินฝาก/เงินสด</span>
-      <span class="dv2-xs">${a.length} บัญชี</span></h3>
+      <span class="dv2-xs">${a.length} บัญชี</span><button class="dv2-zoombtn" onclick="dv2Zoom('stmt')" title="ขยายดูชัด ๆ">🔍</button></h3>
       <div class="dv2-mid dv2-accent" style="margin-bottom:9px">${dv2F(dv2Sum(a,x=>x.balance))}</div>
       <div class="dv2-list">${a.length ? a.map(x=>`<div class="dv2-item">
         <div class="dv2-itxt"><div class="dv2-iname"><span class="dv2-ico" style="font-size:.95rem">${x.account_type==='CASH'?'💵':'🏦'}</span> ${x.name}</div>
@@ -1616,7 +1681,7 @@ function dv2Credit() {
     const uTot = dv2Sum(a, x=>Math.abs(x.balance));
     const lTot = dv2Sum(a, x=>x.credit_limit||0);
     return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">💳</span>Credit Card · ยอดใช้ไป</span>
-      <span class="dv2-xs">${a.length} ใบ</span></h3>
+      <span class="dv2-xs">${a.length} ใบ</span><button class="dv2-zoombtn" onclick="dv2Zoom('credit')" title="ขยายดูชัด ๆ">🔍</button></h3>
       <div class="dv2-mid dv2-neg" style="margin-bottom:4px">${dv2F(uTot)}</div>
       <div class="dv2-xs" style="margin-bottom:9px">วงเงินรวม ${dv2F(lTot)} · ใช้ไป ${lTot?(uTot/lTot*100).toFixed(1):0}% · เหลือ ${dv2F(lTot-uTot)}</div>
       <div class="dv2-list">${a.length ? a.map(x=>{
@@ -1634,16 +1699,17 @@ function dv2Credit() {
       }).join('') : '<div class="dv2-xs" style="text-align:center;padding:14px 0">ยังไม่มีบัตรเครดิต</div>'}</div></div>`;
 }
 function dv2Invest() {
-    const a = dv2Desc(DashState.data.investment, x=>x.amount);
+    const a = DashState.data.investment || [];
+    const g = dv2ByCat(a);
     const tot = dv2Sum(a), pos = dv2Sum(a.filter(x=>x.amount>0)), neg = dv2Sum(a.filter(x=>x.amount<0));
-    return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">💎</span>Investment · เงินลงทุน</span>
-      <span class="dv2-xs">${a.length} รายการ</span></h3>
+    return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">💎</span>Investment · ตามหมวด</span>
+      <span class="dv2-xs">${g.length} หมวด · ${a.length} รายการ</span><button class="dv2-zoombtn" onclick="dv2Zoom('invest')" title="ขยายดูชัด ๆ">🔍</button></h3>
       <div class="dv2-mid ${tot>=0?'dv2-pos':'dv2-neg'}" style="margin-bottom:4px">${dv2F(tot)}</div>
-      <div class="dv2-xs" style="margin-bottom:9px">กำไร/ถือครอง ${dv2F(pos)} · ขาดทุน ${dv2F(neg)}</div>
-      <div class="dv2-list">${a.length ? a.map(x=>`<div class="dv2-item">
-        <div class="dv2-itxt"><div class="dv2-iname"><span class="dv2-ico" style="font-size:.95rem">${x.amount>=0?'📈':'📉'}</span> ${x.category_name||x.title}</div>
-          <div class="dv2-imeta">${x.title||''}${dv2UserTag(x.user_id, x.user_name)}</div></div>
-        <div class="dv2-iamt ${x.amount>=0?'dv2-pos':'dv2-neg'}">${dv2F(x.amount)}</div></div>`).join('') : '<div class="dv2-xs" style="text-align:center;padding:14px 0">ยังไม่มีเงินลงทุน</div>'}</div></div>`;
+      <div class="dv2-xs" style="margin-bottom:9px">เงินกลับเข้า ${dv2F(pos)} · เงินออกไปลงทุน ${dv2F(neg)}</div>
+      <div class="dv2-list">${g.length ? g.map(x=>`<div class="dv2-item">
+        <div class="dv2-itxt"><div class="dv2-iname"><span class="dv2-ico" style="font-size:.95rem">${x.sum>=0?'📈':'📉'}</span> ${x.name}</div>
+          <div class="dv2-imeta">${x.n} รายการ</div></div>
+        <div class="dv2-iamt ${x.sum>=0?'dv2-pos':'dv2-neg'}">${dv2F(x.sum)}</div></div>`).join('') : '<div class="dv2-xs" style="text-align:center;padding:14px 0">ยังไม่มีเงินลงทุน</div>'}</div></div>`;
 }
 
 // ── เงินไปไหน ──
@@ -1666,8 +1732,8 @@ function dv2BudgetRow(b, i) {
 function dv2Budget() {
     const b = DashState.data.budget || [];
     return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">🎯</span>เงินไปไหน · เทียบงบ</span>
-      <span class="dv2-xs">รวมทั้งครอบครัว · ${b.length} หมวด · ใช้ ${dv2F(dv2Sum(b,x=>x.spent))} / งบ ${dv2F(dv2Sum(b,x=>x.budget))}</span></h3>
-      <div class="dv2-bcols">${b.length ? b.map((x,i)=>dv2BudgetRow(x,i)).join('') : '<div class="dv2-xs">ยังไม่มีค่าใช้จ่ายในเดือนนี้</div>'}</div></div>`;
+      <span class="dv2-xs">รวมทั้งครอบครัว · ${b.length} หมวด · ใช้ ${dv2F(dv2Sum(b,x=>x.spent))} / งบ ${dv2F(dv2Sum(b,x=>x.budget))}</span><button class="dv2-zoombtn" onclick="dv2Zoom('budget')" title="ขยายดูชัด ๆ">🔍</button></h3>
+      <div class="dv2-bcols">${b.length ? b.map((x,i)=>dv2BudgetRow(x,i)).join('') : '<div class="dv2-xs">ยังไม่มีค่าใช้จ่ายในช่วงนี้</div>'}</div></div>`;
 }
 
 // ── AR / AP ──
@@ -2052,16 +2118,119 @@ async function dv2SaveBudget(evt) {
 
 // ── Top bar + master render ──
 function dv2TopBar() {
-    const mLabel = dv2MonthLabel(`${DashState.year}-${DashState.month}`);
+    const p = DashState.period;
+    const chip = (key, label) => `<span class="dv2-chip${p===key?' on':''}" onclick="dv2SetPeriod('${key}')">${label}</span>`;
+    const nav = p === 'all' ? '' : `<button onclick="dv2ChangeMonth(-1)" title="${p==='year'?'ปีก่อน':'เดือนก่อน'}"><i class="fa-solid fa-chevron-left"></i></button>
+        <span class="dv2-chip on dv2-plabel" style="cursor:default">${dv2PeriodLabel()}</span>
+        <button onclick="dv2ChangeMonth(1)" title="${p==='year'?'ปีถัดไป':'เดือนถัดไป'}"><i class="fa-solid fa-chevron-right"></i></button>`;
+    const thru = DashState.range?.last_date ? `<span class="dv2-thru">📅 ข้อมูลถึง ${dv2DateTH(DashState.range.last_date)}</span>` : '';
     return `<div class="dv2-topbar">
       <h2>💰 ภาพรวมระบบการเงิน</h2>
       <div class="dv2-period">
-        <button onclick="dv2ChangeMonth(-1)"><i class="fa-solid fa-chevron-left"></i></button>
-        <span class="dv2-chip on" style="cursor:default">${mLabel}</span>
-        <button onclick="dv2ChangeMonth(1)"><i class="fa-solid fa-chevron-right"></i></button>
-        <button onclick="loadDashboard()"><i class="fa-solid fa-rotate-right"></i></button>
+        <span class="dv2-pswitch">${chip('month','เดือน')}${chip('year','ปี')}${chip('all','ทั้งหมด')}</span>
+        ${nav}
+        ${p === 'all' ? `<span class="dv2-chip on dv2-plabel" style="cursor:default">${dv2PeriodLabel()}</span>` : ''}
+        <button onclick="loadDashboard()" title="โหลดใหม่"><i class="fa-solid fa-rotate-right"></i></button>
+        ${thru}
       </div>
     </div>`;
+}
+
+/* ── หน้าขยาย (2026-09-08) ────────────────────────────────────────────
+   North: "ข้อมูลตัวเล็กเกินไป ต้องการให้มีปุ่ม พอกดไปแล้วเห็นการ์ดในแต่ละเรื่อง
+   และตัวเลขชัดเจน เช่น Statement ก็เห็นยอดคงเหลือทั้งหมด และบอกด้วยว่าข้อมูลถึงวันไหน"
+   หน้าเดียวใช้กับทุกการ์ด — รับชนิดการ์ดแล้วดึงข้อมูลจาก DashState.data ชุดเดิม */
+function dv2ZoomRows(kind) {
+    const d = DashState.data || {};
+    const accs = d.accounts || [];
+    const owner = id => (DashState.member === 'ALL' && id) ? dv2OwnerName(id) : '';
+    const money = x => Math.abs(Number(x.amount) || 0);
+    switch (kind) {
+        case 'stmt': {
+            const a = dv2Desc(accs.filter(x => x.account_type !== 'CREDIT'), x => x.balance);
+            return { title: '🏦 Statement · เงินฝาก/เงินสด', total: dv2Sum(a, x => x.balance), cls: 'dv2-accent',
+                     sub: `${a.length} บัญชี · ยอดคงเหลือ ณ วันที่ข้อมูลล่าสุดของแต่ละบัญชี`, period: false,
+                     rows: a.map(x => ({ name: `${x.account_type==='CASH'?'💵':'🏦'} ${x.name}`,
+                            meta: [x.bank_name, owner(x.entity_id), x.last_date ? `รายการล่าสุด ${dv2DateTH(x.last_date)}` : 'ยังไม่มีรายการ', x.tx_count ? `${Number(x.tx_count).toLocaleString('en-US')} รายการ` : ''].filter(Boolean).join(' · '),
+                            amount: x.balance, cls: Number(x.balance) < 0 ? 'dv2-neg' : '' })) };
+        }
+        case 'credit': {
+            const a = dv2Desc(accs.filter(x => x.account_type === 'CREDIT'), x => x.balance);
+            return { title: '💳 Credit Card · ยอดใช้ไป', total: dv2Sum(a, x => Math.abs(x.balance)), cls: 'dv2-neg',
+                     sub: `${a.length} ใบ · ยอดค้างชำระ ณ วันที่ข้อมูลล่าสุด`, period: false,
+                     rows: a.map(x => ({ name: `💳 ${x.name}`,
+                            meta: [x.credit_limit ? `วงเงิน ${dv2F(x.credit_limit)}` : 'ยังไม่ตั้งวงเงิน', x.due_day ? `ครบกำหนดวันที่ ${x.due_day}` : '', owner(x.entity_id), x.last_date ? `รายการล่าสุด ${dv2DateTH(x.last_date)}` : ''].filter(Boolean).join(' · '),
+                            amount: Math.abs(x.balance), cls: Math.abs(x.balance) > 0 ? 'dv2-neg' : '' })) };
+        }
+        case 'invest': {
+            const a = d.investment || [];
+            const g = dv2ByCat(a);
+            return { title: '💎 Investment · เงินลงทุน ตามหมวด', total: dv2Sum(a), cls: dv2Sum(a) >= 0 ? 'dv2-pos' : 'dv2-neg',
+                     sub: `${g.length} หมวด · ${a.length} รายการ · บวก = เงินกลับเข้ามา · ลบ = เงินออกไปลงทุน · แตะหมวดเพื่อดูรายการ`, period: true,
+                     rows: g.map(x => ({ name: `${x.sum>=0?'📈':'📉'} ${x.name}`, meta: `${x.n} รายการ`, amount: x.sum, cls: x.sum >= 0 ? 'dv2-pos' : 'dv2-neg',
+                            items: dv2Desc(x.items, i => i.amount).map(i => ({ name: i.title, meta: [dv2DateTH(i.date), owner(i.entity_id)].filter(Boolean).join(' · '), amount: i.amount, cls: i.amount >= 0 ? 'dv2-pos' : 'dv2-neg' })) })) };
+        }
+        case 'income': {
+            const a = d.income || [];
+            const g = dv2ByCat(a, x => Number(x.amount) || 0);
+            return { title: '📥 รายรับ ตามหมวด', total: dv2Sum(a), cls: 'dv2-pos', sub: `${g.length} หมวด · ${a.length} รายการ · แตะหมวดเพื่อดูรายการ`, period: true,
+                     rows: g.map(x => ({ name: x.name, meta: `${x.n} รายการ`, amount: x.sum, cls: 'dv2-pos',
+                            items: dv2Desc(x.items, i => i.amount).map(i => ({ name: i.title, meta: [dv2DateTH(i.date), owner(i.entity_id), i.contact_name].filter(Boolean).join(' · '), amount: money(i), cls: 'dv2-pos' })) })) };
+        }
+        case 'expense': {
+            const a = d.expense || [];
+            const g = dv2ByCat(a, money);
+            return { title: '📤 รายจ่าย ตามหมวด', total: dv2Sum(a, money), cls: 'dv2-neg', sub: `${g.length} หมวด · ${a.length} รายการ · แตะหมวดเพื่อดูรายการ`, period: true,
+                     rows: g.map(x => ({ name: x.name, meta: `${x.n} รายการ`, amount: x.sum, cls: 'dv2-neg',
+                            items: dv2Desc(x.items, i => i.amount).map(i => ({ name: i.title, meta: [dv2DateTH(i.date), owner(i.entity_id), i.contact_name].filter(Boolean).join(' · '), amount: money(i), cls: 'dv2-neg' })) })) };
+        }
+        case 'budget': {
+            const a = [...(d.budget || [])].sort((p1, p2) => p2.spent - p1.spent);
+            return { title: '🎯 เงินไปไหน · ค่าใช้จ่ายตามหมวด', total: dv2Sum(a, x => x.spent), cls: 'dv2-neg', sub: `${a.length} หมวด · เรียงจากมากไปน้อย`, period: true,
+                     rows: a.map(x => ({ name: x.category_name, meta: x.budget ? `งบ ${dv2F(x.budget)} · ${x.spent > x.budget ? 'เกินงบ ' + dv2F(x.spent - x.budget) : 'เหลือ ' + dv2F(x.budget - x.spent)}` : 'ยังไม่ตั้งงบ', amount: x.spent, cls: x.budget && x.spent > x.budget ? 'dv2-neg' : '' })) };
+        }
+    }
+    return null;
+}
+function dv2Zoom(kind) {
+    const z = dv2ZoomRows(kind);
+    if (!z) return;
+    let el = document.getElementById('dv2-zoom');
+    if (!el) { el = document.createElement('div'); el.id = 'dv2-zoom'; document.body.appendChild(el); }
+    const thru = DashState.range?.last_date ? `ข้อมูลถึง ${dv2DateTH(DashState.range.last_date)}` : '';
+    const period = z.period ? `ช่วงที่ดู: ${dv2PeriodLabel()}` : '';
+    el.innerHTML = `<div class="dv2-zoom-box" role="dialog" aria-modal="true">
+      <div class="dv2-zoom-head">
+        <div><div class="dv2-zoom-title">${z.title}</div>
+          <div class="dv2-zoom-sub">${[period, thru].filter(Boolean).join(' · ')}</div></div>
+        <button class="dv2-zoom-close" onclick="dv2ZoomClose()" aria-label="ปิด">✕</button>
+      </div>
+      <div class="dv2-zoom-total ${z.cls}">${dv2F(z.total)}</div>
+      <div class="dv2-zoom-sub2">${z.sub}</div>
+      <div class="dv2-zoom-list">${z.rows.length ? z.rows.map(r => `<div class="dv2-zoom-row${r.items ? ' dv2-zoom-cat' : ''}"${r.items ? ' onclick="dv2ZoomToggle(this)"' : ''}>
+          <div class="dv2-zoom-name">${r.items ? '<span class="dv2-zoom-caret">▸</span> ' : ''}${r.name}<div class="dv2-zoom-meta">${r.meta || ''}</div></div>
+          <div class="dv2-zoom-amt ${r.cls || ''}">${dv2F(r.amount)}</div></div>${r.items ? `<div class="dv2-zoom-items" hidden>${r.items.map(i => `<div class="dv2-zoom-row dv2-zoom-sub">
+          <div class="dv2-zoom-name">${i.name}<div class="dv2-zoom-meta">${i.meta || ''}</div></div>
+          <div class="dv2-zoom-amt ${i.cls || ''}">${dv2F(i.amount)}</div></div>`).join('')}</div>` : ''}`).join('')
+        : '<div class="dv2-zoom-empty">ไม่มีรายการในช่วงนี้</div>'}</div>
+    </div>`;
+    el.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    el.onclick = e => { if (e.target === el) dv2ZoomClose(); };
+    document.addEventListener('keydown', dv2ZoomEsc);
+}
+function dv2ZoomClose() {
+    const el = document.getElementById('dv2-zoom');
+    if (el) el.classList.remove('open');
+    document.body.style.overflow = '';
+    document.removeEventListener('keydown', dv2ZoomEsc);
+}
+function dv2ZoomEsc(e) { if (e.key === 'Escape') dv2ZoomClose(); }
+function dv2ZoomToggle(row) {
+    const items = row.nextElementSibling;
+    if (!items || !items.classList.contains('dv2-zoom-items')) return;
+    items.hidden = !items.hidden;
+    row.classList.toggle('open', !items.hidden);
 }
 function dv2Render() {
     const root = document.getElementById('dv2-root');
@@ -3236,6 +3405,11 @@ async function loadHistory() {
     if (monthYear) url += `&month=${monthYear}`;
     if (startDateRaw) url += `&startDate=${normalizeDateToYYYYMMDD(startDateRaw)}`;
     if (endDateRaw) url += `&endDate=${normalizeDateToYYYYMMDD(endDateRaw)}`;
+    /* 2026-09-08 · ไม่ระบุช่วงวันที่ → เซิร์ฟเวอร์ให้แค่ 500 รายการล่าสุด (ประหยัด D1 rows_read)
+       แต่ถ้าผู้ใช้กรอกคำค้นหรือเลือกตัวกรอง ซึ่งกรองฝั่งจอ ต้องขอทั้งหมดมาก่อน ไม่งั้นหาของเก่าไม่เจอ */
+    const hasClientFilter = Boolean(search) || [statementFilter, captionFilter, categoryFilter, companyFilter, customerFilter].some(v => v !== 'ALL');
+    const noRange = !monthYear && !startDateRaw && !endDateRaw;
+    if (noRange && hasClientFilter) url += `&limit=0`;
     
     try {
         const res = await fetch(url, {
@@ -3296,6 +3470,9 @@ async function loadHistory() {
         if (history.length === 0) {
             listContainer.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">ไม่พบรายการที่ค้นหา</div>';
             return;
+        }
+        if (noRange && !hasClientFilter && history.length >= 500) {
+            listContainer.innerHTML = '<div style="text-align:center;color:#64748b;font-size:.78rem;padding:8px 10px;background:#f1f5f9;border-radius:8px;margin-bottom:6px">แสดง 500 รายการล่าสุด · เลือกเดือนหรือช่วงวันที่เพื่อดูรายการเก่ากว่านี้</div>';
         }
 
         history.forEach(tx => {

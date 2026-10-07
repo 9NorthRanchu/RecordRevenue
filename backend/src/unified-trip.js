@@ -18,6 +18,7 @@
 //   POST   /api/unified-trip/stops           — เพิ่ม/แก้จุดแวะ (สมาชิกทุกคน)
 //   DELETE /api/unified-trip/stops?id=
 //   POST   /api/unified-trip/stops/order     — จัดลำดับ/ย้ายวัน ทั้งชุดในครั้งเดียว
+//   (POST /stops รับ body.booking ด้วย — การจองของจุดแวะ: ไม่ส่ง=ไม่แตะ · null=ลบ · object=สร้าง/แก้ · bundle คืน bookings[])
 //   POST   /api/unified-trip/presets          — เพิ่ม/แก้รายการค่าใช้จ่ายย่อยของทริป (ชื่อ+ไอคอน+หมวดบัญชี)
 //   DELETE /api/unified-trip/presets?id=
 //   POST   /api/unified-trip/presets/copy    — คัดลอกรายการทั้งชุดจากทริปอื่นในครอบครัวเดียวกัน
@@ -170,6 +171,12 @@ async function canActFor(env, ctx, projectId, ownerMemberId) {
   return Boolean(row?.managed_by) && row.managed_by === ctx.viewer?.member_id;
 }
 
+/* สร้าง id ที่เดา/ชนกันได้ยากกว่า Date.now() + Math.random().
+   crypto.randomUUID() มีอยู่ใน Workers runtime และเหมาะกับ id ที่ออกจากเซิร์ฟเวอร์ */
+function tripId(prefix) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
 async function writeMember(request, env, ctx, projectId, corsHeaders) {
   if (!ctx.viewer?.is_admin) {
     return json({ error: 'เพิ่มหรือแก้สมาชิกได้เฉพาะผู้ดูแลทริป' }, corsHeaders, 403);
@@ -235,7 +242,7 @@ async function writeMember(request, env, ctx, projectId, corsHeaders) {
 
   const memberId = String(body.member_id || '').trim();
   if (!memberId) {
-    const newId = `TM-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const newId = tripId('TM');
     await env.DB.prepare(`
       INSERT INTO TripMembers (member_id, project_id, user_id, display_name, role, ledger_mode,
         is_admin, avatar_url, managed_by, created_at)
@@ -503,12 +510,17 @@ async function writeWallet(request, env, ctx, projectId, corsHeaders) {
      CASH   = เงินสด/บัตรเติมเงิน · เติมเงินเข้าไปก่อนแล้วค่อยใช้
               → ผูกบัญชีเงินฝากได้ว่า "เงินก้อนนี้ออกจากบัญชีไหน"
      CREDIT = บัตรเครดิต · ไม่มีการเติมเงิน ใช้ก่อนแล้วค่อยถูกเรียกเก็บ
-              → 🔴 ไม่ผูกบัญชีเงินฝาก และตอนปิดทริป "ต้องกรอกยอดบาทจริง"
-                 ที่ถูกเรียกเก็บ ไม่งั้นปิดทริปไม่ได้ (North 2026-08-23)
-                 เพราะยอดบาทของบัตรเครดิตไม่มีทางรู้จนกว่าบิลจะมา
-                 ถ้าปล่อยให้ปิดด้วยเรทประมาณการ ยอดในบัญชีจะไม่ตรงกับที่จ่ายจริง */
+              → ตอนปิดทริป "ต้องกรอกยอดบาทจริง" ที่ถูกเรียกเก็บ ไม่งั้นปิดทริปไม่ได้
+                 (North 2026-08-23) เพราะยอดบาทของบัตรเครดิตไม่มีทางรู้จนกว่าบิลจะมา
+                 ถ้าปล่อยให้ปิดด้วยเรทประมาณการ ยอดในบัญชีจะไม่ตรงกับที่จ่ายจริง
+
+     🔴 บัตรเครดิตก็ต้องผูกบัญชีได้ (แก้ 2026-08-23 รอบสอง)
+        เดิมบังคับ account_id = null สำหรับ CREDIT ผลคือบิลที่จ่ายด้วยบัตร
+        **ไม่มีบัญชีปลายทางตอนปิดทริป จึงลงสมุดบัญชีไม่ได้เลย** — ยอดหายไปทั้งก้อน
+        บัญชีของบัตรเครดิตในสมุดหลักมีอยู่จริง (Accounts.account_type = 'CREDIT')
+        และเป็นที่ที่ยอดถูกเรียกเก็บจริง จึงเป็นปลายทางที่ถูกต้อง */
   const kind = body.kind === 'CREDIT' ? 'CREDIT' : 'CASH';
-  let accountId = kind === 'CREDIT' ? null : (String(body.account_id || '').trim() || null);
+  let accountId = String(body.account_id || '').trim() || null;
   if (accountId) {
     const account = await env.DB.prepare(`
       SELECT a.account_id FROM Accounts a
@@ -921,22 +933,27 @@ async function writeExpense(request, env, ctx, projectId, corsHeaders) {
       return json({ error: `ยอดหมวดรวม ${catSum} ไม่เท่ากับยอดบิล ${amount}` }, corsHeaders, 400);
     }
 
-    /* หมวดที่ผูกกับสมุดบัญชีต้องมีอยู่จริง อยู่ในครอบครัวเดียวกัน และต้องเป็น
-       หมวดฝั่งค่าใช้จ่าย — ตรวจตอนนี้เลย เพราะถ้าปล่อยไปเจอตอนปิดทริป
-       คนที่ต้องมาแก้คือคนปิด ซึ่งไม่ใช่คนที่รู้ว่าบิลนี้คือค่าอะไร */
+    /* หมวดที่ผูกกับสมุดบัญชีต้องมีอยู่จริงและอยู่ในครอบครัวเดียวกัน — ตรวจตอนนี้เลย
+       เพราะถ้าปล่อยไปเจอตอนปิดทริป คนที่ต้องมาแก้คือคนปิด ซึ่งไม่ใช่คนที่รู้ว่าบิลนี้คือค่าอะไร
+
+       🔴 **ห้ามจำกัดว่าต้องเป็น Caption ฝั่งค่าใช้จ่าย** (North 2026-08-23)
+          เดิมบังคับ behavior='EXPENSE' ซึ่งผิดความตั้งใจ — ของที่ซื้อระหว่างทริป
+          เช่นกล้องหรือคอมพิวเตอร์ ต้องผูกกับ Caption ฝั่งสินทรัพย์ได้
+          กติกาที่ต้องการคือ "Category วิ่งไปตาม Caption ที่มันสังกัด ห้ามข้าม"
+          ซึ่งเกิดขึ้นเองอยู่แล้ว เพราะไม่มีใครส่ง Caption มา ทุกหน้าสรุปอ่านจาก
+          Categories.caption_id เสมอ · หน้าที่ของด่านนี้จึงเหลือแค่ "หมวดต้องมีอยู่จริง" */
     const wanted = [...new Set(categories.map(c => c.category_id).filter(Boolean))];
     if (wanted.length) {
       const rows = await env.DB.prepare(`
         SELECT c.category_id FROM Categories c
-        JOIN Captions cap ON cap.type_id = c.caption_id
-        WHERE c.family_id = ? AND cap.behavior = 'EXPENSE'
+        WHERE c.family_id = ?
           AND c.category_id IN (${wanted.map(() => '?').join(',')})
       `).bind(ctx.trip.family_id, ...wanted).all();
       const usable = new Set((rows.results || []).map(row => row.category_id));
       const bad = wanted.filter(id => !usable.has(id));
       if (bad.length) {
         return json({
-          error: `หมวดในสมุดบัญชีใช้ไม่ได้: ${bad.join(' · ')} — ต้องเป็นหมวดของครอบครัวนี้และอยู่ใต้ Caption ที่เป็นค่าใช้จ่าย`
+          error: `หมวดในสมุดบัญชีใช้ไม่ได้: ${bad.join(' · ')} — ต้องเป็นหมวดของครอบครัวนี้`
         }, corsHeaders, 400);
       }
     }
@@ -1317,10 +1334,14 @@ async function listFamilyAccounts(env, userId, corsHeaders) {
   const { familyId } = await familyRoleFor(env, userId);
   if (!familyId) return json({ error: 'ไม่พบผู้ใช้นี้' }, corsHeaders, 401);
   const rows = await env.DB.prepare(`
-    SELECT a.account_id, a.name, e.entity_id, e.name AS entity_name
-      FROM Accounts a JOIN Entities e ON e.entity_id = a.entity_id
-     WHERE e.family_id = ? ORDER BY e.name, a.name
-  `).bind(familyId).all();
+    SELECT a.account_id, a.name, a.account_type, e.entity_id, e.name AS entity_name
+      FROM Accounts a
+      JOIN Entities e ON e.entity_id = a.entity_id
+      JOIN UserPermissions up ON up.entity_id = e.entity_id AND up.user_id = ?
+     WHERE e.family_id = ?
+       AND COALESCE(a.account_type, '') != 'TRIP_HOLDING'
+     ORDER BY e.name, a.name
+  `).bind(userId, familyId).all();
   return json({ accounts: rows.results || [] }, corsHeaders);
 }
 
@@ -1412,16 +1433,18 @@ async function deleteUploadedIcon(env, userId, key, corsHeaders) {
   return json({ ok: true, deleted: key }, corsHeaders);
 }
 
-/* ไอคอนประจำหมวดค่าใช้จ่าย — อ่าน/แก้ Categories.icon_asset ของครอบครัวผู้ใช้
-   เอาเฉพาะหมวด behavior='EXPENSE' เพราะเป็นหมวดเดียวที่ฟอร์มบิลทริปใช้เลือก */
+/* ไอคอนประจำหมวด — อ่าน/แก้ Categories.icon_asset ของครอบครัวผู้ใช้
+   🔴 ทุก Caption ไม่ใช่เฉพาะฝั่งค่าใช้จ่าย (North 2026-08-23)
+      ของที่ซื้อระหว่างทริป เช่นกล้องหรือคอมพิวเตอร์ ต้องผูกกับ Caption
+      ฝั่งสินทรัพย์ได้ · จัดกลุ่มด้วย caption_name ให้หน้าจอทำ optgroup ได้ */
 async function listCategoryIcons(env, userId, corsHeaders) {
   const familyId = await familyIdFor(env, userId);
   if (!familyId) return json({ error: 'ไม่พบผู้ใช้นี้' }, corsHeaders, 401);
 
   const rows = await env.DB.prepare(`
-    SELECT c.category_id, c.name, c.icon_asset, cap.name AS caption_name
+    SELECT c.category_id, c.name, c.icon_asset, cap.name AS caption_name, cap.behavior
       FROM Categories c JOIN Captions cap ON cap.type_id = c.caption_id
-     WHERE c.family_id = ? AND cap.behavior = 'EXPENSE'
+     WHERE c.family_id = ?
      ORDER BY cap.name, c.name
   `).bind(familyId).all();
 
@@ -1479,6 +1502,7 @@ async function deleteTrip(env, ctx, projectId, corsHeaders) {
     env.DB.prepare(`DELETE FROM TripWalletFundings WHERE project_id=?`).bind(projectId),
     env.DB.prepare(`DELETE FROM TripWallets WHERE project_id=?`).bind(projectId),
     env.DB.prepare(`DELETE FROM TripCurrencies WHERE project_id=?`).bind(projectId),
+    env.DB.prepare(`DELETE FROM TripBookings WHERE project_id=?`).bind(projectId),
     env.DB.prepare(`DELETE FROM TripStops WHERE project_id=?`).bind(projectId),
     env.DB.prepare(`DELETE FROM TripPresence WHERE project_id=?`).bind(projectId),
     env.DB.prepare(`DELETE FROM TripMembers WHERE project_id=?`).bind(projectId),
@@ -1495,6 +1519,97 @@ async function deleteTrip(env, ctx, projectId, corsHeaders) {
        เข้าบัญชีไปแล้ว ไม่เกี่ยวกับการแก้บันทึกความทรงจำของทริป */
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+
+/* ── การจองของจุดแวะ (North 2026-09-15 · จาก Trip.xlsx) ──────────────────
+   ตาราง TripBookings ผูกกับจุดแวะ 1:1 เก็บสิ่งที่ TripStops ไม่มีที่ให้:
+   ผู้ขาย · เลขจอง · เช็กเอาต์ · ห้อง/วิว/ตรม. · ผู้เข้าพัก · อาหาร/ที่จอด/ซักผ้า
+   · สถานะจ่าย · วันจ่าย · จ่ายด้วย · ยกเลิกฟรีถึง
+   🔴 ราคา **ไม่** เก็บที่นี่ — ใช้ TripStops.planned_cost/planned_currency ที่เดียว
+      ไม่งั้นหน้าสรุปงบกับการ์ดจองจะโชว์คนละตัวเลขเมื่อแก้ที่ใดที่หนึ่ง
+   ส่งมาใน body.booking ของ POST /stops:
+     · ไม่ส่ง (undefined) = ไม่แตะการจองเดิม
+     · null              = ลบการจองทิ้ง
+     · object            = สร้าง/แก้ (ค่าที่ไม่ส่งในนั้นถือว่าว่าง — ฟอร์มส่งครบทุกช่องเสมอ) */
+const BOOKING_KINDS = ['HOTEL', 'FLIGHT', 'TRANSPORT', 'TICKET', 'OTHER'];
+const BOOKING_STATUSES = ['CONFIRMED', 'BACKUP', 'CANCELLED'];
+const PAY_STATUSES = ['UNPAID', 'PAID', 'PAY_AT_VENUE'];
+const TEXT_FIELDS = ['vendor', 'ref_no', 'depart_from', 'arrive_to', 'room_desc', 'view_desc',
+  'travelers', 'child_ages', 'pay_method', 'cancel_policy', 'notes'];
+const DATE_FIELDS = ['check_in', 'check_out', 'pay_date', 'cancel_deadline'];
+const FLAG_FIELDS = ['inc_breakfast', 'inc_lunch', 'inc_dinner', 'has_parking', 'has_laundry'];
+const COUNT_FIELDS = ['adults', 'children'];
+
+/* คืน { ok, value } หรือ { error } · ไม่แตะฐาน */
+function normalizeBooking(raw, stopDate) {
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { error: 'ข้อมูลการจองไม่ถูกต้อง' };
+  const b = {};
+  b.kind = String(raw.kind || 'HOTEL').trim().toUpperCase();
+  if (!BOOKING_KINDS.includes(b.kind)) return { error: 'ชนิดการจองไม่ถูกต้อง' };
+  b.status = String(raw.status || 'CONFIRMED').trim().toUpperCase();
+  if (!BOOKING_STATUSES.includes(b.status)) return { error: 'สถานะการจองไม่ถูกต้อง' };
+  b.pay_status = String(raw.pay_status || 'UNPAID').trim().toUpperCase();
+  if (!PAY_STATUSES.includes(b.pay_status)) return { error: 'สถานะการจ่ายไม่ถูกต้อง' };
+
+  for (const key of TEXT_FIELDS) b[key] = String(raw[key] ?? '').trim().slice(0, 200) || null;
+  for (const key of DATE_FIELDS) {
+    const value = String(raw[key] ?? '').trim();
+    if (value && !YMD.test(value)) return { error: `วันที่ (${key}) ต้องเป็นรูปแบบ YYYY-MM-DD` };
+    b[key] = value || null;
+  }
+  const arriveTime = String(raw.arrive_time ?? '').trim();
+  if (arriveTime && !HHMM.test(arriveTime)) return { error: 'เวลาถึงต้องเป็นรูปแบบ HH:MM' };
+  b.arrive_time = arriveTime || null;
+
+  /* 1 / 0 / null — "ไม่ทราบ" ต้องต่างจาก "ไม่มี" เพราะหน้าพิมพ์แสดงต่างกัน */
+  for (const key of FLAG_FIELDS) {
+    const value = raw[key];
+    b[key] = value === 1 || value === true || value === '1' ? 1
+      : value === 0 || value === false || value === '0' ? 0 : null;
+  }
+  for (const key of COUNT_FIELDS) {
+    const value = raw[key];
+    if (value === '' || value == null) { b[key] = null; continue; }
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 0 || n > 99) return { error: 'จำนวนผู้เข้าพักต้องเป็นจำนวนเต็ม 0–99' };
+    b[key] = n;
+  }
+  if (raw.size_sqm === '' || raw.size_sqm == null) b.size_sqm = null;
+  else {
+    const n = Number(raw.size_sqm);
+    if (!Number.isFinite(n) || n < 0) return { error: 'ขนาดห้องต้องเป็นตัวเลขไม่ติดลบ' };
+    b.size_sqm = n;
+  }
+  /* ที่พัก: เช็กอินไม่ส่งมา = ใช้วันของจุดแวะ · เช็กเอาต์ต้องไม่ก่อนเช็กอิน */
+  if (b.kind === 'HOTEL' && !b.check_in) b.check_in = stopDate;
+  if (b.check_in && b.check_out && b.check_out < b.check_in) {
+    return { error: 'วันเช็กเอาต์อยู่ก่อนวันเช็กอิน' };
+  }
+  b.linked_transaction_id = String(raw.linked_transaction_id ?? '').trim().slice(0, 80) || null;
+  return { ok: true, value: b };
+}
+
+const BOOKING_COLS = ['kind', 'status', 'vendor', 'ref_no', 'check_in', 'check_out', 'depart_from',
+  'arrive_to', 'arrive_time', 'room_desc', 'view_desc', 'size_sqm', 'travelers', 'adults', 'children',
+  'child_ages', 'inc_breakfast', 'inc_lunch', 'inc_dinner', 'has_parking', 'has_laundry', 'pay_status',
+  'pay_date', 'pay_method', 'cancel_deadline', 'cancel_policy', 'linked_transaction_id', 'notes'];
+
+async function upsertBooking(env, projectId, stopId, booking) {
+  const existing = await env.DB.prepare(`SELECT booking_id FROM TripBookings WHERE stop_id=? AND project_id=?`)
+    .bind(stopId, projectId).first();
+  const values = BOOKING_COLS.map(col => booking[col]);
+  if (existing) {
+    await env.DB.prepare(`UPDATE TripBookings SET ${BOOKING_COLS.map(col => `${col}=?`).join(', ')},
+        updated_at=CURRENT_TIMESTAMP WHERE booking_id=?`)
+      .bind(...values, existing.booking_id).run();
+    return existing.booking_id;
+  }
+  const bookingId = `BKG-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await env.DB.prepare(`INSERT INTO TripBookings (booking_id, project_id, stop_id, ${BOOKING_COLS.join(', ')})
+      VALUES (?,?,?,${BOOKING_COLS.map(() => '?').join(',')})`)
+    .bind(bookingId, projectId, stopId, ...values).run();
+  return bookingId;
+}
 
 async function writeStop(request, env, ctx, projectId, corsHeaders) {
   if (!ctx.viewer) return json({ error: 'ต้องเป็นสมาชิกของทริปนี้' }, corsHeaders, 403);
@@ -1517,6 +1632,11 @@ async function writeStop(request, env, ctx, projectId, corsHeaders) {
   const mapcode = String(body.mapcode || '').trim();
   const openTime = String(body.open_time || '').trim();
   const closeTime = String(body.close_time || '').trim();
+  /* ประเภทของจุดแวะ (North 2026-09-07) — เดิมไม่เคยถูกเก็บเลย มีแต่ 'ที่พัก'
+     ที่อ่านกลับได้เพราะไปอาศัย accommodation อยู่ ที่เหลือเลือกแล้วหายทุกครั้ง
+     ⚠️ ไม่ล็อกเป็นรายการตายตัวไว้ที่นี่ เพราะ North อาจให้แก้รายการเองได้ทีหลัง
+        คุมแค่ความยาว — รายการที่ให้เลือกเป็นเรื่องของหน้าจอ */
+  const stopTag = String(body.stop_tag || '').trim().slice(0, 40);
   /* วันหยุดประจำสัปดาห์เป็นเลข 0–6 คั่นจุลภาค · กรองค่านอกช่วงทิ้งตั้งแต่ตรงนี้
      ไม่งั้นเลขมั่ว ๆ จะไปนอนในฐานแล้วเทียบวันไม่เจอโดยไม่มีใครรู้ */
   /* ⚠️ ต้องกรองข้อความว่างทิ้ง **ก่อน** แปลงเป็นตัวเลข — `Number('')` คืน 0
@@ -1548,6 +1668,22 @@ async function writeStop(request, env, ctx, projectId, corsHeaders) {
 
   const sortOrder = Number.isFinite(Number(body.sort_order)) ? Number(body.sort_order) : 0;
 
+  /* ตรวจการจองก่อนแตะฐาน — จะได้ไม่มีกรณีจุดแวะถูกบันทึกแล้วแต่การจองพัง */
+  let booking;
+  if (body.booking !== undefined && body.booking !== null) {
+    const normalized = normalizeBooking(body.booking, stopDate);
+    if (normalized.error) return json({ error: normalized.error }, corsHeaders, 400);
+    booking = normalized.value;
+  }
+  const applyBooking = async stopId => {
+    if (body.booking === undefined) return undefined;
+    if (body.booking === null) {
+      await env.DB.prepare(`DELETE FROM TripBookings WHERE stop_id=? AND project_id=?`).bind(stopId, projectId).run();
+      return null;
+    }
+    return upsertBooking(env, projectId, stopId, booking);
+  };
+
   if (body.stop_id) {
     const existing = await env.DB.prepare(`SELECT * FROM TripStops WHERE stop_id=? AND project_id=?`)
       .bind(body.stop_id, projectId).first();
@@ -1560,7 +1696,7 @@ async function writeStop(request, env, ctx, projectId, corsHeaders) {
       UPDATE TripStops SET stop_date=?, time=?, end_time=?, city=?, name_th=?, name_en=?,
         accommodation=?, notes=?, icon_asset=?, sort_order=?, latitude=?, longitude=?,
         visit_status=?, skipped_reason=?, highlight_text=?, planned_cost=?, planned_currency=?,
-        mapcode=?, open_time=?, close_time=?, closed_days=?
+        mapcode=?, open_time=?, close_time=?, closed_days=?, stop_tag=?
       WHERE stop_id=? AND project_id=?
     `).bind(stopDate, time || null, endTime || null, city || null, nameTh || null, nameEn || null,
             body.accommodation || null, body.notes || null, body.icon_asset || null, sortOrder,
@@ -1574,8 +1710,10 @@ async function writeStop(request, env, ctx, projectId, corsHeaders) {
             body.open_time === undefined ? existing.open_time : openTime || null,
             body.close_time === undefined ? existing.close_time : closeTime || null,
             body.closed_days === undefined ? existing.closed_days : closedDays || null,
+            body.stop_tag === undefined ? existing.stop_tag : stopTag || null,
             body.stop_id, projectId).run();
-    return json({ ok: true, stop_id: body.stop_id, created: false }, corsHeaders);
+    const bookingId = await applyBooking(body.stop_id);
+    return json({ ok: true, stop_id: body.stop_id, created: false, booking_id: bookingId ?? null }, corsHeaders);
   }
 
   // แยก INSERT ออกจาก UPDATE ด้วยเหตุผลเดียวกับกระเป๋า — upsert ที่ id ชนกัน
@@ -1585,15 +1723,17 @@ async function writeStop(request, env, ctx, projectId, corsHeaders) {
   await env.DB.prepare(`
     INSERT INTO TripStops (stop_id, project_id, stop_date, time, end_time, city, name_th, name_en,
       accommodation, notes, icon_asset, sort_order, latitude, longitude, visit_status, skipped_reason, highlight_text,
-      planned_cost, planned_currency, mapcode, open_time, close_time, closed_days)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      planned_cost, planned_currency, mapcode, open_time, close_time, closed_days, stop_tag)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(stopId, projectId, stopDate, time || null, endTime || null, city || null,
           nameTh || null, nameEn || null, body.accommodation || null, body.notes || null,
           body.icon_asset || null, sortOrder, body.latitude ?? null, body.longitude ?? null,
           visitStatus, visitStatus === 'SKIPPED' ? skippedReason || null : null, highlightText || null,
           plannedCost, plannedCurrency || null,
-          mapcode || null, openTime || null, closeTime || null, closedDays || null).run();
-  return json({ ok: true, stop_id: stopId, created: true }, corsHeaders);
+          mapcode || null, openTime || null, closeTime || null, closedDays || null,
+          stopTag || null).run();
+  const bookingId = await applyBooking(stopId);
+  return json({ ok: true, stop_id: stopId, created: true, booking_id: bookingId ?? null }, corsHeaders);
 }
 
 async function deleteStop(env, ctx, projectId, stopId, corsHeaders) {
@@ -1602,27 +1742,104 @@ async function deleteStop(env, ctx, projectId, stopId, corsHeaders) {
   const existing = await env.DB.prepare(`SELECT stop_id FROM TripStops WHERE stop_id=? AND project_id=?`)
     .bind(stopId, projectId).first();
   if (!existing) return json({ error: 'ไม่พบจุดแวะนี้' }, corsHeaders, 404);
-  await env.DB.prepare(`DELETE FROM TripStops WHERE stop_id=? AND project_id=?`)
-    .bind(stopId, projectId).run();
+  // การจองผูก 1:1 กับจุดแวะ — ลบจุดแวะแล้วต้องไม่เหลือการจองลอย (D1 ไม่บังคับ FK ให้)
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM TripBookings WHERE stop_id=? AND project_id=?`).bind(stopId, projectId),
+    env.DB.prepare(`DELETE FROM TripStops WHERE stop_id=? AND project_id=?`).bind(stopId, projectId)
+  ]);
   return json({ ok: true, deleted: stopId }, corsHeaders);
 }
 
+/* ── วันในแผนเที่ยว (เขียนใหม่ 2026-09-07) ─────────────────────────────
+   North: "เพิ่มวัน เพิ่มสถานที่ ต่างกันอย่างไร · ถ้าเพิ่มวันเฉย ๆ ให้ลบการตั้งค่า
+           ในส่วนอื่นออก และมีให้ลบ หรือแก้ไขวันด้วย"
+
+   🔴 **เปลี่ยนความหมายของ TripDayPlans**
+      เดิม = "ที่เก็บชื่อวัน" เท่านั้น · ลบแถวทิ้งทันทีที่ชื่อว่าง
+      ตอนนี้ = **ทะเบียนวันของทริป** · มีแถว = วันนั้นมีอยู่จริง แม้ยังไม่มีสถานที่
+      ชื่อวันกลายเป็นช่องเสริม (ว่างได้)
+
+      เดิม "วัน" ไม่มีตัวตนเลย — เกิดจาก stop_date ของจุดแวะล้วน ๆ ผลคือ
+      เพิ่มวันเปล่าไม่ได้ · แก้วันไม่ได้ · ลบวันไม่ได้ และปุ่ม "เพิ่มวัน"
+      ต้องยืมฟอร์มเพิ่มสถานที่ทั้งดุ้นมาใช้ ซึ่งสับสนว่าสองปุ่มต่างกันตรงไหน
+
+   ⚠️ ห้ามกลับไปลบแถวเมื่อชื่อว่างอีก — คนล้างชื่อวันแล้ววันหายไปทั้งวัน
+      คือของหายโดยไม่มีใครสั่งลบ */
 async function writeDayPlan(request, env, ctx, projectId, corsHeaders) {
   if (!ctx.viewer) return json({ error: 'ต้องเป็นสมาชิกของทริปนี้' }, corsHeaders, 403);
   const body = await request.json().catch(() => ({}));
   const date = String(body.plan_date || '').trim();
   const title = String(body.title || '').trim();
+  // ว่าง = ไม่ได้ย้ายวัน · มีค่า = ย้ายวันนี้ไปเป็นวันที่ใหม่ (พาจุดแวะไปด้วย)
+  const newDate = String(body.new_plan_date || '').trim();
+
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: 'ต้องระบุวันที่แบบ YYYY-MM-DD' }, corsHeaders, 400);
   if (title.length > 100) return json({ error: 'ชื่อแผนประจำวันยาวเกิน 100 ตัวอักษร' }, corsHeaders, 400);
-  if (!title) {
-    await env.DB.prepare(`DELETE FROM TripDayPlans WHERE project_id=? AND plan_date=?`).bind(projectId, date).run();
-    return json({ ok:true, plan_date:date, title:'' }, corsHeaders);
+  if (newDate && !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+    return json({ error: 'วันที่ใหม่ต้องเป็นแบบ YYYY-MM-DD' }, corsHeaders, 400);
   }
-  await env.DB.prepare(`
-    INSERT INTO TripDayPlans (project_id,plan_date,title,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP)
-    ON CONFLICT(project_id,plan_date) DO UPDATE SET title=excluded.title,updated_at=CURRENT_TIMESTAMP
-  `).bind(projectId, date, title).run();
-  return json({ ok:true, plan_date:date, title }, corsHeaders);
+
+  const target = newDate || date;
+
+  /* 🔴 ย้ายวันไปชนวันที่มีอยู่แล้วไม่ได้ — ถ้าปล่อยผ่าน จุดแวะสองวันจะถูกยุบ
+     รวมกันเงียบ ๆ แล้วแยกกลับไม่ได้อีกเลย ต้องให้คนตัดสินใจเองว่าจะย้ายทีละจุด */
+  if (newDate && newDate !== date) {
+    const clash = await env.DB.prepare(`
+      SELECT (SELECT COUNT(*) FROM TripStops WHERE project_id=? AND stop_date=?)
+           + (SELECT COUNT(*) FROM TripDayPlans WHERE project_id=? AND plan_date=?) AS n
+    `).bind(projectId, newDate, projectId, newDate).first();
+    if (clash?.n) {
+      return json({ error: `วันที่ ${newDate} มีอยู่ในแผนแล้ว — เลือกวันอื่น หรือย้ายสถานที่ทีละจุดแทน` },
+                  corsHeaders, 409);
+    }
+  }
+
+  const statements = [
+    env.DB.prepare(`
+      INSERT INTO TripDayPlans (project_id,plan_date,title,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(project_id,plan_date) DO UPDATE SET title=excluded.title,updated_at=CURRENT_TIMESTAMP
+    `).bind(projectId, target, title)
+  ];
+  if (newDate && newDate !== date) {
+    /* พาจุดแวะของวันเดิมไปด้วยทั้งหมด — ถ้าย้ายแต่ป้ายวัน จุดแวะจะค้างอยู่วันเก่า
+       แล้วโผล่เป็น "วันที่ไม่มีใครสั่งให้มี" กลับมาอีกวันหนึ่ง */
+    statements.push(
+      env.DB.prepare(`UPDATE TripStops SET stop_date=? WHERE project_id=? AND stop_date=?`)
+        .bind(newDate, projectId, date),
+      env.DB.prepare(`DELETE FROM TripDayPlans WHERE project_id=? AND plan_date=?`).bind(projectId, date)
+    );
+  }
+  await env.DB.batch(statements);
+
+  const moved = newDate && newDate !== date
+    ? (await env.DB.prepare(`SELECT COUNT(*) AS n FROM TripStops WHERE project_id=? AND stop_date=?`)
+        .bind(projectId, newDate).first())?.n || 0
+    : 0;
+  return json({ ok:true, plan_date:target, title, moved_stops:moved }, corsHeaders);
+}
+
+/* ลบวันออกจากแผน
+   🔴 ลบไม่ได้ถ้ายังมีสถานที่อยู่ในวันนั้น (North เลือกกติกานี้เอง 2026-09-07)
+      กติกาเดียวกับ "กระเป๋าที่มีบิลผูกอยู่ ลบไม่ได้" — ของที่ยังมีลูกอยู่
+      ต้องให้คนจัดการลูกก่อน ไม่ใช่ลบเป็นทอด ๆ ให้เงียบ ๆ
+      ตอบ 409 พร้อมบอกจำนวน คนจะได้รู้ว่าต้องไปจัดการอะไรก่อน */
+async function deleteDayPlan(env, ctx, projectId, date, corsHeaders) {
+  if (!ctx.viewer) return json({ error: 'ต้องเป็นสมาชิกของทริปนี้' }, corsHeaders, 403);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
+    return json({ error: 'ต้องระบุวันที่แบบ YYYY-MM-DD' }, corsHeaders, 400);
+  }
+  const used = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM TripStops WHERE project_id=? AND stop_date=?`
+  ).bind(projectId, date).first();
+  if (used?.n) {
+    return json({
+      error: `ลบวันนี้ไม่ได้ · ยังมีสถานที่อยู่ ${used.n} จุด — ย้ายหรือลบสถานที่ให้หมดก่อน`,
+      stop_count: used.n
+    }, corsHeaders, 409);
+  }
+  await env.DB.prepare(`DELETE FROM TripDayPlans WHERE project_id=? AND plan_date=?`)
+    .bind(projectId, date).run();
+  return json({ ok: true, deleted: date }, corsHeaders);
 }
 
 /* เช็กอินเป็นการยืนยันโดยผู้ใช้ ไม่ใช่การติดตามตำแหน่งเบื้องหลัง
@@ -2182,24 +2399,33 @@ async function loadClosureInputs(env, projectId) {
 }
 
 /* ── โพสต์การปิดทริปเข้าบัญชีจริง ──────────────────────────────────────
-   1 Transaction ต่อการปิดหนึ่งครั้ง · รายการย่อยแยกตามหมวดค่าใช้จ่าย
+   1 Transaction ต่อ "บัญชี" · รายการย่อยแยกตามหมวด × คน
 
-   ⚠️ ไม่เดาหมวดให้เด็ดขาด — บิลในทริปเก็บหมวดเป็น "ข้อความ" (อาหาร/ที่พัก)
-      ส่วนบัญชีจริงใช้ category_id ถ้าจับคู่ไม่ได้จะปฏิเสธพร้อมบอกว่าหมวดไหน
-      ยังไม่ได้จับคู่ ดีกว่ายัดลงหมวด "อื่น ๆ" แล้วงบรวมเพี้ยนโดยไม่มีใครรู้
+   🔴 บัญชีปลายทางมาจาก **กระเป๋าที่จ่ายบิลใบนั้น** (`TripWallets.account_id`)
+      ไม่ใช่บัญชีก้อนเดียวที่ถามตอนปิด (North 2026-08-23 รอบสอง)
+
+      หลักการของ North: ในสมุดบัญชีหลักเขาโอนจาก Kbank ไปไว้ที่บัญชี "เงินรอเที่ยว"
+      ตอนซื้อเงินต่างประเทศ · กระเป๋าในทริปผูกกับบัญชีนั้น · ตอนปิดทริปจึงตัดเงินออก
+      จากบัญชีนั้นเท่าที่ใช้จริง เงินที่เหลือปล่อยค้างเป็นยอดในบัญชีไว้ใช้ทริปหน้า
+
+      ถามบัญชีเดียวตอนปิดไม่ได้ เพราะทริปเดียวเติมเงินจากสองบัญชีได้จริง
+      (เงินสดเยนถอนจากบัญชีหนึ่ง · YouTrip ตัดจากอีกบัญชี) และหนึ่ง Transaction
+      ผูกได้บัญชีเดียว จึงต้องแตกเป็นคนละใบ
+
+   🔴 เครื่องหมายต้องตรงกับสมุดบัญชีหลัก — ยอดหัวรายการและยอดย่อย **ติดลบ** ทั้งคู่
+      สำหรับเงินที่จ่ายออก (signed model ของ frontend/app.js)
+      ยอดคงเหลือบัญชีคำนวณจากผลรวม total_amount ถ้าลงเป็นบวก ปิดทริปแล้ว
+      เงินในบัญชีจะ "เพิ่ม" เท่ายอดที่ใช้ไป โดยไม่มีอะไรฟ้อง
+
+   🔴 หมวดไหนก็ได้ ขอแค่มีอยู่จริง — Caption ตามหมวดนั้นเสมอ ห้ามข้าม
+      ของที่ซื้อระหว่างทริปอาจเป็นสินทรัพย์ (กล้อง/คอมพิวเตอร์) ไม่ใช่ค่าใช้จ่ายเสมอไป
+      `type` ของรายการย่อยจึงมาจาก Categories.default_type เหมือนที่สมุดหลักทำ
+      ไม่ใช่ยัด 'EXPENSE' ตายตัว
 
    ⚠️ ยอดที่ลงบัญชีคิดตามสัดส่วนของคนที่ ledger_mode = MAIN เท่านั้น
       บิล ¥1,000 ที่หารกับคน TRIP_ONLY ครึ่งหนึ่ง ลงบัญชีแค่ครึ่งเดียว */
 async function buildLedgerPosting(env, ctx, projectId, data, options) {
-  const { accountId, categoryMap = {}, defaultCategoryId = null, postingDate, note,
-          billSettled = new Map() } = options;
-
-  const account = await env.DB.prepare(`
-    SELECT a.account_id FROM Accounts a
-    JOIN Entities e ON e.entity_id = a.entity_id
-    WHERE a.account_id = ? AND e.family_id = ?
-  `).bind(accountId, ctx.trip.family_id).first();
-  if (!account) return { error: 'ไม่พบบัญชีที่ระบุ หรือไม่ใช่บัญชีของครอบครัวนี้', status: 400 };
+  const { postingDate, note, billSettled = new Map() } = options;
 
   const categoryLines = await env.DB.prepare(`
     SELECT c.* FROM TripExpenseCategories c
@@ -2224,11 +2450,21 @@ async function buildLedgerPosting(env, ctx, projectId, data, options) {
     return member?.entity_id || null;
   };
 
-  const byLine = new Map();   // `${categoryId}|${entityId}` → { categoryId, entityId, amount, who }
+  // `${accountId}|${categoryId}|${entityId}` → { accountId, categoryId, entityId, amount, who }
+  const byLine = new Map();
   const unmapped = new Set();
+  const noAccount = new Set();
 
   for (const expense of data.expenses) {
     const wallet = data.wallets.find(w => w.wallet_id === expense.wallet_id) || null;
+    /* บัญชีปลายทาง = บัญชีที่ผูกไว้กับกระเป๋าที่จ่ายบิลใบนี้
+       ไม่มีบัญชี = ปิดทริปไม่ได้ · ถ้าปล่อยผ่าน ยอดของกระเป๋าใบนั้นจะหายจาก
+       สมุดบัญชีเงียบ ๆ ทั้งที่ยอดรวมในหน้าทริปยังดูถูกต้องทุกประการ */
+    const lineAccountId = wallet?.account_id || null;
+    if (!lineAccountId) {
+      noAccount.add(wallet?.name || '(บิลที่ไม่ได้ระบุกระเป๋า)');
+      continue;
+    }
     /* 🔴 บิลบัตรเครดิตใช้ "ยอดบาทจริงของบิลใบนั้น" ไม่ใช่คูณเรทเฉลี่ย
        ธนาคารแปลงค่าเงินทีละรายการตามวันที่รูดจริง เรทเฉลี่ยจะทำให้ยอดราย
        หมวดและรายคนเพี้ยน ทั้งที่ยอดรวมถูก */
@@ -2243,7 +2479,10 @@ async function buildLedgerPosting(env, ctx, projectId, data, options) {
     if (!total) continue;
 
     const lines = (categoryLines.results || []).filter(c => c.trip_expense_id === expense.trip_expense_id);
-    // บิลที่ไม่ได้แบ่งหมวดถือเป็นก้อนเดียว ใช้หมวดตั้งต้นที่ผู้ปิดทริประบุมา
+    /* บิลที่ไม่ได้แบ่งหมวดถือเป็นก้อนเดียว แต่ **ไม่มีหมวดตั้งต้นให้ยัดลงอีกแล้ว**
+       เดิมรับ default_category_id / category_map จาก body โดยไม่ตรวจอะไรเลย
+       ซึ่งเป็นประตูหลังที่ยัดหมวดของครอบครัวอื่นหรือหมวดคนละ Caption เข้ามาได้
+       ถ้าบิลไหนยังไม่มีหมวด ให้ไปผูกที่ตัวบิล ซึ่งคนจดรู้ดีที่สุดว่าคือค่าอะไร */
     const effective = lines.length ? lines : [{ category_id: null, label: '', amount_foreign: expense.amount_foreign }];
 
     /* บิลที่ไม่มีผู้ร่วมหารเลย ถือว่าเป็นของเจ้าของเงินคนเดียวเต็มจำนวน
@@ -2260,18 +2499,24 @@ async function buildLedgerPosting(env, ctx, projectId, data, options) {
       const who = data.members.find(m => m.member_id === share.memberId)?.display_name || '';
 
       for (const line of effective) {
-        const categoryId = line.category_id || categoryMap[line.label || ''] || defaultCategoryId || null;
+        const categoryId = line.category_id || null;
         if (!categoryId) { unmapped.add(line.label || '(บิลที่ไม่ได้แบ่งหมวด)'); continue; }
         const thb = round2((line.amount_foreign || 0) * rate * ratio);
         if (!thb) continue;
-        const key = `${categoryId}|${entityId || ''}`;
-        const row = byLine.get(key) || { categoryId, entityId, amount: 0, who };
+        const key = `${lineAccountId}|${categoryId}|${entityId || ''}`;
+        const row = byLine.get(key) || { accountId: lineAccountId, categoryId, entityId, amount: 0, who };
         row.amount = round2(row.amount + thb);
         byLine.set(key, row);
       }
     }
   }
 
+  if (noAccount.size) {
+    return {
+      error: `กระเป๋าที่ยังไม่ได้ผูกบัญชีในสมุดบัญชีหลัก: ${[...noAccount].join(' · ')} — ผูกบัญชีให้ครบก่อนจึงจะปิดทริปได้`,
+      status: 400, needs_account: [...noAccount]
+    };
+  }
   if (unmapped.size) {
     return {
       error: `ยังจับคู่หมวดกับบัญชีจริงไม่ครบ: ${[...unmapped].join(' · ')}`,
@@ -2280,33 +2525,81 @@ async function buildLedgerPosting(env, ctx, projectId, data, options) {
   }
   if (!byLine.size) return { error: 'ไม่มียอดที่ต้องลงบัญชีหลัก', status: 400 };
 
-  const txId = `TX-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  /* กำไร/ขาดทุนอัตราแลกเปลี่ยนลงเป็น "บรรทัดแยกต่างหาก" (North 2026-08-23)
-     🔴 ห้ามเกลี่ยเข้าไปในค่าใช้จ่ายแต่ละหมวด — ถ้าเกลี่ย จะดูไม่ออกเลยว่า
-        ปีนี้ขาดทุนค่าเงินไปเท่าไร และยอดหมวดอาหารจะเพี้ยนไปด้วยเหตุที่ไม่ใช่อาหาร
-     ยอดติดลบ = ขาดทุน (จ่ายบาทมากกว่าต้นทุน) · เป็นบวก = ได้คืนมากกว่าต้นทุน */
-  const totalAmount = round2([...byLine.values()].reduce((sum, row) => sum + row.amount, 0));
+  const rows = [...byLine.values()];
 
-  /* source มี CHECK จำกัดไว้ 4 ค่าและ D1 แก้ CHECK ไม่ได้ จึงใช้ WEB_GRID
-     ซึ่งหมายถึง "สร้างจากหน้าเว็บ" — ใกล้เคียงที่สุดและไม่ผิดความจริง */
-  const statements = [
-    env.DB.prepare(`
+  /* ── ตรวจซ้ำกับฐานก่อนเขียน ────────────────────────────────────────
+     บิลถูกตรวจตอนบันทึกไปแล้ว แต่ระหว่างทริปหมวดอาจถูกลบ หรือบัญชีอาจถูกย้าย
+     ครอบครัว · ตรวจอีกรอบตรงนี้ถูกกว่าการไปพบว่าสมุดบัญชีมีรายการที่ชี้ไปหาหมวด
+     ที่ไม่มีอยู่จริง ซึ่งทุกหน้าสรุปจะ JOIN ไม่ติดแล้วตัดทิ้งเงียบ ๆ */
+  const accountIds = [...new Set(rows.map(row => row.accountId))];
+  const okAccounts = await env.DB.prepare(`
+    SELECT a.account_id FROM Accounts a
+    JOIN Entities e ON e.entity_id = a.entity_id
+    WHERE e.family_id = ? AND a.account_id IN (${accountIds.map(() => '?').join(',')})
+  `).bind(ctx.trip.family_id, ...accountIds).all();
+  const usableAccounts = new Set((okAccounts.results || []).map(row => row.account_id));
+  const badAccounts = accountIds.filter(id => !usableAccounts.has(id));
+  if (badAccounts.length) {
+    return { error: `บัญชีที่ผูกไว้กับกระเป๋าไม่ใช่บัญชีของครอบครัวนี้: ${badAccounts.join(' · ')}`, status: 400 };
+  }
+
+  /* default_type ของหมวดคือสิ่งที่สมุดบัญชีหลักใช้ตั้งค่า type ของรายการย่อย
+     (frontend/app.js: `cat?.default_type || (amount >= 0 ? 'INCOME' : 'EXPENSE')`)
+     ทริปต้องใช้กติกาเดียวกันเป๊ะ ไม่ใช่ยัด 'EXPENSE' ตายตัว ไม่งั้นของที่ซื้อ
+     แล้วผูกไว้กับ Caption ฝั่งสินทรัพย์จะถูกติดป้ายผิดชนิดตั้งแต่แรก */
+  const categoryIds = [...new Set(rows.map(row => row.categoryId))];
+  const okCategories = await env.DB.prepare(`
+    SELECT c.category_id, c.default_type FROM Categories c
+    WHERE c.family_id = ? AND c.category_id IN (${categoryIds.map(() => '?').join(',')})
+  `).bind(ctx.trip.family_id, ...categoryIds).all();
+  const categoryInfo = new Map((okCategories.results || []).map(row => [row.category_id, row]));
+  const badCategories = categoryIds.filter(id => !categoryInfo.has(id));
+  if (badCategories.length) {
+    return {
+      error: `หมวดที่บิลผูกไว้ไม่มีอยู่ในผังบัญชีของครอบครัวนี้แล้ว: ${badCategories.join(' · ')} — ไปแก้หมวดของบิลก่อนปิดทริป`,
+      status: 400, unmapped: badCategories
+    };
+  }
+
+  /* 🔴 เงินจ่ายออก = ยอด **ติดลบ** ทั้งยอดหัวรายการและยอดย่อย
+     ตรงกับ signed model ของสมุดบัญชีหลัก (positive=income · negative=expense)
+     และรักษากติกา "ยอดหัว = ผลรวมยอดย่อย" ที่ฟอร์มสมุดหลักบังคับไว้ */
+  const statements = [];
+  const txIds = [];
+  let totalAmount = 0;
+
+  accountIds.forEach((accountId, accountIndex) => {
+    const own = rows.filter(row => row.accountId === accountId);
+    const accountTotal = round2(own.reduce((sum, row) => sum + row.amount, 0));
+    if (!accountTotal) return;
+
+    const txId = `TX-${projectId}-${Date.now()}-${accountIndex}-${Math.random().toString(36).slice(2, 6)}`;
+    txIds.push(txId);
+    totalAmount = round2(totalAmount + accountTotal);
+
+    /* source มี CHECK จำกัดไว้ 4 ค่าและ D1 แก้ CHECK ไม่ได้ จึงใช้ WEB_GRID
+       ซึ่งหมายถึง "สร้างจากหน้าเว็บ" — ใกล้เคียงที่สุดและไม่ผิดความจริง */
+    statements.push(env.DB.prepare(`
       INSERT INTO Transactions (transaction_id, account_id, date, total_amount, statement_desc,
         status, source, created_by_user_id)
       VALUES (?,?,?,?,?, 'CONFIRMED', 'WEB_GRID', ?)
-    `).bind(txId, accountId, postingDate, totalAmount, note, ctx.viewer.user_id || ctx.viewer.member_id)
-  ];
-  [...byLine.values()].forEach((row, index) => {
-    statements.push(env.DB.prepare(`
-      INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, entity_id, project_id, note, type)
-      VALUES (?,?,?,?,?,?,?, 'EXPENSE')
-    `).bind(`${txId}-D${index}`, txId, row.amount, row.categoryId, row.entityId, projectId,
-            row.who ? `${note} · ${row.who}` : note));
+    `).bind(txId, accountId, postingDate, -accountTotal, note,
+            ctx.viewer.user_id || ctx.viewer.member_id));
+
+    own.forEach((row, index) => {
+      const detailType = categoryInfo.get(row.categoryId)?.default_type || 'EXPENSE';
+      statements.push(env.DB.prepare(`
+        INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, entity_id, project_id, note, type)
+        VALUES (?,?,?,?,?,?,?,?)
+      `).bind(`${txId}-D${index}`, txId, -row.amount, row.categoryId, row.entityId, projectId,
+              row.who ? `${note} · ${row.who}` : note, detailType));
+    });
   });
 
+  if (!txIds.length) return { error: 'ไม่มียอดที่ต้องลงบัญชีหลัก', status: 400 };
 
-
-  return { txId, totalAmount, statements };
+  /* txId ตัวแรกไว้ใช้กับโค้ดเดิมที่ยังอ่านค่าเดียว · txIds คือของจริงทั้งหมด */
+  return { txId: txIds[0], txIds, totalAmount, statements };
 }
 
 /* ── รายการกำไร/ขาดทุนอัตราแลกเปลี่ยน (2026-08-23) ────────────────────
@@ -2339,6 +2632,20 @@ async function buildFxPostings(env, ctx, projectId, options) {
   `).bind(ctx.trip.family_id).all();
   const known = new Set((accounts.results || []).map(row => row.account_id));
 
+  /* หมวดของ FX ต้องเป็นหมวดของครอบครัวนี้จริง — เดิมตรวจแค่ "ไม่ว่าง"
+     ซึ่งแปลว่าส่ง id อะไรมาก็เขียนลงสมุดบัญชีได้ ถ้าเป็น id ที่ไม่มีอยู่จริง
+     ทุกหน้าสรุปจะ JOIN Categories ไม่ติดแล้วตัดรายการนั้นทิ้งเงียบ ๆ
+     เหลือแต่ยอดในบัญชีที่ขยับโดยไม่มีอะไรอธิบายได้ว่ามาจากไหน */
+  const fxCategoryIds = [...new Set(entries.map(entry => entry.categoryId).filter(Boolean))];
+  const knownCategories = new Set();
+  if (fxCategoryIds.length) {
+    const rows = await env.DB.prepare(`
+      SELECT category_id FROM Categories
+      WHERE family_id = ? AND category_id IN (${fxCategoryIds.map(() => '?').join(',')})
+    `).bind(ctx.trip.family_id, ...fxCategoryIds).all();
+    (rows.results || []).forEach(row => knownCategories.add(row.category_id));
+  }
+
   const statements = [];
   const txIds = [];
   entries.forEach((entry, index) => {
@@ -2350,6 +2657,9 @@ async function buildFxPostings(env, ctx, projectId, options) {
     }
     if (!known.has(entry.accountId)) {
       throw new HttpError(`บัญชีสำหรับกำไร/ขาดทุนของกระเป๋า "${entry.walletName}" ไม่ใช่บัญชีของครอบครัวนี้`, 400);
+    }
+    if (!knownCategories.has(entry.categoryId)) {
+      throw new HttpError(`หมวดสำหรับกำไร/ขาดทุนของกระเป๋า "${entry.walletName}" ไม่ใช่หมวดของครอบครัวนี้`, 400);
     }
     const txId = `TXFX-${projectId}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 5)}`;
     const label = `${note} · ${entry.amount < 0 ? 'ขาดทุน' : 'กำไร'}อัตราแลกเปลี่ยน · ${entry.walletName}`;
@@ -2464,16 +2774,15 @@ async function closeTrip(request, env, ctx, projectId, corsHeaders) {
   /* ⚠️ บัตรเครดิตไม่มี "เงินเหลือ" ให้จัดการ — ไม่เคยเติมเงินเข้าไปตั้งแต่แรก
      ตัวเลข leftover ของมันจึงติดลบเท่ากับที่ใช้ไป ซึ่งไม่ใช่หนี้สินที่ต้องจัดการ
      ตอนปิด (บิลบัตรจะถูกเรียกเก็บจากบัญชีอยู่แล้ว) ต้องกันออกจากด่านนี้ */
-  const needsLine = walletState.filter(s =>
-    s.wallet.kind !== 'CREDIT' && Math.abs(s.leftover) > EPSILON);
-  const missing = needsLine
-    .filter(s => !lines.some(l => l.wallet_id === s.wallet.wallet_id))
-    .map(s => s.wallet.name);
-  // ไม่ยอมให้ปิดทั้งที่ยังมีเงินเหลือค้างไม่ได้บอกว่าจะเอาไปไหน
-  // ถ้าปล่อยผ่าน เงินก้อนนั้นจะหายจากบัญชีเงียบ ๆ
-  if (missing.length) {
-    return json({ error: `ยังไม่ได้ระบุว่าจะจัดการเงินเหลือในกระเป๋าอย่างไร: ${missing.join(' · ')}` }, corsHeaders, 400);
-  }
+  /* ── เงินเหลือ: ค่าเริ่มต้นคือ "ปล่อยไว้" (North 2026-08-23 รอบสอง) ──────
+     🔴 เดิมบังคับว่าทุกกระเป๋าที่มีเงินเหลือต้องบอกว่าจะเอาไปไหน ไม่งั้นปิดไม่ได้
+        ซึ่งผิดกับวิธีทำงานจริง — North: "เงินที่เหลือในทริป ก็ไม่ต้องทำอะไร
+        ปล่อยเป็นยอดไว้" ญี่ปุ่นไปบ่อย เยนที่เหลือก็ค้างไว้ใช้ทริปหน้า
+        การแลกคืนเป็นการตัดสินใจ **หลังจบทริป** ไม่ใช่เงื่อนไขของการปิด
+
+     เงินเหลือไม่ต้องลงบัญชีอะไรเลย และนั่นถูกต้องโดยตัวมันเอง:
+     ตอนปิดทริปเราตัดออกจากบัญชีเฉพาะ "ยอดที่ใช้จริง" เงินที่เหลือจึงยังค้าง
+     เป็นยอดคงเหลือของบัญชี "เงินรอเที่ยว" อยู่แล้วโดยอัตโนมัติ ไม่หายไปไหน */
   // บัตรเครดิตได้เรทจริงจากยอดที่กรอกไปแล้วข้างบน จึงไม่ติดด่านนี้
   const noRate = walletState.filter(s => s.rate === null).map(s => s.wallet.name);
   if (noRate.length) {
@@ -2508,8 +2817,14 @@ async function closeTrip(request, env, ctx, projectId, corsHeaders) {
       // ถ้ารับรู้ตรงนี้จะเป็นการรับรู้กำไรที่ยังไม่เกิดขึ้นจริง
       carriedThb = round2(carriedThb + thbCost);
       closureLines.push({ ...line, disposition, thbCost, receivedThb: null, fx: 0 });
+    } else if (disposition === 'KEEP' || !disposition) {
+      /* ปล่อยไว้ = ไม่ทำอะไรกับเงินเหลือเลย · ไม่ใช่กำไรขาดทุน ไม่ใช่การยกยอด
+         ต้นทุนบาทของมันยังค้างเป็นยอดในบัญชีที่ผูกกับกระเป๋าอยู่แล้ว
+         (เพราะเราตัดออกจากบัญชีเฉพาะยอดที่ใช้จริง) · บันทึกบรรทัดไว้เพื่อ
+         ให้ตรวจย้อนได้ว่าตอนปิดทริปนั้นเหลือเท่าไรและคิดเป็นบาทเท่าไร */
+      closureLines.push({ ...line, disposition: 'KEEP', thbCost, receivedThb: null, fx: 0 });
     } else {
-      return json({ error: `disposition ต้องเป็น RETURN หรือ CARRY (ได้ ${line.disposition})` }, corsHeaders, 400);
+      return json({ error: `disposition ต้องเป็น RETURN, CARRY หรือ KEEP (ได้ ${line.disposition})` }, corsHeaders, 400);
     }
   }
 
@@ -2535,27 +2850,27 @@ async function closeTrip(request, env, ctx, projectId, corsHeaders) {
     }
   }
 
-  /* โพสต์เข้าบัญชีจริงเฉพาะเมื่อระบุบัญชีปลายทางมา — ไม่ระบุ = เก็บไว้ใน
-     TripClosures อย่างเดียวเหมือนเดิม จะได้ไม่เผลอเขียนลงสมุดบัญชีโดยไม่ตั้งใจ */
-  let posting = null;
-  if (body.account_id) {
-    posting = await buildLedgerPosting(env, ctx, projectId, data, {
-      accountId: body.account_id,
-      categoryMap: body.category_map || {},
-      defaultCategoryId: body.default_category_id || null,
-      // บัตรเครดิตใช้ "ยอดบาทจริงรายบิล" ไม่ใช่คูณเรท (ดูเหตุผลที่ closeTrip)
-      billSettled,
-      postingDate,
-      note: `ปิดทริป ${ctx.trip.name}`
-    });
-    if (posting.error) return json({ error: posting.error, unmapped: posting.unmapped }, corsHeaders, posting.status);
+  /* 🔴 ปิดทริป = ลงสมุดบัญชีเสมอ (North 2026-08-23 รอบสอง)
+     เดิมโพสต์ก็ต่อเมื่อ body.account_id ถูกส่งมา แต่หน้าจอไม่เคยส่ง
+     ผลคือปิดทริปมาตลอดโดย **ไม่มีอะไรเข้าสมุดบัญชีเลยสักบาท** ทั้งที่หน้าจอ
+     ขึ้นข้อความว่า "ยอดถูกบันทึกเข้าบัญชีจริง"
+     ตอนนี้บัญชีปลายทางมาจากกระเป๋าเอง จึงไม่มีอะไรต้องถามและไม่มีทางลืมส่ง */
+  const posting = await buildLedgerPosting(env, ctx, projectId, data, {
+    // บัตรเครดิตใช้ "ยอดบาทจริงรายบิล" ไม่ใช่คูณเรท (ดูเหตุผลที่ closeTrip)
+    billSettled,
+    postingDate,
+    note: `ปิดทริป ${ctx.trip.name}`
+  });
+  if (posting.error) {
+    return json({ error: posting.error, unmapped: posting.unmapped, needs_account: posting.needs_account },
+                corsHeaders, posting.status);
   }
 
   /* กำไร/ขาดทุนค่าเงินลงเป็น Transaction คนละใบ พร้อมบัญชีของตัวเอง
-     ⚠️ ทำเฉพาะเมื่อกำลังลงบัญชีจริงเท่านั้น — ถ้าไม่ได้ระบุ account_id
-        แปลว่าปิดแบบไม่แตะสมุดบัญชี ก็ไม่ควรไปสร้างรายการ FX ค้างไว้ */
+     เกิดเฉพาะกระเป๋าที่ **แลกคืนเป็นบาทจริง** (disposition = RETURN) เท่านั้น
+     เงินเหลือที่ปล่อยไว้หรือยกไปทริปหน้ายังไม่เกิดกำไรขาดทุน จึงไม่มีรายการ */
   let fxPosting = null;
-  if (body.account_id) {
+  {
     /* หนึ่งกระเป๋าที่มีผลต่าง = หนึ่งรายการในสมุดบัญชี
        บัญชีตั้งต้นคือบัญชีที่ผูกไว้กับกระเป๋าใบนั้น (เงินคืนกลับไปที่เดิม)
        แต่แก้ได้ตอนปิด เผื่อแลกคืนเข้าบัญชีอื่น */
@@ -2581,13 +2896,20 @@ async function closeTrip(request, env, ctx, projectId, corsHeaders) {
     }
   }
 
+  /* 🔴 เก็บ **ทุก** transaction_id ที่การปิดครั้งนี้สร้าง คั่นด้วยจุลภาค
+     เดิมเก็บได้ใบเดียว ทั้งที่รายการ FX ก็เป็นคนละใบ ผลคือเปิดทริปกลับแล้ว
+     รายการ FX ค้างอยู่ในสมุดบัญชีตลอดไปโดยไม่มีใครกลับให้
+     ตอนนี้ค่าใช้จ่ายก็แตกได้หลายใบตามบัญชีอีก จึงต้องเก็บเป็นรายการ
+     ค่าเดิมที่มีใบเดียวไม่มีจุลภาค จึงอ่านกลับได้เหมือนเดิมทุกประการ */
+  const linkedTxIds = [...(posting.txIds || []), ...(fxPosting?.txIds || [])].join(',') || null;
+
   const statements = [
     env.DB.prepare(`
       INSERT INTO TripClosures (closure_id, project_id, entry_type, posting_date, ledger_total,
         trip_only_total, fx_result, carried_thb, reverses_id, reason, performed_by, linked_transaction_id)
       VALUES (?,?,'CLOSE',?,?,?,?,?,NULL,?,?,?)
     `).bind(closureId, projectId, postingDate, ledgerTotal, tripOnlyTotal, fxResult, carriedThb,
-            body.reason || null, ctx.viewer.member_id, posting?.txId || null),
+            body.reason || null, ctx.viewer.member_id, linkedTxIds),
     ...(posting?.statements || []),
     ...(fxPosting?.statements || []),
     env.DB.prepare(`UPDATE Projects SET status='closed', closed_at=CURRENT_TIMESTAMP, posting_date=? WHERE project_id=?`)
@@ -2602,6 +2924,20 @@ async function closeTrip(request, env, ctx, projectId, corsHeaders) {
     closureLines.push({
       wallet_id: state.wallet.wallet_id, disposition: 'SETTLED',
       thbCost: state.settledThb, receivedThb: null, fx: 0
+    });
+  });
+
+  /* กระเป๋าที่มีเงินเหลือแต่ไม่ได้ส่งบรรทัดมา = "ปล่อยไว้" — เติมบรรทัดให้เอง
+     ไม่ใช่เงียบไป เพราะ TripClosureLines คือที่เดียวที่บอกได้ว่าตอนปิดทริป
+     กระเป๋าใบนั้นเหลือเท่าไรและคิดเป็นบาทเท่าไร ถ้าไม่มีแถว ก็ตรวจย้อนไม่ได้เลย
+     ว่าเงินที่ค้างอยู่ในบัญชี "เงินรอเที่ยว" วันนี้มาจากทริปไหนบ้าง */
+  walletState.forEach(state => {
+    if (state.wallet.kind === 'CREDIT') return;
+    if (Math.abs(state.leftover) <= EPSILON) return;
+    if (closureLines.some(line => line.wallet_id === state.wallet.wallet_id)) return;
+    closureLines.push({
+      wallet_id: state.wallet.wallet_id, disposition: 'KEEP',
+      thbCost: round2(state.leftover * state.rate), receivedThb: null, fx: 0
     });
   });
 
@@ -2646,9 +2982,13 @@ async function closeTrip(request, env, ctx, projectId, corsHeaders) {
     ledger_total: ledgerTotal, trip_only_total: tripOnlyTotal,
     fx_result: fxResult, carried_thb: carriedThb,
     net_ledger_thb: round2(net?.net || 0),
-    posted_to_ledger: Boolean(posting),
-    transaction_id: posting?.txId || null,
-    transaction_total: posting?.totalAmount ?? null
+    posted_to_ledger: true,
+    transaction_id: posting.txId || null,
+    // ค่าใช้จ่ายแตกได้หลายใบตามบัญชีของกระเป๋า · FX อีกใบต่อกระเป๋าที่แลกคืน
+    transaction_ids: posting.txIds || [],
+    fx_transaction_ids: fxPosting?.txIds || [],
+    // ยอดที่ตัดออกจากบัญชีจริง — ติดลบเหมือนค่าใช้จ่ายทุกใบในสมุดบัญชีหลัก
+    transaction_total: posting.totalAmount != null ? -posting.totalAmount : null
   }, corsHeaders);
 }
 
@@ -2673,29 +3013,43 @@ async function reopenTrip(request, env, ctx, projectId, corsHeaders) {
      **ไม่ลบ Transaction เดิม** — สมุดบัญชีมีแต่เพิ่ม ไม่มีลบ ไม่งั้นงบที่เคย
      พิมพ์ออกไปแล้วจะอธิบายไม่ได้ว่ารายการหายไปไหน · ลงเป็นยอดติดลบแทน */
   let reversalTxId = null;
+  const reversalTxIds = [];
   const reversalStatements = [];
-  if (lastClose.linked_transaction_id) {
+  /* 🔴 กลับ **ทุกใบ** ที่การปิดครั้งนั้นสร้าง ไม่ใช่ใบเดียว
+     ค่าใช้จ่ายแตกตามบัญชีได้หลายใบ และรายการ FX ก็เป็นคนละใบอีก
+     ถ้ากลับแค่ใบแรก ที่เหลือจะค้างในสมุดบัญชีตลอดไปโดยไม่มีอะไรฟ้อง
+     ค่าเก่าที่เก็บไว้ใบเดียวไม่มีจุลภาค split แล้วได้อาเรย์ตัวเดียว จึงเข้ากันได้ */
+  const linkedIds = String(lastClose.linked_transaction_id || '')
+    .split(',').map(id => id.trim()).filter(Boolean);
+
+  for (const [order, linkedId] of linkedIds.entries()) {
     const original = await env.DB.prepare(`SELECT * FROM Transactions WHERE transaction_id=?`)
-      .bind(lastClose.linked_transaction_id).first();
+      .bind(linkedId).first();
+    if (!original) continue;
     const details = await env.DB.prepare(`SELECT * FROM TransactionDetails WHERE transaction_id=?`)
-      .bind(lastClose.linked_transaction_id).all();
-    if (original) {
-      reversalTxId = `TX-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      .bind(linkedId).all();
+
+    const txId = `TX-${projectId}-${Date.now()}-${order}-${Math.random().toString(36).slice(2, 6)}`;
+    if (!reversalTxId) reversalTxId = txId;
+    reversalTxIds.push(txId);
+    reversalStatements.push(env.DB.prepare(`
+      INSERT INTO Transactions (transaction_id, account_id, date, total_amount, statement_desc,
+        status, source, created_by_user_id)
+      VALUES (?,?,?,?,?, 'CONFIRMED', 'WEB_GRID', ?)
+    `).bind(txId, original.account_id, original.date, -original.total_amount,
+            `กลับรายการปิดทริป ${ctx.trip.name}`,
+            ctx.viewer.user_id || ctx.viewer.member_id));
+
+    /* คัดลอก entity_id และ type ของเดิมมาด้วย — เดิมตกไปสองช่อง ทำให้รายการ
+       ที่กลับไม่ติดป้ายบริษัท และถูกยัดเป็น 'EXPENSE' เสมอ ซึ่งผิดทันทีที่ของ
+       เดิมเป็นหมวดฝั่งสินทรัพย์ · รายการกลับต้องเป็นเงาของต้นฉบับทุกช่อง */
+    (details.results || []).forEach((row, index) => {
       reversalStatements.push(env.DB.prepare(`
-        INSERT INTO Transactions (transaction_id, account_id, date, total_amount, statement_desc,
-          status, source, created_by_user_id)
-        VALUES (?,?,?,?,?, 'CONFIRMED', 'WEB_GRID', ?)
-      `).bind(reversalTxId, original.account_id, original.date, -original.total_amount,
-              `กลับรายการปิดทริป ${ctx.trip.name}`,
-              ctx.viewer.user_id || ctx.viewer.member_id));
-      (details.results || []).forEach((row, index) => {
-        reversalStatements.push(env.DB.prepare(`
-          INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, project_id, note, type)
-          VALUES (?,?,?,?,?,?, 'EXPENSE')
-        `).bind(`${reversalTxId}-D${index}`, reversalTxId, -row.amount, row.category_id,
-                row.project_id, `กลับรายการ · ${reason}`));
-      });
-    }
+        INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, entity_id, project_id, note, type)
+        VALUES (?,?,?,?,?,?,?,?)
+      `).bind(`${txId}-D${index}`, txId, -row.amount, row.category_id, row.entity_id || null,
+              row.project_id, `กลับรายการ · ${reason}`, row.type || 'EXPENSE'));
+    });
   }
 
   const reopenId = `TC-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2709,7 +3063,7 @@ async function reopenTrip(request, env, ctx, projectId, corsHeaders) {
       VALUES (?,?,'REOPEN',?,?,?,?,?,?,?,?,?)
     `).bind(reopenId, projectId, lastClose.posting_date, -lastClose.ledger_total,
             -lastClose.trip_only_total, -lastClose.fx_result, -lastClose.carried_thb,
-            lastClose.closure_id, reason, ctx.viewer.member_id, reversalTxId),
+            lastClose.closure_id, reason, ctx.viewer.member_id, reversalTxIds.join(',') || null),
     env.DB.prepare(`UPDATE Projects SET status='active', closed_at=NULL WHERE project_id=?`).bind(projectId),
     // ปลดล็อกเรท ให้กลับไปคำนวณสดเหมือนก่อนปิด
     env.DB.prepare(`UPDATE TripWallets SET locked_rate=NULL WHERE project_id=?`).bind(projectId),
@@ -2722,7 +3076,8 @@ async function reopenTrip(request, env, ctx, projectId, corsHeaders) {
     ok: true, closure_id: reopenId, reverses: lastClose.closure_id,
     posting_date: lastClose.posting_date, ledger_total: -lastClose.ledger_total,
     net_ledger_thb: round2(net?.net || 0),
-    reversed_transaction_id: reversalTxId
+    reversed_transaction_id: reversalTxId,
+    reversed_transaction_ids: reversalTxIds
   }, corsHeaders);
 }
 
@@ -2798,6 +3153,35 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
   if (!ctx) return json({ error: 'ไม่พบทริปนี้ หรือไม่มีสิทธิ์เข้าถึง' }, corsHeaders, 404);
   const { trip } = ctx;
 
+  /* สมาชิกครอบครัวไม่ได้แปลว่าเป็นสมาชิกทุกทริปในครอบครัวเดียวกัน
+     ผู้ดูแลครอบครัวมีทางกู้ทริปกำพร้าได้เฉพาะแก้ metadata/ลบเท่านั้น
+     แต่ต้องไม่เห็นรายชื่อ บิล แผน เอกสาร หรือตำแหน่งของทริปนั้น */
+  if (!ctx.viewer && !ctx.familyAdmin) {
+    return json({ error: 'ไม่พบทริปนี้ หรือไม่มีสิทธิ์เข้าถึง' }, corsHeaders, 404);
+  }
+  if (!ctx.viewer && ctx.familyAdmin) {
+    const mayManageOrphan = sub === '/trip' && ['POST', 'DELETE'].includes(request.method);
+    if (request.method !== 'GET' && !mayManageOrphan) {
+      return json({ error: 'ผู้ดูแลครอบครัวต้องเป็นสมาชิกทริปก่อน จึงจะจัดการรายละเอียดภายในได้' }, corsHeaders, 403);
+    }
+    if (request.method === 'GET' && sub) {
+      return json({ error: 'ต้องเป็นสมาชิกทริปจึงจะดูรายละเอียดส่วนนี้ได้' }, corsHeaders, 403);
+    }
+    if (request.method === 'GET') {
+      return json({
+        trip: { ...trip, closed: ctx.closed }, viewer: null,
+        members: [], currencies: [], wallets: [], expenses: [], stops: [], day_plans: [],
+        presets: [], documents: [], bookings: [], ledger_categories: [], presence: [], closures: [],
+        ledger: { net_thb: 0, net_trip_only_thb: 0 },
+        meta: {
+          phase: 'read-only', viewer_is_admin: false, can_view_trip_data: false,
+          can_manage_trip: true, can_manage_members: false, can_manage_shared_settings: false,
+          is_guest: false, hidden_expense_count: 0
+        }
+      }, corsHeaders);
+    }
+  }
+
   /* ⚠️ ด่านของผู้ร่วมทริป — ปฏิเสธทุกอย่างที่ไม่ได้อยู่ในรายการนี้
      เขียนเป็น allow-list โดยตั้งใจ: endpoint ใหม่ที่เพิ่มวันหลังจะถูกห้าม
      โดยอัตโนมัติ ต้องมาแก้ตรงนี้ถึงจะเปิดให้ ซึ่งบังคับให้คิดเรื่องสิทธิ์ทุกครั้ง
@@ -2829,6 +3213,9 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     }
     if (sub === '/stops/order' && request.method === 'POST') return reorderStops(request, env, ctx, projectId, corsHeaders);
     if (sub === '/days' && request.method === 'POST') return writeDayPlan(request, env, ctx, projectId, corsHeaders);
+    if (sub === '/days' && request.method === 'DELETE') {
+      return deleteDayPlan(env, ctx, projectId, url.searchParams.get('date') || '', corsHeaders);
+    }
     /* รายการค่าใช้จ่ายย่อย — อยู่ก่อนด่านทริปปิดเช่นกัน เพราะเป็นแค่ชื่อกับไอคอน
        ไม่ใช่ตัวเลขบัญชี · แก้ชื่อ/ไอคอนย้อนหลังหลังปิดทริปได้เหมือนแผนเที่ยว */
     if (sub === '/presets' && request.method === 'POST') return writePreset(request, env, ctx, projectId, corsHeaders);
@@ -2902,7 +3289,7 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     return geocodeTripStops(env, projectId, offset, corsHeaders);
   }
 
-  const [members, currencies, wallets, fundings, expenses, categories, participants, closures, closureLines, presence, stops, dayPlans, ledgerCategories, presets, documents] =
+  const [members, currencies, wallets, fundings, expenses, categories, participants, closures, closureLines, presence, stops, dayPlans, ledgerCategories, presets, documents, bookings] =
     await Promise.all([
       /* has_passcode แทนการส่ง passcode_hash ออกไป — หน้าจอต้องรู้แค่ว่า
        "ตั้งรหัสแล้วหรือยัง" ไม่ควรได้เห็นค่า hash เลยแม้จะแฮชแล้วก็ตาม */
@@ -2938,12 +3325,13 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
       /* ผังบัญชีของครอบครัว — ส่งไปให้ฟอร์มบิลเลือกได้ตั้งแต่ตอนบันทึก
          จะได้ไม่ต้องมานั่งจับคู่ทีหลังตอนปิดทริป ซึ่งคนปิดต้องเดาว่าบิล
          "ของฝาก" ควรลงหมวดอะไร ทั้งที่คนจดรู้อยู่แล้ว
-         เอาเฉพาะ behavior = EXPENSE เพราะนี่คือฟอร์มค่าใช้จ่าย */
+         🔴 ส่งทุก Caption ไม่ใช่เฉพาะฝั่งค่าใช้จ่าย — ของที่ซื้อระหว่างทริป
+            อาจเป็นสินทรัพย์ (กล้อง/คอมพิวเตอร์) · หน้าจอจัดกลุ่มตาม caption_name เอง */
       env.DB.prepare(`
         SELECT c.category_id, c.name AS category_name, c.caption_id,
                cap.name AS caption_name, cap.behavior
           FROM Categories c JOIN Captions cap ON cap.type_id = c.caption_id
-         WHERE c.family_id = ? AND cap.behavior = 'EXPENSE'
+         WHERE c.family_id = ?
          ORDER BY cap.name, c.name
       `).bind(trip.family_id).all(),
       /* รายการค่าใช้จ่ายย่อยของทริปนี้ พร้อมชื่อหมวดบัญชีที่ผูกไว้ — หน้าจอจะได้
@@ -2971,7 +3359,10 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
           LEFT JOIN TripStops s ON s.stop_id = d.related_entity_id
          WHERE d.project_id = ?
          ORDER BY d.created_at
-      `).bind(projectId).all()
+      `).bind(projectId).all(),
+      /* การจองของแต่ละจุดแวะ (1:1) — ส่งแยกเป็นรายการ ฝั่งหน้าจอประกบเข้า stop.booking เอง
+         ไม่ JOIN เข้า stops เพราะชื่อคอลัมน์ซ้ำกัน (notes/status/created_at) จะทับกันเงียบ ๆ */
+      env.DB.prepare(`SELECT * FROM TripBookings WHERE project_id=?`).bind(projectId).all()
     ]);
 
   const memberRows = members.results || [];
@@ -3026,9 +3417,31 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
       };
     });
 
+  /* ── ใครเห็นกระเป๋าของใคร (แก้ 2026-08-23) ──────────────────────────
+     🔴 เดิมกรองเหลือเฉพาะกระเป๋าของตัวเอง **โดยไม่มีข้อยกเว้นให้ใครเลย**
+        ผลคือผู้ดูแลทริปแก้กระเป๋าของคนอื่นไม่ได้ ทั้งที่ canActFor() อนุญาตไว้แล้ว
+        — สิทธิ์ที่ให้ไว้ฝั่งเขียน ใช้ไม่ได้จริงเพราะฝั่งอ่านไม่เคยส่งข้อมูลไปให้
+        และ `managed_by` ("ให้คนนี้จดกระเป๋าแทนฉัน") ใช้ไม่ได้เลย 100% ด้วยเหตุผลเดียวกัน
+
+     North 2026-08-23: "คนสร้างทริปคือ admin และสามารถอนุญาตให้ใครเป็น admin
+     เพิ่มได้ เพื่อการดูแลและจัดการทริป ถ้าเป็น admin แล้วก็สามารถแก้ไข
+     เปลี่ยนแปลง ลบ เพิ่ม ได้ทั้งหมด"
+
+     ⚠️ กติกาฝั่งอ่านต้องตรงกับ canActFor() เป๊ะ ๆ ไม่งั้นจะกลับไปเป็นปัญหาเดิม
+        คือ "กดปุ่มได้แต่ของไม่โผล่" หรือ "เห็นแต่กดไม่ได้" */
+  const managedByViewer = new Set(
+    (memberRows || [])
+      .filter(row => row.managed_by && row.managed_by === viewer?.member_id)
+      .map(row => row.member_id)
+  );
+  const walletVisible = row =>
+    !row.owner_member_id
+    || row.owner_member_id === viewer?.member_id
+    || Boolean(viewer?.is_admin)
+    || managedByViewer.has(row.owner_member_id);
+
   const walletSummaries = walletRows
-    // ยอดคงเหลือและประวัติเติมเงินเป็นของเจ้าของกระเป๋าเท่านั้น
-    .filter(row => !row.owner_member_id || row.owner_member_id === viewer?.member_id)
+    .filter(walletVisible)
     .map(row => {
       const lots = fundingRows.filter(f => f.wallet_id === row.wallet_id);
       const fundedForeign = lots.reduce((sum, f) => sum + (f.foreign_amount || 0), 0);
@@ -3064,6 +3477,7 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     day_plans: dayPlans.results || [],
     presets: presetRows,
     documents: documents.results || [],
+    bookings: bookings.results || [],
     ledger_categories: ledgerCategories.results || [],
     presence: presence.results || [],
     closures: closureRows.map(row => ({
@@ -3074,9 +3488,12 @@ export async function handleUnifiedTrip(request, env, url, corsHeaders, userId =
     meta: {
       phase: 'read-only',
       viewer_is_admin: Boolean(viewer?.is_admin),
+      can_view_trip_data: Boolean(viewer),
       // สิทธิ์จัดการข้อมูลทริป (แก้ชื่อ/วันที่/ประเภท/ลบ) — รวมผู้ดูแลระบบครอบครัว
       // ที่ไม่ได้เป็นสมาชิกทริปด้วย หน้าจอใช้ตัวนี้ตัดสินปุ่ม ไม่ต้องเดาเอง
       can_manage_trip: Boolean(viewer?.is_admin) || ctx.familyAdmin,
+      can_manage_members: Boolean(viewer?.is_admin) && !ctx.guest,
+      can_manage_shared_settings: Boolean(viewer?.is_admin) && !ctx.guest,
       /* เข้ามาด้วยรหัสผู้ร่วมทริปหรือไม่ — หน้าจอใช้ซ่อนปุ่มที่กดไปก็โดนปฏิเสธ
          (เซิร์ฟเวอร์กันไว้อยู่แล้ว ตัวนี้แค่ทำให้จอไม่หลอกตา) */
       is_guest: Boolean(ctx.guest),

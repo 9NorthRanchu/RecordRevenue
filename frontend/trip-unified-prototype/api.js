@@ -200,6 +200,17 @@ const TripApi = (() => {
         (byDate[date] ||= []).push(stop);
       });
 
+    /* 🔴 วันในแผน = วันที่มีจุดแวะ **รวมกับ** วันที่ถูกลงทะเบียนไว้ใน TripDayPlans
+       (2026-09-07) — เดิมเอาจากจุดแวะอย่างเดียว ผลคือวันเปล่าไม่มีตัวตน
+       สร้างไม่ได้ แก้ไม่ได้ ลบไม่ได้ · ตอนนี้เพิ่มวันไว้ก่อนแล้วค่อยเติมสถานที่ได้ */
+    Object.keys(dayTitleByDate).forEach(date => { byDate[date] ||= []; });
+
+    /* การจองของจุดแวะ (2026-09-15) — เซิร์ฟเวอร์ส่งแยกเป็น bookings[] ประกบเข้า
+       activity.booking ตรงนี้ · ไม่มี = null · คงชื่อคอลัมน์ snake_case ตามฐาน
+       เพราะฟอร์มส่งกลับทั้งก้อนเหมือนเดิม จะได้ไม่ต้องแปลงไปกลับสองรอบ */
+    const bookingByStop = {};
+    (payload.bookings || []).forEach(row => { bookingByStop[row.stop_id] = row; });
+
     const planDays = Object.keys(byDate).sort().map((date, index) => ({
       id: `stop-day-${date}`,
       day: index + 1,
@@ -212,7 +223,12 @@ const TripApi = (() => {
         endTime: stop.end_time || '',
         name: stop.name_th || stop.name_en || stop.city || 'จุดแวะ',
         detail: stop.notes || stop.accommodation || '',
-        tag: stop.accommodation ? 'ที่พัก' : 'สถานที่',
+        /* 🔴 ต้องเป็นชื่อที่ตรงกับตัวเลือกใน #activityTag เป๊ะ ๆ (North 2026-09-07)
+           เดิมส่ง 'สถานที่' ซึ่งไม่มีในลิสต์ (ลิสต์เขียนว่า 'สถานที่หลัก')
+           select จึงกลายเป็นช่องว่างเปล่าทุกครั้งที่เปิดแก้ไขของเดิม
+           ลำดับการอ่าน: ค่าที่บันทึกไว้จริง → เดาจาก accommodation (ข้อมูลก่อน
+           มีคอลัมน์ stop_tag) → 'สถานที่หลัก' · ห้ามคืนค่าว่าง */
+        tag: stop.stop_tag || (stop.accommodation ? 'ที่พัก' : 'สถานที่หลัก'),
         cost: '—',
         bills: 'ยังไม่ผูกบิล',
         image: stop.icon_asset || '',
@@ -232,7 +248,9 @@ const TripApi = (() => {
         closedDays: String(stop.closed_days || '').split(',').filter(Boolean).map(Number),
         visitStatus: String(stop.visit_status || 'PLANNED').toUpperCase(),
         skippedReason: stop.skipped_reason || '',
-        highlight: stop.highlight_text || ''
+        highlight: stop.highlight_text || '',
+        city: stop.city || '',
+        booking: bookingByStop[stop.stop_id] || null
       }))
     }));
 
@@ -295,6 +313,9 @@ const TripApi = (() => {
       /* สิทธิ์จัดการทริป — เซิร์ฟเวอร์คิดให้แล้ว (รวมผู้ดูแลระบบครอบครัว
          ที่ไม่ได้เป็นสมาชิกทริป) หน้าจอห้ามเดาซ้ำจากรายชื่อสมาชิกอย่างเดียว */
       canManageTrip: Boolean(payload.meta?.can_manage_trip),
+      canViewTripData: payload.meta?.can_view_trip_data !== false,
+      canManageMembers: Boolean(payload.meta?.can_manage_members),
+      canManageSharedSettings: Boolean(payload.meta?.can_manage_shared_settings),
       // เข้ามาด้วยรหัสผู้ร่วมทริปหรือไม่ — ใช้ซ่อนปุ่มที่กดไปก็โดนปฏิเสธ
       isGuest: Boolean(payload.meta?.is_guest)
     };
@@ -448,9 +469,11 @@ const TripApi = (() => {
   });
   const removeMember = id => send('DELETE', '/members', { query: `&id=${encodeURIComponent(id)}` });
 
-  /* ปิดทริป — ต้องบอกทุกกระเป๋าที่มีเงินเหลือว่าจะเอาไปไหน ไม่งั้นเซิร์ฟเวอร์
-     ปฏิเสธ (เงินที่ไม่ได้ระบุจะหายจากบัญชีเงียบ ๆ)
-     ยอดที่ลงบัญชีเซิร์ฟเวอร์คิดเองจากผู้ร่วมจ่ายจริง หน้าจอไม่ส่งขึ้นไป */
+  /* ปิดทริป — ยอดที่ลงบัญชีเซิร์ฟเวอร์คิดเองจากผู้ร่วมจ่ายจริง หน้าจอไม่ส่งขึ้นไป
+     บัญชีปลายทางก็เช่นกัน: มาจากบัญชีที่ผูกไว้กับกระเป๋าที่จ่ายบิลใบนั้น
+     ไม่ใช่ค่าที่หน้าจอส่งมา จึงไม่มีทางลืมส่งแล้วเงียบไปทั้งก้อนเหมือนเดิม
+
+     เงินเหลือค่าเริ่มต้นคือ "ปล่อยไว้" (KEEP) ไม่ต้องตอบก่อนปิดอีกแล้ว */
   const closeTrip = ({ postingDate, lines, reason, settlements, fxCategoryId }) => send('POST', '/closures', {
     body: {
       posting_date: postingDate, reason: reason || null,
@@ -459,13 +482,18 @@ const TripApi = (() => {
       // หมวดตั้งต้นของ FX — แต่ละกระเป๋าแทนที่ด้วยของตัวเองได้
       fx_category_id: fxCategoryId || null,
       lines: lines.map(line => {
-        return line.mode === 'carry'
-          ? { wallet_id: line.walletId, disposition: 'CARRY',
-              carry_currency: line.carryCurrency, carry_amount: line.carryAmount }
-          /* 🔴 บัญชี/หมวดของกำไร-ขาดทุนติดมากับบรรทัดของกระเป๋าใบนั้น
-             ห้ามรวมข้ามกระเป๋า — แต่ละใบแลกคืนเข้าคนละบัญชีได้ */
-          : { wallet_id: line.walletId, disposition: 'RETURN', received_thb: line.receivedThb,
-              fx_account_id: line.fxAccountId || null, fx_category_id: line.fxCategoryId || null };
+        if (line.mode === 'carry') {
+          return { wallet_id: line.walletId, disposition: 'CARRY',
+                   carry_currency: line.carryCurrency, carry_amount: line.carryAmount };
+        }
+        // ปล่อยไว้ = ไม่แตะเงินเลย ไม่มียอดรับคืน ไม่มีกำไร/ขาดทุน จึงไม่ต้องมีบัญชีหรือหมวด
+        if (line.mode === 'keep') {
+          return { wallet_id: line.walletId, disposition: 'KEEP' };
+        }
+        /* 🔴 บัญชี/หมวดของกำไร-ขาดทุนติดมากับบรรทัดของกระเป๋าใบนั้น
+           ห้ามรวมข้ามกระเป๋า — แต่ละใบแลกคืนเข้าคนละบัญชีได้ */
+        return { wallet_id: line.walletId, disposition: 'RETURN', received_thb: line.receivedThb,
+                 fx_account_id: line.fxAccountId || null, fx_category_id: line.fxCategoryId || null };
       })
     }
   });
@@ -504,7 +532,7 @@ const TripApi = (() => {
 
   /* จุดแวะ — id ที่ prototype สร้างเองขึ้นต้นด้วย activity- ไม่ใช่ของจริงในฐาน
      ต้องไม่ส่งขึ้นไป ไม่งั้นเซิร์ฟเวอร์จะหาไม่เจอแล้วตอบ 404 ทั้งที่เป็นการสร้างใหม่ */
-  const saveStop = ({ id, dayDate, time, endTime, name, detail, tag, icon, visitStatus, skippedReason, highlight, plannedCost, plannedCurrency, mapcode, openTime, closeTime, closedDays }) => send('POST', '/stops', {
+  const saveStop = ({ id, dayDate, time, endTime, name, detail, tag, icon, visitStatus, skippedReason, highlight, plannedCost, plannedCurrency, mapcode, openTime, closeTime, closedDays, booking }) => send('POST', '/stops', {
     body: {
       stop_id: id && !id.startsWith('activity-') ? id : undefined,
       stop_date: dayDate,
@@ -513,6 +541,10 @@ const TripApi = (() => {
       name_th: name,
       notes: detail,
       accommodation: tag === 'ที่พัก' ? detail || name : undefined,
+      /* ประเภทถูกเก็บจริงแล้วตั้งแต่ 2026-09-07 (คอลัมน์ TripStops.stop_tag)
+         accommodation ข้างบนยังต้องส่งต่อไป เพราะของเก่าทั้งฐานใช้ช่องนั้นบอก
+         "ที่พัก" อยู่ และหน้าอื่นยังอ่านจากตรงนั้น */
+      stop_tag: tag || undefined,
       icon_asset: icon || undefined,
       visit_status: visitStatus || undefined,
       skipped_reason: skippedReason || undefined,
@@ -524,7 +556,9 @@ const TripApi = (() => {
       mapcode: mapcode === undefined ? undefined : mapcode,
       open_time: openTime === undefined ? undefined : openTime,
       close_time: closeTime === undefined ? undefined : closeTime,
-      closed_days: closedDays === undefined ? undefined : (closedDays || []).join(',')
+      closed_days: closedDays === undefined ? undefined : (closedDays || []).join(','),
+      /* การจอง: undefined = ไม่แตะ · null = ลบ · object = สร้าง/แก้ (กติกาเดียวกับเซิร์ฟเวอร์) */
+      booking
     }
   });
   const removeStop = id => send('DELETE', '/stops', { query: `&id=${encodeURIComponent(id)}` });
@@ -535,6 +569,13 @@ const TripApi = (() => {
   const saveDayTitle = (planDate, title) => send('POST', '/days', {
     body: { plan_date:planDate, title }
   });
+  /* เพิ่ม/แก้ "วัน" ในแผน (2026-09-07) — วันมีตัวตนของตัวเองแล้ว ไม่ต้องมี
+     สถานที่ก่อนถึงจะมีวันได้ · newDate มีค่า = ย้ายวัน (พาจุดแวะไปด้วยทั้งหมด) */
+  const saveDay = ({ date, title = '', newDate = '' }) => send('POST', '/days', {
+    body: { plan_date: date, title, new_plan_date: newDate || '' }
+  });
+  // ลบไม่ได้ถ้ายังมีสถานที่ในวันนั้น — เซิร์ฟเวอร์ตอบ 409 พร้อมบอกจำนวน
+  const removeDay = date => send('DELETE', '/days', { query: `&date=${encodeURIComponent(date)}` });
 
   /* ── รายการค่าใช้จ่ายย่อยของทริป ─────────────────────────────────────
      ชื่อ+ไอคอน+หมวดบัญชีที่ผูก · id ที่หน้าจอสร้างเองขึ้นต้นด้วย new- ไม่ใช่ของจริง
@@ -655,7 +696,7 @@ const TripApi = (() => {
     config, fetchTrip, toPrototypeState, toExpenseBody,
     saveExpense, removeExpense, saveCurrency, removeCurrency,
     saveMember, removeMember, saveWallet, removeWallet, reorderExpenses, reorderActivity, saveFunding, removeFunding, closeTrip, reopenTrip,
-    saveStop, removeStop, reorderStops, saveDayTitle, saveTripMeta, saveBanner,
+    saveStop, removeStop, reorderStops, saveDayTitle, saveDay, removeDay, saveTripMeta, saveBanner,
     listTrips, createTrip, deleteTrip, authHeaders, sessionToken, bannerPath,
     uploadIcon, listFamilyUsers, listFamilyAccounts, listUploadedIcons, removeUploadedIcon, loadCategoryIcons, saveCategoryIcon, savePreset, removePreset, copyPresets,
     saveDocument, removeDocument, uploadDocument, weatherFor, geocodeStops, routeLegs, checkIn,

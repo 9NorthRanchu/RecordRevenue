@@ -490,6 +490,54 @@ body{font-family:Poppins,Anuphan,system-ui,sans-serif}
 .trip-locked-note b{color:var(--ink)}
 body.trip-closed .mobile-fab{opacity:.4;pointer-events:none}
 
+/* ── ฟอร์มของ "วัน" + ปุ่มแก้ไขบนแท็บวัน (2026-09-07) ────────────────
+   วันเป็นภาชนะ สถานที่เป็นของข้างใน — ฟอร์มจึงมีแค่สองช่องโดยตั้งใจ */
+.day-dialog .day-dialog-lead{margin:2px 0 14px;color:var(--muted);font-size:12.5px;line-height:1.6}
+.day-dialog #dayForm{display:grid;gap:12px}
+.day-dialog label{display:grid;gap:5px;font-weight:700;font-size:13.5px}
+.day-dialog label small{font-weight:500;color:var(--muted)}
+.day-dialog input{width:100%;border:1px solid #d9d5d0;background:#fff;border-radius:12px;
+  padding:11px;font:14px Anuphan,Sarabun,sans-serif;color:var(--ink)}
+.day-dialog .day-dialog-actions{display:flex;gap:9px;align-items:center;margin-top:4px}
+/* ปุ่มลบอยู่ซ้ายสุด แยกจากปุ่มยืนยันฝั่งขวา — กดพลาดยากขึ้นมาก */
+.day-dialog .danger-btn{margin-right:auto;border:1px solid #f0c2cf;background:#fdeaef;color:#a8324f;
+  border-radius:12px;padding:10px 15px;font:700 13px Anuphan,sans-serif;cursor:pointer}
+.day-dialog .danger-btn:disabled{opacity:.55;cursor:not-allowed}
+.day-dialog .danger-btn[hidden]{display:none}
+
+/* ป้ายชื่อวันและปุ่มดินสอบนแท็บวัน */
+#planDayTabs button{position:relative}
+#planDayTabs .day-tab-title{display:block;font-style:normal;font-size:10.5px;font-weight:600;
+  opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px}
+#planDayTabs .day-tab-edit{position:absolute;top:4px;right:5px;font-size:11px;line-height:1;
+  opacity:.45;cursor:pointer;padding:2px}
+#planDayTabs button:hover .day-tab-edit,
+#planDayTabs button.active .day-tab-edit{opacity:1}
+
+/* ปุ่มย้ายไปวันอื่นบนการ์ดสถานที่ + ไฮไลต์แถบเลือกวันปลายทางตอนถูกพาไป
+   (2026-09-07) — ความสามารถนี้มีอยู่แล้วแต่ซ่อนท้ายหน้า คนหาไม่เจอ */
+.plan-actions .moveday-plan-item{background:#eef4ff;border-color:#c9dcff}
+.plan-actions .moveday-plan-item:disabled{opacity:.4;cursor:not-allowed}
+#crossDayMove.flash{animation:crossDayFlash 1.2s ease-out}
+@keyframes crossDayFlash{
+  0%{box-shadow:0 0 0 0 rgba(232,111,145,.55)}
+  100%{box-shadow:0 0 0 14px rgba(232,111,145,0)}
+}
+
+/* ── แถบบอกสถานะ "ผู้ร่วมทริป" (2026-09-03) ──────────────────────────
+   สีส้มอ่อน ไม่ใช่สีแดง — นี่ไม่ใช่ error แต่เป็นการบอกว่าตอนนี้เป็นใคร
+   ติดใต้ topbar ทุกหน้า เพราะข้อจำกัดนี้มีผลกับทุกหน้าไม่ใช่หน้าใดหน้าหนึ่ง */
+.guest-note{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0;
+  padding:11px 28px;background:#fff4e5;border-bottom:1px solid #f2ddbe;
+  color:#7a4f14;font:600 12.5px Anuphan,sans-serif;line-height:1.55}
+.guest-note[hidden]{display:none}
+.guest-note button{margin-left:auto;border:1px solid #e0bd85;background:#fff;
+  color:#7a4f14;border-radius:999px;padding:6px 14px;font:700 12px Anuphan,sans-serif;
+  cursor:pointer;white-space:nowrap}
+.guest-note button:hover{background:#fdf3e3}
+@media(max-width:900px){.guest-note{padding:10px 15px}
+  .guest-note button{margin-left:0;width:100%}}
+
 /* ── v25 · posting date + admin reopen + audit log ── */
 .posting-field{background:#f7f5f2;border-radius:14px;padding:12px 14px;margin-top:14px}
 .posting-field label{display:grid;gap:6px;font-weight:700}
@@ -893,6 +941,36 @@ body{background:linear-gradient(165deg,#DFF1F0,#F4FAF6 48%,#FDF7E9) fixed}
 #screen-plan .day-tabs button.active small{color:#fff;opacity:.86}
 #screen-plan .day-tabs button.add-day{border-style:dashed;border-color:#c9dcee;background:#fbfdff}
 #screen-plan .day-tabs button.add-day b{color:#5c86b4}
+
+/* ── แถบวันเลื่อนซ้ายขวาได้ (North 2026-09-07) ─────────────────────────
+   ทริป 11 วันทำให้แถบยาวเกินจอ แล้วไม่มีอะไรบอกว่ายังมีวันซ่อนอยู่ทางซ้าย
+   (สกรอลบาร์ถูกซ่อนไว้ตั้งแต่ต้นเพราะขี้เหร่) — จึงต้องมีทั้ง
+   ปุ่มลูกศร · เงาจาง ๆ ที่ขอบ · และลากด้วยเมาส์ได้ ให้ครบทุกทางที่คนจะลอง */
+.day-strip{position:relative}
+.day-strip .day-tabs{overscroll-behavior-x:contain}
+.day-strip .day-scroll{position:absolute;top:calc(50% - 5px);transform:translateY(-50%);z-index:3;
+  width:36px;height:36px;padding:0;border-radius:50%;border:1px solid #dbe8f6;background:#fff;
+  color:#3f6fa8;font:700 22px/1 Poppins,sans-serif;cursor:pointer;display:grid;place-items:center;
+  box-shadow:0 5px 14px rgba(47,79,122,.2);opacity:0;pointer-events:none;transition:opacity .18s}
+.day-strip .day-scroll:hover{background:#3f6fa8;color:#fff;border-color:#3f6fa8}
+.day-strip .day-scroll.prev{left:-8px}
+.day-strip .day-scroll.next{right:-8px}
+.day-strip.can-prev .day-scroll.prev,
+.day-strip.can-next .day-scroll.next{opacity:1;pointer-events:auto}
+/* เงาจางที่ขอบ = สัญญาณว่า "ยังมีต่อทางนี้" โดยไม่ต้องเขียนอธิบาย */
+.day-strip:before,.day-strip:after{content:'';position:absolute;top:0;bottom:8px;width:42px;
+  z-index:2;pointer-events:none;opacity:0;transition:opacity .18s}
+.day-strip:before{left:0;background:linear-gradient(90deg,#e9f3fc 22%,rgba(233,243,252,0))}
+.day-strip:after{right:0;background:linear-gradient(270deg,#e9f3fc 22%,rgba(233,243,252,0))}
+.day-strip.can-prev:before,.day-strip.can-next:after{opacity:1}
+/* ลากด้วยเมาส์: ระหว่างลากต้องปิด pointer-events ของลูก ๆ ไม่งั้นปล่อยมือแล้ว
+   กลายเป็นกดเปลี่ยนวัน/เปิดฟอร์มแก้ไขวันโดยไม่ได้ตั้งใจ */
+.day-strip .day-tabs.dragging{scroll-behavior:auto;cursor:grabbing}
+.day-strip .day-tabs.dragging>*{pointer-events:none}
+@media(max-width:640px){
+  /* บนมือถือปัดนิ้วอยู่แล้ว ปุ่มลูกศรมีแต่บังการ์ด */
+  .day-strip .day-scroll{display:none}
+}
 
 #screen-plan .plan-day-overview{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:18px;
   align-items:start;background:linear-gradient(135deg,#fdf3d8,#fefaee 62%,#fdf6e4);
@@ -1577,6 +1655,12 @@ body{background:linear-gradient(165deg,#DFF1F0,#F4FAF6 48%,#FDF7E9) fixed}
 #screen-wallets .wcard-icon{width:40px;height:40px;border-radius:12px;object-fit:cover;
   background:hsl(var(--wc) 80% 96%);flex:none}
 #screen-wallets .wcard-name{display:flex;flex-direction:column;gap:1px;min-width:0;margin-right:auto}
+/* ป้ายเจ้าของกระเป๋า — โผล่เฉพาะใบที่ไม่ใช่ของผู้ดูเอง (2026-08-23)
+   ผู้ดูแลเห็นกระเป๋าของทุกคน ถ้าไม่มีป้ายจะเติมเงินผิดใบโดยไม่รู้ตัว */
+#screen-wallets .wcard-owner{flex:none;align-self:flex-start;font:600 11px Anuphan,sans-serif;
+  font-style:normal;color:#5a3fa8;background:#f0eaff;border:1px solid #d8caf7;
+  border-radius:999px;padding:3px 9px;white-space:nowrap;max-width:45%;overflow:hidden;
+  text-overflow:ellipsis}
 #screen-wallets .wcard-name b{font:700 16px Anuphan,sans-serif;color:#26405e;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #screen-wallets .wcard-name small{font-size:11.5px;color:#8aa2bd}
@@ -1645,6 +1729,10 @@ body{background:linear-gradient(165deg,#DFF1F0,#F4FAF6 48%,#FDF7E9) fixed}
 #screen-wallets .wlot-cost small{display:block;font-size:10.5px;font-weight:500;color:#9db3ca}
 #screen-wallets .wlot-do{display:flex;gap:5px}
 #screen-wallets .wlot-do .wico{width:32px;height:32px;border-radius:10px;font-size:14px}
+/* ปุ่มแก้ไข/ลบของล็อตเติมเงิน บนแถว "รายการล่าสุด" (2026-08-23)
+   ขนาดเดียวกับปุ่มในประวัติของการ์ดกระเป๋า เพื่อให้เป็นภาษาเดียวกันทั้งหน้า */
+#screen-wallets .wact-actions{display:flex;gap:5px}
+#screen-wallets .wact-actions .wico{width:32px;height:32px;border-radius:10px;font-size:14px}
 #screen-wallets .wlot-empty{margin:0;font:500 12.5px Anuphan,sans-serif;color:#8aa2bd;
   background:#f8fbfe;border:1px dashed #dfeaf6;border-radius:13px;padding:11px 12px;text-align:center}
 #screen-wallets .wlot-foot{margin:9px 0 0;font:600 12px Anuphan,sans-serif;color:#456a94}
@@ -2260,3 +2348,211 @@ body{background:linear-gradient(165deg,#DFF1F0,#F4FAF6 48%,#FDF7E9) fixed}
 @media(max-width:520px){
   .access-fields{grid-template-columns:1fr}
 }
+
+/* ── v46 · Enjoy Life Trip / Momo magical travel companion ───────────
+   ใช้สีสดเป็นจุดนำสายตาและคง layout เดิม เพื่อไม่รบกวนงานหลักระหว่างเดินทาง */
+.brand .brand-icon{overflow:hidden;padding:0;background:linear-gradient(145deg,#ff8f70,#7a4ce0 58%,#19bfc3)}
+.brand .brand-icon img{width:100%;height:100%;display:block;object-fit:cover}
+.momo-guide{position:absolute;right:18px;top:18px;z-index:4;display:flex;align-items:center;gap:8px;
+  max-width:285px;padding:7px 12px 7px 6px;border:1px solid rgba(255,255,255,.82);border-radius:22px;
+  background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(255,246,224,.93));
+  box-shadow:0 10px 28px rgba(75,44,123,.22);backdrop-filter:blur(8px)}
+.momo-guide>img{width:68px;height:68px;object-fit:contain;filter:drop-shadow(0 5px 7px rgba(64,34,103,.2))}
+.momo-guide p{display:grid;gap:2px;margin:0;color:#39265d;font:600 12px/1.35 Anuphan,Sarabun,sans-serif}
+.momo-guide b{font-size:14px;color:#6b35b5}.momo-guide span{color:#665b75}
+@media(max-width:640px){
+  .momo-guide{right:8px;top:8px;max-width:168px;padding:5px 8px 5px 3px;border-radius:16px}
+  .momo-guide>img{width:47px;height:47px}.momo-guide p{font-size:9px}.momo-guide b{font-size:11px}
+}
+
+/* ── v43 · ช่องเวลาให้กระชับ (North 2026-09-07) ────────────────────────
+   North: "เวลา ทั้ง 4 จุดให้กระชับกว่านี้ ชม. นาที รวมอยู่ด้วยกัน
+           เลือกเลื่อนได้ ชม. หรือ นาที"
+
+   🔴 ต้นเหตุที่มันบานเป็นสองกล่องใหญ่: กฎ `.dialog select` ที่ท้ายไฟล์
+      ใส่ขอบ + ลูกศรของตัวเอง + padding-right 38px ให้ select ทุกตัวในหน้าต่าง
+      น้ำหนัก selector เท่ากันเป๊ะกับ `.time-picker select` ที่เขียนไว้ก่อนหน้า
+      และอยู่ทีหลังกว่า → ทับหมด ผลคือ ชม. กับ นาที กลายเป็นสองกล่องมีลูกศร
+      ของตัวเองคนละอัน แล้วยังมีลูกศรของกรอบนอกอีกอันเป็นสาม
+      ⚠️ ยังไม่พอ — `#planEditor select` (บรรทัด ~1080) เป็น id จึงชนะ class
+         ทุกจำนวน ต้องใส่ `#planEditor .time-picker select` ไปด้วยถึงจะทับได้จริง
+      แก้ด้วยการเจาะจงให้ชนะ — ไม่ใช้ !important ตามกติกาที่เขียนไว้ท้ายไฟล์ */
+.time-picker{width:max-content;max-width:100%;min-width:126px;gap:0;padding:2px 8px 2px 4px}
+#planEditor .time-picker select,
+.dialog .time-picker select,
+.bottom-sheet .time-picker select,
+.screen .time-picker select{
+  appearance:none;-webkit-appearance:none;-moz-appearance:none;
+  border:0;box-shadow:none;background:transparent;background-image:none;
+  flex:none;width:auto;min-width:0;padding:8px 3px;border-radius:9px;
+  font:600 15px Poppins,Anuphan,sans-serif;color:#16233a;text-align:center;cursor:pointer}
+#planEditor .time-picker select:focus,
+.dialog .time-picker select:focus,
+.bottom-sheet .time-picker select:focus,
+.screen .time-picker select:focus{outline:none;background:#e7f0fb}
+.time-picker>b{margin:0 1px;font-size:15px}
+@media(max-width:640px){
+  /* ≤16px = iOS ซูมหน้าจอเข้าเองตอนแตะช่อง — ต้องคง 16px ไว้ */
+  #planEditor .time-picker select,
+  .dialog .time-picker select,
+  .bottom-sheet .time-picker select,
+  .screen .time-picker select{font-size:16px}
+  .time-picker{min-width:118px}
+}
+
+/* ── v44 · ฟอร์มสถานที่จัดใหม่ (North 2026-09-07) ──────────────────────
+   North: "หน้าแก้ไข จัดหน้าจอใหม่ให้สวยงาม กระชับ ใช้กับมือถือสะดวกด้วย"
+
+   ปัญหาเดิม: ทุกช่องมีน้ำหนักเท่ากันหมด เรียงลงมา 12 แถว ยาวจนต้องเลื่อน
+   หาปุ่มบันทึก · บนมือถือยิ่งยาว เพราะตารางยุบเหลือคอลัมน์เดียว
+
+   โครงใหม่: หัวเรื่องติดบน · เนื้อหาเลื่อนในตัวเอง · ปุ่มบันทึกติดล่างเสมอ
+   จะเลื่อนอยู่ตรงไหนก็กดบันทึกได้ทันที ไม่ต้องเลื่อนกลับ */
+.plan-editor{display:flex;flex-direction:column;padding:0;overflow:hidden;
+  max-height:min(88vh,860px)}
+.plan-editor #planEditorForm{display:flex;flex-direction:column;min-height:0;flex:1}
+.pe-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+  padding:20px 24px 14px;border-bottom:1px solid #e6edf6;background:var(--paper)}
+.pe-head h2{margin:2px 0 0;font:800 23px Sarabun,sans-serif;line-height:1.25}
+.pe-head .dialog-close{position:static;flex:none}
+.pe-body{flex:1;min-height:0;overflow:auto;padding:16px 24px 6px}
+.pe-foot{padding:12px 24px 18px;border-top:1px solid #e6edf6;background:var(--paper);
+  box-shadow:0 -6px 16px rgba(31,58,95,.05)}
+.pe-foot .form-error:empty{display:none}
+.pe-foot .form-error{margin:0 0 8px}
+
+/* หัวข้อคั่น — บอกว่าของข้างล่างนี้ "ไม่กรอกก็ได้" โดยไม่ต้องเขียนต่อท้ายทุกช่อง */
+.pe-divider{display:flex;align-items:baseline;gap:9px;margin:10px 0 -2px;
+  padding-top:12px;border-top:1px dashed #dbe6f3}
+.pe-divider b{font:700 13px Sarabun,sans-serif;color:#3f6fa8}
+.pe-divider small{color:#8ba2bd;font-size:11.5px}
+
+/* ช่วงเวลา: [เริ่ม] → [จบ] อยู่บรรทัดเดียว อ่านเป็นช่วงได้ทันที
+   ไม่ต้องมีป้าย "เวลา" กับ "เวลาสิ้นสุด" แยกกันคนละแถวอีกต่อไป */
+.pe-range{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pe-range .pe-arrow{color:#9ab0c8;font-weight:700}
+.pe-range small{color:#8ba2bd;font-size:11.5px}
+.editor-grid .weekday-picker{margin-top:2px}
+
+@media(max-width:640px){
+  /* มือถือ: เต็มจอไปเลย — กล่องลอยกลางจอที่สูงเกือบเต็มอยู่แล้วเสียพื้นที่ขอบฟรี ๆ
+     ปุ่มบันทึกติดล่างจอ ระยะนิ้วโป้งพอดี */
+  /* ⚠️ themes.css โหลดทีหลัง style.css และมีกฎ `.dialog{border:4px solid…;
+     border-radius:28px}` น้ำหนักเท่ากัน → ชนะ ต้องใช้ #planEditor (id) ตรงนี้
+     ไม่งั้นแผ่นเต็มจอจะยังมีกรอบหนากับมุมโค้งค้างอยู่ */
+  #planEditor.plan-editor{left:0;top:0;transform:none;width:100%;max-width:none;
+    height:100%;max-height:100%;border-radius:0;border:0}
+  #planEditor.plan-editor.open{transform:none}
+  .pe-head{padding:14px 16px 11px}
+  .pe-head h2{font-size:20px}
+  .pe-body{padding:13px 16px 4px}
+  .pe-foot{padding:11px 16px calc(15px + env(safe-area-inset-bottom))}
+  .pe-foot .sheet-actions{display:grid;grid-template-columns:1fr 1.4fr;gap:9px}
+  .pe-foot .sheet-actions button{padding:13px 10px}
+  .editor-grid{gap:11px}
+}
+
+/* ══ v167 · การจองของจุดแวะ + สกุลเงินต่อจุด (North 2026-09-15 · จาก Trip.xlsx) ══
+   ฟอร์ม 3 ชั้นตามขั้นการวางแผน: วางแผน (เห็นเสมอ) → จองแล้ว (กางกล่อง) → จ่ายเงิน (ล่างสุด)
+   กล่องเป็น <details> พับไว้บรรทัดเดียว ไม่กินที่จนกว่าจะแตะ */
+.cost-row{display:grid;grid-template-columns:1fr 92px;gap:6px}
+#planEditor .cost-row select{padding:11px 30px 11px 10px;background-position:right 10px center;
+  font:700 13px Poppins,Sarabun,sans-serif;color:#2f5e8c;background-color:#e8f0f8;border-color:transparent}
+
+.bk-box{border:1.5px solid #d6e6f5;border-radius:14px;background:#fff;overflow:hidden}
+.bk-box[open]{border-color:#b9d5ee}
+.bk-summary{list-style:none;display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:pointer;
+  background:#f6fafd;color:#2f5e8c;user-select:none}
+.bk-summary::-webkit-details-marker{display:none}
+.bk-summary b{font:700 13.5px Sarabun,sans-serif}
+.bk-summary small{margin-left:auto;color:#8ba2bd;font-size:11.5px;text-align:right;line-height:1.3}
+.bk-summary small.has{color:#3d7a54;font-weight:700}
+.bk-plus{color:#9ab0c8;font-weight:700;font-size:16px;line-height:1}
+.bk-box[open] .bk-plus{transform:rotate(45deg)}
+.bk-box[open] .bk-summary{border-bottom:1px solid #e3edf7}
+.bk-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:10px 12px 0;flex-wrap:wrap}
+.bk-head .bk-kind{display:grid;gap:5px;font-weight:700;font-size:12px;color:#5c86b4;flex:1;min-width:150px}
+.bk-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 12px 12px}
+.bk-grid label{display:grid;gap:5px;font-weight:700;font-size:12px;color:#5c86b4}
+.bk-grid label[hidden],.bk-grid div[hidden],.bk-grid small[hidden]{display:none}
+.bk-tri{display:grid;grid-template-columns:1.3fr 1fr 1.2fr;gap:8px}
+.bk-nights{font-style:normal;font-size:10.5px;font-weight:700;color:#3d7a54;background:#e2f3e8;
+  padding:1px 7px;border-radius:99px;margin-left:6px;vertical-align:middle}
+.bk-nights:empty{display:none}
+.bk-nights.warn{color:#a2482a;background:#fde3da}
+
+/* สวิตช์สถานะ (radio ซ่อน · ป้ายเป็นเม็ดยา) */
+.seg{display:inline-flex;background:#fff;border:1px solid #d9dfe8;border-radius:999px;padding:2px;gap:2px}
+.seg label{display:inline-flex!important;position:relative;cursor:pointer;margin:0}
+.seg input{position:absolute;opacity:0;width:0;height:0}
+.seg span{padding:5px 11px;border-radius:999px;font:700 12px Sarabun,sans-serif;color:#7d8796;white-space:nowrap}
+.seg input:checked+span{background:var(--blue);color:#fff}
+.seg input:checked[value="BACKUP"]+span{background:#e39b3b}
+.seg input:checked[value="CANCELLED"]+span{background:#9aa5b1}
+.seg.ok input:checked[value="PAID"]+span{background:#3d7a54}
+.seg.ok input:checked[value="PAY_AT_VENUE"]+span{background:#7a6cc4}
+.seg input:focus-visible+span{outline:3px solid rgba(47,111,237,.25)}
+
+/* บริการที่รวม — ปุ่ม 3 สถานะ */
+.bk-amen{display:flex;gap:6px}
+.bk-amen button{flex:1;border:1px solid #d9dfe8;background:#fff;border-radius:12px;padding:7px 2px 6px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;font:600 10.5px Sarabun,sans-serif;color:#7d8796;cursor:pointer}
+.bk-amen button i{font-style:normal;font-size:19px;line-height:1}
+.bk-amen button.yes{background:#e2f3e8;border-color:#b9dfc6;color:#3d7a54;font-weight:700}
+.bk-amen button.no{background:#f3f4f4;color:#b1bab8;text-decoration:line-through}
+.bk-note{color:#8ba2bd;font-size:10.5px;margin-top:-4px}
+.bk-pay{border-top:1px dashed #dbe6f3;padding-top:10px;margin-top:2px}
+.bk-pay-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.bk-pay-head b{font:700 13px Sarabun,sans-serif;color:#3f6fa8}
+.bk-pay .bk-grid{padding:6px 0 0}
+.bk-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bk-foot small{color:#8ba2bd;font-size:11px}
+.soft-btn.danger{background:#fde3da;color:#a2482a}
+@media(max-width:640px){
+  .bk-tri{grid-template-columns:1fr 1fr 1fr}
+  .seg span{padding:5px 9px;font-size:11.5px}
+}
+
+/* ── การ์ดในแผน: ป้ายการจอง · สำรอง · ที่พักหลายคืน · แถบเตือน · สรุป ── */
+#screen-plan .plan-tags em.ref{background:#ece9f8;color:#5a4b9c;font-family:Poppins,monospace;letter-spacing:.02em}
+#screen-plan .plan-tags em.room{background:#f1f4f3;color:#4f6360;white-space:normal;max-width:100%;text-align:left;line-height:1.35}
+#screen-plan .plan-tags em.paid{background:#e2f3e8;color:#3d7a54}
+#screen-plan .plan-tags em.due{background:#fff4d6;color:#8a5a00}
+#screen-plan .plan-tags em.venue{background:#ede9fb;color:#5b4ba8}
+#screen-plan .plan-tags em.cancel{background:#fde8f0;color:#a63e68}
+#screen-plan .plan-tags em.amen{background:#fff;border:1px solid var(--line);color:var(--ink);letter-spacing:.08em}
+.plan-item.booking-backup{border-style:dashed;opacity:.78;position:relative}
+.plan-item.booking-backup::after{content:"สำรอง · รอเลือก";position:absolute;top:-9px;right:14px;
+  background:#e39b3b;color:#fff;font:700 10px Sarabun,sans-serif;padding:2px 9px;border-radius:99px}
+.plan-item.booking-cancelled{opacity:.55}
+.plan-item.booking-cancelled .stop-name{text-decoration:line-through}
+.plan-ghost{display:grid;grid-template-columns:62px 58px 1fr;gap:12px;align-items:center;
+  border:1px dashed #cfd8e3;border-radius:18px;padding:12px 12px 12px 36px;background:transparent;
+  cursor:pointer;opacity:.85}
+.plan-ghost:hover{background:#f7fafc}
+.plan-ghost img{width:54px;height:54px;object-fit:contain;filter:grayscale(.4)}
+.plan-ghost .plan-time b{font-size:18px}
+.plan-ghost .plan-time small{display:block;color:var(--muted);font-size:10px}
+.plan-ghost .stop-name{display:block}
+.plan-ghost small{color:var(--muted)}
+@media(max-width:640px){.plan-ghost{grid-template-columns:52px 48px 1fr;padding-left:18px}}
+
+.booking-alert{display:flex;gap:8px;align-items:center;background:#fff4d6;color:#7a5200;border:1px solid #f1dfa6;
+  border-radius:14px;padding:9px 12px;margin:0 0 12px;font:600 13px Sarabun,sans-serif;cursor:pointer}
+.booking-alert.urgent{background:#fde3da;color:#a2482a;border-color:#f3c3b4}
+.booking-alert small{margin-left:auto;font-weight:400;white-space:nowrap}
+.booking-alert:hover{filter:brightness(.98)}
+
+.booking-summary{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin-top:14px}
+.bs-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.bs-head b{font:800 15px Sarabun,sans-serif}
+.bs-head a.soft-btn{text-decoration:none;display:inline-block}
+.bs-grid{display:grid;grid-template-columns:repeat(3,1fr) 1.6fr;gap:8px;text-align:center}
+.bs-grid div{background:#f5f8fb;border-radius:12px;padding:8px 4px}
+.bs-grid strong{display:block;font:600 18px Poppins,sans-serif;color:#2f5e8c}
+.bs-grid small{font-size:10.5px;color:var(--muted)}
+.bs-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.bs-chips em{font-style:normal;font-size:11px;font-weight:700;padding:3px 9px;border-radius:99px}
+.bs-chips em.due{background:#fff4d6;color:#8a5a00}
+.bs-chips em.backup{background:#fbe9d2;color:#9a5a12}
+@media(max-width:640px){.bs-grid{grid-template-columns:1fr 1fr 1fr}.bs-grid .wide{grid-column:1/-1}}

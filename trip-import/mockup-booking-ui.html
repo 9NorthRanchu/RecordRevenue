@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>แบบหน้าจอ · การจองในแผนทริป</title>
+<style>
+:root{--accent:#348fc1;--accent-deep:#236f9c;--accent-soft:#dff2fa;--accent-ink:#285f7d;--ink:#2f4441;--muted:#73827f;--line:#dfe6e4;--card:#fffdf9;--bg:#eef3f2;--warn:#a2482a;--warn-bg:#fde3da;--ok:#3d7a54;--ok-bg:#e2f3e8;--pink:#a63e68;--pink-bg:#fde8f0;--violet:#5a4b9c;--violet-bg:#ece9f8}
+*{box-sizing:border-box}
+body{margin:0;font-family:Loma,Garuda,"Noto Sans Thai",system-ui,sans-serif;color:var(--ink);background:#d9e1df;padding:24px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:var(--muted);margin:0 0 20px;font-size:14px}
+.row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-bottom:36px}
+.shot{display:flex;flex-direction:column;gap:8px}
+.shot>h2{font-size:14px;margin:0;color:var(--accent-ink)}
+.shot>p{font-size:12px;color:var(--muted);margin:0;max-width:390px;line-height:1.45}
+.phone{width:390px;background:var(--bg);border:10px solid #1d2624;border-radius:34px;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.25)}
+.screen{padding:14px 14px 18px;min-height:600px}
+
+/* ── ฟอร์ม ── */
+.pe-head{display:flex;justify-content:space-between;align-items:flex-start;padding:4px 2px 10px}
+.eyebrow{font-size:10px;letter-spacing:.14em;color:var(--accent);font-weight:700}
+.pe-head h2{margin:2px 0 0;font-size:18px}
+.x{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;display:grid;place-items:center;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 10px}
+.wide{grid-column:1/-1}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--muted);font-weight:600}
+.in{height:38px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:0 10px;display:flex;align-items:center;font-size:14px;color:var(--ink);font-weight:500;gap:6px}
+.in.ph{color:#a9b3b0;font-weight:400}
+.in .caret{margin-left:auto;color:#a9b3b0;font-size:11px}
+.time{display:inline-flex;align-items:center;gap:2px}
+.time b{background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:14px;font-weight:600}
+.arrow{color:var(--muted);padding:0 4px}
+.pe-divider{display:flex;justify-content:space-between;align-items:baseline;margin-top:6px;padding-top:10px;border-top:1px dashed var(--line);font-size:12.5px}
+.pe-divider small{color:var(--muted);font-size:11px}
+.cost{display:flex;gap:6px}
+.cost .in:first-child{flex:1}
+.cost .cur{width:88px;justify-content:space-between;font-weight:700;color:var(--accent-ink);background:var(--accent-soft);border-color:transparent}
+
+/* กล่องการจอง แบบพับได้ */
+.bk{grid-column:1/-1;border:1.5px solid var(--accent-soft);background:#fff;border-radius:14px;overflow:hidden}
+.bk-head{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--accent-soft);color:var(--accent-ink);font-weight:700;font-size:13.5px}
+.bk-head .st{margin-left:auto;display:flex;gap:4px}
+.seg{display:inline-flex;background:#fff;border:1px solid var(--line);border-radius:999px;padding:2px;font-size:11.5px;font-weight:600}
+.seg span{padding:3px 9px;border-radius:999px;color:var(--muted)}
+.seg span.on{background:var(--accent);color:#fff}
+.seg.warn span.on{background:#e39b3b}
+.seg.ok span.on{background:var(--ok)}
+.bk-body{padding:10px 12px 12px;display:grid;grid-template-columns:1fr 1fr;gap:9px 8px}
+.bk-body .f{font-size:11px}
+.bk-body .in{height:36px;font-size:13.5px}
+.nights{margin-left:auto;font-size:11px;color:var(--ok);font-weight:700;background:var(--ok-bg);padding:2px 7px;border-radius:999px}
+.tri{display:grid;grid-template-columns:1.3fr 1fr 1.2fr;gap:8px;grid-column:1/-1}
+.amen{grid-column:1/-1;display:flex;gap:6px;justify-content:space-between}
+.amen button{flex:1;border:1px solid var(--line);background:#fff;border-radius:12px;padding:6px 2px 5px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--muted);font-family:inherit}
+.amen button i{font-style:normal;font-size:18px;line-height:1}
+.amen button.yes{background:var(--ok-bg);border-color:#b9dfc6;color:var(--ok);font-weight:700}
+.amen button.no{background:#f3f4f4;color:#b1bab8;text-decoration:line-through}
+.hint{grid-column:1/-1;font-size:10.5px;color:var(--muted);margin-top:-4px}
+.sub{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px dashed var(--line);border-radius:10px;font-size:12.5px;color:var(--accent-ink);font-weight:600;background:#fbfdff}
+.sub small{font-weight:400;color:var(--muted);margin-left:auto}
+.pay{grid-column:1/-1;border-top:1px dashed var(--line);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:9px 8px}
+.pay .h{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700}
+.pay .h .seg{margin-left:auto}
+.dl{position:relative}
+.dl .in{padding-right:26px}
+.pe-foot{display:flex;gap:8px;justify-content:flex-end;padding-top:12px}
+.btn{height:40px;padding:0 18px;border-radius:12px;border:1px solid var(--line);background:#fff;font-family:inherit;font-size:14px;font-weight:600}
+.btn.pri{background:var(--accent);color:#fff;border-color:transparent}
+
+/* ── การ์ดในแผน ── */
+.daybar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.daybar b{font-size:16px}
+.daybar small{color:var(--muted)}
+.alert{display:flex;gap:8px;align-items:center;background:var(--warn-bg);color:var(--warn);border-radius:12px;padding:8px 10px;font-size:12px;font-weight:600;margin-bottom:10px}
+.alert small{font-weight:400;margin-left:auto;white-space:nowrap}
+.card{display:grid;grid-template-columns:44px 42px 1fr;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:8px;position:relative}
+.card .t{display:flex;flex-direction:column}
+.card .t b{font-size:14px}
+.card .t small{font-size:10px;color:var(--muted)}
+.card .img{width:42px;height:42px;border-radius:10px;background:var(--accent-soft);display:grid;place-items:center;font-size:20px}
+.card .c b{font-size:14px;display:block}
+.card .c small{color:var(--muted);font-size:11.5px;display:block;margin-top:1px}
+.tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.tags em{font-style:normal;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;background:#eceff0;color:var(--muted)}
+em.stay{background:var(--ok-bg);color:var(--ok)}
+em.ref{background:var(--violet-bg);color:var(--violet);font-family:Poppins,monospace;letter-spacing:.02em}
+em.money{background:var(--pink-bg);color:var(--pink)}
+em.paid{background:var(--ok-bg);color:var(--ok)}
+em.due{background:#fff4d6;color:#8a5a00}
+em.cancel{background:var(--warn-bg);color:var(--warn)}
+em.amen{background:#fff;border:1px solid var(--line);color:var(--ink);letter-spacing:.08em}
+.card.backup{opacity:.72;border-style:dashed}
+.card.backup::after{content:"สำรอง · รอเลือก";position:absolute;top:-8px;right:12px;background:#e39b3b;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px}
+.card.ghost{background:transparent;border-style:dashed;opacity:.8}
+.card.ghost .img{background:#f1f4f3}
+.stripe{grid-column:1/-1;font-size:11px;color:var(--muted);margin:2px 0 6px;display:flex;align-items:center;gap:6px}
+.stripe::before,.stripe::after{content:"";flex:1;border-top:1px dashed var(--line)}
+.sum{background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin:14px 0 8px;font-size:12px}
+.sum b{display:block;font-size:13px;margin-bottom:4px}
+.sum .k{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.sum .k div{background:var(--bg);border-radius:10px;padding:6px 2px}
+.sum .k strong{display:block;font-size:15px;color:var(--accent-ink)}
+.sum .k small{font-size:10px;color:var(--muted)}
+.tabs{display:flex;gap:6px;margin:8px 0 10px}
+.tabs span{font-size:12px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--muted);font-weight:600}
+.tabs span.on{background:var(--accent);color:#fff;border-color:transparent}
+
+/* ── หน้าพิมพ์ ── */
+.a4{width:794px;min-height:1123px;background:#fff;padding:44px 48px;box-shadow:0 18px 40px rgba(0,0,0,.2);font-size:11.5px;color:#111}
+.a4 h1{font-size:22px;margin:0}
+.a4 .meta{display:flex;gap:18px;color:#555;margin:4px 0 14px;font-size:11px}
+.a4 h2{font-size:13px;margin:14px 0 6px;padding-bottom:3px;border-bottom:1.5px solid #111;display:flex;justify-content:space-between}
+.a4 h2 small{font-weight:400;color:#555}
+.a4 table{width:100%;border-collapse:collapse}
+.a4 th,.a4 td{border-bottom:1px solid #d8d8d8;padding:4px 6px;text-align:left;vertical-align:top}
+.a4 th{font-size:10px;color:#555;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #999}
+.a4 td.r,.a4 th.r{text-align:right;white-space:nowrap}
+.a4 td.tm{white-space:nowrap;font-weight:700;width:48px}
+.a4 .ty{display:inline-block;width:14px}
+.a4 .book{color:#444;font-size:10.5px}
+.a4 .book b{font-weight:700;color:#111}
+.a4 .note{height:26px;border-bottom:1px dotted #bbb}
+.a4 .mono{font-family:monospace;font-size:10.5px}
+.a4 .icons{letter-spacing:.06em;white-space:nowrap}
+.a4 .foot{margin-top:16px;color:#777;font-size:9.5px;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<h1>แบบหน้าจอ: ข้อมูลการจองในระบบทริป</h1>
+<p class="lead">3 มุมมอง: ฟอร์มแก้ไข (พับ/คลี่ตามขั้นการวางแผน) · การ์ดในแผนรายวัน · หน้าพิมพ์ A4 — ยังเป็นแบบ ยังไม่ได้ลงโค้ดจริง</p>
+
+<div class="row">
+<!-- ═══ 1. ฟอร์ม ขั้นวางแผน (ยังไม่จอง) ═══ -->
+<div class="shot">
+<h2>1A · ฟอร์มที่พัก — ขั้นวางแผน (ยังไม่จอง)</h2>
+<p>เหมือนฟอร์มปัจจุบัน + งบมีตัวเลือกสกุลเงิน · กล่อง "การจอง" พับอยู่แถวเดียว ไม่กินที่ · ถึงเวลาจองค่อยแตะเปิด</p>
+<div class="phone"><div class="screen">
+  <div class="pe-head"><div><span class="eyebrow">FLEXIBLE ITINERARY</span><h2>แก้ไขสถานที่ในแผน</h2></div><span class="x">✕</span></div>
+  <div class="grid">
+    <label class="f wide">ชื่อสถานที่หรือกิจกรรม<span class="in">Akan Yuku no Sato Tsuruga</span></label>
+    <label class="f">วันที่<span class="in">ส. 19 ธ.ค.<span class="caret">▼</span></span></label>
+    <label class="f">ประเภท<span class="in">ที่พัก<span class="caret">▼</span></span></label>
+    <label class="f wide">เวลาที่อยู่ตรงนี้<span><span class="time"><b>15</b>:<b>00</b></span><span class="arrow">→</span><span class="time"><b>--</b>:<b>--</b></span></span></label>
+    <div class="pe-divider wide"><b>รายละเอียดเพิ่มเติม</b><small>ใส่ทีหลังก็ได้</small></div>
+    <label class="f wide">งบประมาณ / ราคา<span class="cost"><span class="in">58,492</span><span class="in cur">THB<span class="caret">▼</span></span></span></label>
+    <div class="hint">สกุลเงินเลือกได้ต่อจุด: JPY · THB · หรือสกุลที่เพิ่มไว้ในทริป (ไต้หวัน ฮ่องกง จีน …)</div>
+    <label class="f wide">รายละเอียด<span class="in ph">การเดินทาง สิ่งที่ควรเตรียม หรือแผนสำรอง</span></label>
+    <div class="sub">🧾 ข้อมูลการจอง <small>ผู้ขาย · เลขจอง · เช็กเอาต์ · การจ่าย  ＋</small></div>
+    <div class="sub">📎 เอกสารของสถานที่นี้ <small>0 ไฟล์  ＋</small></div>
+  </div>
+  <div class="pe-foot"><span class="btn">ยกเลิก</span><span class="btn pri">บันทึกในแผน</span></div>
+</div></div>
+</div>
+
+<!-- ═══ 1B. ฟอร์ม ที่พัก จองแล้ว ═══ -->
+<div class="shot">
+<h2>1B · ฟอร์มที่พัก — คลี่กล่องการจอง</h2>
+<p>ผู้ขาย+เลขจอง แถวเดียว · เช็กเอาต์แล้วนับคืนให้ · ห้องบรรทัดเดียว · วิว/ตรม./ผู้เข้าพัก แถวเดียว · บริการ 5 ปุ่มไอคอน แตะวน มี→ไม่มี→ไม่ทราบ · การจ่ายเงินอยู่ล่างสุด (ใช้ตอนใกล้เดินทาง)</p>
+<div class="phone"><div class="screen">
+  <div class="pe-head"><div><span class="eyebrow">FLEXIBLE ITINERARY</span><h2>แก้ไขสถานที่ในแผน</h2></div><span class="x">✕</span></div>
+  <div class="grid">
+    <label class="f wide">ชื่อสถานที่หรือกิจกรรม<span class="in">Akan Yuku no Sato Tsuruga</span></label>
+    <label class="f wide">งบประมาณ / ราคา<span class="cost"><span class="in">58,492</span><span class="in cur">THB<span class="caret">▼</span></span></span></label>
+    <div class="bk">
+      <div class="bk-head">🧾 การจอง <span class="st"><span class="seg"><span class="on">ยืนยัน</span><span>สำรอง</span><span>ยกเลิก</span></span></span></div>
+      <div class="bk-body">
+        <label class="f">ผู้ขาย<span class="in">Agoda<span class="caret">▼</span></span></label>
+        <label class="f">เลขจอง<span class="in">2031426205</span></label>
+        <label class="f">เช็กอิน<span class="in">19 ธ.ค. 2026</span></label>
+        <label class="f">เช็กเอาต์ <span class="nights">1 คืน</span><span class="in">20 ธ.ค. 2026</span></label>
+        <label class="f wide">ห้อง<span class="in">1x WINGS Japanese-Style Room · Non-Smoking</span></label>
+        <div class="tri">
+          <label class="f">วิว<span class="in">Mountain</span></label>
+          <label class="f">ตรม.<span class="in">37</span></label>
+          <label class="f">ผู้เข้าพัก<span class="in">2A 1C(7)</span></label>
+        </div>
+        <div class="amen">
+          <button class="yes"><i>🍳</i>เช้า</button>
+          <button class="no"><i>🍱</i>กลางวัน</button>
+          <button class="yes"><i>🍽</i>เย็น</button>
+          <button class="yes"><i>🅿️</i>จอดรถ</button>
+          <button class="yes"><i>🧺</i>ซักผ้า</button>
+        </div>
+        <div class="hint">แตะวน: มี → ไม่มี → ไม่ทราบ</div>
+        <div class="pay">
+          <div class="h">💳 การจ่ายเงิน <span class="seg ok"><span>ยังไม่จ่าย</span><span class="on">จ่ายแล้ว</span><span>หน้างาน</span></span></div>
+          <label class="f">วันจ่าย<span class="in">3 ธ.ค. 2026</span></label>
+          <label class="f">จ่ายด้วย<span class="in dl">บัตร 3696<span class="caret">▼</span></span></label>
+          <label class="f wide">ยกเลิกฟรีถึง<span class="in">4 ธ.ค. 2026 <small style="margin-left:auto;color:var(--warn);font-weight:700">อีก 80 วัน</small></span></label>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pe-foot"><span class="btn">ยกเลิก</span><span class="btn pri">บันทึกในแผน</span></div>
+</div></div>
+</div>
+
+<!-- ═══ 1C. ฟอร์ม การเดินทาง ═══ -->
+<div class="shot">
+<h2>1C · ฟอร์มการเดินทาง (ไฟลท์/รถไฟ/รถเช่า)</h2>
+<p>กล่องเดียวกันแต่ช่องเปลี่ยนตามประเภท: สายการบิน · เที่ยวบิน · ต้นทาง→ปลายทาง · เวลาถึง · ไม่มีห้อง/บริการ</p>
+<div class="phone"><div class="screen">
+  <div class="pe-head"><div><span class="eyebrow">FLEXIBLE ITINERARY</span><h2>แก้ไขสถานที่ในแผน</h2></div><span class="x">✕</span></div>
+  <div class="grid">
+    <label class="f wide">ชื่อสถานที่หรือกิจกรรม<span class="in">บิน BKK → HND</span></label>
+    <label class="f">วันที่<span class="in">พฤ. 17 ธ.ค.<span class="caret">▼</span></span></label>
+    <label class="f">ประเภท<span class="in">การเดินทาง<span class="caret">▼</span></span></label>
+    <label class="f wide">เวลาที่อยู่ตรงนี้<span><span class="time"><b>22</b>:<b>25</b></span><span class="arrow">→</span><span class="time"><b>--</b>:<b>--</b></span></span></label>
+    <div class="bk">
+      <div class="bk-head">🧾 การจอง <span class="st"><span class="seg"><span class="on">ยืนยัน</span><span>สำรอง</span><span>ยกเลิก</span></span></span></div>
+      <div class="bk-body">
+        <label class="f">สายการบิน / ผู้ให้บริการ<span class="in">ANA<span class="caret">▼</span></span></label>
+        <label class="f">เที่ยวบิน / เลขจอง<span class="in">NH850</span></label>
+        <label class="f">จาก<span class="in">BKK</span></label>
+        <label class="f">ถึง<span class="in">HND</span></label>
+        <label class="f">เวลาถึง<span><span class="time"><b>07</b>:<b>05</b></span> <small style="color:var(--muted)">+1 วัน</small></span></label>
+        <label class="f">ผู้เดินทาง<span class="in">2A 1C(7)</span></label>
+        <div class="pay">
+          <div class="h">💳 การจ่ายเงิน <span class="seg"><span>ยังไม่จ่าย</span><span class="on">จ่ายแล้ว</span><span>หน้างาน</span></span></div>
+          <label class="f">วันจ่าย<span class="in">12 ส.ค. 2026</span></label>
+          <label class="f">จ่ายด้วย<span class="in dl">KTC<span class="caret">▼</span></span></label>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pe-foot"><span class="btn">ยกเลิก</span><span class="btn pri">บันทึกในแผน</span></div>
+</div></div>
+</div>
+</div>
+
+<div class="row">
+<!-- ═══ 2. การ์ดในแผน ═══ -->
+<div class="shot">
+<h2>2 · แผนรายวัน — การ์ดพร้อมป้ายการจอง</h2>
+<p>บนสุด: เตือนเส้นตายยกเลิกที่ใกล้ที่สุดของทั้งทริป · การ์ดโรงแรมมีป้าย เลขจอง / จ่ายแล้ว / ยกเลิกฟรีถึง / บริการที่รวม · โรงแรมสำรองเป็นการ์ดเส้นประจาง มีริบบิ้น "สำรอง" · ที่พักหลายคืน โผล่วันถัดไปเป็นการ์ดเงา "คืนที่ 2/3"</p>
+<div class="phone"><div class="screen">
+  <div class="alert">⚠️ ยกเลิกฟรี Niseko Grand Hotel หมดเขต 25 พ.ย. <small>อีก 3 วัน</small></div>
+  <div class="daybar"><b>จ. 21 ธ.ค.</b><small>Moor Onsen · Shiroganeonsen</small></div>
+
+  <div class="card">
+    <div class="t"><b>10:30</b><small>ถึง 12:00</small></div><div class="img">🏞️</div>
+    <div class="c"><b>Shirogane Blue Pond</b><small>บ่อน้ำสีฟ้า · ถ่ายรูปช่วงเช้าแสงดี</small>
+      <div class="tags"><em>✨ น้ำสีฟ้าเทอร์ควอยซ์</em><em class="money">¥ 500</em></div></div>
+  </div>
+
+  <div class="card">
+    <div class="t"><b>15:00</b><small>1 คืน</small></div><div class="img">🛏️</div>
+    <div class="c"><b>Morinoshizuku RIN</b><small>Japanese Style Standard · Mountain view · 16 ตรม.</small>
+      <div class="tags"><em class="stay">ที่พัก</em><em class="ref">Agoda #2032004776</em><em class="money">฿ 29,002</em><em class="paid">✓ จ่ายแล้ว 16 ธ.ค.</em><em class="cancel">ยกเลิกฟรีถึง 17 ธ.ค.</em><em class="amen">🍳🍽🅿️</em></div></div>
+  </div>
+
+  <div class="card backup">
+    <div class="t"><b>15:00</b><small>1 คืน</small></div><div class="img">🛏️</div>
+    <div class="c"><b>อาโอโนบิ ยูยู</b><small>ห้องสไตล์ญี่ปุ่นมาตรฐาน · 35 ตรม.</small>
+      <div class="tags"><em class="stay">ที่พัก</em><em class="ref">Trip.com #1622928888021958</em><em class="money">฿ 8,141.80</em><em class="due">ยังไม่จ่าย</em><em class="cancel">ยกเลิกฟรีถึง 17 ธ.ค.</em></div></div>
+  </div>
+
+  <div class="stripe">อ. 22 ธ.ค. — ตัวอย่างที่พักหลายคืน</div>
+  <div class="card ghost">
+    <div class="t"><b>🛏</b><small>คืนที่ 2/3</small></div><div class="img">🛏️</div>
+    <div class="c"><b>Niseko Grand Hotel</b><small>พักต่อ · เช็กเอาต์ 25 ธ.ค. 10:00</small>
+      <div class="tags"><em class="stay">ที่พัก</em><em class="amen">🍳🅿️🧺</em></div></div>
+  </div>
+
+  <div class="sum"><b>🧾 การจองทั้งทริป</b>
+    <div class="k"><div><strong>11</strong><small>คืน</small></div><div><strong>4</strong><small>ไฟลท์</small></div><div><strong>9/13</strong><small>จ่ายแล้ว</small></div><div><strong>338k</strong><small>฿ ยอดจอง</small></div></div>
+    <div class="tabs"><span class="on">ทั้งหมด</span><span>ค้างจ่าย 4</span><span>สำรอง 2</span><span>🖨 พิมพ์</span></div>
+  </div>
+</div></div>
+</div>
+
+<!-- ═══ 3. หน้าพิมพ์ ═══ -->
+<div class="shot">
+<h2>3 · หน้าพิมพ์ A4 (ตัวอย่างหน้าแรก + ตารางท้าย)</h2>
+<p>แผนรายวันเป็นตารางเวลา/ชื่อ/ไฮไลต์/ค่าใช้จ่าย · แถวโรงแรมพิมพ์เลขจอง ห้อง บริการ · มีบรรทัดว่างให้จดมือ · ท้ายเล่ม: ตารางที่พัก · ตารางไฟลท์ · ปฏิทินวันจ่าย/วันยกเลิก · โรงแรมสำรองพิมพ์ด้วย (มีป้าย "สำรอง") จนกว่าจะลบ</p>
+<div class="a4">
+  <h1>Hokkaido 2026</h1>
+  <div class="meta"><span>พฤ. 17 – จ. 28 ธ.ค. 2026 · 12 วัน</span><span>North · Puii · XinXin</span><span>พิมพ์ 15 ก.ย. 2026</span></div>
+
+  <h2>ศ. 18 ธ.ค. · Kushiro LanLa <small>เช้า −6° / บ่าย −1° · ขับ 96 กม.</small></h2>
+  <table>
+    <tr><th>เวลา</th><th></th><th>สถานที่</th><th>เมือง</th><th>ไฮไลต์ / รายละเอียด</th><th class="r">ค่าใช้จ่าย</th></tr>
+    <tr><td class="tm">07:40</td><td><span class="ty">✈</span></td><td><b>NH4771 HND → KUH</b><div class="book">ANA · ถึง 09:20</div></td><td>Haneda</td><td></td><td class="r"></td></tr>
+    <tr><td class="tm">10:00</td><td><span class="ty">📍</span></td><td><b>Kushiro City Red-crowned Crane Natural Park</b></td><td>Kushiro</td><td>นกกระเรียนมงกุฏแดง · เปิด 09:00–17:00</td><td class="r">¥ 2,000</td></tr>
+    <tr><td class="tm">12:00</td><td><span class="ty">🍜</span></td><td><b>Market Kushiro</b></td><td>Kushiro</td><td>ซาเซมิเลือกหน้าเอง (Katte Don)</td><td class="r"></td></tr>
+    <tr><td class="tm">13:00</td><td><span class="ty">📍</span></td><td><b>Akan International Crane Center</b></td><td>Kushiro</td><td>นกกระเรียนมงกุฏแดง</td><td class="r">¥ 2,000</td></tr>
+    <tr><td class="tm">15:00</td><td><span class="ty">📍</span></td><td><b>Nusamai Bridge</b></td><td>Kushiro</td><td>พระอาทิตย์ตกดิน ~15:50</td><td class="r">¥ 2,000</td></tr>
+    <tr><td class="tm">19:00</td><td><span class="ty">🛏</span></td><td><b>Dormy Inn PREMIUM Kushiro</b><div class="book">Agoda <b class="mono">#2031420173</b> · 1 คืน → 19 ธ.ค. · Twin Non-Smoking · City view · 21 ตรม. · 2A1C(7) · <span class="icons">🍳 🅿 🧺</span></div></td><td>Kushiro</td><td>จ่ายแล้ว 15 ธ.ค. (3696) · ยกเลิกฟรีถึง 16 ธ.ค.</td><td class="r">฿ 23,339</td></tr>
+    <tr><td colspan="6" class="note"></td></tr>
+  </table>
+
+  <h2>ส. 19 ธ.ค. · Lake Kassaro <small>ขับ 71 กม.</small></h2>
+  <table>
+    <tr><td class="tm">14:00</td><td><span class="ty">🛏</span></td><td><b>Akan Yuku no Sato Tsuruga</b><div class="book">Agoda <b class="mono">#2031426205</b> · 1 คืน → 20 ธ.ค. · WINGS Japanese-Style · Mountain · 37 ตรม. · 2A1C(7) · <span class="icons">🍳 🍽 🅿 🧺</span></div></td><td>Lake Akan</td><td>จ่ายแล้ว 3 ธ.ค. (3696) · ยกเลิกฟรีถึง 4 ธ.ค.</td><td class="r">฿ 58,492</td></tr>
+    <tr><td class="tm">21:00</td><td><span class="ty">📍</span></td><td><b>Akanko Ainu Kotan</b></td><td>Kushiro</td><td>แสงผสมมัลติมีเดีย 21:00</td><td class="r"></td></tr>
+    <tr><td colspan="6" class="note"></td></tr>
+  </table>
+
+  <h2 style="margin-top:26px">ที่พักทั้งทริป <small>11 คืน · ฿ 338,073</small></h2>
+  <table>
+    <tr><th>วัน</th><th>โรงแรม · เมือง</th><th>ห้อง</th><th>บริการ</th><th>จอง</th><th>จ่าย</th><th>ยกเลิกฟรีถึง</th><th class="r">฿</th></tr>
+    <tr><td>18 ธ.ค.</td><td><b>Dormy Inn PREMIUM Kushiro</b> · Kushiro</td><td>Twin · City · 21 ตรม.</td><td class="icons">🍳 🅿 🧺</td><td class="mono">Agoda 2031420173</td><td>✓ 15 ธ.ค.</td><td>16 ธ.ค.</td><td class="r">23,339</td></tr>
+    <tr><td>19 ธ.ค.</td><td><b>Akan Yuku no Sato Tsuruga</b> · Lake Akan</td><td>WINGS JP · Mountain · 37</td><td class="icons">🍳 🍽 🅿 🧺</td><td class="mono">Agoda 2031426205</td><td>✓ 3 ธ.ค.</td><td>4 ธ.ค.</td><td class="r">58,492</td></tr>
+    <tr><td>20 ธ.ค.</td><td><b>Sounkaku</b> · Sounkyo</td><td>Standard JP</td><td class="icons">🍳 🍽 🅿 🧺</td><td class="mono">Agoda 2031998525</td><td>✓ 15 ธ.ค.</td><td>16 ธ.ค.</td><td class="r">50,495</td></tr>
+    <tr><td>21 ธ.ค.</td><td><b>Morinoshizuku RIN</b> · Shiroganeonsen</td><td>JP Standard · Mountain · 16</td><td class="icons">🍳 🍽 🅿</td><td class="mono">Agoda 2032004776</td><td>✓ 16 ธ.ค.</td><td>17 ธ.ค.</td><td class="r">29,002</td></tr>
+    <tr style="color:#888"><td>21 ธ.ค.</td><td><b>อาโอโนบิ ยูยู</b> · Shiroganeonsen <i>(สำรอง)</i></td><td>JP Standard · 35</td><td class="icons">🍳 🍽 🅿</td><td class="mono">Trip 1622928888021958</td><td>15 ธ.ค. (KTC)</td><td>17 ธ.ค.</td><td class="r">8,141.80</td></tr>
+    <tr><td colspan="8" style="text-align:center;color:#999">… (อีก 6 แถว)</td></tr>
+  </table>
+
+  <h2>ปฏิทินเงิน <small>เรียงตามวัน · ใช้ไล่จ่าย / ตัดสินใจก่อนเดินทาง</small></h2>
+  <table>
+    <tr><th>วัน</th><th>รายการ</th><th>สำหรับ</th><th class="r">฿</th><th>จ่ายด้วย</th><th>สถานะ</th></tr>
+    <tr><td>24 พ.ย.</td><td>💳 จ่าย</td><td>Niseko Grand Hotel</td><td class="r">38,652</td><td>3696</td><td>☐</td></tr>
+    <tr><td>25 พ.ย.</td><td>⚠ ยกเลิกฟรีวันสุดท้าย</td><td>Niseko Grand Hotel</td><td class="r"></td><td></td><td></td></tr>
+    <tr><td>3 ธ.ค.</td><td>💳 จ่าย</td><td>Akan Yuku no Sato Tsuruga</td><td class="r">58,492</td><td>3696</td><td>☐</td></tr>
+    <tr><td>4 ธ.ค.</td><td>⚠ ยกเลิกฟรีวันสุดท้าย</td><td>Akan Yuku no Sato Tsuruga</td><td class="r"></td><td></td><td></td></tr>
+    <tr><td colspan="6" style="text-align:center;color:#999">…</td></tr>
+  </table>
+  <div class="foot"><span>RecordRevenue · ทริป Hokkaido 2026</span><span>หน้า 1 / 5</span></div>
+</div>
+</div>
+</div>
+</body>
+</html>

@@ -70,6 +70,9 @@ const PAYLOAD = {
     { category_id:'CAT-FOOD', category_name:'ค่าอาหาร', caption_id:'CAP-EXP', caption_name:'Expense', behavior:'EXPENSE' },
     { category_id:'CAT-STAY', category_name:'ค่าที่พัก', caption_id:'CAP-EXP', caption_name:'Expense', behavior:'EXPENSE' }
   ],
+  presets: [
+    { preset_id:'PRESET-FOOD', label:'อาหาร', icon_url:'', category_id:'CAT-FOOD', category_name:'ค่าอาหาร', sort_order:1 }
+  ],
   stops: [
     { stop_id:'S-1', stop_date:'2026-12-17', time:'10:20', sort_order:1, city:'Kushiro',
       name_en:'Kushiro Airport', name_th:'สนามบินคุชิโระ', notes:'รับรถเช่า', icon_asset:'' },
@@ -80,7 +83,8 @@ const PAYLOAD = {
   ],
   presence: [], closures: [],
   ledger: { net_thb: 0, net_trip_only_thb: 0 },
-  meta: { viewer_is_admin:true, hidden_expense_count:2 }
+  meta: { viewer_is_admin:true, hidden_expense_count:2, can_view_trip_data:true,
+          can_manage_trip:true, can_manage_members:true, can_manage_shared_settings:true }
 };
 
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
@@ -149,7 +153,7 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === '/api/unified-trip/wallets' && req.method === 'POST') {
     return readBody(req).then(body => {
-      posted.push({ kind:'wallet', ...body });
+      posted.push({ action:'wallet', ...body });
       if (failNextWrite) return sendJson(res, 400, { error: failNextWrite });
       const at = PAYLOAD.wallets.findIndex(w => w.wallet_id === body.wallet_id);
       const row = { wallet_id: body.wallet_id || 'W-NEW', name: body.name, currency: body.currency,
@@ -235,6 +239,15 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type':'application/json' });
     return res.end(JSON.stringify(PAYLOAD));
   }
+  if (url.pathname === '/api/unified-trip/route') return sendJson(res, 200, { legs:[] });
+  if (url.pathname === '/api/unified-trip/geocode-stops') return sendJson(res, 200, { updated:0, failed:0, remaining:0 });
+  if (url.pathname === '/api/unified-trip/weather') return sendJson(res, 200, { available:false });
+  if (url.pathname === '/api/unified-trip/icon-upload' && req.method === 'GET') {
+    return sendJson(res, 200, { icons:[], can_delete:true });
+  }
+  if (url.pathname === '/api/unified-trip/family-accounts') {
+    return sendJson(res, 200, { accounts:[{ account_id:'ACC-1', name:'บัญชีหลัก', entity_id:'ENT-1', entity_name:'บ้าน', account_type:'BANK' }] });
+  }
   if (url.pathname === '/api/fail') {
     res.writeHead(404, { 'Content-Type':'application/json' });
     return res.end(JSON.stringify({ error:'ไม่พบทริปนี้ หรือไม่มีสิทธิ์เข้าถึง' }));
@@ -263,6 +276,8 @@ const check = (name, cond, detail='') => {
   if (cond) { pass++; console.log(`  ✅ ${name}`); }
   else { fail++; console.log(`  ❌ ${name}  ${detail}`); }
 };
+const waitForLive = () => page.waitForFunction(() => typeof liveMode !== 'undefined' && liveMode === true
+  && document.querySelector('#tripTitle')?.textContent === 'Hokkaido 2026', null, { timeout: 5000 });
 
 console.log('\n── โหมดปกติ (ไม่ใส่ ?live) ─────────────────────');
 await page.goto(`${BASE}/index.html`, { waitUntil:'domcontentloaded' });
@@ -303,14 +318,9 @@ await page.waitForTimeout(150);
 console.log('\n── โหมดข้อมูลจริง ──────────────────────────────');
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
-await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
-const bar = await page.textContent('#liveBar');
-check('แถบแดงบอกว่าเป็นข้อมูลจริง', bar.includes('ข้อมูลจริง'), bar);
-check('แถบบอกชื่อทริปจริง', bar.includes('Hokkaido 2026'), bar);
-check('แถบบอกจำนวนบิลที่ถูกซ่อน', bar.includes('ซ่อนจากคุณ 2'), bar);
-check('แถบเดิมที่เขียนว่า "ข้อมูลจำลอง" ถูกแก้ ไม่ขัดกับความจริง',
-  !(await page.textContent('.prototype-note')).includes('ข้อมูลจำลอง'),
-  await page.textContent('.prototype-note'));
+await waitForLive();
+check('ระบุตัวตนจาก URL ต้องมีคำเตือนว่าไม่ใช่การล็อกอิน',
+  (await page.textContent('#liveBar')).includes('ไม่ใช่การล็อกอิน'), await page.textContent('#liveBar'));
 
 // header เดิมเขียนวันที่ของข้อมูลตัวอย่างไว้ตายตัว ต้องถูกทับด้วยของจริง
 check('ชื่อทริปใน header เป็นของจริง',
@@ -320,12 +330,8 @@ check('ช่วงวันที่ใน header เป็นของจร�
   await page.textContent('#tripDates'));
 check('ไม่มีวันที่ของข้อมูลตัวอย่างหลงเหลือใน header',
   !(await page.textContent('#tripDates')).includes('2570'), await page.textContent('#tripDates'));
-check('ติดป้ายว่ายังไม่ได้เชื่อมพยากรณ์อากาศ',
-  (await page.textContent('.weather-card .demo-flag')).includes('พยากรณ์อากาศ'),
-  await page.textContent('.weather-card .demo-flag'));
-check('ป้ายแผนเที่ยวบอกว่ามาจากฐานจริง',
-  (await page.textContent('#screen-plan .demo-flag')).includes('ฐานข้อมูลจริง'),
-  await page.textContent('#screen-plan .demo-flag'));
+check('ไม่มีป้ายข้อมูลตัวอย่างเก่าค้างในโหมดข้อมูลจริง',
+  await page.locator('.demo-flag').count() === 0);
 check('แผนเที่ยวใช้จุดแวะจริง ไม่ใช่ของตัวอย่าง',
   await page.evaluate(() => planDays.length === 2 && planDays[0].activities.length === 2),
   await page.evaluate(() => JSON.stringify(planDays.map(d => [d.date, d.activities.length]))));
@@ -336,9 +342,6 @@ check('จุดแวะที่มีที่พักถูกติดป�
   await page.evaluate(() => planDays[0].activities[1].tag === 'ที่พัก'));
 check('ไม่แต่งพยากรณ์อากาศขึ้นมาเอง',
   await page.evaluate(() => planDays.every(d => d.weather === undefined)));
-check('การ์ดอากาศบอกว่าไม่มีข้อมูล ไม่ใช่ค้างตัวเลขเดิม',
-  (await page.textContent('#weatherNow')).includes('ยังไม่มีข้อมูล'),
-  await page.textContent('#weatherNow'));
 check('ปุ่มเพิ่มสถานที่ปลดล็อกแล้ว', !(await page.locator('#addPlace').isDisabled()));
 
 const body = await page.textContent('body');
@@ -358,9 +361,8 @@ check('ปิดทริปแล้วยังแก้แผนเที่�
   await page.evaluate(() => { const was = tripClosed; tripClosed = true;
     const locked = financeLocked('plan'); tripClosed = was; return locked === false; }));
 const note = await page.locator('.trip-locked-note').first().innerText();
-check('ทริปยังเปิดอยู่ → ป้ายต้องไม่บอกว่า "ทริปนี้ปิดแล้ว"',
-  note.includes('โหมดข้อมูลจริง') && !note.includes('ทริปนี้ปิดแล้ว'), note);
-check('ป้ายบอกชัดว่าบันทึกลงฐานจริง', note.includes('ลงฐานจริง'), note);
+check('ทริปยังเปิดอยู่ → ซ่อนป้ายล็อกทริป',
+  await page.locator('.trip-locked-note').first().isHidden(), note);
 
 // เช็คด้วยค่าที่มีเฉพาะในข้อมูลจริงเท่านั้น ไม่ใช่ค่าที่ข้อมูลตัวอย่างก็มี
 check('ไม่เขียนข้อมูลจริงลง localStorage',
@@ -383,9 +385,9 @@ async function fillBill(amount, title) {
   await page.waitForTimeout(250);
   await page.fill('#expenseAmount', String(amount));
   await page.fill('#expenseDescription', title);
-  // โหมดข้อมูลจริงบังคับผูกหมวดกับสมุดบัญชี ต้องเลือกก่อนถึงจะบันทึกได้
-  const ledger = page.locator('#splitRows .split-row .category-ledger').first();
-  if (await ledger.count()) await ledger.selectOption('CAT-FOOD');
+  // โหมดข้อมูลจริงเลือก preset ของทริป ซึ่งผูก category_id ของสมุดบัญชีไว้แล้ว
+  const preset = page.locator('#splitRows .split-row .category-preset').first();
+  if (await preset.count()) await preset.selectOption('PRESET-FOOD');
   await page.waitForTimeout(250);
 }
 
@@ -454,7 +456,7 @@ check('error ที่เกิดตอน API ล้มเป็นตัว�
 console.log('\n── กระเป๋า · สกุลเงิน · เติมเงิน (ข้อมูลจริง) ──');
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
-await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+await waitForLive();
 posted.length = 0;
 
 await page.locator('[data-screen="wallets"]:visible').first().click();
@@ -468,7 +470,7 @@ await page.waitForTimeout(200);
 await page.fill('#walletLabel', 'กระเป๋าใหม่จากจอ');
 await page.locator('#walletForm button[type=submit], #walletForm .primary-btn').first().click();
 await page.waitForTimeout(600);
-const walletBody = posted.find(p => p.kind === 'wallet') || {};
+const walletBody = posted.find(p => p.action === 'wallet') || {};
 check('ยิงสร้างกระเป๋าขึ้นเซิร์ฟเวอร์', Boolean(walletBody.name), JSON.stringify(posted));
 check('แมปชื่อกระเป๋าถูก', walletBody.name === 'กระเป๋าใหม่จากจอ', walletBody.name);
 check('เจ้าของเป็น member_id จริง', String(walletBody.owner_member_id).startsWith('TM-'), walletBody.owner_member_id);
@@ -477,6 +479,8 @@ check('กระเป๋าใหม่ขึ้นบนจอ', (await page.t
 
 await page.locator('[data-screen="more"]:visible').first().click();
 await page.waitForTimeout(250);
+await page.locator('.mrail-item[data-panel="money"]:visible').first().click();
+await page.waitForTimeout(150);
 await page.locator('#addCurrency:visible').first().click();
 await page.waitForTimeout(200);
 await page.fill('#currencyCode', 'krw');
@@ -543,44 +547,34 @@ await page.evaluate(() => sessionStorage.setItem('logged_in_user',
   JSON.stringify({ user_id:'9North', name:'North' })));
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
-await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+await waitForLive();
 check('ไม่ต้องใส่ userId ใน URL ก็โหลดได้', await page.evaluate(() => TripApi.config.userId) === '9North');
 check('บอกว่ารู้ตัวตนจาก session', await page.evaluate(() => TripApi.config.userSource) === 'session');
-check('ไม่ขึ้นคำเตือนเรื่อง URL', !(await page.textContent('#liveBar')).includes('จาก URL'));
+check('session ที่ถูกต้องไม่ต้องมีแถบเตือนค้าง', await page.locator('#liveBar').count() === 0);
 
 // มี session อยู่ แต่มีคนยัด ?userId= ของคนอื่นมา → session ต้องชนะ
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=uOther&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
-await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+await waitForLive();
 check('userId ใน URL ทับ session ไม่ได้',
   await page.evaluate(() => TripApi.config.userId) === '9North',
   await page.evaluate(() => TripApi.config.userId));
 
-// ไม่มีทั้ง session และ URL → ต้องบอกให้ล็อกอิน ไม่ใช่ error กำกวม
+// ไม่มีทั้ง session และ URL → ส่งไปทางเข้าร่วมทริปด้วยรหัสตามกติกาลิงก์เดียว
 await page.goto(`${BASE}/index.html`, { waitUntil:'domcontentloaded' });
 await page.evaluate(() => sessionStorage.clear());
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
 await page.waitForTimeout(700);
-check('ไม่มีทั้ง session และ URL → บอกให้ไปล็อกอิน',
-  (await page.textContent('#liveBar')).includes('ล็อกอิน'), await page.textContent('#liveBar'));
+check('ไม่มีทั้ง session และ URL → ไปหน้าเข้าร่วมทริป ไม่เปิดข้อมูลตัวอย่างค้างไว้',
+  page.url().includes('/join.html') && page.url().includes('projectId=TRP-9'), page.url());
 
 // กลับมาโหมด URL เพื่อเทสส่วนที่เหลือ + ต้องเตือนว่าไม่ได้ผ่านการล็อกอิน
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
-await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+await waitForLive();
 check('ระบุตัวตนจาก URL ต้องมีคำเตือนบนแถบ',
   (await page.textContent('#liveBar')).includes('ไม่ใช่การล็อกอิน'), await page.textContent('#liveBar'));
-
-// ยังไม่ผูกสมุดบัญชี = บันทึกไม่ได้ ต้องเตือนตั้งแต่ในฟอร์ม
-await page.locator('.add-expense:visible').first().click();
-await page.waitForTimeout(250);
-await page.fill('#expenseAmount', '500');
-await page.waitForTimeout(300);
-check('ยังไม่ผูกสมุดบัญชี → กดบันทึกไม่ได้', await page.locator('#saveExpense').isDisabled());
-check('และบอกเหตุผลตั้งแต่ในฟอร์ม',
-  (await page.textContent('#saveWarning')).includes('สมุดบัญชี'), await page.textContent('#saveWarning'));
-await page.keyboard.press('Escape');
 
 console.log('\n── ฟอร์มจดค่าใช้จ่ายแบบหน้าเดียว ───────────────');
 await page.locator('.add-expense:visible').first().click();
@@ -601,7 +595,7 @@ check('ตัวเลือกที่ไม่ค่อยใช้ถูก�
 await page.fill('#expenseAmount', '780');
 await page.waitForTimeout(300);
 check('🔑 พิมพ์ยอดครั้งเดียว หมวดเดียวเติมให้อัตโนมัติ',
-  (await page.locator('#splitRows .category-amount').first().inputValue()) === '780',
+  Number(await page.locator('#splitRows .category-amount').first().inputValue()) === 780,
   await page.locator('#splitRows .category-amount').first().inputValue());
 check('ปุ่มบันทึกบอกยอดที่กำลังจะบันทึก',
   (await page.textContent('#saveExpense')).includes('780'), await page.textContent('#saveExpense'));
@@ -615,7 +609,7 @@ await page.keyboard.press('Escape');
 console.log('\n── แผนเที่ยว: เขียนลงฐานจริง ───────────────────');
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
-await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+await waitForLive();
 posted.length = 0;
 
 await page.locator('[data-screen="plan"]:visible').first().click();
@@ -623,7 +617,8 @@ await page.waitForTimeout(300);
 await page.locator('#addPlace:visible').first().click();
 await page.waitForTimeout(300);
 await page.fill('#activityName', 'ตลาดปลาคุชิโระ');
-await page.fill('#activityTime', '08:00');
+await page.selectOption('#activityTime .tp-h', '08');
+await page.selectOption('#activityTime .tp-m', '00');
 await page.fill('#activityDetail', 'คัตเตะโดง');
 await page.locator('#planEditorForm button[type=submit]').first().click();
 await page.waitForTimeout(700);
@@ -637,7 +632,9 @@ check('จุดแวะใหม่ขึ้นบนจอ', (await page.text
 
 // สลับลำดับ → ต้องส่งลำดับ "ทุกวัน" ไม่ใช่แค่วันที่แก้
 posted.length = 0;
-await page.locator('.plan-item [data-move="down"]').first().click();
+await page.locator('[data-screen="plan"]:visible').first().click();
+await page.waitForTimeout(150);
+await page.locator('.plan-item [data-move="down"]').first().evaluate(button => button.click());
 await page.waitForTimeout(700);
 const orderBody = posted.find(p => p.kind === 'order') || {};
 check('สลับลำดับแล้วยิงขึ้นเซิร์ฟเวอร์', Array.isArray(orderBody.stops), JSON.stringify(posted));
@@ -664,12 +661,14 @@ await page.keyboard.press('Escape');
 console.log('\n── ปิดทริป · เปิดกลับ (ข้อมูลจริง) ─────────────');
 await page.goto(`${BASE}/index.html?live=1&projectId=TRP-9&userId=9North&api=${BASE}`,
   { waitUntil:'domcontentloaded' });
-await page.waitForSelector('#liveBar.live-bar--live', { timeout: 5000 });
+await waitForLive();
 posted.length = 0;
 
 // ปุ่มปิดทริปอยู่บนหน้าจอ "เพิ่มเติม"
 await page.locator('[data-screen="more"]:visible').first().click();
 await page.waitForTimeout(250);
+await page.locator('.mrail-item[data-panel="close"]:visible').first().click();
+await page.waitForTimeout(150);
 await page.locator('#closePreview:visible').first().click();
 await page.waitForTimeout(500);
 
@@ -686,9 +685,11 @@ await page.waitForTimeout(800);
 const closeBody = posted.find(p => p.kind === 'close') || {};
 check('ยิงปิดทริปขึ้นเซิร์ฟเวอร์', Boolean(closeBody.posting_date), JSON.stringify(posted));
 check('ส่งวันลงบัญชีที่ผู้ใช้เลือก ไม่ใช่วันจบทริป', closeBody.posting_date === '2027-01-10', closeBody.posting_date);
+/* KEEP = ปล่อยไว้ ซึ่งเป็นค่าเริ่มต้นตั้งแต่ 2026-08-23 รอบสอง
+   (North: "เงินที่เหลือในทริป ก็ไม่ต้องทำอะไร ปล่อยเป็นยอดไว้") */
 check('ส่ง disposition ของทุกกระเป๋าที่มีเงินเหลือ',
   Array.isArray(closeBody.lines) && closeBody.lines.length > 0 &&
-  closeBody.lines.every(l => ['RETURN','CARRY'].includes(l.disposition)), JSON.stringify(closeBody.lines));
+  closeBody.lines.every(l => ['RETURN','CARRY','KEEP'].includes(l.disposition)), JSON.stringify(closeBody.lines));
 check('ไม่ส่งยอดที่ลงบัญชีขึ้นไป ปล่อยให้เซิร์ฟเวอร์คิดจากผู้ร่วมจ่ายจริง',
   closeBody.ledger_total === undefined, String(closeBody.ledger_total));
 check('ทริปกลายเป็นสถานะปิดบนจอ', await page.evaluate(() => tripClosed === true));
@@ -719,7 +720,7 @@ console.log('\n── ปุ่มย้อนกลับ ───────
 await page.goto(`${BASE}/index.html`, { waitUntil:'domcontentloaded' });
 await page.waitForTimeout(400);
 const startedAt = page.url();
-await page.locator('.back').click();
+await page.getByRole('button', { name:'เมนูหลัก' }).click();
 await page.waitForTimeout(400);
 check('กดแล้วพาออกจากหน้านี้จริง ไม่ใช่ปุ่มเปล่า', page.url() !== startedAt, page.url());
 

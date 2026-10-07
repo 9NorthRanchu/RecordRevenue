@@ -79,10 +79,16 @@ step "ALTER TABLE TripClosureLines ADD COLUMN settled_thb REAL;" "TripClosureLin
 step "ALTER TABLE TripExpenses ADD COLUMN settled_thb REAL;" "TripExpenses.settled_thb"
 
 echo
+echo "▶ ประเภทของจุดแวะ + การจอง (North 2026-09-07 / 2026-09-15)"
+step "ALTER TABLE TripStops ADD COLUMN stop_tag TEXT;" "TripStops.stop_tag"
+step "CREATE TABLE IF NOT EXISTS TripBookings (booking_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, stop_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'HOTEL', status TEXT NOT NULL DEFAULT 'CONFIRMED', vendor TEXT, ref_no TEXT, check_in TEXT, check_out TEXT, depart_from TEXT, arrive_to TEXT, arrive_time TEXT, room_desc TEXT, view_desc TEXT, size_sqm REAL, travelers TEXT, adults INTEGER, children INTEGER, child_ages TEXT, inc_breakfast INTEGER, inc_lunch INTEGER, inc_dinner INTEGER, has_parking INTEGER, has_laundry INTEGER, pay_status TEXT NOT NULL DEFAULT 'UNPAID', pay_date TEXT, pay_account_id TEXT, pay_method TEXT, cancel_deadline TEXT, cancel_policy TEXT, linked_transaction_id TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME);" "ตาราง TripBookings"
+step "CREATE INDEX IF NOT EXISTS idx_tripbookings_project ON TripBookings(project_id);" "ดัชนี idx_tripbookings_project"
+
+echo
 echo "▶ ตรวจผลรวม"
-echo "  ตารางที่ต้องมี (ควรได้ 3 ชื่อ):"
+echo "  ตารางที่ต้องมี (ควรได้ 4 ชื่อ):"
 npx wrangler d1 execute "$DB" --remote --command \
-  "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('TripLegs','TripMemberSessions','TripDayPlans');" 2>&1 \
+  "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('TripLegs','TripMemberSessions','TripDayPlans','TripBookings');" 2>&1 \
   | grep -o '"name": "[A-Za-z]*"' | sed 's/"name": /    ✓ /;s/"//g'
 
 echo "  คอลัมน์ใน TripStops (ควรได้ 9 ชื่อ):"

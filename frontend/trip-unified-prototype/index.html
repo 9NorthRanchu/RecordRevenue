@@ -3,16 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Unified Trip — Hokkaido Prototype</title>
+  <title>Enjoy Life Trip — Hokkaido</title>
+  <link rel="icon" type="image/png" href="art/enjoy-life-trip-icon-v1.png">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="../puppup-prototype/fonts/noto-sans-thai-looped-thai-600-normal.woff2">
-  <link rel="stylesheet" href="style.css?v=157">
+  <link rel="stylesheet" href="style.css?v=167">
   <!-- ธีมสี kawaii เลือกได้ต่อทริป — สลับด้วย data-theme บน <html> -->
   <link rel="stylesheet" href="themes.css?v=18">
 </head>
 <body>
   <div class="app-shell">
     <aside class="side-rail">
-      <div class="brand"><span>旅</span><div><b id="brandTitle">Hokkaido Family</b><small id="brandSub">Winter road trip · 12 วัน</small></div></div>
+      <div class="brand"><span class="brand-icon"><img src="art/enjoy-life-trip-icon-v1.png" alt="Enjoy Life Trip"></span><div><b id="brandTitle">Hokkaido Family</b><small id="brandSub">Enjoy Life Trip · 12 วัน</small></div></div>
       <nav class="main-nav">
         <button class="active" data-screen="today"><i>🏠</i><span>วันนี้</span></button>
         <button data-screen="plan"><i>🗺️</i><span>แผนเที่ยว</span></button>
@@ -37,9 +38,20 @@
         </div>
       </header>
 
+      <!-- ผู้ร่วมทริป (เข้าด้วยรหัสจากลิงก์) — บอกให้ชัดว่าทำอะไรได้แค่ไหน
+           และมีทางออกกลับไปใช้สิทธิ์บัญชีครอบครัว · app.js: renderGuestNote() -->
+      <p class="guest-note" id="guestNote" hidden>
+        <span id="guestNoteText"></span>
+        <button type="button" id="guestSignOut">ออกจากระบบผู้ร่วมทริป</button>
+      </p>
+
       <section class="screen active" id="screen-today">
         <div class="map-hero">
           <img src="art/hokkaido-illustrated-clean.png?v=1" alt="แผนที่ภาพวาดฮอกไกโดพร้อมสถานที่สำคัญ">
+          <aside class="momo-guide" aria-label="Momo ผู้ช่วยวางแผนทริป">
+            <img src="art/momo-mascot-v1.png" alt="Momo มาสคอตนักเวทของ Enjoy Life Trip">
+            <p><b>Momo พร้อมช่วย ✨</b><span>ดูแผน จดบิล แล้วออกเดินทางกัน!</span></p>
+          </aside>
           <svg class="current-day-route" viewBox="0 0 1931 814" aria-label="เส้นทางท่องเที่ยวฮอกไกโดทั้งหมด">
             <path class="future-route" d="M1660 610 C1510 570 1390 535 1290 478 C1325 444 1350 412 1382 388 C1230 265 1050 170 870 150 C930 300 1050 430 1130 540 C1060 500 985 455 930 420 C845 462 760 505 690 540 C565 565 440 580 330 570 C330 485 332 385 340 300 C405 335 465 370 520 400 C565 505 625 600 690 665"/>
             <path class="completed-route" id="completedRoute" d="M1660 610 L1290 478"/>
@@ -106,7 +118,14 @@
       <section class="screen" id="screen-plan">
         <div class="page-head"><div><span>จัดลำดับง่าย · ใช้จริงระหว่างทริป</span><h1>แผนเที่ยว 🗺️</h1><p>เวลา เส้นทาง เอกสาร และสิ่งสำคัญของทุกจุดในหน้าเดียว</p></div><button class="primary-btn" id="addPlace">＋ เพิ่มสถานที่</button></div>
         <div class="plan-layout">
-          <div class="day-tabs" id="planDayTabs"></div>
+          <!-- แถบวัน · เลื่อนซ้ายขวาได้ทั้งลาก ปัด และปุ่มลูกศร (North 2026-09-07) -->
+          <div class="day-strip" id="planDayStrip">
+            <button type="button" class="day-scroll prev" id="dayScrollPrev" aria-label="เลื่อนแถบวันไปทางซ้าย">‹</button>
+            <div class="day-tabs" id="planDayTabs"></div>
+            <button type="button" class="day-scroll next" id="dayScrollNext" aria-label="เลื่อนแถบวันไปทางขวา">›</button>
+          </div>
+          <!-- เส้นตายยกเลิกฟรีที่ใกล้ที่สุดของทั้งทริป (North 2026-09-15) · แตะแล้วไปการ์ดนั้น -->
+          <div class="booking-alert" id="bookingAlert" role="button" tabindex="0" hidden></div>
           <!-- การ์ดสรุปวัน: ชื่อแผนประจำวัน · ลำดับเมือง · ชิปสรุป (จุด/เวลา/ระยะ/อากาศ/เอกสาร) -->
           <div class="plan-day-overview" id="planDayOverview"></div>
           <div class="plan-list-head"><b>กำหนดการวันนี้</b><small>ลากเพื่อจัดลำดับ · แตะ ••• เพื่อจัดการ</small></div>
@@ -115,6 +134,8 @@
             <p class="plan-backup" id="planBackup" hidden></p>
             <button class="primary-btn" id="addPlaceFoot">＋ เพิ่ม Stop วันนี้</button>
           </div>
+          <!-- สรุปการจองทั้งทริป (คืน / ไฟลท์ / จ่ายแล้ว / ยอด) + ปุ่มพิมพ์แผน · ซ่อนถ้ายังไม่มีการจอง -->
+          <section class="booking-summary" id="bookingSummary" hidden></section>
           <!-- ย้ายจุดแวะข้ามวัน · ซ่อนทั้งบล็อกเมื่อทริปมีวันเดียว (ไม่มีปลายทางให้ย้าย) -->
           <div class="cross-day-move" id="crossDayMove" hidden>
             <span id="crossDayLabel"></span>
@@ -411,79 +432,221 @@
     </div>
   </section>
 
+  <!-- ── เพิ่ม/แก้ไข "วัน" ในแผน (2026-09-07) ──────────────────────────────
+       North: "ถ้าเพิ่มวันเฉย ๆ ให้ลบการตั้งค่าในส่วนอื่นออก และมีให้ลบ หรือแก้ไขวันด้วย"
+       จงใจให้มีแค่สองช่อง — วันที่กับชื่อวัน · ช่องของ "สถานที่" ไม่ควรมาอยู่ที่นี่
+       🔴 ต้องอยู่ในลิสต์ของ closeLayers() ใน app.js ด้วย ไม่งั้นเปิดได้แต่ปิดไม่ลง -->
+  <section class="dialog day-dialog" id="dayDialog" aria-hidden="true" role="dialog" aria-labelledby="dayDialogTitle">
+    <button class="dialog-close" type="button" data-close-day aria-label="ปิด">×</button>
+    <h2 id="dayDialogTitle">เพิ่มวันในแผน</h2>
+    <p class="day-dialog-lead">วันในแผนมีได้โดยยังไม่มีสถานที่ · เพิ่มวันไว้ก่อนแล้วค่อยเติมสถานที่ทีหลังได้</p>
+    <form id="dayForm">
+      <label>วันที่<input type="date" id="dayDate" required></label>
+      <label>ชื่อวัน <small>(ไม่บังคับ)</small>
+        <input type="text" id="dayTitle" maxlength="100" placeholder="เช่น วันเดินเล่นในเมือง">
+      </label>
+      <p class="form-error" id="dayError"></p>
+      <div class="day-dialog-actions">
+        <button type="button" id="deleteDayBtn" class="danger-btn" hidden>ลบวันนี้</button>
+        <button type="button" class="soft-btn" data-close-day>ยกเลิก</button>
+        <button type="submit" class="primary-btn" id="daySubmit">เพิ่มวัน</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ── ฟอร์มสถานที่ · จัดใหม่ 2026-09-07 ────────────────────────────────
+       North: "หน้าแก้ไข จัดหน้าจอใหม่ให้สวยงาม กระชับ ใช้กับมือถือสะดวกด้วย"
+       โครง: หัวเรื่องติดบน · เนื้อหาเลื่อนได้ · ปุ่มบันทึกติดล่างเสมอ
+       ของที่ต้องกรอกเกือบทุกครั้งอยู่บนสุด ที่นาน ๆ ใช้ทีอยู่ล่าง แยกเป็นหัวข้อ -->
   <section class="dialog plan-editor" id="planEditor" aria-hidden="true" role="dialog" aria-labelledby="planEditorTitle">
-    <button class="dialog-close" id="closePlanEditor" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-    <span class="eyebrow">FLEXIBLE ITINERARY</span>
-    <h2 id="planEditorTitle">เพิ่มสถานที่ในแผน</h2>
+    <header class="pe-head">
+      <div>
+        <span class="eyebrow">FLEXIBLE ITINERARY</span>
+        <h2 id="planEditorTitle">เพิ่มสถานที่ในแผน</h2>
+      </div>
+      <button class="dialog-close" id="closePlanEditor" aria-label="ปิด"><svg class="ico-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
     <form id="planEditorForm">
-      <div class="editor-grid">
-        <label class="field-wide">ชื่อสถานที่หรือกิจกรรม
-          <input id="activityName" required placeholder="เช่น ตลาดปลาคุชิโระ">
-        </label>
-        <label>วันที่
-          <select id="activityDay"></select>
-        </label>
-        <label>เวลา
-          <span class="time-picker" id="activityTime" data-required="1"></span>
-        </label>
-        <label>เวลาสิ้นสุด
-          <span class="time-picker" id="activityEndTime"></span>
-        </label>
-        <label>ประเภท
-          <select id="activityTag">
-            <option>สถานที่หลัก</option>
-            <option>กิจกรรมย่อย</option>
-            <option>การเดินทาง</option>
-            <option>อาหาร</option>
-            <option>ที่พัก</option>
-          </select>
-        </label>
-        <label>งบประมาณ (JPY)
-          <input id="activityCost" inputmode="numeric" placeholder="เช่น 2800">
-        </label>
-        <!-- GPS รถเช่าในญี่ปุ่นค้นชื่อสถานที่มักไม่เจอ แต่ใส่ mapcode เข้าได้เสมอ -->
-        <label class="field-wide">Mapcode (สำหรับ GPS รถเช่า)
-          <input id="activityMapcode" maxlength="32" placeholder="เช่น 149 287 165*36">
-        </label>
-        <label>เวลาเปิด
-          <span class="time-picker" id="activityOpen"></span>
-        </label>
-        <label>เวลาปิด
-          <span class="time-picker" id="activityClose"></span>
-        </label>
-        <label class="field-wide">วันหยุดประจำสัปดาห์
-          <span class="weekday-picker" id="activityClosedDays">
-            <label><input type="checkbox" value="0"><span>อา</span></label>
-            <label><input type="checkbox" value="1"><span>จ</span></label>
-            <label><input type="checkbox" value="2"><span>อ</span></label>
-            <label><input type="checkbox" value="3"><span>พ</span></label>
-            <label><input type="checkbox" value="4"><span>พฤ</span></label>
-            <label><input type="checkbox" value="5"><span>ศ</span></label>
-            <label><input type="checkbox" value="6"><span>ส</span></label>
-          </span>
-        </label>
-        <label class="field-wide">รายละเอียด
-          <textarea id="activityDetail" rows="3" placeholder="การเดินทาง สิ่งที่ควรเตรียม หรือแผนสำรอง"></textarea>
-        </label>
-        <label class="field-wide">ไฮไลต์ (ของดี/ของเด็ด)
-          <input id="activityHighlight" maxlength="160" placeholder="เช่น ข้าวหน้าปลาดิบ Katte Don หรือจุดชมพระอาทิตย์ตก">
-        </label>
-        <div class="icon-field field-wide">
-          <span>ไอคอนสถานที่</span>
-          <img id="activityIconPreview" class="icon-preview rounded" alt="ไอคอนที่เลือก">
-          <button type="button" class="soft-btn" id="pickActivityIcon">เลือกไอคอน</button>
+      <div class="pe-body">
+        <div class="editor-grid">
+          <label class="field-wide">ชื่อสถานที่หรือกิจกรรม
+            <input id="activityName" required placeholder="เช่น ตลาดปลาคุชิโระ">
+          </label>
+          <label>วันที่
+            <select id="activityDay"></select>
+          </label>
+          <label>ประเภท
+            <select id="activityTag">
+              <option>สถานที่หลัก</option>
+              <option>กิจกรรมย่อย</option>
+              <option>การเดินทาง</option>
+              <option>อาหาร</option>
+              <option>ที่พัก</option>
+            </select>
+          </label>
+          <!-- เวลาเริ่ม–สิ้นสุด อยู่บรรทัดเดียวกัน อ่านเป็นช่วงเวลาได้ทันที -->
+          <label class="field-wide">เวลาที่อยู่ตรงนี้
+            <span class="pe-range">
+              <span class="time-picker" id="activityTime" data-required="1"></span>
+              <b class="pe-arrow">→</b>
+              <span class="time-picker" id="activityEndTime"></span>
+              <small>เวลาสิ้นสุดเว้นว่างได้</small>
+            </span>
+          </label>
+
+          <div class="pe-divider field-wide"><b>เวลาทำการของสถานที่</b><small>ไม่รู้ก็เว้นว่างไว้ได้</small></div>
+          <label class="field-wide">เปิด – ปิด
+            <span class="pe-range">
+              <span class="time-picker" id="activityOpen"></span>
+              <b class="pe-arrow">→</b>
+              <span class="time-picker" id="activityClose"></span>
+            </span>
+          </label>
+          <label class="field-wide">วันหยุดประจำสัปดาห์
+            <span class="weekday-picker" id="activityClosedDays">
+              <label><input type="checkbox" value="0"><span>อา</span></label>
+              <label><input type="checkbox" value="1"><span>จ</span></label>
+              <label><input type="checkbox" value="2"><span>อ</span></label>
+              <label><input type="checkbox" value="3"><span>พ</span></label>
+              <label><input type="checkbox" value="4"><span>พฤ</span></label>
+              <label><input type="checkbox" value="5"><span>ศ</span></label>
+              <label><input type="checkbox" value="6"><span>ส</span></label>
+            </span>
+          </label>
+
+          <div class="pe-divider field-wide"><b>รายละเอียดเพิ่มเติม</b><small>ใส่ทีหลังก็ได้</small></div>
+          <!-- สกุลเงินเลือกได้ต่อจุด (North 2026-09-15): ค่าเข้าชมเป็นเงินท้องถิ่น
+               แต่โรงแรมจองล่วงหน้าเป็นบาท · รายการ = สกุลของทริป + THB เสมอ -->
+          <label>งบประมาณ / ราคา
+            <span class="cost-row">
+              <input id="activityCost" inputmode="decimal" placeholder="เช่น 2800">
+              <select id="activityCurrency" aria-label="สกุลเงิน"></select>
+            </span>
+          </label>
+          <!-- GPS รถเช่าในญี่ปุ่นค้นชื่อสถานที่มักไม่เจอ แต่ใส่ mapcode เข้าได้เสมอ -->
+          <label>Mapcode (GPS รถเช่า)
+            <input id="activityMapcode" maxlength="32" placeholder="เช่น 149 287 165*36">
+          </label>
+          <label class="field-wide">รายละเอียด
+            <textarea id="activityDetail" rows="2" placeholder="การเดินทาง สิ่งที่ควรเตรียม หรือแผนสำรอง"></textarea>
+          </label>
+          <label class="field-wide">ไฮไลต์ (ของดี/ของเด็ด)
+            <input id="activityHighlight" maxlength="160" placeholder="เช่น ข้าวหน้าปลาดิบ Katte Don">
+          </label>
+
+          <!-- ── การจอง (North 2026-09-15 · จาก Trip.xlsx) ──────────────────
+               พับไว้บรรทัดเดียวจนกว่าจะแตะ · ช่องเปลี่ยนตามชนิด (ที่พัก / เดินทาง)
+               · ส่วนจ่ายเงินอยู่ล่างสุด ใช้ตอนใกล้เดินทาง
+               ราคาไม่อยู่ในนี้ — ใช้ช่องงบประมาณด้านบนที่เดียว -->
+          <details class="bk-box field-wide" id="bookingBox">
+            <summary class="bk-summary">
+              <b>🧾 ข้อมูลการจอง</b>
+              <small id="bookingHint">ผู้ขาย · เลขจอง · เช็กเอาต์ · การจ่าย</small>
+              <span class="bk-plus" aria-hidden="true">＋</span>
+            </summary>
+            <div class="bk-head">
+              <label class="bk-kind">ชนิด
+                <select id="bookingKind">
+                  <option value="HOTEL">ที่พัก</option>
+                  <option value="FLIGHT">ไฟลท์</option>
+                  <option value="TRANSPORT">รถ / รถไฟ / เรือ</option>
+                  <option value="TICKET">ตั๋ว / บัตรเข้าชม</option>
+                  <option value="OTHER">อื่น ๆ</option>
+                </select>
+              </label>
+              <div class="seg" id="bookingStatus" role="radiogroup" aria-label="สถานะการจอง">
+                <label><input type="radio" name="bookingStatus" value="CONFIRMED" checked><span>ยืนยัน</span></label>
+                <label><input type="radio" name="bookingStatus" value="BACKUP"><span>สำรอง</span></label>
+                <label><input type="radio" name="bookingStatus" value="CANCELLED"><span>ยกเลิก</span></label>
+              </div>
+            </div>
+            <div class="bk-grid">
+              <label id="bookingVendorLabel">ผู้ขาย
+                <input id="bookingVendor" list="bookingVendors" maxlength="80" placeholder="Agoda / ANA">
+                <datalist id="bookingVendors"></datalist>
+              </label>
+              <label id="bookingRefLabel">เลขจอง
+                <input id="bookingRef" maxlength="80" placeholder="เลขจอง / เที่ยวบิน" autocomplete="off">
+              </label>
+
+              <!-- ที่พัก -->
+              <label class="bk-hotel">เช็กอิน
+                <input type="date" id="bookingCheckIn">
+              </label>
+              <label class="bk-hotel">เช็กเอาต์ <em class="bk-nights" id="bookingNights"></em>
+                <input type="date" id="bookingCheckOut">
+              </label>
+              <label class="bk-hotel field-wide">ห้อง
+                <input id="bookingRoom" maxlength="200" placeholder="เช่น 1x Twin Non-Smoking">
+              </label>
+              <div class="bk-hotel bk-tri field-wide">
+                <label>วิว<input id="bookingView" maxlength="80" placeholder="Mountain"></label>
+                <label>ตรม.<input id="bookingSize" inputmode="decimal" placeholder="37"></label>
+                <label>ผู้เข้าพัก<input id="bookingTravelers" maxlength="40" placeholder="2A 1C(7)"></label>
+              </div>
+              <!-- สวิตช์ 3 สถานะ: แตะวน มี → ไม่มี → ไม่ทราบ (data-state = 1 / 0 / ว่าง) -->
+              <div class="bk-hotel bk-amen field-wide" id="bookingAmenities" role="group" aria-label="บริการที่รวม">
+                <button type="button" data-amen="inc_breakfast" data-state=""><i>🍳</i>เช้า</button>
+                <button type="button" data-amen="inc_lunch" data-state=""><i>🍱</i>กลางวัน</button>
+                <button type="button" data-amen="inc_dinner" data-state=""><i>🍽️</i>เย็น</button>
+                <button type="button" data-amen="has_parking" data-state=""><i>🅿️</i>จอดรถ</button>
+                <button type="button" data-amen="has_laundry" data-state=""><i>🧺</i>ซักผ้า</button>
+              </div>
+              <small class="bk-hotel bk-note field-wide">แตะวน: มี → ไม่มี → ไม่ทราบ</small>
+
+              <!-- การเดินทาง -->
+              <label class="bk-travel">จาก<input id="bookingFrom" maxlength="80" placeholder="BKK"></label>
+              <label class="bk-travel">ถึง<input id="bookingTo" maxlength="80" placeholder="HND"></label>
+              <label class="bk-travel">เวลาถึง<span class="time-picker" id="bookingArrive"></span></label>
+              <label class="bk-travel">ผู้เดินทาง<input id="bookingTravelers2" maxlength="40" placeholder="2A 1C(7)"></label>
+
+              <!-- จ่ายเงิน — ใช้ตอนใกล้เดินทาง -->
+              <div class="bk-pay field-wide">
+                <div class="bk-pay-head">
+                  <b>💳 การจ่ายเงิน</b>
+                  <div class="seg ok" id="bookingPayStatus" role="radiogroup" aria-label="สถานะการจ่าย">
+                    <label><input type="radio" name="bookingPayStatus" value="UNPAID" checked><span>ยังไม่จ่าย</span></label>
+                    <label><input type="radio" name="bookingPayStatus" value="PAID"><span>จ่ายแล้ว</span></label>
+                    <label><input type="radio" name="bookingPayStatus" value="PAY_AT_VENUE"><span>หน้างาน</span></label>
+                  </div>
+                </div>
+                <div class="bk-grid">
+                  <label>วันจ่าย<input type="date" id="bookingPayDate"></label>
+                  <label>จ่ายด้วย
+                    <input id="bookingPayMethod" list="bookingPayMethods" maxlength="80" placeholder="เช่น บัตร 3696">
+                    <datalist id="bookingPayMethods"></datalist>
+                  </label>
+                  <label class="field-wide">ยกเลิกฟรีถึง <em class="bk-nights" id="bookingCancelHint"></em>
+                    <input type="date" id="bookingCancel">
+                  </label>
+                </div>
+              </div>
+              <div class="bk-foot field-wide">
+                <button type="button" class="soft-btn danger" id="bookingClear">ล้างข้อมูลการจอง</button>
+                <small>ล้างหมดแล้วบันทึก = ลบการจองนี้ทิ้ง</small>
+              </div>
+            </div>
+          </details>
+
+          <div class="icon-field field-wide">
+            <span>ไอคอนสถานที่</span>
+            <img id="activityIconPreview" class="icon-preview rounded" alt="ไอคอนที่เลือก">
+            <button type="button" class="soft-btn" id="pickActivityIcon">เลือกไอคอน</button>
+          </div>
+          <div class="field-wide stop-docs-field">
+            <span class="stop-docs-label">เอกสารของสถานที่นี้</span>
+            <div id="stopDocuments"></div>
+          </div>
         </div>
-        <div class="field-wide stop-docs-field">
-          <span class="stop-docs-label">เอกสารของสถานที่นี้</span>
-          <div id="stopDocuments"></div>
+        <div class="editor-note">สภาพอากาศจะแสดงตามสถานที่หลักของวันที่เลือก และอัปเดตบนแผนโดยอัตโนมัติ</div>
+      </div>
+      <footer class="pe-foot">
+        <p class="form-error" id="planEditorError"></p>
+        <div class="sheet-actions">
+          <button type="button" class="soft-btn" id="cancelPlanEditor">ยกเลิก</button>
+          <button type="submit" class="primary-btn">บันทึกในแผน</button>
         </div>
-      </div>
-      <div class="editor-note">สภาพอากาศจะแสดงตามสถานที่หลักของวันที่เลือก และอัปเดตบนแผนโดยอัตโนมัติ</div>
-      <p class="form-error" id="planEditorError"></p>
-      <div class="sheet-actions">
-        <button type="button" class="soft-btn" id="cancelPlanEditor">ยกเลิก</button>
-        <button type="submit" class="primary-btn">บันทึกในแผน</button>
-      </div>
+      </footer>
     </form>
   </section>
 
@@ -756,10 +919,11 @@
           </select>
         </label>
         <label class="field-wide">สกุลเงิน<select id="walletCurrency"></select><small class="field-hint" id="walletCurrencyHint"></small></label>
-        <!-- โผล่เฉพาะกระเป๋าเงินสด — บัตรเครดิตยังไม่รู้ยอดบาทจนกว่าบิลจะมา -->
+        <!-- ทุกชนิดกระเป๋าต้องผูกบัญชี — ตอนปิดทริปนี่คือบัญชีที่ค่าใช้จ่ายจะถูกตัดออก
+             ไม่ผูก = ยอดของกระเป๋าใบนี้ลงสมุดบัญชีไม่ได้ และปิดทริปไม่ผ่าน -->
         <label class="field-wide" id="walletAccountField">เงินก้อนนี้ออกจากบัญชีไหน
           <select id="walletAccount"></select>
-          <small class="field-hint">ใช้ตอนปิดทริปเพื่อลงบัญชีให้ถูกเล่ม · ไม่เลือกก็ได้</small>
+          <small class="field-hint" id="walletAccountHint">บัญชีที่เงินก้อนนี้ออกไป (เช่น "เงินรอเที่ยว") — ตอนปิดทริปค่าใช้จ่ายจะถูกตัดออกจากบัญชีนี้</small>
         </label>
         <p class="field-note" id="walletKindNote" hidden>💳 บัตรเครดิต — ตอนปิดทริปต้องกรอกยอดเงินบาทที่ถูกเรียกเก็บจริง
           ระบบจะใช้ยอดนั้นเป็นเรทจริงของกระเป๋าใบนี้ ไม่ใช่เรทประมาณการ</p>
@@ -866,7 +1030,7 @@
   <!-- ตรรกะเงิน: หารบิล จับคู่โอน สรุปหมวด (มีเทสคุมใน backend/test/money.test.mjs) -->
   <script src="money.js?v=3"></script>
   <script src="slice-engine.js?v=2"></script>
-  <script src="api.js?v=47"></script>
-  <script src="app.js?v=124"></script>
+  <script src="api.js?v=53"></script>
+  <script src="app.js?v=136"></script>
 </body>
 </html>
