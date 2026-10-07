@@ -6402,6 +6402,9 @@ function openUserModal(userId = '') {
             document.getElementById("user-name-input").value = u.name;
             document.getElementById("user-email-input").value = u.email;
             document.getElementById("user-password-input").value = '';
+            // แก้สมาชิกเดิม: เว้นรหัสว่างได้ = ใช้รหัสเดิม (เดิมบังคับกรอก แล้วกลายเป็นรหัสใหม่)
+            document.getElementById("user-password-input").required = false;
+            document.getElementById("user-password-input").placeholder = 'เว้นว่าง = ใช้รหัสเดิม';
             document.getElementById("user-role-select").value = u.role;
             document.getElementById("user-line-id-input").value = u.line_user_id || '';
 
@@ -6419,6 +6422,8 @@ function openUserModal(userId = '') {
         document.getElementById("user-name-input").value = '';
         document.getElementById("user-email-input").value = '';
         document.getElementById("user-password-input").value = '';
+        document.getElementById("user-password-input").required = true;
+        document.getElementById("user-password-input").placeholder = 'รหัสผ่านเข้าใช้';
         document.getElementById("user-role-select").value = 'member';
         document.getElementById("user-line-id-input").value = '';
     }
@@ -6451,7 +6456,7 @@ async function saveUserItem(e) {
         old_user_id: oldUserId || null,
         name,
         email,
-        password: password || '1234',
+        password: password || (oldUserId ? '' : '1234'),
         role,
         line_user_id: lineUserId || null,
         allowed_entities

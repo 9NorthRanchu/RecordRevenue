@@ -1253,6 +1253,10 @@ async function familyIdFor(env, userId) {
    เป็นแค่ไอคอนตกแต่ง ไม่ใช่ข้อมูลอ่อนไหว จึงเปิดให้ดึงตรงได้โดยไม่ต้องล็อกอิน */
 async function serveIcon(env, key, corsHeaders) {
   if (!key || key.includes('..')) return new Response('not found', { status: 404 });
+  /* เสิร์ฟเฉพาะไอคอน/รูปตกแต่ง — bucket เดียวกันนี้เก็บสลิปและเอกสารการเงิน
+     ของสมุดจดไว้ใต้ ledger-docs/ ด้วย ซึ่งต้องล็อกอินก่อนเสมอ (ledger-inbox.js)
+     ห้ามถอดบรรทัดนี้ ไม่งั้นใครรู้คีย์ก็เปิดสลิปได้โดยไม่ต้องล็อกอิน */
+  if (!key.startsWith('icons/') && !key.startsWith('db/')) return new Response('not found', { status: 404 });
 
   const headers = new Headers(corsHeaders);
   headers.set('Cache-Control', 'public, max-age=31536000, immutable');

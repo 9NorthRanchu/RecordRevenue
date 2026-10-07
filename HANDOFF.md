@@ -3,6 +3,32 @@
 อัปเดตล่าสุด: 2026-10-07 (สรุปสถานะก่อนย้ายแชท) · โปรเจกต์ = แอปการเงินครอบครัว + ท่องเที่ยว (ไทย)
 Stack: Cloudflare Pages (frontend) + Cloudflare Worker (backend) + D1 (`record-revenue-db`, id `3112e08d-db8b-428c-925d-91fb50f50de4`)
 
+## 🚀 2026-10-07 (ค่ำ) — เริ่มยกเครื่องสมุดจด: ระยะ 0 + ระยะ 1 (หลังบ้าน) — **อ่านก่อนหัวข้อถัดไป**
+
+แผนเต็มอยู่ใน Claude Doc "ยกเครื่องสมุดจดค่าใช้จ่าย RecordRevenue" (https://claude.ai/code/artifact/9f4b715a-fb59-4d44-9950-e861d014f1fb)
+North เลือก: หน้าเว็บสมุดจด**ทำใหม่ทั้งหมด** · **ใช้ฐานเดิมร่วมกับทริป** · เริ่ม**ระยะ 0+1** · ลบ Debts BAY Chaiyapruk แล้ว (North รัน) · จุดสำรอง git `b359719`
+
+**ระยะ 0 — แยกทริปออกจากสมุดจด (เสร็จ · ยังไม่ deploy)**
+- ทางเข้าทริปรุ่นเก่า (`/api/trips/*` `/api/trip-stops` `/api/travel` `/api/wallets` `/api/trip-expenses`) + ฟังก์ชันช่วย 5 ตัว ย้ายจาก `index.js` → **`backend/src/legacy-trip.js`** (`handleLegacyTrip` คืน null ถ้าไม่ใช่ path ตัวเอง) · ใช้กับหน้าเว็บเก่า app.js/travel.js เท่านั้น
+- แอปทริปปัจจุบัน (Enjoy Life Trip) ใช้ `/api/unified-trip` ใน `unified-trip.js` — ไม่ถูกแตะ
+- ตรวจ: เรียก 9 path เทียบก่อน/หลังแยก ผลเหมือนกันทุกตัว · `index.js` 3,684 → ~2,870 บรรทัด
+- จุดที่ทริปเขียนลงสมุดจด (สัญญา — แก้ต้องตกลงก่อน): `unified-trip.js` INSERT Transactions/TransactionDetails 3 จุด (ปิดทริป · เปิดกลับ · เติมกระเป๋า) + UPDATE Categories 1 จุด
+
+**ระยะ 1 — กล่องรับเอกสาร + LINE Bot รุ่นใหม่ (หลังบ้านเสร็จ · ยังไม่ deploy · หน้าเว็บกล่องยังไม่ทำ)**
+- `backend/src/ledger-match.js` ฟังก์ชันล้วน: อ่านข้อความเงินสด · ชื่อธนาคาร/เลขท้าย · คะแนนจับคู่ · เสนอบรรทัดย่อยจากแบบที่จำ (แตกหลายบริษัท + หัก ณ ที่จ่าย + สัดส่วน)
+- `backend/src/ledger-inbox.js`: `/api/line-webhook` (แทนของเดิม) · `/api/inbox` · `/upload` · `/cash` · `/file/{id}` · `/{id}/accept|link|account|dismiss`
+- ตารางใหม่ (setup-db.sh): `LedgerDocs` `LedgerDocLinks` (role CREATED/MATCHED/SUPPORT) `LedgerRules` (kind ACCOUNT/PARTY/DEFAULT_CASH) + ดัชนี `Transactions(account_id,date)` `Transactions(ref_code)`
+- ไฟล์สลิปเก็บใน R2 (binding ICONS) ใต้ `ledger-docs/{family}/` เปิดได้เฉพาะคนในครอบครัวที่ล็อกอิน · `serveIcon` ของทริปปฏิเสธทุก key ที่ไม่ขึ้นต้น `icons/` หรือ `db/` แล้ว (ห้ามถอด)
+- LINE: อ่านทุก event (เดิมอ่านแค่ตัวแรก) · ตรวจลายเซ็นเมื่อมี secret `LINE_CHANNEL_SECRET` · สลิป→จับคู่/สร้างรอยืนยัน + ปุ่ม ✓ ถูกต้อง/ไม่ต้องบันทึก · ไม่รู้บัญชี→ถามครั้งเดียวแล้วจำ · "กาแฟ 65"→จดเงินสด (ยืนยันเองเมื่อคำนั้นเคยยืนยัน ≥2 ครั้ง) · "วันนี้/เมื่อวาน/รายวัน/อื่น ๆ" → สรุปเดิม (`lineSummaryReply` ใน index.js)
+- กติกาเครื่องหมาย (ตรวจจากข้อมูลจริง): `ยอดหัว = Σยอดย่อย − Σfee − Σwht` · fee บวกเสมอ · **wht เครื่องหมายเดียวกับยอดย่อย** (รายจ่าย -9,990 หัก -280.09 → หัว -9,709.91)
+- ⚠️ CHECK ในฐานจริง: Transactions.source ได้แค่ LINE_SLIP/LINE_TEXT/PDF_IMPORT/WEB_GRID · status ได้แค่ PENDING_REVIEW/CONFIRMED
+- ⚠️ ข้อมูลจริง: `Users.line_user_id` ของ 9North และ Puii **ว่างทั้งคู่** → ต้องผูก LINE ก่อนใช้ · `Accounts.account_number` ว่างทุกบัญชี → ระบบเรียนจากการเลือกบัญชีครั้งแรกแทน
+- เทส: `backend/test/ledger-inbox.test.mjs` 84 เคส (schema ลอกจากฐานจริงรวม CHECK) · เทสทั้งหมดผ่าน: auth 27 · ledger-inbox 84 · money 54 · session 22 · slice 33 · unified-trip 616
+
+**แก้บั๊กหน้าแก้ไขสมาชิก (ต้องทำก่อนให้ North ใส่ LINE ID)**: เดิมแก้สมาชิกแล้วเว้นรหัสว่าง → หน้าจอส่ง '1234' → รหัสถูกเปลี่ยนเป็น 1234 เงียบ ๆ · ตอนนี้แก้สมาชิกเดิมเว้นรหัสว่าง = ใช้รหัสเดิม (backend `/api/users` POST + app.js `openUserModal`/`saveUserItem`) · `app.js?v=178`
+
+**ถัดไป**: North deploy (`bash deploy.sh`) + ตั้ง `LINE_CHANNEL_SECRET` + ผูก LINE ID → ทดลองส่งสลิปจริง · ระยะ 1 ส่วนหน้าเว็บ: หน้า "กล่องรอเคลียร์" ใหม่ (การ์ดปัด · หน้าแตกรายการพร้อมแถบ "เหลืออีก x บาท") ในโฟลเดอร์ใหม่ `frontend/ledger/`
+
 ## 🧭 2026-10-07 — สถานะรวม + งานถัดไป (North สั่งบันทึกก่อนย้ายแชท) — **อ่านส่วนนี้ก่อน**
 
 ### กติกาการทำงานกับ North (ยังใช้ทุกข้อ)

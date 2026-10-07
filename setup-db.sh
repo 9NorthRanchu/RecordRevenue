@@ -85,10 +85,21 @@ step "CREATE TABLE IF NOT EXISTS TripBookings (booking_id TEXT PRIMARY KEY, proj
 step "CREATE INDEX IF NOT EXISTS idx_tripbookings_project ON TripBookings(project_id);" "ดัชนี idx_tripbookings_project"
 
 echo
+echo "▶ สมุดจด ระยะ 1: กล่องรับเอกสาร + เครื่องจับคู่ (2026-10-07)"
+step "CREATE TABLE IF NOT EXISTS LedgerDocs (doc_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, uploaded_by TEXT, source TEXT NOT NULL, file_key TEXT, file_hash TEXT, mime TEXT, file_name TEXT, doc_type TEXT, status TEXT NOT NULL DEFAULT 'NEW', extracted TEXT, suggestion TEXT, transaction_id TEXT, error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME);" "ตาราง LedgerDocs"
+step "CREATE INDEX IF NOT EXISTS idx_ledgerdocs_family_status ON LedgerDocs(family_id, status, created_at);" "ดัชนี idx_ledgerdocs_family_status"
+step "CREATE INDEX IF NOT EXISTS idx_ledgerdocs_hash ON LedgerDocs(family_id, file_hash);" "ดัชนี idx_ledgerdocs_hash"
+step "CREATE TABLE IF NOT EXISTS LedgerDocLinks (doc_id TEXT NOT NULL, transaction_id TEXT NOT NULL, role TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (doc_id, transaction_id));" "ตาราง LedgerDocLinks"
+step "CREATE INDEX IF NOT EXISTS idx_ledgerdoclinks_tx ON LedgerDocLinks(transaction_id);" "ดัชนี idx_ledgerdoclinks_tx"
+step "CREATE TABLE IF NOT EXISTS LedgerRules (rule_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, kind TEXT NOT NULL, rkey TEXT NOT NULL, value TEXT NOT NULL, hits INTEGER NOT NULL DEFAULT 1, updated_at DATETIME, UNIQUE (family_id, kind, rkey));" "ตาราง LedgerRules"
+step "CREATE INDEX IF NOT EXISTS idx_transactions_account_date ON Transactions(account_id, date);" "ดัชนี idx_transactions_account_date"
+step "CREATE INDEX IF NOT EXISTS idx_transactions_ref ON Transactions(ref_code);" "ดัชนี idx_transactions_ref"
+
+echo
 echo "▶ ตรวจผลรวม"
-echo "  ตารางที่ต้องมี (ควรได้ 4 ชื่อ):"
+echo "  ตารางที่ต้องมี (ควรได้ 7 ชื่อ):"
 npx wrangler d1 execute "$DB" --remote --command \
-  "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('TripLegs','TripMemberSessions','TripDayPlans','TripBookings');" 2>&1 \
+  "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('TripLegs','TripMemberSessions','TripDayPlans','TripBookings','LedgerDocs','LedgerDocLinks','LedgerRules');" 2>&1 \
   | grep -o '"name": "[A-Za-z]*"' | sed 's/"name": /    ✓ /;s/"//g'
 
 echo "  คอลัมน์ใน TripStops (ควรได้ 9 ชื่อ):"
