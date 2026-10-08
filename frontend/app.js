@@ -118,7 +118,17 @@ window.getSessionToken = () => {
         if (!token || !url.startsWith(API_BASE)) return original(input, init);
         const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
         if (!headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
-        return original(input, { ...init, headers });
+        return original(input, { ...init, headers }).then(res => {
+            /* token หมดอายุ (30 วัน) → เซิร์ฟเวอร์ตอบ 401 ทุกคำขอ แต่หน้าจอเดิมไม่รู้ตัว
+               แสดงหน้าว่างเปล่าเหมือนข้อมูลหาย (เจอจริง 2026-10-08: หน้าตั้งค่าว่าง)
+               → พากลับหน้าล็อกอินพร้อมบอกเหตุผล ครั้งเดียวต่อการโหลดหน้า */
+            if (res.status === 401 && !/\/api\/(login|logout)$/.test(url) && !window.__sessionExpiredShown) {
+                window.__sessionExpiredShown = true;
+                try { document.getElementById('btn-logout')?.click(); } catch { /* ไม่เป็นไร */ }
+                try { window.showToast?.('หมดเวลาการเข้าใช้งาน กรุณาเข้าสู่ระบบใหม่อีกครั้ง', 'info'); } catch { /* ไม่เป็นไร */ }
+            }
+            return res;
+        });
     };
 })();
 
