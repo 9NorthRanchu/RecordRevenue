@@ -76,6 +76,12 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
     const fileMatch = path.match(/^\/api\/inbox\/file\/([\w-]+)$/);
     if (fileMatch && request.method === 'GET') return serveDocFile(env, user, fileMatch[1], cors);
 
+    const retry = path.match(/^\/api\/inbox\/([\w-]+)\/retry$/);
+    if (retry && request.method === 'POST') {
+      const out = await retryDoc(env, user, retry[1]);
+      return json(out, cors, out.error ? (out.status || 400) : 200);
+    }
+
     const act = path.match(/^\/api\/inbox\/([\w-]+)\/(accept|link|account|dismiss)$/);
     if (act && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
@@ -165,7 +171,7 @@ export async function ingestFile(env, user, { bytes, mime, name, source, forced 
 
   let extracted;
   try {
-    extracted = await extractDocument(env, toBase64(bytes), mime);
+    extracted = await extractDocument(env, bytes, mime);
   } catch (err) {
     await setDoc(env, docId, { status: 'ERROR', error: String(err.message).slice(0, 500) });
     return { doc: publicDoc(await getDoc(env, user, docId)), outcome: 'ERROR', error: err.message };
@@ -206,14 +212,35 @@ Return ONLY JSON:
  "statement_period":"","due_date":""}
 For SLIP keep masked account numbers exactly as printed (e.g. "xxx-x-x1234-x"). amount is positive.`;
 
-async function extractDocument(env, base64, mime) {
-  if (env.__extractOverride) return env.__extractOverride(base64, mime);   // ใช้ในเทสเท่านั้น
+/* ⚠️ Workers แผนฟรีให้เวลา CPU ต่อคำขอแค่ ~10 ms
+   แปลงรูปสลิปเป็น base64 แล้วยัดใส่ JSON ก้อนใหญ่ = เกินเพดาน → ระบบถูกตัดกลางทาง
+   เอกสารค้างสถานะ READING และ LINE ไม่ได้รับคำตอบเลย (เจอจริง 2026-10-08)
+   วิธีแก้: ส่ง "ไบต์ดิบ" ขึ้น Gemini Files API ตรง ๆ (ไม่ต้องแปลง ไม่กิน CPU)
+   แล้วอ้างถึงไฟล์ด้วย fileUri · ถ้าอัปโหลดไม่ได้ค่อยถอยไปใช้ base64 แบบเดิม */
+async function extractDocument(env, bytes, mime) {
+  if (env.__extractOverride) return env.__extractOverride(bytes, mime);   // ใช้ในเทสเท่านั้น
   if (!env.GEMINI_API_KEY) throw new Error('ยังไม่ได้ตั้ง GEMINI_API_KEY');
+  const base = 'https://generativelanguage.googleapis.com';
   const model = env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
+  let filePart = null;
+  try {
+    const up = await fetch(`${base}/upload/v1beta/files?key=${env.GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'X-Goog-Upload-Protocol': 'raw', 'Content-Type': mime },
+      body: bytes,
+    });
+    if (up.ok) {
+      const info = await up.json();
+      const uri = info?.file?.uri;
+      if (uri) filePart = { fileData: { mimeType: mime, fileUri: uri } };
+    }
+  } catch { /* ถอยไปใช้ base64 */ }
+  if (!filePart) filePart = { inlineData: { mimeType: mime, data: toBase64(bytes) } };
+
+  const res = await fetch(`${base}/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: EXTRACT_PROMPT }, { inlineData: { mimeType: mime, data: base64 } }] }],
+      contents: [{ parts: [{ text: EXTRACT_PROMPT }, filePart] }],
       generationConfig: { responseMimeType: 'application/json' },
     }),
   });
@@ -222,6 +249,26 @@ async function extractDocument(env, base64, mime) {
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
   return normalizeExtract(JSON.parse(text.trim().replace(/^```json\s*|```$/g, '')));
 }
+
+/* อ่านเอกสารที่ค้างอยู่ใหม่ (READING ที่ถูกตัดกลางทาง หรือ ERROR) จากไฟล์ใน R2 */
+export async function retryDoc(env, user, docId) {
+  const doc = await getDoc(env, user, docId);
+  if (!doc) return { error: 'ไม่พบเอกสารนี้', status: 404 };
+  if (!['READING', 'ERROR'].includes(doc.status)) return { doc: publicDoc(doc), outcome: 'ALREADY', status: 409 };
+  const obj = doc.file_key && env.ICONS ? await env.ICONS.get(doc.file_key) : null;
+  if (!obj) return { error: 'ไม่พบไฟล์ต้นฉบับ', status: 404 };
+  const bytes = new Uint8Array(await obj.arrayBuffer());
+  let extracted;
+  try {
+    extracted = await extractDocument(env, bytes, doc.mime || 'image/jpeg');
+  } catch (err) {
+    await setDoc(env, docId, { status: 'ERROR', error: String(err.message).slice(0, 500) });
+    return { doc: publicDoc(await getDoc(env, user, docId)), outcome: 'ERROR', error: err.message };
+  }
+  await setDoc(env, docId, { doc_type: String(extracted.doc_type || 'OTHER').toUpperCase(), extracted: JSON.stringify(extracted), error: null });
+  return processDoc(env, user, docId, {});
+}
+
 export function normalizeExtract(out) {
   out = out || {};
   out.amount = round2(Math.abs(Number(out.amount) || Number(out.total) || 0));
@@ -625,6 +672,15 @@ async function handleLineEvent(env, event, hooks) {
   }
   if (msg.type === 'text') {
     const text = String(msg.text || '').trim();
+    // "อ่านใหม่" → อ่านเอกสารล่าสุดที่ค้าง/อ่านไม่สำเร็จซ้ำ (ทีละใบ เพื่อไม่ให้เกินเพดาน CPU)
+    if (/^(อ่านใหม่|ลองใหม่|retry)$/i.test(text)) {
+      const stuck = (await env.DB.prepare(`SELECT doc_id FROM LedgerDocs WHERE family_id=? AND uploaded_by=? AND status IN ('READING','ERROR')
+        AND file_key IS NOT NULL ORDER BY created_at DESC LIMIT 5`).bind(user.family_id, user.user_id).all()).results || [];
+      if (!stuck.length) return lineReply(env, token, '👍 ไม่มีเอกสารค้างครับ');
+      const out = await retryDoc(env, user, stuck[0].doc_id);
+      if (stuck.length > 1) out.note = `ยังค้างอีก ${stuck.length - 1} ใบ พิมพ์ \"อ่านใหม่\" อีกครั้ง`;
+      return replyOutcome(env, token, user, out);
+    }
     if (!SUMMARY_WORDS.test(text) && parseCashText(text)) {
       const out = await recordCash(env, user, { text }, 'LINE');
       if (out.error) return lineReply(env, token, `⚠️ ${out.error}`);
@@ -646,20 +702,22 @@ async function categoryName(env, id) {
 const qr = (label, data) => ({ type: 'action', action: { type: 'postback', label: label.slice(0, 20), data, displayText: label.slice(0, 20) } });
 
 async function replyOutcome(env, token, user, out) {
+  // ข้อความแถมท้าย (เช่น "ยังค้างอีก 2 ใบ") ต่อท้ายทุกคำตอบ — reply token ใช้ได้ครั้งเดียว ส่งแยกไม่ได้
+  const say = (text, quick) => lineReply(env, token, out.note ? `${text}\n\n${out.note}` : text, quick);
   const web = env.WEB_APP_URL || 'https://record-revenue-web.pages.dev';
-  if (out.error && !out.doc) return lineReply(env, token, `⚠️ ${out.error}`);
-  if (out.duplicate) return lineReply(env, token, '🔁 เอกสารนี้เคยส่งมาแล้ว ไม่บันทึกซ้ำครับ');
+  if (out.error && !out.doc) return say(`⚠️ ${out.error}`);
+  if (out.duplicate) return say('🔁 เอกสารนี้เคยส่งมาแล้ว ไม่บันทึกซ้ำครับ');
   const doc = out.doc, ex = doc?.extracted || {}, id = doc?.doc_id;
   const amountLine = ex.amount ? `${money(ex.amount)} บาท${ex.date ? ` · ${ex.date}` : ''}` : '';
   switch (out.outcome) {
-    case 'ERROR': return lineReply(env, token, `❌ อ่านเอกสารไม่สำเร็จ แต่เก็บไฟล์ไว้แล้ว\n${out.error || ''}`);
+    case 'ERROR': return say(`❌ อ่านเอกสารไม่สำเร็จ แต่เก็บไฟล์ไว้แล้ว\n${out.error || ''}\nพิมพ์ "อ่านใหม่" เพื่อลองอีกครั้ง`);
     case 'NEEDS_ACCOUNT':
-      return lineReply(env, token, `🧾 ${amountLine}\n${ex.sender?.name || '?'} → ${ex.receiver?.name || '?'}\nเป็นบัญชีไหนของเราครับ? (ตอบครั้งเดียว ครั้งหน้าจำให้)`,
+      return say(`🧾 ${amountLine}\n${ex.sender?.name || '?'} → ${ex.receiver?.name || '?'}\nเป็นบัญชีไหนของเราครับ? (ตอบครั้งเดียว ครั้งหน้าจำให้)`,
         [...out.options.slice(0, 11).map(o => qr(`${o.side === 'IN' ? 'รับเข้า' : 'จ่ายจาก'} ${o.account_id}`, `inbox|account|${id}|${o.account_id}|${o.side}`)),
           qr('ไม่ต้องบันทึก', `inbox|dismiss|${id}`)]);
-    case 'MATCHED': return lineReply(env, token, `✅ จับคู่กับรายการเดิมแล้ว\n${amountLine}\nแนบสลิปเป็นหลักฐานเรียบร้อย`);
-    case 'ATTACHED': return lineReply(env, token, `📎 แนบเอกสารกับรายการจ่าย ${amountLine} แล้ว`);
-    case 'STORED': return lineReply(env, token, `📎 ${doc.suggestion?.note || 'เก็บเอกสารไว้แล้ว'}`);
+    case 'MATCHED': return say(`✅ จับคู่กับรายการเดิมแล้ว\n${amountLine}\nแนบสลิปเป็นหลักฐานเรียบร้อย`);
+    case 'ATTACHED': return say(`📎 แนบเอกสารกับรายการจ่าย ${amountLine} แล้ว`);
+    case 'STORED': return say(`📎 ${doc.suggestion?.note || 'เก็บเอกสารไว้แล้ว'}`);
     case 'NEEDS_CHOICE': {
       const leg = (out.legs || []).find(l => l.kind === 'CHOOSE');
       const choices = (leg?.choices || []).slice(0, 4);
@@ -679,10 +737,10 @@ async function replyOutcome(env, token, user, out) {
         : `💸 จ่าย ${amountLine}\nจาก ${accName(created?.account_id)}\nให้ ${ex.receiver?.name || '-'}`;
       const first = await env.DB.prepare(`SELECT category_id FROM TransactionDetails WHERE transaction_id=? LIMIT 1`).bind(created?.transaction_id).first();
       const learned = String(created?.how || '').startsWith('template') ? ' (จำจากครั้งก่อน)' : '';
-      return lineReply(env, token, `${head}\nหมวด: ${await categoryName(env, first?.category_id)}${learned}\n\nแก้/แตกรายการในเว็บ: ${web}?txId=${created?.transaction_id}`,
+      return say(`${head}\nหมวด: ${await categoryName(env, first?.category_id)}${learned}\n\nแก้/แตกรายการในเว็บ: ${web}?txId=${created?.transaction_id}`,
         [qr('✓ ถูกต้อง', `inbox|accept|${id}`), qr('ไม่ต้องบันทึก', `inbox|dismiss|${id}`)]);
     }
-    default: return lineReply(env, token, '📥 รับเอกสารแล้ว');
+    default: return say('📥 รับเอกสารแล้ว');
   }
 }
 

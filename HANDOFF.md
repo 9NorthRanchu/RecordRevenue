@@ -29,6 +29,10 @@ North เลือก: หน้าเว็บสมุดจด**ทำให�
 
 **token หมดอายุ = หน้าว่าง (2026-10-08)**: หน้าตั้งค่าว่างเปล่า ตรวจแล้วฐานปกติ (Entities 13) · สาเหตุ = token ใน localStorage อายุ 30 วันหมด → ทุกคำขอได้ 401 แต่หน้าจอไม่รู้ตัว · แก้: ตัวห่อ fetch ใน app.js เจอ 401 → พากลับหน้าล็อกอิน + บอกเหตุผล · `app.js?v=179`
 
+**สลิปจาก LINE ค้าง READING ไม่มีคำตอบ (2026-10-08)**: เงินสดผ่าน · สลิปค้าง = น่าจะเกินเพดาน CPU ~10ms ของ Workers ฟรี ตอนแปลงรูปเป็น base64 ใส่ JSON · แก้: ส่งไบต์ดิบขึ้น Gemini Files API (`/upload/v1beta/files` header `X-Goog-Upload-Protocol: raw`) แล้วอ้าง `fileUri` · อัปไม่ได้ค่อยถอยไป base64 · เพิ่ม `retryDoc` + `/api/inbox/{id}/retry` + พิมพ์ "อ่านใหม่" ใน LINE = อ่านเอกสาร READING/ERROR ล่าสุดซ้ำทีละใบ · ยังไม่ยืนยันด้วย log จริง ถ้ายังเงียบให้ดู `npx wrangler tail` · เทส ledger-inbox 91
+
+**คำสั่งสรุปทาง LINE พังมาตลอด (2026-10-08)**: `sendMonthlySummaryFlex` `get7DayBreakdownText` อ้าง `cp.behavior` โดยไม่ JOIN Captions · `getDailySummaryText` อ้าง `tx.details` ที่ไม่มี → แก้ทั้งสามให้แยกรับ/จ่ายด้วย `d.type` (INCOME / EXPENSE กลับเครื่องหมาย) + ช่วงวันที่แทน LIKE · ทดสอบด้วย node:sqlite ผ่าน "วันนี้/รายวัน/เดือน" · บทเรียน: บอท LINE ไม่เคยใช้งานจริงมาก่อน (ไม่มี secret) โค้ดเดิมฝั่ง LINE ทั้งหมดไม่เคยถูกรันบน production
+
 **ถัดไป**: North deploy (`bash deploy.sh`) + ตั้ง `LINE_CHANNEL_SECRET` + ผูก LINE ID → ทดลองส่งสลิปจริง · ระยะ 1 ส่วนหน้าเว็บ: หน้า "กล่องรอเคลียร์" ใหม่ (การ์ดปัด · หน้าแตกรายการพร้อมแถบ "เหลืออีก x บาท") ในโฟลเดอร์ใหม่ `frontend/ledger/`
 
 ## 🧭 2026-10-07 — สถานะรวม + งานถัดไป (North สั่งบันทึกก่อนย้ายแชท) — **อ่านส่วนนี้ก่อน**

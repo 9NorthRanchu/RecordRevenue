@@ -2397,22 +2397,24 @@ async function sendMonthlySummaryFlex(replyToken, user, env) {
   const todayStr = localNow.toISOString().slice(0, 10);
   const currentMonthStr = todayStr.substring(0, 7); // "YYYY-MM"
   
-  // Query totals
+  /* แยกรับ/จ่ายด้วย d.type แบบเดียวกับแดชบอร์ด (2026-10-08)
+     เดิมอ้าง cp.behavior โดยไม่ได้ JOIN Captions → "no such column cp.behavior" ทุกครั้ง
+     · รายจ่ายเก็บเป็นลบ จึงกลับเครื่องหมาย · โอนระหว่างบัญชี/ลูกหนี้ไม่นับ */
+  const [yy, mm] = currentMonthStr.split('-').map(Number);
+  const nextMonthStr = mm === 12 ? `${yy + 1}-01` : `${yy}-${String(mm + 1).padStart(2, '0')}`;
   const query = `
-    SELECT 
-      SUM(CASE WHEN cp.behavior IN ('REVENUE', 'ASSET')
-                AND IFNULL(cp.sub_behavior,'') != 'INVESTMENT'
-               THEN d.amount ELSE 0 END) as income,
-      SUM(CASE WHEN cp.behavior IN ('EXPENSE', 'LIABILITY') THEN d.amount ELSE 0 END) as expense
+    SELECT
+      SUM(CASE WHEN d.type = 'INCOME' THEN d.amount ELSE 0 END) as income,
+      SUM(CASE WHEN d.type = 'EXPENSE' THEN -d.amount ELSE 0 END) as expense
     FROM Transactions t
     JOIN Accounts a ON t.account_id = a.account_id
     JOIN UserPermissions up ON a.entity_id = up.entity_id
     JOIN TransactionDetails d ON t.transaction_id = d.transaction_id
     WHERE up.user_id = ?
-      AND t.date LIKE ?
+      AND t.date >= ? AND t.date < ?
       AND t.status = 'CONFIRMED'
   `;
-  const result = await env.DB.prepare(query).bind(user.user_id, `${currentMonthStr}%`).first();
+  const result = await env.DB.prepare(query).bind(user.user_id, `${currentMonthStr}-01`, `${nextMonthStr}-01`).first();
   
   const income = result.income || 0;
   const expense = result.expense || 0;
@@ -2518,21 +2520,23 @@ async function getDailySummaryText(userId, dateStr, dateLabel, env) {
     SELECT 
       t.date,
       a.name as account_name,
+      t.time,
       d.amount,
-      
+      d.type,
       d.note,
       c.name as category_name
     FROM Transactions t
     JOIN Accounts a ON t.account_id = a.account_id
     JOIN UserPermissions up ON a.entity_id = up.entity_id
     JOIN TransactionDetails d ON t.transaction_id = d.transaction_id
-    JOIN Categories c ON d.category_id = c.category_id
+    LEFT JOIN Categories c ON d.category_id = c.category_id
     WHERE up.user_id = ?
-      AND t.date LIKE ?
+      AND t.date >= ? AND t.date < ?
       AND t.status = 'CONFIRMED'
-    ORDER BY t.date ASC, t.created_at ASC
+    ORDER BY t.date ASC, t.time ASC, t.created_at ASC
   `;
-  const result = await env.DB.prepare(query).bind(userId, `${dateStr}%`).all();
+  const nextDay = new Date(Date.parse(dateStr) + 864e5).toISOString().slice(0, 10);
+  const result = await env.DB.prepare(query).bind(userId, dateStr, nextDay).all();
   const txs = result.results;
 
   const displayDate = dateStr.split('-').reverse().join('/'); // "DD/MM/YYYY"
@@ -2547,18 +2551,20 @@ async function getDailySummaryText(userId, dateStr, dateLabel, env) {
   let totalExpense = 0;
 
   txs.forEach(tx => {
-    const timePart = tx.date.includes(' ') ? tx.date.split(' ')[1].substring(0, 5) : '';
+    // เวลาอยู่ในช่อง time (ของใหม่) หรือต่อท้ายวันที่ (ของเก่า)
+    const timePart = (tx.time || (tx.date.includes(' ') ? tx.date.split(' ')[1] : '') || '').substring(0, 5);
     const timeDisplay = timePart ? `[${timePart}] ` : '';
-    
+
     const amountVal = Math.abs(tx.amount);
-    const line = `- ${timeDisplay}${tx.account_name}: ${amountVal.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿ (${tx.note || '-'} - หมวด ${tx.category_name})\n`;
-    
-    if (tx.details.some(d => d.behavior === 'REVENUE' || d.behavior === 'ASSET')) {
+    const line = `- ${timeDisplay}${tx.account_name}: ${amountVal.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿ (${tx.note || '-'} - หมวด ${tx.category_name || '-'})\n`;
+
+    // แยกด้วยชนิดของบรรทัดย่อย (เดิมอ้าง tx.details ที่ไม่มีอยู่จริง → พังทุกครั้ง)
+    if (tx.type === 'INCOME') {
       incomeText += line;
-      totalIncome += amountVal;
-    } else if (tx.details.some(d => d.behavior === 'EXPENSE' || d.behavior === 'LIABILITY')) {
+      totalIncome += tx.amount;
+    } else if (tx.type === 'EXPENSE') {
       expenseText += line;
-      totalExpense += amountVal;
+      totalExpense += -tx.amount;
     }
   });
 
@@ -2591,10 +2597,8 @@ async function get7DayBreakdownText(userId, env) {
   const query = `
     SELECT 
       substr(t.date, 1, 10) as date_only,
-      SUM(CASE WHEN cp.behavior IN ('REVENUE', 'ASSET')
-                AND IFNULL(cp.sub_behavior,'') != 'INVESTMENT'
-               THEN d.amount ELSE 0 END) as income,
-      SUM(CASE WHEN cp.behavior IN ('EXPENSE', 'LIABILITY') THEN d.amount ELSE 0 END) as expense
+      SUM(CASE WHEN d.type = 'INCOME' THEN d.amount ELSE 0 END) as income,
+      SUM(CASE WHEN d.type = 'EXPENSE' THEN -d.amount ELSE 0 END) as expense
     FROM Transactions t
     JOIN Accounts a ON t.account_id = a.account_id
     JOIN UserPermissions up ON a.entity_id = up.entity_id

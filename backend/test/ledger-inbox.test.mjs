@@ -67,7 +67,7 @@ const r2 = new Map();
 const extractQueue = [];
 const env = {
   DB: { prepare: toD1, batch: async ops => { db.exec('BEGIN'); try { ops.forEach(o => o._run()); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; } } },
-  ICONS: { put: async (k, v) => r2.set(k, v), get: async k => r2.has(k) ? { body: r2.get(k) } : null },
+  ICONS: { put: async (k, v) => r2.set(k, v), get: async k => r2.has(k) ? { body: r2.get(k), arrayBuffer: async () => r2.get(k).slice().buffer } : null },
   __extractOverride: async () => { const next = extractQueue.shift(); if (next instanceof Error) throw next; return inbox.normalizeExtract(structuredClone(next)); },
   LINE_CHANNEL_ACCESS_TOKEN: 'tok',
 };
@@ -363,6 +363,65 @@ console.log('\n── LINE webhook ──');
       { type: 'message', replyToken: 't6', source: { userId: 'Uline-north' }, message: { type: 'text', text: 'วันนี้' } }] }) }),
       env, new URL('https://x/api/line-webhook'), {}, '', { summary: async () => { summaryCalled = true; } });
     check('"วันนี้" → ส่งต่อให้คำสั่งสรุปเดิม', summaryCalled);
+  } finally { globalThis.fetch = realFetch; }
+}
+
+console.log('\n── อ่านเอกสารผ่าน Gemini Files API (กันเกินเพดาน CPU) ──');
+{
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  const geminiReply = slip({ amount: 58300, date: '2026-09-29', sender: { name: 'นาย ปรัชญา', bank: 'กสิกรไทย', account: 'xxx-x-x1111-x' },
+    receiver: { name: 'น.ส. นารีรัตน์', bank: 'กรุงศรี', account: 'xxx-x-x8624-x' }, memo: 'Chaiyapruk Villaggio' });
+  globalThis.fetch = async (u, init) => {
+    calls.push({ u: String(u), init });
+    if (String(u).includes('/upload/v1beta/files')) return new Response(JSON.stringify({ file: { uri: 'https://files/abc' } }));
+    if (String(u).includes(':generateContent')) return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(geminiReply) }] } }] }));
+    throw new Error('unexpected ' + u);
+  };
+  try {
+    const realEnv = { ...env, GEMINI_API_KEY: 'k', __extractOverride: undefined };
+    const out = await inbox.ingestFile(realEnv, user, { bytes: fakeFile(), mime: 'image/jpeg', source: 'LINE' });
+    const gen = calls.find(c => c.u.includes(':generateContent'));
+    const up = calls.find(c => c.u.includes('/upload/'));
+    check('ส่งไบต์ดิบขึ้น Files API (ไม่แปลง base64)', up && up.init.body instanceof Uint8Array && up.init.headers['X-Goog-Upload-Protocol'] === 'raw');
+    check('คำขออ่านอ้างไฟล์ด้วย fileUri ไม่มี inlineData', gen && gen.init.body.includes('"fileUri":"https://files/abc"') && !gen.init.body.includes('inlineData'));
+    check('อ่านแล้วประมวลผลต่อได้ (จ่ายจาก A02 ที่จำไว้)', out.outcome === 'SUGGESTED' && out.legs?.[0]?.account_id === 'A02', out.outcome);
+
+    calls.length = 0;
+    globalThis.fetch = async (u, init) => {
+      calls.push({ u: String(u), init });
+      if (String(u).includes('/upload/')) return new Response('nope', { status: 500 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(slip({ amount: 11 })) }] } }] }));
+    };
+    await inbox.ingestFile(realEnv, user, { bytes: fakeFile(), mime: 'image/jpeg', source: 'WEB' });
+    check('อัปโหลดไม่ได้ → ถอยไปใช้ base64 แบบเดิม', calls.find(c => c.u.includes(':generateContent'))?.init.body.includes('inlineData'));
+  } finally { globalThis.fetch = realFetch; }
+}
+
+console.log('\n── อ่านเอกสารที่ค้างใหม่ ("อ่านใหม่") ──');
+{
+  // จำลองเอกสารที่ถูกตัดกลางทาง: มีไฟล์ใน R2 แต่สถานะค้าง READING
+  const key = 'ledger-docs/Fam_Default/DOC-STUCK.jpg';
+  r2.set(key, new Uint8Array([1, 2, 3]));
+  db.prepare(`INSERT INTO LedgerDocs (doc_id, family_id, uploaded_by, source, file_key, file_hash, mime, status, created_at)
+    VALUES ('DOC-STUCK','Fam_Default','9North','LINE',?, 'h-stuck','image/jpeg','READING','2999-01-01T00:00:00Z')`).run(key);
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, init) => { if (String(u).includes('api.line.me')) { sent.push(JSON.parse(init.body)); return new Response('{}'); } throw new Error('net ' + u); };
+  try {
+    extractQueue.push(slip({ amount: 58300, date: '2026-09-29' }));
+    await inbox.handleLedgerInbox(new Request('https://x/api/line-webhook', { method: 'POST', body: JSON.stringify({ events: [
+      { type: 'message', replyToken: 'r1', source: { userId: 'Uline-north' }, message: { type: 'text', text: 'อ่านใหม่' } }] }) }),
+      env, new URL('https://x/api/line-webhook'), {}, '');
+    const doc = db.prepare(`SELECT status FROM LedgerDocs WHERE doc_id='DOC-STUCK'`).get();
+    check('เอกสารค้างถูกอ่านใหม่และสร้างรายการรอยืนยัน', doc.status === 'SUGGESTED', doc.status);
+    check('LINE ตอบผลการอ่าน', sent[0]?.messages?.[0]?.text.includes('58,300.00'));
+    db.prepare(`UPDATE LedgerDocs SET status='DISMISSED' WHERE status IN ('READING','ERROR')`).run();   // เคลียร์ของค้างจากเทสก่อนหน้า
+    sent.length = 0;
+    await inbox.handleLedgerInbox(new Request('https://x/api/line-webhook', { method: 'POST', body: JSON.stringify({ events: [
+      { type: 'message', replyToken: 'r2', source: { userId: 'Uline-north' }, message: { type: 'text', text: 'อ่านใหม่' } }] }) }),
+      env, new URL('https://x/api/line-webhook'), {}, '');
+    check('ไม่มีค้างแล้ว → บอกว่าไม่มี', sent[0]?.messages?.[0]?.text.includes('ไม่มีเอกสารค้าง'));
   } finally { globalThis.fetch = realFetch; }
 }
 
