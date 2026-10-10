@@ -18,6 +18,8 @@ const inbox = await import(asDataUrl(source));
 const match = await import(asDataUrl(readSrc('ledger-match.js')));
 
 let pass = 0, fail = 0;
+const J = m => JSON.stringify(m || {});                       // ข้อความ LINE (text หรือ flex) เป็นสตริงเดียว
+const dataOf = (m, prefix) => (J(m).match(new RegExp(`"data":"(${prefix}[^"]*)"`)) || [])[1];
 const check = (label, ok, extra = '') => {
   if (ok) { pass += 1; console.log(`  ✅ ${label}`); }
   else { fail += 1; console.log(`  ❌ ${label}${extra !== '' ? ` → ${typeof extra === 'string' ? extra : JSON.stringify(extra)}` : ''}`); }
@@ -48,7 +50,7 @@ INSERT INTO UserPermissions VALUES ('9North','Ent_North'),('9North','Ent_Co_S01'
 INSERT INTO Accounts (account_id, entity_id, name, bank_name, account_number) VALUES
   ('A01','Ent_North','[A01] Pocket','Cash',NULL), ('A02','Ent_North','[A02] BK KBANK','Kbank',NULL), ('A06','Ent_North','[A06] Kbank','Kbank',NULL),
   ('A09','Ent_North','[A09] SCB','SCB',NULL), ('A10','Ent_North','[A10] SCB Salary','SCB','987-6-54321-0'), ('C01','Ent_North','[C01] KBank Credit Card','Kbank',NULL), ('X99','Ent_Other','other fam','Kbank',NULL);
-INSERT INTO Categories (category_id, name, default_type) VALUES ('Cat_Uncategorized','รอการระบุ','EXPENSE'),('T01','[T01] Food & Beverage','EXPENSE'),
+INSERT INTO Categories (category_id, name, default_type) VALUES ('Cat_Uncategorized','รอการระบุ','EXPENSE'),('T01','[T01] Food & Beverage','EXPENSE'),('T05','[T05] Other Expense','EXPENSE'),
   ('Bank_Transfer','Bank Transfer','TRANSFER'),('Account','Account','INCOME'),('Audit','Audit','INCOME'),('Service','Service','INCOME'),('AP__AR__Customer','AP (AR) Customer',NULL);
 `);
 
@@ -340,7 +342,7 @@ console.log('\n── LINE webhook ──');
 
     const res = await call([{ type: 'message', replyToken: 't1', source: { userId: 'Uline-north' }, message: { type: 'text', text: 'ส้มตำ 80' } }], 's3cret');
     check('ลายเซ็นถูก → 200', res.status === 200);
-    check('จดเงินสดแล้วตอบพร้อมปุ่มยืนยัน', sent.at(-1)?.messages?.[0]?.text.includes('ส้มตำ') && sent.at(-1).messages[0].quickReply.items.length === 2);
+    check('จดเงินสดแล้วตอบเป็นการ์ดพร้อมปุ่มยืนยัน', sent.at(-1)?.messages?.[0]?.type === 'flex' && J(sent.at(-1)).includes('ส้มตำ') && !!dataOf(sent.at(-1), 'inbox\\|accept'));
 
     extractQueue.push(slip({ amount: 120, date: '2026-10-12' }), slip({ amount: 130, date: '2026-10-12' }));
     sent.length = 0;
@@ -348,11 +350,11 @@ console.log('\n── LINE webhook ──');
       { type: 'message', replyToken: 't2', source: { userId: 'Uline-north' }, message: { type: 'image', id: 'm1' } },
       { type: 'message', replyToken: 't3', source: { userId: 'Uline-north' }, message: { type: 'image', id: 'm2' } },
     ]);
-    check('ส่ง 2 รูปพร้อมกัน → ตอบครบทั้ง 2 (ของเดิมอ่านแค่รูปแรก)', sent.length === 2 && sent.every(m => m.messages[0].text.includes('จ่าย')));
-    const postback = sent[0].messages[0].quickReply.items[0].action.data;
+    check('ส่ง 2 รูปพร้อมกัน → ตอบครบทั้ง 2 (ของเดิมอ่านแค่รูปแรก)', sent.length === 2 && sent.every(m => J(m).includes('จ่ายเงิน')));
+    const postback = dataOf(sent[0], 'inbox\\|accept');
     sent.length = 0;
     await call([{ type: 'postback', replyToken: 't4', source: { userId: 'Uline-north' }, postback: { data: postback } }]);
-    check('กด "✓ ถูกต้อง" ใน LINE → บันทึกเรียบร้อย', sent[0]?.messages?.[0]?.text.includes('บันทึกเรียบร้อย'));
+    check('กด "ยืนยันบันทึก" ใน LINE → การ์ดบันทึกแล้ว', J(sent[0]).includes('บันทึกแล้ว'));
 
     sent.length = 0;
     await call([{ type: 'message', replyToken: 't5', source: { userId: 'U-unknown' }, message: { type: 'text', text: 'กาแฟ 50' } }]);
@@ -415,7 +417,7 @@ console.log('\n── อ่านเอกสารที่ค้างให�
       env, new URL('https://x/api/line-webhook'), {}, '');
     const doc = db.prepare(`SELECT status FROM LedgerDocs WHERE doc_id='DOC-STUCK'`).get();
     check('เอกสารค้างถูกอ่านใหม่และสร้างรายการรอยืนยัน', doc.status === 'SUGGESTED', doc.status);
-    check('LINE ตอบผลการอ่าน', sent[0]?.messages?.[0]?.text.includes('58,300.00'));
+    check('LINE ตอบผลการอ่าน', J(sent[0]).includes('58,300.00'));
     db.prepare(`UPDATE LedgerDocs SET status='DISMISSED' WHERE status IN ('READING','ERROR')`).run();   // เคลียร์ของค้างจากเทสก่อนหน้า
     sent.length = 0;
     await inbox.handleLedgerInbox(new Request('https://x/api/line-webhook', { method: 'POST', body: JSON.stringify({ events: [
@@ -455,7 +457,85 @@ console.log('\n── LINE: ตอบ OK ทันที แล้วทำง�
       env, new URL('https://x/api/line-webhook'), {}, '', { waitUntil: p => { pending = p; } });
     check('ตอบ LINE 200 ทันที ก่อนงานเสร็จ', res.status === 200 && pending instanceof Promise && sent.length === 0);
     await pending;
-    check('งานเบื้องหลังเสร็จแล้วส่งผลกลับ LINE', sent.length === 1 && sent[0].messages[0].text.includes('777.00'));
+    check('งานเบื้องหลังเสร็จแล้วส่งผลกลับ LINE', sent.length === 1 && J(sent[0]).includes('777.00'));
+  } finally { globalThis.fetch = realFetch; }
+}
+
+console.log('\n── บันทึกช่วยจำ → รายละเอียด · การ์ด LINE · หน้าแก้ไขด่วน ──');
+{
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, init) => {
+    if (String(u).includes('api-data.line.me')) return new Response(fakeFile(), { headers: { 'content-type': 'image/jpeg' } });
+    if (String(u).includes('api.line.me')) { sent.push(JSON.parse(init.body)); return new Response('{}'); }
+    throw new Error('net ' + u);
+  };
+  const hook = (events) => inbox.handleLedgerInbox(new Request('https://api.example/api/line-webhook', { method: 'POST', body: JSON.stringify({ events }) }),
+    env, new URL('https://api.example/api/line-webhook'), {}, '');
+  try {
+    // 1) บันทึกช่วยจำ
+    const memoSlip = slip({ amount: 16215, date: '2026-09-29', memo: 'Chaiyapruk Villaggio',
+      receiver: { name: 'น.ส. นารีรัตน์', bank: 'กรุงศรี', account: 'xxx-x-x8624-x' } });
+    const out = await ingest(memoSlip);
+    const t1 = out.legs?.[0]?.transaction_id;
+    check('บันทึกช่วยจำบนสลิปไปอยู่ในรายละเอียดรายการ', lines(t1)[0]?.note === 'Chaiyapruk Villaggio');
+
+    // 2) การ์ดรอยืนยัน
+    sent.length = 0;
+    extractQueue.push(slip({ amount: 250, date: '2026-10-10', memo: 'ค่าน้ำแข็ง', receiver: { name: 'ร้านใหม่เอี่ยม', bank: 'SCB', account: 'xxx-x-x4444-x' } }));
+    await hook([{ type: 'message', replyToken: 'c1', source: { userId: 'Uline-north' }, message: { type: 'image', id: 'mc1' } }]);
+    const card = sent[0]?.messages?.[0];
+    const cj = J(card);
+    check('ตอบเป็นการ์ด (flex) แยกหัวข้อ วันที่/บัญชี/รายการ/หมวด', card?.type === 'flex' && ['วันที่', 'จากบัญชี', 'รายการ', 'หมวด'].every(w => cj.includes(w)));
+    check('การ์ดแสดงชื่อบัญชีแบบไม่มีรหัส', cj.includes('BK KBANK') && !cj.includes('[A02]'));
+    check('การ์ดแสดงบันทึกช่วยจำ + วันที่แบบไทย', cj.includes('ค่าน้ำแข็ง') && cj.includes('10 ต.ค. 2569'));
+    check('มีปุ่ม ยืนยัน · เปลี่ยนหมวด · แก้ไข(ลิงก์) · ไม่ต้องบันทึก', !!dataOf(card, 'inbox\\|accept') && !!dataOf(card, 'inbox\\|cats') && cj.includes('/ledger/quick.html?doc=') && !!dataOf(card, 'inbox\\|dismiss'));
+    const docId = dataOf(card, 'inbox\\|accept').split('|')[2];
+
+    // 3) เปลี่ยนหมวดในแชท
+    sent.length = 0;
+    await hook([{ type: 'postback', replyToken: 'c2', source: { userId: 'Uline-north' }, postback: { data: `inbox|cats|${docId}` } }]);
+    const items = sent[0]?.messages?.[0]?.quickReply?.items || [];
+    check('กด "เปลี่ยนหมวด" → ตัวเลือกหมวดเป็นชื่อ (ไม่มีรหัส) + ปุ่มหมวดอื่น', items.length >= 2 && items.some(i => i.action.label === 'Food & Beverage') && items.at(-1).action.type === 'uri');
+    sent.length = 0;
+    await hook([{ type: 'postback', replyToken: 'c3', source: { userId: 'Uline-north' }, postback: { data: `inbox|setcat|${docId}|T01` } }]);
+    const doc3 = db.prepare(`SELECT transaction_id FROM LedgerDocs WHERE doc_id=?`).get(docId);
+    check('เลือกหมวดแล้ว → บรรทัดเปลี่ยนเป็น T01 ยังรอยืนยัน', lines(doc3.transaction_id)[0].category_id === 'T01' && tx(doc3.transaction_id).status === 'PENDING_REVIEW');
+    check('ตอบการ์ดใหม่ที่หมวดเปลี่ยนแล้ว', J(sent[0]).includes('Food & Beverage') && J(sent[0]).includes('เปลี่ยนหมวดแล้ว'));
+
+    // 4) หน้าแก้ไขด่วน
+    const token = await inbox.signDocLink(env, docId);
+    const q = (method, body, t = token, extra = '') => inbox.handleLedgerInbox(
+      new Request(`https://api.example/api/inbox/quick/${docId}${extra}?t=${t}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }),
+      env, new URL(`https://api.example/api/inbox/quick/${docId}${extra}?t=${t}`), {}, '');
+    check('ลิงก์ปลอม → 403', (await q('GET', null, '123.abc')).status === 403);
+    const view = await (await q('GET')).json();
+    check('เปิดหน้าแก้ไข: ได้รายการ บัญชีเป็นชื่อ หมวดเรียงตามที่ใช้บ่อย', view.tx?.total_amount === -250 && view.accounts.some(a => a.name === 'BK KBANK')
+      && view.categories[0]?.category_id === 'T01' && view.pending === true);
+    check('เปิดรูปสลิปจากหน้าแก้ไขได้', (await q('GET', null, token, '/file')).status === 200);
+    const saved = await (await q('POST', { date: '2026-10-09', amount: 260, note: 'ค่าน้ำแข็ง + ถุง', account_id: 'A06', category_id: 'T05' })).json();
+    const t4 = doc3.transaction_id;
+    check('บันทึกจากหน้าแก้ไข → ยืนยันแล้ว', saved.ok && tx(t4).status === 'CONFIRMED', saved);
+    check('ค่าที่แก้ถูกบันทึก (วันที่ ยอด บัญชี หมวด รายละเอียด)', tx(t4).date === '2026-10-09' && tx(t4).total_amount === -260 && tx(t4).account_id === 'A06'
+      && lines(t4)[0].category_id === 'T05' && lines(t4)[0].amount === -260 && lines(t4)[0].note === 'ค่าน้ำแข็ง + ถุง');
+    check('จำร้านนี้ → T05 และจำบัญชีที่แก้ (KBANK|1111 → A06)', JSON.parse(db.prepare(`SELECT value FROM LedgerRules WHERE kind='PARTY' AND rkey=?`).get(match.partyKey('ร้านใหม่เอี่ยม'))?.value || '{}').lines?.[0]?.category_id === 'T05'
+      && db.prepare(`SELECT value FROM LedgerRules WHERE kind='ACCOUNT' AND rkey='KBANK|1111'`).get()?.value === 'A06');
+    check('บันทึกซ้ำ → แจ้งว่าบันทึกไปแล้ว', (await q('POST', { category_id: 'T01' })).status === 409);
+    db.prepare(`UPDATE LedgerRules SET value='A02' WHERE kind='ACCOUNT' AND rkey='KBANK|1111'`).run();   // คืนค่าให้เทสอื่น
+
+    // 5) สลิปที่ยังไม่รู้บัญชี: การ์ดเลือกบัญชีเป็นชื่อ + เลือกบัญชีจากหน้าแก้ไขได้
+    sent.length = 0;
+    extractQueue.push(slip({ amount: 133, date: '2026-09-23', sender: { name: 'BOOKKEEPER CO.,LTD.', bank: 'Kasikornbank', account: 'xxx-x-x7318-x' } }));
+    await hook([{ type: 'message', replyToken: 'c4', source: { userId: 'Uline-north' }, message: { type: 'image', id: 'mc4' } }]);
+    const ask = J(sent[0]);
+    check('การ์ดเลือกบัญชี: ปุ่มเป็นชื่อบัญชี ไม่มีรหัส', ask.includes('จ่ายจาก BK KBANK') && !ask.includes('จ่ายจาก A02') && ask.includes('บัญชีอื่น'));
+    const askDoc = dataOf(sent[0], 'inbox\\|dismiss').split('|')[2];
+    const t5 = await inbox.signDocLink(env, askDoc);
+    const res5 = await inbox.handleLedgerInbox(new Request(`https://api.example/api/inbox/quick/${askDoc}?t=${t5}`, { method: 'POST',
+      body: JSON.stringify({ account_id: 'A02', side: 'OUT', category_id: 'T05', note: 'ค่าธรรมเนียม' }) }), env,
+      new URL(`https://api.example/api/inbox/quick/${askDoc}?t=${t5}`), {}, '');
+    const d5 = db.prepare(`SELECT status, transaction_id FROM LedgerDocs WHERE doc_id=?`).get(askDoc);
+    check('เลือกบัญชี+หมวดในหน้าแก้ไข → สร้างและยืนยันในครั้งเดียว', res5.status === 200 && d5.status === 'DONE' && tx(d5.transaction_id).status === 'CONFIRMED' && lines(d5.transaction_id)[0].category_id === 'T05');
   } finally { globalThis.fetch = realFetch; }
 }
 

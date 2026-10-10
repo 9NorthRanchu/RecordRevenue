@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>แก้ไขรายการ · สมุดจด</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  หน้าแก้ไขด่วน — เปิดจากปุ่ม "แก้ไข" / "บัญชีอื่น" / "หมวดอื่น…" ในการ์ด LINE
+  ไม่ต้องล็อกอิน: ลิงก์มี ?doc=&t= ที่ระบบเซ็นไว้ต่อเอกสาร (อายุ 14 วัน) · ?api= = ที่อยู่ API
+  ใช้ API: GET/POST /api/inbox/quick/{doc}?t=  ·  GET /api/inbox/quick/{doc}/file?t= (รูปสลิป)
+-->
+<style>
+  :root {
+    --ink: #212529; --muted: #868e96; --line: #e9ecef; --bg: #f8f9fb; --card: #ffffff;
+    --accent: #ff6b6b; --accent-soft: #fff1f1; --ok: #12b886; --warn: #f59f00; --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Anuphan', -apple-system, 'Segoe UI', sans-serif; }
+  body { padding: 0 0 120px; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 0 16px; }
+  .hero { margin: 16px auto 0; border-radius: 24px; padding: 18px 18px 20px; color: #fff;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #fff)); box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .hero .kind { font-size: 14px; font-weight: 600; opacity: .95; display: flex; gap: 8px; align-items: center; }
+  .hero .pill { background: rgba(255,255,255,.25); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
+  .amount { display: flex; align-items: baseline; gap: 6px; margin-top: 8px; }
+  .amount span { font-size: 28px; font-weight: 700; }
+  .amount input { width: 100%; border: 0; background: transparent; color: #fff; font: inherit; font-size: 40px; font-weight: 700; padding: 0; outline: none; }
+  .amount input:focus { border-bottom: 2px dashed rgba(255,255,255,.7); }
+  .hero .sub { font-size: 13px; opacity: .9; margin-top: 4px; }
+  .card { background: var(--card); border-radius: var(--radius); margin-top: 14px; padding: 14px 16px; box-shadow: 0 1px 0 var(--line), 0 6px 20px rgba(33,37,41,.04); }
+  .card h3 { margin: 0 0 10px; font-size: 14px; color: var(--muted); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  label.field { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
+  input[type=text], input[type=date], input[type=search] { width: 100%; border: 1.5px solid var(--line); border-radius: 12px; padding: 12px; font: inherit; font-size: 16px; color: var(--ink); background: #fff; }
+  input:focus { outline: none; border-color: var(--accent); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; max-height: 260px; overflow-y: auto; }
+  .chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 9px 14px; font: inherit; font-size: 14px; color: var(--ink); cursor: pointer; }
+  .chip small { color: var(--muted); margin-left: 4px; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .chip.on small { color: rgba(255,255,255,.85); }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border-radius: 12px; padding: 4px; gap: 4px; }
+  .seg button { border: 0; border-radius: 9px; padding: 10px; font: inherit; font-size: 14px; background: transparent; color: var(--muted); }
+  .seg button.on { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .kv { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .kv:last-child { border-bottom: 0; }
+  .kv b { font-weight: 500; text-align: right; }
+  .kv span { color: var(--muted); white-space: nowrap; }
+  .slip { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; border: 2px solid rgba(255,255,255,.6); float: right; margin-left: 12px; cursor: zoom-in; background: rgba(255,255,255,.2); }
+  .note { font-size: 13px; color: #495057; background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; margin-top: 10px; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: rgba(248,249,251,.92); backdrop-filter: blur(8px); border-top: 1px solid var(--line); }
+  .bar .wrap { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; padding: 0; }
+  .btn { border: 0; border-radius: 14px; padding: 15px; font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .btn.main { background: var(--accent); color: #fff; box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 40%, transparent); }
+  .btn.ghost { background: #fff; color: var(--muted); border: 1.5px solid var(--line); }
+  .btn:disabled { opacity: .5; }
+  .center { text-align: center; padding: 60px 20px; }
+  .center .big { font-size: 56px; }
+  .center h2 { margin: 12px 0 6px; }
+  .center p { color: var(--muted); margin: 0; }
+  .err { color: #e03131; font-size: 14px; margin-top: 8px; min-height: 1em; }
+  .zoom { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; align-items: center; justify-content: center; z-index: 9; }
+  .zoom img { max-width: 94vw; max-height: 90vh; border-radius: 8px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app"><div class="center"><div class="big">⏳</div><p>กำลังโหลด…</p></div></div>
+<div class="zoom" id="zoom" onclick="this.style.display='none'"><img id="zoomImg" alt="สลิป"></div>
+
+<script>
+(function () {
+  const P = new URLSearchParams(location.search);
+  const DOC = P.get('doc') || '';
+  const TOKEN = P.get('t') || '';
+  const API = (P.get('api') || 'https://record-revenue.9nimz.workers.dev').replace(/\/$/, '');
+  const base = `${API}/api/inbox/quick/${encodeURIComponent(DOC)}`;
+  const qs = `?t=${encodeURIComponent(TOKEN)}`;
+  const THEME = {
+    OUT: { accent: '#ff6b6b', soft: '#fff1f1', icon: '💸', word: 'จ่ายเงิน' },
+    IN: { accent: '#12b886', soft: '#e6fcf5', icon: '💰', word: 'รับเงิน' },
+    TRANSFER: { accent: '#4c6ef5', soft: '#edf2ff', icon: '🔁', word: 'โอนระหว่างบัญชี' },
+    ASK: { accent: '#f59f00', soft: '#fff9db', icon: '🧾', word: 'สลิปใหม่' },
+    CASH: { accent: '#7950f2', soft: '#f3f0ff', icon: '🪙', word: 'จดเงินสด' },
+  };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const app = document.getElementById('app');
+  const state = { data: null, side: 'OUT', account: null, category: null, catQuery: '', accQuery: '' };
+
+  function screen(icon, title, text) {
+    app.innerHTML = `<div class="center"><div class="big">${icon}</div><h2>${esc(title)}</h2><p>${esc(text || '')}</p></div>`;
+    document.querySelector('.bar')?.remove();
+  }
+
+  async function load() {
+    if (!DOC || !TOKEN) return screen('🔗', 'ลิงก์ไม่ครบ', 'กรุณาเปิดจากปุ่มในการ์ด LINE');
+    let res;
+    try { res = await fetch(base + qs); } catch { return screen('📡', 'เชื่อมต่อไม่ได้', 'ลองใหม่อีกครั้ง'); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return screen('⚠️', data.error || 'เปิดรายการไม่ได้', res.status === 403 ? 'ลิงก์หมดอายุ ส่งสลิปหรือพิมพ์ "อ่านใหม่" ใน LINE เพื่อรับลิงก์ใหม่' : '');
+    state.data = data;
+    const needsAccount = data.doc?.status === 'NEEDS_ACCOUNT';
+    state.side = needsAccount ? ((data.options || [])[0]?.side || 'OUT') : data.side;
+    state.account = data.tx?.account_id || null;
+    state.category = data.details?.length === 1 ? data.details[0].category_id : null;
+    if (!needsAccount && !data.pending) {
+      return screen('✅', 'รายการนี้บันทึกแล้ว', data.doc?.status === 'DISMISSED' ? 'รายการนี้ถูกยกเลิกไว้' : 'แก้ไขเพิ่มเติมได้ในหน้าเว็บสมุดจด');
+    }
+    render();
+    loadSlip();
+  }
+
+  function kind() {
+    const d = state.data;
+    if (d.doc?.status === 'NEEDS_ACCOUNT') return 'ASK';
+    if (d.direction === 'TRANSFER') return 'TRANSFER';
+    if (d.doc?.doc_type === 'CASH') return 'CASH';
+    return state.side === 'IN' ? 'IN' : 'OUT';
+  }
+
+  function render() {
+    const d = state.data, ex = d.doc?.extracted || {}, k = kind(), th = THEME[k];
+    document.documentElement.style.setProperty('--accent', th.accent);
+    document.documentElement.style.setProperty('--accent-soft', th.soft);
+    const amount = Math.abs(d.tx?.total_amount ?? ex.amount ?? 0);
+    const date = (d.tx?.date || ex.date || new Date().toISOString()).slice(0, 10);
+    const note = d.details?.[0]?.note ?? ex.memo ?? ex.note ?? '';
+    const isTransfer = k === 'TRANSFER';
+    const split = d.details?.length > 1;
+
+    app.innerHTML = `
+      <div class="wrap">
+        <div class="hero">
+          ${d.doc?.has_file ? '<img class="slip" id="slip" alt="สลิป">' : ''}
+          <div class="kind">${th.icon} ${th.word} <span class="pill">${k === 'ASK' ? 'เลือกบัญชีของเรา' : 'รอยืนยัน'}</span></div>
+          <div class="amount"><span>฿</span><input id="amount" inputmode="decimal" value="${money(amount)}" ${d.can_edit_amount && !isTransfer ? '' : 'readonly'}></div>
+          <div class="sub">${esc(d.user?.name || '')}${ex.ref_code ? ' · อ้างอิง ' + esc(ex.ref_code) : ''}</div>
+        </div>
+
+        <div class="card">
+          <h3>รายละเอียด</h3>
+          <div class="row2">
+            <div><label class="field" for="date">📅 วันที่</label><input type="date" id="date" value="${esc(date)}"></div>
+            <div><label class="field">⏰ เวลา</label><input type="text" value="${esc((d.tx?.time || ex.time || '').slice(0, 5) || '-')}" readonly></div>
+          </div>
+          <label class="field" for="note">📝 รายการ / บันทึกช่วยจำ</label>
+          <input type="text" id="note" value="${esc(note)}" placeholder="เช่น ค่าอาหารกลางวัน" maxlength="200">
+          ${ex.sender?.name || ex.receiver?.name ? `
+          <div style="margin-top:12px">
+            <div class="kv"><span>👤 ผู้โอน</span><b>${esc([ex.sender?.name, ex.sender?.bank].filter(Boolean).join(' · ') || '-')}</b></div>
+            <div class="kv"><span>👤 ผู้รับ</span><b>${esc([ex.receiver?.name, ex.receiver?.bank].filter(Boolean).join(' · ') || '-')}</b></div>
+          </div>` : ''}
+        </div>
+
+        ${isTransfer ? `<div class="card"><h3>โอนระหว่างบัญชีของเรา</h3><div class="note">ไม่นับเป็นรายจ่าย · ยืนยันได้เลย</div></div>` : `
+        <div class="card">
+          <h3>🏦 บัญชีของเรา <span id="accName" style="color:var(--ink)"></span></h3>
+          ${k === 'ASK' ? `<div class="seg" id="side">
+              <button data-side="OUT" class="${state.side === 'OUT' ? 'on' : ''}">💸 จ่ายออกจาก</button>
+              <button data-side="IN" class="${state.side === 'IN' ? 'on' : ''}">💰 รับเข้า</button></div>` : ''}
+          <input type="search" id="accSearch" placeholder="🔎 ค้นหาบัญชี" style="margin-top:10px">
+          <div class="chips" id="accounts"></div>
+        </div>
+
+        <div class="card">
+          <h3>🗂️ หมวด <span id="catName" style="color:var(--ink)"></span></h3>
+          ${split ? `<div class="note">รายการนี้แตกหลายบรรทัด (${d.details.length} บรรทัด) แก้หมวด/ยอดในหน้าเว็บสมุดจด</div>` : `
+          <input type="search" id="catSearch" placeholder="🔎 พิมพ์ค้นหาหมวด เช่น อาหาร, Food">
+          <div class="chips" id="cats"></div>`}
+        </div>`}
+        <div class="err" id="err"></div>
+      </div>`;
+
+    const bar = document.querySelector('.bar') || document.body.appendChild(Object.assign(document.createElement('div'), { className: 'bar' }));
+    bar.innerHTML = `<div class="wrap"><button class="btn ghost" id="skip">ไม่บันทึก</button><button class="btn main" id="save">✓ ยืนยันบันทึก</button></div>`;
+
+    document.getElementById('save').onclick = save;
+    document.getElementById('skip').onclick = dismiss;
+    document.getElementById('side')?.addEventListener('click', e => {
+      const b = e.target.closest('button[data-side]'); if (!b) return;
+      state.side = b.dataset.side; render(); loadSlip();
+    });
+    const acc = document.getElementById('accSearch');
+    if (acc) { acc.value = state.accQuery; acc.oninput = () => { state.accQuery = acc.value; drawAccounts(); }; drawAccounts(); }
+    const cs = document.getElementById('catSearch');
+    if (cs) { cs.value = state.catQuery; cs.oninput = () => { state.catQuery = cs.value; drawCats(); }; drawCats(); }
+  }
+
+  function drawAccounts() {
+    const d = state.data, el = document.getElementById('accounts'); if (!el) return;
+    const q = state.accQuery.trim().toLowerCase();
+    const suggested = new Set((d.options || []).filter(o => o.side === state.side).map(o => o.account_id));
+    const list = d.accounts
+      .filter(a => !q || a.name.toLowerCase().includes(q) || String(a.bank_name || '').toLowerCase().includes(q))
+      .sort((a, b) => (b.account_id === state.account) - (a.account_id === state.account) || suggested.has(b.account_id) - suggested.has(a.account_id));
+    el.innerHTML = list.map(a => `<button class="chip ${a.account_id === state.account ? 'on' : ''}" data-acc="${esc(a.account_id)}">${esc(a.name)}${a.bank_name ? `<small>${esc(a.bank_name)}</small>` : ''}</button>`).join('')
+      || '<span style="color:var(--muted);font-size:14px">ไม่พบบัญชี</span>';
+    el.onclick = e => { const b = e.target.closest('[data-acc]'); if (!b) return; state.account = b.dataset.acc; drawAccounts(); };
+    document.getElementById('accName').textContent = d.accounts.find(a => a.account_id === state.account)?.name || '';
+  }
+
+  function drawCats() {
+    const d = state.data, el = document.getElementById('cats'); if (!el) return;
+    const q = state.catQuery.trim().toLowerCase();
+    const list = q ? d.categories.filter(c => c.name.toLowerCase().includes(q) || c.category_id.toLowerCase().includes(q))
+      : d.categories.filter((c, i) => i < 12 || c.category_id === state.category);
+    el.innerHTML = list.map(c => `<button class="chip ${c.category_id === state.category ? 'on' : ''}" data-cat="${esc(c.category_id)}">${esc(c.name)}${c.uses ? '<small>★</small>' : ''}</button>`).join('')
+      + (!q ? `<span style="color:var(--muted);font-size:13px;align-self:center">พิมพ์ค้นหาเพื่อดูหมวดทั้งหมด ${d.categories.length} หมวด</span>` : '')
+      || '<span style="color:var(--muted);font-size:14px">ไม่พบหมวด</span>';
+    el.onclick = e => { const b = e.target.closest('[data-cat]'); if (!b) return; state.category = b.dataset.cat; drawCats(); };
+    document.getElementById('catName').textContent = d.categories.find(c => c.category_id === state.category)?.name || 'ยังไม่ระบุ';
+  }
+
+  async function loadSlip() {
+    const img = document.getElementById('slip'); if (!img) return;
+    try {
+      const r = await fetch(`${base}/file${qs}`); if (!r.ok) return img.remove();
+      const url = URL.createObjectURL(await r.blob());
+      img.src = url;
+      img.onclick = () => { document.getElementById('zoomImg').src = url; document.getElementById('zoom').style.display = 'flex'; };
+    } catch { img.remove(); }
+  }
+
+  async function send(body) {
+    const btns = document.querySelectorAll('.bar .btn'); btns.forEach(b => b.disabled = true);
+    const errEl = document.getElementById('err'); if (errEl) errEl.textContent = '';
+    try {
+      const r = await fetch(base + qs, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'บันทึกไม่สำเร็จ');
+      return data;
+    } catch (e) {
+      if (errEl) errEl.textContent = '⚠️ ' + e.message;
+      btns.forEach(b => b.disabled = false);
+      return null;
+    }
+  }
+
+  async function save() {
+    const d = state.data;
+    if (kind() === 'ASK' && !state.account) { document.getElementById('err').textContent = '⚠️ เลือกบัญชีของเราก่อน'; return; }
+    const amount = parseFloat(String(document.getElementById('amount').value).replace(/,/g, ''));
+    const body = { date: document.getElementById('date').value, note: document.getElementById('note').value.trim() };
+    if (state.account) body.account_id = state.account;
+    if (kind() === 'ASK') body.side = state.side;
+    if (d.can_edit_amount && amount > 0) body.amount = amount;
+    if (state.category && d.details?.length <= 1) body.category_id = state.category;
+    const out = await send(body);
+    if (out) screen('🎉', 'บันทึกแล้ว', out.matched ? 'จับคู่กับรายการเดิมและแนบสลิปเรียบร้อย · ปิดหน้านี้กลับไปที่ LINE ได้เลย' : 'ครั้งหน้าระบบจะจำหมวดและบัญชีนี้ให้ · ปิดหน้านี้กลับไปที่ LINE ได้เลย');
+  }
+
+  async function dismiss() {
+    if (!confirm('ไม่บันทึกรายการนี้?')) return;
+    const out = await send({ action: 'dismiss' });
+    if (out) screen('🗑️', 'ไม่บันทึกรายการนี้แล้ว', 'ปิดหน้านี้กลับไปที่ LINE ได้เลย');
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

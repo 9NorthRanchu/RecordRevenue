@@ -24,6 +24,9 @@ import {
   round2, bankKey, last4, accountHintKey, partyKey, parseCashText, slipDirection,
   scoreCandidate, decideMatch, balanceGap, proposeLines, templateFromDetails,
 } from './ledger-match.js';
+import {
+  displayName, moneyText, thaiDate, txCard, flexMessage, confirmButtons, accountButtons, categoryQuickItems, postback,
+} from './ledger-line-ui.js';
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'application/pdf': 'pdf' };
@@ -43,7 +46,11 @@ const bangkokNow = () => new Date(Date.now() + 7 * 3600e3).toISOString();   // Y
 // ───────────────────────── entry ─────────────────────────
 export async function handleLedgerInbox(request, env, url, cors, userId, hooks = {}) {
   const path = url.pathname;
-  if (path === '/api/line-webhook' && request.method === 'POST') return handleLineWebhook(request, env, hooks);
+  if (path === '/api/line-webhook' && request.method === 'POST') return handleLineWebhook(request, env, { ...hooks, origin: url.origin });
+
+  // หน้าแก้ไขด่วนที่เปิดจากปุ่มใน LINE — ไม่ต้องล็อกอิน ใช้ลิงก์ที่ระบบเซ็นไว้ต่อเอกสาร (อายุ 14 วัน)
+  const quick = path.match(/^\/api\/inbox\/quick\/([\w-]+)(\/file)?$/);
+  if (quick) return handleQuick(request, env, url, cors, quick[1], !!quick[2]);
   if (path !== '/api/inbox' && !path.startsWith('/api/inbox/')) return null;
 
   const user = userId ? await env.DB.prepare(`SELECT * FROM Users WHERE user_id=?`).bind(userId).first() : null;
@@ -360,6 +367,8 @@ async function processSlip(env, user, doc, ex, forced) {
       const party = leg.side === 'OUT' ? ex.receiver?.name : ex.sender?.name;
       const lines = await suggestLines(env, user, { total: leg.signedAmount, fee: leg.side === 'OUT' ? ex.fee || 0 : 0,
         party, direction, counterAccount: leg.counter, entity: account?.entity_id });
+      // บันทึกช่วยจำบนสลิป = รายละเอียดของรายการ (North ขอ 2026-10-10) · ไม่มีก็ใช้ชื่อคู่ค้า
+      if (ex.memo && lines.lines[0]) lines.lines[0].note = String(ex.memo).slice(0, 200);
       const txId = await createTransaction(env, user, {
         account_id: leg.account_id, date, time: ex.time || null, total_amount: leg.signedAmount, ref_code: ex.ref_code || null,
         statement_desc: slipDesc(ex, leg.side), source: 'LINE_SLIP', status: 'PENDING_REVIEW',
@@ -666,12 +675,26 @@ async function handleLineEvent(env, event, hooks) {
   if (event.type === 'postback') {
     const [ns, action, docId, arg, side] = String(event.postback?.data || '').split('|');
     if (ns !== 'inbox') return;
+    const link = await editLinkFor(env, hooks, docId);
+    if (action === 'cats') {                                       // เปิดทางลัดเลือกหมวด
+      const doc = await getDoc(env, user, docId);
+      if (!doc) return lineReply(env, token, '⚠️ ไม่พบเอกสารนี้');
+      const dir = parse(doc.suggestion, {})?.legs?.[0]?.side === 'IN' ? 'INCOME' : 'EXPENSE';
+      const cats = await topCategories(env, user.family_id, dir, 12);
+      return lineReplyMessages(env, token, [{ type: 'text', text: '🗂️ เลือกหมวด (หรือกด "หมวดอื่น…" เพื่อค้นหา)',
+        quickReply: { items: categoryQuickItems(docId, cats, link) } }]);
+    }
+    if (action === 'setcat') {                                     // เปลี่ยนหมวดแล้วโชว์การ์ดใหม่ (ยังไม่ยืนยัน)
+      const out = await applyEdits(env, user, docId, { category_id: arg, confirm: false });
+      if (out.error) return lineReply(env, token, `⚠️ ${out.error}`);
+      return replyCard(env, token, user, docId, hooks, { status: 'เปลี่ยนหมวดแล้ว' });
+    }
     const body = action === 'account' ? { account_id: arg, side } : action === 'link' ? { transaction_id: arg } : {};
     const out = await runAction(env, user, docId, action, body);
     if (out.error) return lineReply(env, token, `⚠️ ${out.error}`);
     if (action === 'dismiss') return lineReply(env, token, '🗑️ ไม่บันทึกรายการนี้แล้ว');
-    if (action === 'accept' || action === 'link') return lineReply(env, token, '✅ บันทึกเรียบร้อย');
-    return replyOutcome(env, token, user, out);                 // account → ประมวลผลใหม่แล้ว ตอบผลรอบใหม่
+    if (action === 'accept' || action === 'link') return replyCard(env, token, user, docId, hooks, { done: true });
+    return replyOutcome(env, token, user, out, hooks);             // account → ประมวลผลใหม่แล้ว ตอบผลรอบใหม่
   }
 
   if (event.type !== 'message') return;
@@ -683,88 +706,241 @@ async function handleLineEvent(env, event, hooks) {
     const bytes = new Uint8Array(await res.arrayBuffer());
     const out = await ingestFile(env, user, { bytes, mime: res.headers.get('content-type') || 'image/jpeg',
       name: msg.fileName || null, source: 'LINE' });
-    return replyOutcome(env, token, user, out);
+    return replyOutcome(env, token, user, out, hooks);
   }
   if (msg.type === 'text') {
     const text = String(msg.text || '').trim();
-    // "อ่านใหม่" → อ่านเอกสารล่าสุดที่ค้าง/อ่านไม่สำเร็จซ้ำ (ทีละใบ เพื่อไม่ให้เกินเพดาน CPU)
+    // "อ่านใหม่" → อ่านเอกสารล่าสุดที่ค้าง/อ่านไม่สำเร็จซ้ำ (ทีละใบ)
     if (/^(อ่านใหม่|ลองใหม่|retry)$/i.test(text)) {
       const stuck = (await env.DB.prepare(`SELECT doc_id FROM LedgerDocs WHERE family_id=? AND uploaded_by=? AND status IN ('READING','ERROR')
         AND file_key IS NOT NULL ORDER BY created_at DESC LIMIT 5`).bind(user.family_id, user.user_id).all()).results || [];
       if (!stuck.length) return lineReply(env, token, '👍 ไม่มีเอกสารค้างครับ');
       const out = await retryDoc(env, user, stuck[0].doc_id);
-      if (stuck.length > 1) out.note = `ยังค้างอีก ${stuck.length - 1} ใบ พิมพ์ \"อ่านใหม่\" อีกครั้ง`;
-      return replyOutcome(env, token, user, out);
+      if (stuck.length > 1) out.note = `ยังค้างอีก ${stuck.length - 1} ใบ พิมพ์ "อ่านใหม่" อีกครั้ง`;
+      return replyOutcome(env, token, user, out, hooks);
     }
     if (!SUMMARY_WORDS.test(text) && parseCashText(text)) {
       const out = await recordCash(env, user, { text }, 'LINE');
       if (out.error) return lineReply(env, token, `⚠️ ${out.error}`);
-      const cat = await categoryName(env, out.category_id);
-      return lineReply(env, token,
-        `${out.auto_confirmed ? '✅ บันทึกแล้ว' : '📝 จดไว้แล้ว รอยืนยัน'}\n${out.note || 'เงินสด'} ${money(out.amount)} บาท\nจาก ${out.account.name}\nหมวด: ${cat}`,
-        out.auto_confirmed ? [] : [qr('✓ ถูกต้อง', `inbox|accept|${out.doc_id}`), qr('ไม่ต้องบันทึก', `inbox|dismiss|${out.doc_id}`)]);
+      return replyCard(env, token, user, out.doc_id, hooks, out.auto_confirmed ? { done: true } : {});
     }
     if (hooks.summary) return hooks.summary(event, user, env);
   }
 }
 
 async function categoryName(env, id) {
-  if (!id || id === UNCATEGORIZED) return 'ยังไม่ระบุ (เลือกในเว็บ)';
+  if (!id || id === UNCATEGORIZED) return 'ยังไม่ระบุ';
   const r = await env.DB.prepare(`SELECT name FROM Categories WHERE category_id=?`).bind(id).first();
-  return r?.name || id;
+  return displayName(r?.name || id);
 }
 
-const qr = (label, data) => ({ type: 'action', action: { type: 'postback', label: label.slice(0, 20), data, displayText: label.slice(0, 20) } });
+/* หมวดที่ใช้บ่อยของทิศทางนี้ (ดูจาก 1,500 บรรทัดล่าสุด — ไม่สแกนทั้งตาราง) แล้วต่อด้วยหมวดที่เหลือ */
+async function topCategories(env, familyId, type, limit = 200) {
+  const all = (await env.DB.prepare(`SELECT category_id, name, default_type FROM Categories
+    WHERE (family_id = ? OR family_id IS NULL) AND category_id != ?`).bind(familyId, UNCATEGORIZED).all()).results || [];
+  const uses = (await env.DB.prepare(`SELECT category_id, COUNT(*) AS n FROM
+    (SELECT category_id FROM TransactionDetails WHERE type = ? ORDER BY rowid DESC LIMIT 1500) GROUP BY category_id`)
+    .bind(type).all()).results || [];
+  const n = new Map(uses.map(u => [u.category_id, u.n]));
+  return all.map(c => ({ ...c, uses: n.get(c.category_id) || 0 }))
+    .sort((a, b) => (b.uses - a.uses) || ((b.default_type === type) - (a.default_type === type)) || String(a.name).localeCompare(String(b.name)))
+    .slice(0, limit);
+}
 
-async function replyOutcome(env, token, user, out) {
-  // ข้อความแถมท้าย (เช่น "ยังค้างอีก 2 ใบ") ต่อท้ายทุกคำตอบ — reply token ใช้ได้ครั้งเดียว ส่งแยกไม่ได้
-  const say = (text, quick) => lineReply(env, token, out.note ? `${text}\n\n${out.note}` : text, quick);
+// ───────────────────────── ลิงก์แก้ไขด่วน (เซ็นต่อเอกสาร) ─────────────────────────
+const LINK_DAYS = 14;
+async function linkSig(env, docId, exp) {
+  const secret = env.LINK_SECRET || env.LINE_CHANNEL_SECRET || env.GEMINI_API_KEY || 'dev-only';
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${docId}.${exp}`)));
+  return toBase64(mac).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '').slice(0, 32);
+}
+export async function signDocLink(env, docId) {
+  const exp = Math.floor(Date.now() / 1000) + LINK_DAYS * 86400;
+  return `${exp}.${await linkSig(env, docId, exp)}`;
+}
+async function verifyDocLink(env, docId, token) {
+  const [exp, sig] = String(token || '').split('.');
+  if (!exp || !sig || Number(exp) < Date.now() / 1000) return false;
+  return (await linkSig(env, docId, Number(exp))) === sig;
+}
+async function editLinkFor(env, hooks, docId) {
   const web = env.WEB_APP_URL || 'https://record-revenue-web.pages.dev';
+  const api = hooks?.origin ? `&api=${encodeURIComponent(hooks.origin)}` : '';
+  return `${web}/ledger/quick.html?doc=${encodeURIComponent(docId)}&t=${await signDocLink(env, docId)}${api}`;
+}
+
+async function handleQuick(request, env, url, cors, docId, wantFile) {
+  if (!(await verifyDocLink(env, docId, url.searchParams.get('t')))) return json({ error: 'ลิงก์หมดอายุหรือไม่ถูกต้อง' }, cors, 403);
+  const raw = await env.DB.prepare(`SELECT * FROM LedgerDocs WHERE doc_id=?`).bind(docId).first();
+  const user = raw && await env.DB.prepare(`SELECT * FROM Users WHERE user_id=?`).bind(raw.uploaded_by).first();
+  if (!raw || !user) return json({ error: 'ไม่พบเอกสารนี้' }, cors, 404);
+  if (wantFile) return serveDocFile(env, user, docId, cors);
+  try {
+    if (request.method === 'GET') return json(await quickView(env, user, docId), cors);
+    if (request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const out = body.action === 'dismiss' ? await runAction(env, user, docId, 'dismiss') : await applyEdits(env, user, docId, body);
+      return json(out, cors, out.error ? (out.status || 400) : 200);
+    }
+    return json({ error: 'Not Found' }, cors, 404);
+  } catch (err) {
+    return json({ error: err.message }, cors, 500);
+  }
+}
+
+async function quickView(env, user, docId) {
+  const doc = await getDoc(env, user, docId);
+  const sug = parse(doc.suggestion, {}) || {};
+  const link = (await env.DB.prepare(`SELECT l.transaction_id FROM LedgerDocLinks l WHERE l.doc_id=? ORDER BY l.role='CREATED' DESC LIMIT 1`)
+    .bind(docId).first())?.transaction_id;
+  const tx = link ? await env.DB.prepare(`SELECT * FROM Transactions WHERE transaction_id=?`).bind(link).first() : null;
+  const details = tx ? (await env.DB.prepare(`SELECT * FROM TransactionDetails WHERE transaction_id=?`).bind(tx.transaction_id).all()).results || [] : [];
+  const side = sug.legs?.[0]?.side || (tx && tx.total_amount > 0 ? 'IN' : 'OUT');
+  const accounts = (await permittedAccounts(env, user)).map(a => ({ account_id: a.account_id, name: displayName(a.name), bank_name: a.bank_name }));
+  const categories = (await topCategories(env, user.family_id, side === 'IN' ? 'INCOME' : 'EXPENSE'))
+    .map(c => ({ category_id: c.category_id, name: displayName(c.name), default_type: c.default_type, uses: c.uses }));
+  return { doc: publicDoc(doc), user: { name: user.name }, side, direction: sug.direction || side,
+    options: sug.options || [], tx, details, accounts, categories,
+    pending: !!tx && tx.status === 'PENDING_REVIEW', can_edit_amount: details.length <= 1 };
+}
+
+/* แก้รายการจากการ์ด LINE / หน้าแก้ไขด่วน แล้วยืนยัน (confirm:false = แก้อย่างเดียว)
+   ใช้ได้กับรายการที่ระบบสร้างและยังรอยืนยัน · แตกหลายบรรทัดแล้ว แก้ยอด/หมวดต้องไปหน้าเว็บเต็ม */
+export async function applyEdits(env, user, docId, e = {}) {
+  let doc = await getDoc(env, user, docId);
+  if (!doc) return { error: 'ไม่พบเอกสารนี้', status: 404 };
+  const accounts = await permittedAccounts(env, user);
+  if (e.account_id && !accounts.some(a => a.account_id === e.account_id)) return { error: 'ไม่มีสิทธิ์ใช้บัญชีนี้', status: 403 };
+
+  if (doc.status === 'NEEDS_ACCOUNT') {
+    if (!e.account_id) return { error: 'เลือกบัญชีก่อน', status: 400 };
+    const r = await runAction(env, user, docId, 'account', { account_id: e.account_id, side: e.side === 'IN' ? 'IN' : 'OUT' });
+    if (r.error) return r;
+    if (r.outcome === 'MATCHED') return { ok: true, status: 'DONE', matched: true };
+    doc = await getDoc(env, user, docId);
+  }
+  const links = (await env.DB.prepare(`SELECT l.transaction_id FROM LedgerDocLinks l JOIN Transactions t ON t.transaction_id=l.transaction_id
+    WHERE l.doc_id=? AND l.role='CREATED' AND t.status='PENDING_REVIEW'`).bind(docId).all()).results || [];
+  if (!links.length) return { error: 'รายการนี้บันทึกหรือยกเลิกไปแล้ว', status: 409 };
+
+  if (links.length === 1) {
+    const txId = links[0].transaction_id;
+    const head = await env.DB.prepare(`SELECT * FROM Transactions WHERE transaction_id=?`).bind(txId).first();
+    const lines = (await env.DB.prepare(`SELECT * FROM TransactionDetails WHERE transaction_id=?`).bind(txId).all()).results || [];
+    const sign = head.total_amount < 0 ? -1 : 1;
+    const amountChanged = e.amount != null && Number(e.amount) > 0 && Math.abs(round2(Math.abs(e.amount)) - Math.abs(head.total_amount)) >= 0.005;
+    if (lines.length > 1 && (amountChanged || e.category_id)) return { error: 'รายการนี้แตกหลายบรรทัด แก้ยอด/หมวดในหน้าเว็บเต็ม', status: 400 };
+    const total = amountChanged ? round2(sign * Math.abs(e.amount)) : head.total_amount;
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(e.date || '') ? e.date : head.date;
+    const accountId = e.account_id || head.account_id;
+    const ops = [env.DB.prepare(`UPDATE Transactions SET total_amount=?, date=?, account_id=? WHERE transaction_id=?`)
+      .bind(total, date, accountId, txId)];
+    if (lines.length === 1) {
+      const l = lines[0];
+      let type = l.type;
+      if (e.category_id) {
+        const cat = await env.DB.prepare(`SELECT default_type FROM Categories WHERE category_id=?`).bind(e.category_id).first();
+        if (!cat) return { error: 'ไม่พบหมวดนี้', status: 400 };
+        if (['INCOME', 'EXPENSE', 'TRANSFER'].includes(cat.default_type)) type = cat.default_type;
+      }
+      // ยอดย่อย = ยอดหัว + fee + wht (สูตรเดียวกับข้อมูลจริง)
+      ops.push(env.DB.prepare(`UPDATE TransactionDetails SET amount=?, category_id=?, type=?, note=? WHERE detail_id=?`)
+        .bind(round2(total + (l.fee || 0) + (l.wht || 0)), e.category_id || l.category_id, type,
+          e.note != null ? String(e.note).slice(0, 200) : l.note, l.detail_id));
+    } else if (e.note != null) {
+      ops.push(env.DB.prepare(`UPDATE TransactionDetails SET note=? WHERE detail_id=?`).bind(String(e.note).slice(0, 200), lines[0].detail_id));
+    }
+    await env.DB.batch(ops);
+    if (accountId !== head.account_id) {                           // ให้การเรียนรู้บัญชีใช้บัญชีที่คนแก้
+      const sug = parse(doc.suggestion, {}) || {};
+      for (const leg of sug.legs || []) if (leg.transaction_id === txId) leg.account_id = accountId;
+      await setDoc(env, docId, { suggestion: JSON.stringify(sug) });
+    }
+  }
+  if (e.confirm === false) return { ok: true, status: 'EDITED' };
+  return runAction(env, user, docId, 'accept', {});
+}
+
+// ───────────────────────── การ์ดตอบกลับ ─────────────────────────
+/* การ์ดของเอกสาร 1 ใบ จากสถานะปัจจุบันในฐาน (ใช้ทั้งหลังอ่านสลิป จดเงินสด เปลี่ยนหมวด ยืนยัน) */
+async function replyCard(env, token, user, docId, hooks, { done = false, status: statusText, note } = {}) {
+  const doc = await getDoc(env, user, docId);
+  if (!doc) return lineReply(env, token, '⚠️ ไม่พบเอกสารนี้');
+  const ex = parse(doc.extracted, {}) || {};
+  const sug = parse(doc.suggestion, {}) || {};
+  const legs = sug.legs || [];
+  const txId = legs.find(l => l.transaction_id)?.transaction_id || doc.transaction_id;
+  const tx = txId ? await env.DB.prepare(`SELECT * FROM Transactions WHERE transaction_id=?`).bind(txId).first() : null;
+  const lines = tx ? (await env.DB.prepare(`SELECT * FROM TransactionDetails WHERE transaction_id=?`).bind(tx.transaction_id).all()).results || [] : [];
+  const accounts = await permittedAccounts(env, user);
+  const accName = id => displayName(accounts.find(a => a.account_id === id)?.name || id || '-');
+  const link = await editLinkFor(env, hooks, docId);
+  const isCash = doc.doc_type === 'CASH';
+  const kind = done || doc.status === 'DONE' ? 'DONE' : sug.direction === 'TRANSFER' ? 'TRANSFER' : isCash ? 'CASH' : (legs[0]?.side === 'IN' ? 'IN' : 'OUT');
+  const amount = Math.abs(tx?.total_amount ?? ex.amount ?? 0);
+  const learned = legs.some(l => String(l.how || '').startsWith('template'));
+  const cats = lines.length > 1 ? `แตก ${lines.length} บรรทัด` : await categoryName(env, lines[0]?.category_id);
+  const rows = [['📅 วันที่', thaiDate(tx?.date || ex.date, tx?.time || ex.time)]];
+  if (sug.direction === 'TRANSFER') {
+    rows.push(['🏦 จาก', accName(legs.find(l => l.side === 'OUT')?.account_id)], ['🏦 เข้า', accName(legs.find(l => l.side === 'IN')?.account_id)]);
+  } else if (legs[0]?.side === 'IN') {
+    rows.push(['🏦 เข้าบัญชี', accName(tx?.account_id || legs[0]?.account_id)], ['👤 จาก', ex.sender?.name || '-']);
+  } else {
+    rows.push(['🏦 จากบัญชี', accName(tx?.account_id || legs[0]?.account_id)]);
+    if (!isCash) rows.push(['👤 ให้', ex.receiver?.name || '-']);
+  }
+  rows.push(['📝 รายการ', lines[0]?.note || ex.memo || ex.note || '-']);
+  rows.push(['🗂️ หมวด', `${cats}${learned && !done ? ' ✨' : ''}`, { bold: true, color: cats === 'ยังไม่ระบุ' ? '#E03131' : '#212529' }]);
+  const hint = note || (done ? null : cats === 'ยังไม่ระบุ' ? 'กด "เปลี่ยนหมวด" ก่อนยืนยัน ครั้งหน้าระบบจะจำให้'
+    : learned ? '✨ หมวดนี้ระบบจำจากครั้งก่อน' : null);
+  const bubble = txCard({ kind, status: done ? '' : (statusText || (doc.status === 'DONE' ? '' : 'รอยืนยัน')), amount, rows, note: hint,
+    buttons: done || doc.status === 'DONE' ? [] : confirmButtons(docId, link, kind) });
+  return lineReplyMessages(env, token, [flexMessage(`${done ? 'บันทึกแล้ว' : 'รอยืนยัน'} ฿${moneyText(amount)}`, bubble)]);
+}
+
+async function replyOutcome(env, token, user, out, hooks = {}) {
+  const extra = out.note || null;
+  const say = text => lineReply(env, token, extra ? `${text}\n\n${extra}` : text);
   if (out.error && !out.doc) return say(`⚠️ ${out.error}`);
   if (out.duplicate) return say('🔁 เอกสารนี้เคยส่งมาแล้ว ไม่บันทึกซ้ำครับ');
   const doc = out.doc, ex = doc?.extracted || {}, id = doc?.doc_id;
-  const amountLine = ex.amount ? `${money(ex.amount)} บาท${ex.date ? ` · ${ex.date}` : ''}` : '';
   switch (out.outcome) {
     case 'ERROR': return say(`❌ อ่านเอกสารไม่สำเร็จ แต่เก็บไฟล์ไว้แล้ว\n${out.error || ''}\nพิมพ์ "อ่านใหม่" เพื่อลองอีกครั้ง`);
-    case 'NEEDS_ACCOUNT':
-      return say(`🧾 ${amountLine}\n${ex.sender?.name || '?'} → ${ex.receiver?.name || '?'}\nเป็นบัญชีไหนของเราครับ? (ตอบครั้งเดียว ครั้งหน้าจำให้)`,
-        [...out.options.slice(0, 11).map(o => qr(`${o.side === 'IN' ? 'รับเข้า' : 'จ่ายจาก'} ${o.account_id}`, `inbox|account|${id}|${o.account_id}|${o.side}`)),
-          qr('ไม่ต้องบันทึก', `inbox|dismiss|${id}`)]);
-    case 'MATCHED': return say(`✅ จับคู่กับรายการเดิมแล้ว\n${amountLine}\nแนบสลิปเป็นหลักฐานเรียบร้อย`);
-    case 'ATTACHED': return say(`📎 แนบเอกสารกับรายการจ่าย ${amountLine} แล้ว`);
+    case 'NEEDS_ACCOUNT': {
+      const link = await editLinkFor(env, hooks, id);
+      const party = p => [p?.name, p?.bank, p?.account].filter(Boolean).join(' · ') || '-';
+      const bubble = txCard({ kind: 'ASK', status: 'เลือกบัญชีของเรา', amount: ex.amount, rows: [
+        ['📅 วันที่', thaiDate(ex.date, ex.time)], ['👤 ผู้โอน', party(ex.sender)], ['👤 ผู้รับ', party(ex.receiver)],
+        ['📝 รายการ', ex.memo || '-'],
+      ], note: `${extra ? extra + '\n' : ''}ตอบครั้งเดียว ครั้งหน้าระบบจำบัญชีนี้ให้`, buttons: accountButtons(id, out.options || [], link) });
+      return lineReplyMessages(env, token, [flexMessage(`สลิปใหม่ ฿${moneyText(ex.amount)} เลือกบัญชี`, bubble)]);
+    }
+    case 'MATCHED': return replyCard(env, token, user, id, hooks, { done: true, note: `จับคู่กับรายการเดิมแล้ว แนบสลิปเป็นหลักฐาน${extra ? '\n' + extra : ''}` });
+    case 'ATTACHED': return say(`📎 แนบเอกสารกับรายการจ่าย ฿${moneyText(ex.amount)} แล้ว`);
     case 'STORED': return say(`📎 ${doc.suggestion?.note || 'เก็บเอกสารไว้แล้ว'}`);
     case 'NEEDS_CHOICE': {
       const leg = (out.legs || []).find(l => l.kind === 'CHOOSE');
       const choices = (leg?.choices || []).slice(0, 4);
-      return lineReply(env, token,
-        `🤔 ${amountLine}\nเจอรายการที่ยอดตรงกันหลายรายการ เลือกอันที่ใช่ครับ\n${choices.map((c, i) => `${i + 1}. ${c.date} ${c.statement_desc || ''}`).join('\n')}`,
-        [...choices.map((c, i) => qr(`${i + 1}. ${String(c.date).slice(5, 10)} ${money(Math.abs(c.total_amount))}`, `inbox|link|${id}|${c.transaction_id}`)),
-          qr('ไม่ต้องบันทึก', `inbox|dismiss|${id}`)]);
+      const bubble = txCard({ kind: 'ASK', status: 'เจอยอดตรงกันหลายรายการ', amount: ex.amount,
+        rows: choices.map((c, i) => [`${i + 1}.`, `${thaiDate(c.date)} ${c.statement_desc || ''}`]),
+        buttons: [...choices.map((c, i) => ({ type: 'button', style: 'secondary', height: 'sm',
+          action: { ...postback(`inbox|link|${id}|${c.transaction_id}`, `เลือกรายการที่ ${i + 1}`), label: `เลือกรายการที่ ${i + 1}` } })),
+        { type: 'button', style: 'link', height: 'sm', action: { ...postback(`inbox|dismiss|${id}`, 'ไม่ต้องบันทึก'), label: 'ไม่ต้องบันทึก' } }] });
+      return lineReplyMessages(env, token, [flexMessage(`เลือกรายการที่ตรงกับ ฿${moneyText(ex.amount)}`, bubble)]);
     }
-    case 'SUGGESTED': {
-      const legs = out.legs || [];
-      const created = legs.find(l => l.kind === 'CREATED');
-      const accounts = await permittedAccounts(env, user);
-      const accName = accId => accounts.find(a => a.account_id === accId)?.name || accId;
-      const head = doc.suggestion?.direction === 'TRANSFER'
-        ? `🔁 โอนระหว่างบัญชี ${amountLine}\n${legs.map(l => accName(l.account_id)).join(' → ')}`
-        : created?.side === 'IN' ? `💰 รับเงิน ${amountLine}\nเข้า ${accName(created.account_id)}\nจาก ${ex.sender?.name || '-'}`
-        : `💸 จ่าย ${amountLine}\nจาก ${accName(created?.account_id)}\nให้ ${ex.receiver?.name || '-'}`;
-      const first = await env.DB.prepare(`SELECT category_id FROM TransactionDetails WHERE transaction_id=? LIMIT 1`).bind(created?.transaction_id).first();
-      const learned = String(created?.how || '').startsWith('template') ? ' (จำจากครั้งก่อน)' : '';
-      return say(`${head}\nหมวด: ${await categoryName(env, first?.category_id)}${learned}\n\nแก้/แตกรายการในเว็บ: ${web}?txId=${created?.transaction_id}`,
-        [qr('✓ ถูกต้อง', `inbox|accept|${id}`), qr('ไม่ต้องบันทึก', `inbox|dismiss|${id}`)]);
-    }
+    case 'SUGGESTED': return replyCard(env, token, user, id, hooks, { note: extra });
     default: return say('📥 รับเอกสารแล้ว');
   }
 }
 
-async function lineReply(env, replyToken, text, quick = []) {
-  const message = { type: 'text', text: String(text).slice(0, 4900) };
-  if (quick.length) message.quickReply = { items: quick.slice(0, 13) };
+async function lineReplyMessages(env, replyToken, messages) {
   await fetch('https://api.line.me/v2/bot/message/reply', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` },
-    body: JSON.stringify({ replyToken, messages: [message] }),
+    body: JSON.stringify({ replyToken, messages: messages.slice(0, 5) }),
   });
+}
+async function lineReply(env, replyToken, text) {
+  return lineReplyMessages(env, replyToken, [{ type: 'text', text: String(text).slice(0, 4900) }]);
 }
