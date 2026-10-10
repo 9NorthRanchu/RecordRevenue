@@ -34,7 +34,12 @@
   label.field { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
   input[type=text], input[type=date], input[type=search] { width: 100%; border: 1.5px solid var(--line); border-radius: 12px; padding: 12px; font: inherit; font-size: 16px; color: var(--ink); background: #fff; }
   input:focus { outline: none; border-color: var(--accent); }
-  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; align-items: end; }
+  /* iPhone วาดช่องวันที่สูง/กว้างไม่เท่าช่องอื่น → บังคับให้สูงเท่ากันและชิดซ้าย */
+  .row2 input { display: block; height: 48px; min-width: 0; margin: 0; line-height: 22px; }
+  input[type=date] { -webkit-appearance: none; appearance: none; text-align: left; }
+  input[type=date]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+  input[type=date]::-webkit-calendar-picker-indicator { margin: 0; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; max-height: 260px; overflow-y: auto; }
   .chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 9px 14px; font: inherit; font-size: 14px; color: var(--ink); cursor: pointer; }
   .chip small { color: var(--muted); margin-left: 4px; }
