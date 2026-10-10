@@ -438,6 +438,27 @@ console.log('\n── ส่งรูปเดิมซ้ำหลังค้�
   check('อ่านสำเร็จแล้ว ส่งอีก → ตอบว่าซ้ำตามปกติ', third.duplicate === true);
 }
 
+console.log('\n── LINE: ตอบ OK ทันที แล้วทำงานเบื้องหลัง ──');
+{
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, init) => {
+    if (String(u).includes('api-data.line.me')) return new Response(fakeFile(), { headers: { 'content-type': 'image/jpeg' } });
+    if (String(u).includes('api.line.me')) { sent.push(JSON.parse(init.body)); return new Response('{}'); }
+    throw new Error('net ' + u);
+  };
+  try {
+    let pending = null;
+    extractQueue.push(slip({ amount: 777, date: '2026-10-10' }));
+    const res = await inbox.handleLedgerInbox(new Request('https://x/api/line-webhook', { method: 'POST', body: JSON.stringify({ events: [
+      { type: 'message', replyToken: 'w1', source: { userId: 'Uline-north' }, message: { type: 'image', id: 'mw' } }] }) }),
+      env, new URL('https://x/api/line-webhook'), {}, '', { waitUntil: p => { pending = p; } });
+    check('ตอบ LINE 200 ทันที ก่อนงานเสร็จ', res.status === 200 && pending instanceof Promise && sent.length === 0);
+    await pending;
+    check('งานเบื้องหลังเสร็จแล้วส่งผลกลับ LINE', sent.length === 1 && sent[0].messages[0].text.includes('777.00'));
+  } finally { globalThis.fetch = realFetch; }
+}
+
 console.log('\n── ตรวจยอดทุกรายการที่ระบบสร้าง ──');
 {
   const all = db.prepare(`SELECT transaction_id, total_amount FROM Transactions WHERE source != 'PDF_IMPORT'`).all();

@@ -6,7 +6,7 @@ import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSe
 // backend/src/index.js
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
     // CORS Headers
@@ -36,7 +36,7 @@ export default {
 
       // กล่องรับเอกสาร + LINE Bot รุ่นใหม่ (ledger-inbox.js) — รับ /api/line-webhook และ /api/inbox/*
       // คำสั่งสรุป (วันนี้/เมื่อวาน/รายวัน/เดือน) ยังใช้โค้ดเดิมในไฟล์นี้ผ่าน hooks.summary
-      const inbox = await handleLedgerInbox(request, env, url, corsHeaders, authUserId, { summary: lineSummaryReply });
+      const inbox = await handleLedgerInbox(request, env, url, corsHeaders, authUserId, { summary: lineSummaryReply, waitUntil: ctx?.waitUntil ? p => ctx.waitUntil(p) : null });
       if (inbox) return inbox;
 
       /* ออกจากระบบ — ลบ token ทิ้งฝั่งเซิร์ฟเวอร์ ไม่ใช่แค่ลบในเบราว์เซอร์

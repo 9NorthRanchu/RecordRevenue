@@ -638,10 +638,18 @@ async function handleLineWebhook(request, env, hooks) {
     return new Response('bad signature', { status: 401 });
   }
   const body = parse(raw, {});
-  for (const event of body.events || []) {
-    try { await handleLineEvent(env, event, hooks); }
-    catch (err) { if (event.replyToken) await lineReply(env, event.replyToken, `❌ มีข้อผิดพลาด: ${err.message}`); }
-  }
+  const work = (async () => {
+    for (const event of body.events || []) {
+      try { await handleLineEvent(env, event, hooks); }
+      catch (err) { if (event.replyToken) await lineReply(env, event.replyToken, `❌ มีข้อผิดพลาด: ${err.message}`); }
+    }
+  })();
+  /* ตอบ LINE "OK" ทันที แล้วทำงานต่อเบื้องหลัง (ctx.waitUntil)
+     LINE รอคำตอบไม่นาน — ถ้าเราอ่านสลิปกับ AI นานกว่านั้น LINE ตัดสาย แล้ว Cloudflare
+     ยกเลิกงานทั้งหมดกลางทาง (log ขึ้น "Canceled") → เอกสารค้าง + บอทเงียบ (เจอจริง 2026-10-10)
+     reply token ยังใช้ได้หลังตอบ OK ไปแล้ว จึงส่งผลกลับได้ตามปกติ */
+  if (hooks.waitUntil) { hooks.waitUntil(work); return new Response('OK'); }
+  await work;
   return new Response('OK');
 }
 

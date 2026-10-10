@@ -35,6 +35,8 @@ North เลือก: หน้าเว็บสมุดจด**ทำให�
 
 **Gemini ตอบ 403 (2026-10-10)**: หลังเปลี่ยนเป็น Files API ระบบไม่ถูกตัดแล้ว (ตอบ LINE ได้) แต่ Gemini ปฏิเสธ 403 = ปัญหา API key (ปิด/หมดอายุ/ถูกจำกัด) · ให้ North สร้าง key ใหม่ที่ aistudio.google.com/apikey แล้ว `npx wrangler secret put GEMINI_API_KEY` · error ตอนนี้แนบเหตุผลจาก Google มาใน LINE ด้วย · ส่งรูปเดิมที่ค้าง READING/ERROR ซ้ำ = อ่านใหม่ให้เอง (ไม่ตอบว่าซ้ำ) · เทส ledger-inbox 94
 
+**ต้นเหตุจริงของสลิปค้าง = "Canceled" (2026-10-10)**: `wrangler tail` ขึ้น `POST /api/line-webhook - Canceled` → LINE ตัดสายเพราะรอคำตอบนานเกิน (อ่านสลิปกับ AI หลายวินาที) แล้ว Cloudflare ยกเลิกงานกลางทาง (ไม่ใช่เพดาน CPU อย่างที่เดาตอนแรก) · แก้: `index.js` รับ `ctx` แล้วส่ง `waitUntil` ใน hooks → webhook ตอบ OK ทันที ทำงานต่อเบื้องหลัง แล้วส่งผลด้วย reply token · เทส ledger-inbox 96
+
 **ถัดไป**: North deploy (`bash deploy.sh`) + ตั้ง `LINE_CHANNEL_SECRET` + ผูก LINE ID → ทดลองส่งสลิปจริง · ระยะ 1 ส่วนหน้าเว็บ: หน้า "กล่องรอเคลียร์" ใหม่ (การ์ดปัด · หน้าแตกรายการพร้อมแถบ "เหลืออีก x บาท") ในโฟลเดอร์ใหม่ `frontend/ledger/`
 
 ## 🧭 2026-10-07 — สถานะรวม + งานถัดไป (North สั่งบันทึกก่อนย้ายแชท) — **อ่านส่วนนี้ก่อน**
