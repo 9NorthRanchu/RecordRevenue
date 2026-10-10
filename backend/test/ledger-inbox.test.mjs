@@ -425,6 +425,19 @@ console.log('\n── อ่านเอกสารที่ค้างให�
   } finally { globalThis.fetch = realFetch; }
 }
 
+console.log('\n── ส่งรูปเดิมซ้ำหลังค้าง → อ่านใหม่ให้เอง ──');
+{
+  const bytes = fakeFile();
+  extractQueue.push(new Error('ถูกตัดกลางทาง'));
+  const first = await inbox.ingestFile(env, user, { bytes, mime: 'image/jpeg', source: 'LINE' });
+  check('ครั้งแรกอ่านไม่สำเร็จ (ERROR)', first.outcome === 'ERROR');
+  extractQueue.push(slip({ amount: 4321, date: '2026-10-09' }));
+  const again = await inbox.ingestFile(env, user, { bytes, mime: 'image/jpeg', source: 'LINE' });
+  check('ส่งรูปเดิมอีกครั้ง → อ่านใหม่ ไม่ตอบว่าซ้ำ', !again.duplicate && again.outcome === 'SUGGESTED', again.outcome);
+  const third = await inbox.ingestFile(env, user, { bytes, mime: 'image/jpeg', source: 'LINE' });
+  check('อ่านสำเร็จแล้ว ส่งอีก → ตอบว่าซ้ำตามปกติ', third.duplicate === true);
+}
+
 console.log('\n── ตรวจยอดทุกรายการที่ระบบสร้าง ──');
 {
   const all = db.prepare(`SELECT transaction_id, total_amount FROM Transactions WHERE source != 'PDF_IMPORT'`).all();

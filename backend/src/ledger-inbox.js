@@ -159,6 +159,8 @@ export async function ingestFile(env, user, { bytes, mime, name, source, forced 
   // ไฟล์เดิมเป๊ะส่งซ้ำ (กดส่งสองรอบ / ส่งทั้งใน LINE และเว็บ) → ไม่บันทึกซ้ำ
   const hash = await sha256Hex(bytes);
   const dup = await env.DB.prepare(`SELECT * FROM LedgerDocs WHERE family_id=? AND file_hash=? LIMIT 1`).bind(user.family_id, hash).first();
+  // ส่งรูปเดิมซ้ำเพราะครั้งก่อนค้าง/อ่านไม่สำเร็จ → อ่านใหม่ให้เลย แทนที่จะตอบว่า "เคยส่งแล้ว"
+  if (dup && ['READING', 'ERROR'].includes(dup.status) && dup.file_key) return retryDoc(env, user, dup.doc_id);
   if (dup) return { duplicate: true, doc: publicDoc(dup) };
 
   const docId = newId('DOC');
@@ -244,7 +246,12 @@ async function extractDocument(env, bytes, mime) {
       generationConfig: { responseMimeType: 'application/json' },
     }),
   });
-  if (!res.ok) throw new Error(`AI อ่านเอกสารไม่สำเร็จ (${res.status})`);
+  if (!res.ok) {
+    // แนบเหตุผลจาก Google มาด้วย (เช่น key ถูกปิด/หมดอายุ) — ตัวเลขอย่างเดียวไล่ปัญหาไม่ได้ (เจอ 403 จริง 2026-10-10)
+    let reason = '';
+    try { const e = await res.json(); reason = e?.error?.message || e?.error?.status || ''; } catch { /* ไม่มีรายละเอียด */ }
+    throw new Error(`AI อ่านเอกสารไม่สำเร็จ (${res.status})${reason ? ': ' + String(reason).slice(0, 160) : ''}`);
+  }
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
   return normalizeExtract(JSON.parse(text.trim().replace(/^```json\s*|```$/g, '')));

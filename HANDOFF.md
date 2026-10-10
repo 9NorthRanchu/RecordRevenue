@@ -33,6 +33,8 @@ North เลือก: หน้าเว็บสมุดจด**ทำให�
 
 **คำสั่งสรุปทาง LINE พังมาตลอด (2026-10-08)**: `sendMonthlySummaryFlex` `get7DayBreakdownText` อ้าง `cp.behavior` โดยไม่ JOIN Captions · `getDailySummaryText` อ้าง `tx.details` ที่ไม่มี → แก้ทั้งสามให้แยกรับ/จ่ายด้วย `d.type` (INCOME / EXPENSE กลับเครื่องหมาย) + ช่วงวันที่แทน LIKE · ทดสอบด้วย node:sqlite ผ่าน "วันนี้/รายวัน/เดือน" · บทเรียน: บอท LINE ไม่เคยใช้งานจริงมาก่อน (ไม่มี secret) โค้ดเดิมฝั่ง LINE ทั้งหมดไม่เคยถูกรันบน production
 
+**Gemini ตอบ 403 (2026-10-10)**: หลังเปลี่ยนเป็น Files API ระบบไม่ถูกตัดแล้ว (ตอบ LINE ได้) แต่ Gemini ปฏิเสธ 403 = ปัญหา API key (ปิด/หมดอายุ/ถูกจำกัด) · ให้ North สร้าง key ใหม่ที่ aistudio.google.com/apikey แล้ว `npx wrangler secret put GEMINI_API_KEY` · error ตอนนี้แนบเหตุผลจาก Google มาใน LINE ด้วย · ส่งรูปเดิมที่ค้าง READING/ERROR ซ้ำ = อ่านใหม่ให้เอง (ไม่ตอบว่าซ้ำ) · เทส ledger-inbox 94
+
 **ถัดไป**: North deploy (`bash deploy.sh`) + ตั้ง `LINE_CHANNEL_SECRET` + ผูก LINE ID → ทดลองส่งสลิปจริง · ระยะ 1 ส่วนหน้าเว็บ: หน้า "กล่องรอเคลียร์" ใหม่ (การ์ดปัด · หน้าแตกรายการพร้อมแถบ "เหลืออีก x บาท") ในโฟลเดอร์ใหม่ `frontend/ledger/`
 
 ## 🧭 2026-10-07 — สถานะรวม + งานถัดไป (North สั่งบันทึกก่อนย้ายแชท) — **อ่านส่วนนี้ก่อน**
