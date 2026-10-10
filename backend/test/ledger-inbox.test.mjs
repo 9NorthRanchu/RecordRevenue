@@ -520,7 +520,18 @@ console.log('\n── บันทึกช่วยจำ → รายละ�
       && lines(t4)[0].category_id === 'T05' && lines(t4)[0].amount === -260 && lines(t4)[0].note === 'ค่าน้ำแข็ง + ถุง');
     check('จำร้านนี้ → T05 และจำบัญชีที่แก้ (KBANK|1111 → A06)', JSON.parse(db.prepare(`SELECT value FROM LedgerRules WHERE kind='PARTY' AND rkey=?`).get(match.partyKey('ร้านใหม่เอี่ยม'))?.value || '{}').lines?.[0]?.category_id === 'T05'
       && db.prepare(`SELECT value FROM LedgerRules WHERE kind='ACCOUNT' AND rkey='KBANK|1111'`).get()?.value === 'A06');
+    const pushed = sent.find(m => m.to === 'Uline-north');
+    check('บันทึกจากหน้าเว็บ → ส่งการ์ด "บันทึกแล้ว" ค่าใหม่เข้าแชทเอง (push)', !!pushed && J(pushed).includes('บันทึกแล้ว') && J(pushed).includes('Other Expense') && J(pushed).includes('ค่าน้ำแข็ง + ถุง'));
     check('บันทึกซ้ำ → แจ้งว่าบันทึกไปแล้ว', (await q('POST', { category_id: 'T01' })).status === 409);
+    sent.length = 0;
+    await hook([{ type: 'message', replyToken: 'l1', source: { userId: 'Uline-north' }, message: { type: 'text', text: '✅ บันทึกแล้ว ฿260.00 · ค่าน้ำแข็ง + ถุง' } }]);
+    check('ข้อความ "✅ บันทึกแล้ว" จากหน้า LIFF → บอทตอบการ์ดที่เพิ่งแก้ (ไม่จดเป็นเงินสด)', sent.length === 1 && sent[0].replyToken === 'l1' && J(sent[0]).includes('ค่าน้ำแข็ง + ถุง') && J(sent[0]).includes('บันทึกแล้ว'));
+    sent.length = 0;
+    extractQueue.push(slip({ amount: 99, date: '2026-10-10' }));
+    await inbox.handleLedgerInbox(new Request('https://api.example/api/line-webhook', { method: 'POST', body: JSON.stringify({ events: [
+      { type: 'message', replyToken: 'l2', source: { userId: 'Uline-north' }, message: { type: 'image', id: 'ml2' } }] }) }),
+      { ...env, LIFF_ID: '2000000000-abcd' }, new URL('https://api.example/api/line-webhook'), {}, '');
+    check('ตั้ง LIFF_ID แล้ว → ปุ่มแก้ไขเปิดผ่าน liff.line.me', J(sent[0]).includes('https://liff.line.me/2000000000-abcd?doc=') && J(sent[0]).includes('lid=2000000000-abcd'));
     db.prepare(`UPDATE LedgerRules SET value='A02' WHERE kind='ACCOUNT' AND rkey='KBANK|1111'`).run();   // คืนค่าให้เทสอื่น
 
     // 5) สลิปที่ยังไม่รู้บัญชี: การ์ดเลือกบัญชีเป็นชื่อ + เลือกบัญชีจากหน้าแก้ไขได้

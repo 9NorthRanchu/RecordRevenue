@@ -719,6 +719,13 @@ async function handleLineEvent(env, event, hooks) {
       if (stuck.length > 1) out.note = `ยังค้างอีก ${stuck.length - 1} ใบ พิมพ์ "อ่านใหม่" อีกครั้ง`;
       return replyOutcome(env, token, user, out, hooks);
     }
+    // ข้อความที่หน้าแก้ไข (LIFF) ส่งเข้าแชทแทนผู้ใช้หลังบันทึก → ตอบการ์ดล่าสุดที่เพิ่งแก้
+    if (/^(✅ บันทึกแล้ว|🗑️ ไม่บันทึก)/.test(text)) {
+      const last = await env.DB.prepare(`SELECT doc_id, status FROM LedgerDocs WHERE family_id=? AND uploaded_by=? AND status IN ('DONE','DISMISSED')
+        ORDER BY updated_at DESC LIMIT 1`).bind(user.family_id, user.user_id).first();
+      if (!last || last.status === 'DISMISSED') return;
+      return replyCard(env, token, user, last.doc_id, hooks, { done: true, note: '✏️ แก้ไขจากหน้าเว็บแล้ว' });
+    }
     if (!SUMMARY_WORDS.test(text) && parseCashText(text)) {
       const out = await recordCash(env, user, { text }, 'LINE');
       if (out.error) return lineReply(env, token, `⚠️ ${out.error}`);
@@ -767,7 +774,11 @@ async function verifyDocLink(env, docId, token) {
 async function editLinkFor(env, hooks, docId) {
   const web = env.WEB_APP_URL || 'https://record-revenue-web.pages.dev';
   const api = hooks?.origin ? `&api=${encodeURIComponent(hooks.origin)}` : '';
-  return `${web}/ledger/quick.html?doc=${encodeURIComponent(docId)}&t=${await signDocLink(env, docId)}${api}`;
+  const q = `doc=${encodeURIComponent(docId)}&t=${await signDocLink(env, docId)}${api}`;
+  /* มี LIFF (ตั้ง env LIFF_ID) → เปิดเป็นหน้าต่างใน LINE: บันทึกแล้วปิดเอง + ส่งข้อความเข้าแชทได้
+     ไม่มี → เปิดหน้าเว็บธรรมดา แล้วระบบ push การ์ดใหม่เข้าแชทแทน */
+  if (env.LIFF_ID) return `https://liff.line.me/${env.LIFF_ID}?${q}&lid=${encodeURIComponent(env.LIFF_ID)}`;
+  return `${web}/ledger/quick.html?${q}`;
 }
 
 async function handleQuick(request, env, url, cors, docId, wantFile) {
@@ -781,6 +792,17 @@ async function handleQuick(request, env, url, cors, docId, wantFile) {
     if (request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
       const out = body.action === 'dismiss' ? await runAction(env, user, docId, 'dismiss') : await applyEdits(env, user, docId, body);
+      /* แก้จากหน้าเว็บธรรมดา → ส่งการ์ดใหม่เข้าแชทให้เห็นผลทันที
+         ถ้าเปิดผ่าน LIFF หน้าเว็บจะส่งข้อความ "✅ บันทึกแล้ว…" เข้าแชทเอง แล้วบอทตอบการ์ด (ฟรี ไม่กินโควตา push) */
+      if (!out.error && body.via !== 'liff') {
+        try {
+          if (body.action === 'dismiss') {
+            if (user.line_user_id) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` },
+              body: JSON.stringify({ to: user.line_user_id, messages: [{ type: 'text', text: '🗑️ ไม่บันทึกรายการนี้แล้ว' }] }) });
+          } else await pushCard(env, user, docId, { origin: url.origin }, { done: true, note: '✏️ แก้ไขจากหน้าเว็บแล้ว' });
+        } catch { /* ส่งเข้าแชทไม่ได้ไม่ทำให้การบันทึกล้ม */ }
+      }
       return json(out, cors, out.error ? (out.status || 400) : 200);
     }
     return json({ error: 'Not Found' }, cors, 404);
@@ -864,9 +886,25 @@ export async function applyEdits(env, user, docId, e = {}) {
 
 // ───────────────────────── การ์ดตอบกลับ ─────────────────────────
 /* การ์ดของเอกสาร 1 ใบ จากสถานะปัจจุบันในฐาน (ใช้ทั้งหลังอ่านสลิป จดเงินสด เปลี่ยนหมวด ยืนยัน) */
-async function replyCard(env, token, user, docId, hooks, { done = false, status: statusText, note } = {}) {
+async function replyCard(env, token, user, docId, hooks, opts = {}) {
+  const messages = await buildCard(env, user, docId, hooks, opts);
+  return messages ? lineReplyMessages(env, token, messages) : lineReply(env, token, '⚠️ ไม่พบเอกสารนี้');
+}
+/* ส่งการ์ดล่าสุดเข้าแชทเอง (Push API) — ใช้หลังแก้จากหน้าเว็บที่ไม่ได้เปิดผ่าน LIFF
+   เพราะการ์ดเก่าในแชทแก้ไม่ได้ ต้องส่งใบใหม่ให้เห็นค่าที่ถูกต้อง · ⚠️ นับโควตาข้อความ push ของ LINE OA */
+async function pushCard(env, user, docId, hooks, opts = {}) {
+  if (!user.line_user_id || !env.LINE_CHANNEL_ACCESS_TOKEN) return;
+  const messages = await buildCard(env, user, docId, hooks, opts);
+  if (!messages) return;
+  await fetch('https://api.line.me/v2/bot/message/push', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}` },
+    body: JSON.stringify({ to: user.line_user_id, messages }),
+  });
+}
+async function buildCard(env, user, docId, hooks, { done = false, status: statusText, note } = {}) {
   const doc = await getDoc(env, user, docId);
-  if (!doc) return lineReply(env, token, '⚠️ ไม่พบเอกสารนี้');
+  if (!doc) return null;
   const ex = parse(doc.extracted, {}) || {};
   const sug = parse(doc.suggestion, {}) || {};
   const legs = sug.legs || [];
@@ -896,7 +934,7 @@ async function replyCard(env, token, user, docId, hooks, { done = false, status:
     : learned ? '✨ หมวดนี้ระบบจำจากครั้งก่อน' : null);
   const bubble = txCard({ kind, status: done ? '' : (statusText || (doc.status === 'DONE' ? '' : 'รอยืนยัน')), amount, rows, note: hint,
     buttons: done || doc.status === 'DONE' ? [] : confirmButtons(docId, link, kind) });
-  return lineReplyMessages(env, token, [flexMessage(`${done ? 'บันทึกแล้ว' : 'รอยืนยัน'} ฿${moneyText(amount)}`, bubble)]);
+  return [flexMessage(`${done || doc.status === 'DONE' ? 'บันทึกแล้ว' : 'รอยืนยัน'} ฿${moneyText(amount)}`, bubble)];
 }
 
 async function replyOutcome(env, token, user, out, hooks = {}) {

@@ -72,6 +72,20 @@
 <script>
 (function () {
   const P = new URLSearchParams(location.search);
+  // เปิดผ่าน LIFF: พารามิเตอร์จริงถูกห่อไว้ใน liff.state → แกะออกมาก่อน
+  if (P.has('liff.state')) {
+    const inner = new URLSearchParams(decodeURIComponent(P.get('liff.state')).replace(/^[^?]*\?/, ''));
+    inner.forEach((v, k) => P.set(k, v));
+  }
+  const LIFF_ID = P.get('lid') || '';
+  let liffReady = false;
+  const liffInit = LIFF_ID ? new Promise(resolve => {
+    const sc = document.createElement('script');
+    sc.src = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
+    sc.onload = () => window.liff.init({ liffId: LIFF_ID }).then(() => { liffReady = window.liff.isInClient(); resolve(); }).catch(() => resolve());
+    sc.onerror = () => resolve();
+    document.head.appendChild(sc);
+  }) : Promise.resolve();
   const DOC = P.get('doc') || '';
   const TOKEN = P.get('t') || '';
   const API = (P.get('api') || 'https://record-revenue.9nimz.workers.dev').replace(/\/$/, '');
@@ -89,13 +103,32 @@
   const app = document.getElementById('app');
   const state = { data: null, side: 'OUT', account: null, category: null, catQuery: '', accQuery: '' };
 
-  function screen(icon, title, text) {
-    app.innerHTML = `<div class="center"><div class="big">${icon}</div><h2>${esc(title)}</h2><p>${esc(text || '')}</p></div>`;
+  function screen(icon, title, text, withClose) {
+    app.innerHTML = `<div class="center"><div class="big">${icon}</div><h2>${esc(title)}</h2><p>${esc(text || '')}</p>
+      ${withClose ? '<button class="btn main" id="closeBtn" style="margin-top:24px;min-width:200px">ปิดหน้านี้</button>' : ''}</div>`;
     document.querySelector('.bar')?.remove();
+    document.getElementById('closeBtn')?.addEventListener('click', closePage);
+  }
+  /* ปิดหน้า: LIFF ปิดได้แน่นอน · เบราว์เซอร์ในแอป LINE ลอง window.close() (บางรุ่นไม่ยอม) */
+  function closePage() {
+    if (liffReady) return window.liff.closeWindow();
+    window.close();
+    setTimeout(() => { const b = document.getElementById('closeBtn'); if (b) b.textContent = 'กดปุ่ม ✕ มุมบนซ้ายเพื่อกลับไปที่ LINE'; }, 400);
+  }
+  /* หลังบันทึก: ผ่าน LIFF → ส่งข้อความเข้าแชท (บอทตอบการ์ดใหม่) แล้วปิดหน้าเอง
+     ไม่ใช่ LIFF → เซิร์ฟเวอร์ส่งการ์ดใหม่เข้าแชทให้แล้ว (push) · ลองปิดหน้าอัตโนมัติ */
+  async function finish(icon, title, text, chatText) {
+    if (liffReady) {
+      try { await window.liff.sendMessages([{ type: 'text', text: chatText }]); } catch { /* ส่งไม่ได้ก็ปิดหน้าไปเลย */ }
+      return window.liff.closeWindow();
+    }
+    screen(icon, title, text, true);
+    setTimeout(() => window.close(), 1500);
   }
 
   async function load() {
     if (!DOC || !TOKEN) return screen('🔗', 'ลิงก์ไม่ครบ', 'กรุณาเปิดจากปุ่มในการ์ด LINE');
+    await liffInit;
     let res;
     try { res = await fetch(base + qs); } catch { return screen('📡', 'เชื่อมต่อไม่ได้', 'ลองใหม่อีกครั้ง'); }
     const data = await res.json().catch(() => ({}));
@@ -227,7 +260,8 @@
     const btns = document.querySelectorAll('.bar .btn'); btns.forEach(b => b.disabled = true);
     const errEl = document.getElementById('err'); if (errEl) errEl.textContent = '';
     try {
-      const r = await fetch(base + qs, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const r = await fetch(base + qs, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, via: liffReady ? 'liff' : 'web' }) });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.error || 'บันทึกไม่สำเร็จ');
       return data;
@@ -248,13 +282,17 @@
     if (d.can_edit_amount && amount > 0) body.amount = amount;
     if (state.category && d.details?.length <= 1) body.category_id = state.category;
     const out = await send(body);
-    if (out) screen('🎉', 'บันทึกแล้ว', out.matched ? 'จับคู่กับรายการเดิมและแนบสลิปเรียบร้อย · ปิดหน้านี้กลับไปที่ LINE ได้เลย' : 'ครั้งหน้าระบบจะจำหมวดและบัญชีนี้ให้ · ปิดหน้านี้กลับไปที่ LINE ได้เลย');
+    if (!out) return;
+    const catName = d.categories.find(c => c.category_id === state.category)?.name || '';
+    await finish('🎉', 'บันทึกแล้ว',
+      out.matched ? 'จับคู่กับรายการเดิมและแนบสลิปเรียบร้อย · ส่งการ์ดใหม่เข้า LINE แล้ว' : 'ส่งการ์ดใหม่เข้า LINE แล้ว · ครั้งหน้าระบบจะจำหมวดและบัญชีนี้ให้',
+      `✅ บันทึกแล้ว ฿${money(amount > 0 ? amount : Math.abs(d.tx?.total_amount || 0))}${body.note ? ' · ' + body.note : ''}${catName ? ' · ' + catName : ''}`.slice(0, 300));
   }
 
   async function dismiss() {
     if (!confirm('ไม่บันทึกรายการนี้?')) return;
     const out = await send({ action: 'dismiss' });
-    if (out) screen('🗑️', 'ไม่บันทึกรายการนี้แล้ว', 'ปิดหน้านี้กลับไปที่ LINE ได้เลย');
+    if (out) await finish('🗑️', 'ไม่บันทึกรายการนี้แล้ว', 'แจ้งเข้า LINE แล้ว', '🗑️ ไม่บันทึกรายการนี้');
   }
 
   load();
