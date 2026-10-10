@@ -672,6 +672,52 @@ console.log('\n── statement: นำเข้า → จับคู่ → �
   delete env.__statementOverride;
 }
 
+console.log('\n── ยืนยัน/ลบจากเมนูเก่า "รอตรวจสอบ" → กล่องปิดตาม ──');
+{
+  const a = await ingest(slip({ amount: 321, date: '2026-10-06' }));
+  const b = await ingest(slip({ amount: 654, date: '2026-10-06' }));
+  const ta = db.prepare(`SELECT transaction_id FROM LedgerDocLinks WHERE doc_id=?`).get(a.doc.doc_id).transaction_id;
+  const tb = db.prepare(`SELECT transaction_id FROM LedgerDocLinks WHERE doc_id=?`).get(b.doc.doc_id).transaction_id;
+  db.prepare(`UPDATE Transactions SET status='CONFIRMED' WHERE transaction_id=?`).run(ta);   // /api/transactions/confirm
+  db.prepare(`DELETE FROM Transactions WHERE transaction_id=?`).run(tb);                       // /api/transactions/delete
+  const res = await inbox.handleLedgerInbox(new Request('https://api.example/api/inbox'), env, new URL('https://api.example/api/inbox'), {}, '9North');
+  const ids = (await res.json()).docs.map(d => d.doc_id);
+  const st = id => db.prepare(`SELECT status FROM LedgerDocs WHERE doc_id=?`).get(id).status;
+  check('ยืนยันจากเมนูเก่า → หายจากกล่อง (DONE)', !ids.includes(a.doc.doc_id) && st(a.doc.doc_id) === 'DONE');
+  check('ลบจากเมนูเก่า → หายจากกล่อง (DISMISSED)', !ids.includes(b.doc.doc_id) && st(b.doc.doc_id) === 'DISMISSED');
+}
+
+console.log('\n── รวม "รอตรวจสอบ" เดิมเข้ากล่อง + เพิ่มรายการเอง ──');
+{
+  // รายการรอตรวจสอบจากทางเดิม (Excel/Bulk · PDF แบบเก่า) ที่ไม่มีเอกสาร
+  db.prepare(`INSERT INTO Transactions (transaction_id, account_id, date, time, total_amount, status, source, created_by_user_id, statement_desc) VALUES
+    ('OLD-1','A02','2026-10-01',NULL,-250,'PENDING_REVIEW','WEB_GRID','9North','ค่าน้ำ'),
+    ('OLD-2','A09','2026-10-02','09:00:00',1200,'PENDING_REVIEW','PDF_IMPORT','9North','TR fr 555 นาย เก่า'),
+    ('OLD-X','X99','2026-10-02',NULL,-5,'PENDING_REVIEW','WEB_GRID','Other','ของครอบครัวอื่น')`).run();
+  for (const [id, a] of [['OLD-1', -250], ['OLD-2', 1200], ['OLD-X', -5]])
+    db.prepare(`INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, type) VALUES (?,?,?,?,?)`).run('DT-' + id, id, a, 'Cat_Uncategorized', a < 0 ? 'EXPENSE' : 'INCOME');
+  const res = await inbox.handleLedgerInbox(new Request('https://api.example/api/inbox?limit=300'), env, new URL('https://api.example/api/inbox?limit=300'), {}, '9North');
+  const docs = (await res.json()).docs;
+  const d1 = docs.find(d => d.transactions.some(t => t.transaction_id === 'OLD-1'));
+  const d2 = docs.find(d => d.transactions.some(t => t.transaction_id === 'OLD-2'));
+  check('รายการรอตรวจสอบเดิมขึ้นในกล่อง', !!d1 && !!d2 && d1.doc_type === 'MANUAL' && d2.doc_type === 'STATEMENT_LINE');
+  check('ไม่ดึงรายการของครอบครัวอื่น', !docs.some(d => d.transactions.some(t => t.transaction_id === 'OLD-X')));
+  const again = await inbox.handleLedgerInbox(new Request('https://api.example/api/inbox?limit=300'), env, new URL('https://api.example/api/inbox?limit=300'), {}, '9North');
+  check('เปิดซ้ำไม่สร้างเอกสารซ้ำ', (await again.json()).docs.filter(d => d.transactions.some(t => t.transaction_id === 'OLD-1')).length === 1);
+  const ok = await inbox.editDoc(env, user, d1.doc_id, { confirm: true, details: [{ amount: -250, category_id: 'T05', entity_id: 'Ent_North', note: 'ค่าน้ำ' }] });
+  check('ยืนยันรายการเดิมจากกล่องได้', ok.status === 'DONE' && tx('OLD-1').status === 'CONFIRMED');
+
+  const m = await inbox.createManual(env, user, { account_id: 'A02', amount: -300, note: 'ค่าน้ำ', date: '2026-10-09' });
+  const mt = tx(m.transaction_id);
+  check('เพิ่มรายการเอง → รอยืนยัน + ใช้หมวดที่เพิ่งจำ (ค่าน้ำ → T05)', m.ok && mt.status === 'PENDING_REVIEW' && mt.source === 'WEB_GRID' && lines(m.transaction_id)[0].category_id === 'T05' && m.how === 'template-scaled');
+  const tot = await inbox.editDoc(env, user, m.doc_id, { total_amount: -320, details: [{ amount: -320, category_id: 'T05', entity_id: 'Ent_North' }] });
+  check('รายการที่จดเองแก้ยอดได้', tot.status === 'EDITED' && tx(m.transaction_id).total_amount === -320);
+  const slipTot = await inbox.editDoc(env, user, d2.doc_id, { total_amount: 999, details: [{ amount: 999, category_id: 'Service' }] });
+  check('รายการจาก statement แก้ยอดไม่ได้ (ยอดต้องตรงธนาคาร)', slipTot.status === 400);
+  const bad = await inbox.createManual(env, user, { account_id: 'X99', amount: -1 });
+  check('เพิ่มเองในบัญชีที่ไม่มีสิทธิ์ → ปฏิเสธ', bad.status === 403);
+}
+
 console.log('\n── meta สำหรับหน้าเว็บ ──');
 {
   db.prepare(`INSERT INTO Contacts (contact_id, family_id, name, contact_type, members) VALUES ('W16','Fam_Default','W16 Co','CUSTOMER',NULL),('PRIV','Fam_Default','ส่วนตัว Puii','OTHER','["Puii"]')`).run();

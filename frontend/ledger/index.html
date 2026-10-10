@@ -16,16 +16,16 @@
 -->
 <style>
   :root {
-    --ink: #212529; --muted: #868e96; --line: #e9ecef; --bg: #f6f7fb; --card: #fff;
+    --ink: #212529; --muted: #5c636a; --line: #e9ecef; --bg: #f8f7fd; --card: #fff;
     --out: #ff6b6b; --in: #12b886; --tr: #4c6ef5; --ask: #f59f00; --cash: #7950f2; --ok: #20c997; --bad: #e03131;
-    --brand: #ff6b6b; --radius: 18px;
+    --brand: #5f3dc4; --radius: 18px;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Anuphan', -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
   body { padding-bottom: 90px; }
   button, input, select, textarea { font: inherit; color: inherit; }
   .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
-  .top { background: linear-gradient(135deg, #ff8787, #ffa94d 55%, #ffd43b); color: #fff; padding: 18px 0 54px; }
+  .top { background: linear-gradient(135deg, #5f3dc4, #7950f2 60%, #9775fa); color: #fff; padding: 18px 0 54px; }
   .top .wrap { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   .top h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
   .top p { margin: 2px 0 0; opacity: .92; font-size: 13px; }
@@ -33,20 +33,28 @@
   .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px;
     box-shadow: 0 8px 24px rgba(33,37,41,.08); position: sticky; top: 8px; z-index: 5; }
   .tabs button { border: 0; background: transparent; padding: 11px 6px; border-radius: 12px; font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer; }
-  .tabs button.on { background: var(--brand); color: #fff; box-shadow: 0 4px 12px rgba(255,107,107,.35); }
+  .tabs button.on { background: var(--brand); color: #fff; box-shadow: 0 4px 12px rgba(95,61,196,.35); }
   .tabs .n { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: rgba(0,0,0,.08); font-size: 12px; margin-left: 4px; }
   .tabs button.on .n { background: rgba(255,255,255,.3); }
 
-  .quick { display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-top: 14px; }
-  .upl { border: 2px dashed #ffc9c9; background: #fff5f5; color: #e8590c; border-radius: 16px; padding: 12px 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-  .upl.drag { background: #ffe3e3; border-color: var(--out); }
+  .quick { display: grid; grid-template-columns: auto auto 1fr; gap: 10px; margin-top: 14px; }
+  @media (max-width: 560px) { .quick { grid-template-columns: 1fr 1fr; } .quick .cash { grid-column: 1 / -1; } }
+  .addb { border: 0; background: var(--brand); color: #fff; border-radius: 16px; padding: 12px 16px; font-weight: 600; cursor: pointer; white-space: nowrap; min-height: 48px; }
+  .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .tools select { height: 44px; border-radius: 12px; border: 1.5px solid var(--line); background: #fff; padding: 0 10px; font-size: 14px; max-width: 260px; }
+  .sumline { color: var(--muted); font-size: 14px; margin-left: auto; }
+  .doc.sel { outline: 3px solid #b197fc; outline-offset: 2px; }
+  .kbd { display: none; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  @media (min-width: 1024px) and (hover: hover) { .kbd { display: block; } }
+  .upl { border: 2px dashed #d0bfff; background: #f3f0ff; color: #5f3dc4; border-radius: 16px; padding: 12px 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .upl.drag { background: #e5dbff; border-color: var(--brand); }
   .cash { display: flex; background: #fff; border-radius: 16px; border: 1.5px solid var(--line); overflow: hidden; }
   .cash input { flex: 1; min-width: 0; border: 0; padding: 12px 14px; font-size: 15px; outline: none; background: transparent; }
   .cash button { border: 0; background: var(--cash); color: #fff; padding: 0 16px; font-weight: 600; cursor: pointer; }
 
   .filters { display: flex; gap: 8px; overflow-x: auto; padding: 14px 0 4px; scrollbar-width: none; }
   .filters::-webkit-scrollbar { display: none; }
-  .chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; font-size: 14px; cursor: pointer; white-space: nowrap; }
+  .chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; font-size: 14px; cursor: pointer; white-space: nowrap; min-height: 40px; }
   .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
   .chip small { opacity: .7; margin-left: 2px; }
   .bulk { margin-top: 10px; width: 100%; border: 0; border-radius: 14px; padding: 13px; font-weight: 700; color: #fff; cursor: pointer;
@@ -66,7 +74,7 @@
   .cat { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 6px 12px; border-radius: 10px; background: var(--bg); font-size: 13px; border: 0; cursor: pointer; }
   .cat.none { background: #fff5f5; color: var(--bad); font-weight: 600; }
   .acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-  .b { border: 0; border-radius: 12px; padding: 10px 14px; font-weight: 600; font-size: 14px; cursor: pointer; background: var(--bg); }
+  .b { border: 0; border-radius: 12px; padding: 10px 14px; font-weight: 600; font-size: 14px; cursor: pointer; background: var(--bg); min-height: 44px; }
   .b.ok { background: var(--k, var(--ok)); color: #fff; flex: 1; min-width: 120px; }
   .b.ghost { background: transparent; color: var(--muted); }
   .b.line { background: #fff; border: 1.5px solid var(--line); }
@@ -83,7 +91,14 @@
   /* แผ่นล่าง (แก้ไข / เลือก) */
   .sheet-bg { position: fixed; inset: 0; background: rgba(33,37,41,.45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; animation: fade .15s; }
   .sheet { background: #fff; width: 100%; max-width: 640px; max-height: 92vh; border-radius: 24px 24px 0 0; display: flex; flex-direction: column; animation: up .2s; }
-  @media (min-width: 700px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; max-height: 88vh; } }
+  @media (min-width: 700px) and (max-width: 1023px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; max-height: 88vh; } }
+  /* จอกว้าง (iPad แนวนอน · Mac · PC): ตัวแก้เปิดเป็นแผงขวา รายการยังเห็นอยู่ทางซ้าย */
+  @media (min-width: 1024px) {
+    .sheet-bg.side { left: auto; width: 480px; background: transparent; align-items: stretch; justify-content: stretch; }
+    .sheet-bg.side .sheet { max-width: none; max-height: none; height: 100%; border-radius: 0; box-shadow: -12px 0 32px rgba(33,37,41,.12); animation: none; }
+    body.panel .wrap { margin-right: 480px; max-width: none; }
+    body.panel .top .wrap { margin-right: auto; max-width: 760px; }
+  }
   .sheet header { padding: 16px 18px 10px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .sheet header h2 { margin: 0; font-size: 18px; }
   .sheet .x { border: 0; background: var(--bg); width: 36px; height: 36px; border-radius: 50%; font-size: 18px; cursor: pointer; flex: none; }
@@ -112,7 +127,7 @@
   .plist { display: grid; gap: 6px; margin-top: 10px; }
   .plist button { text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 11px 12px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
   .plist button small { color: var(--muted); white-space: nowrap; }
-  .plist button.on { border-color: var(--brand); background: #fff5f5; }
+  .plist button.on { border-color: var(--brand); background: #f3f0ff; }
 
   /* statement */
   .card { background: #fff; border-radius: var(--radius); padding: 16px; margin-top: 14px; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(33,37,41,.05); }
@@ -134,13 +149,13 @@
   .sl .a { font-weight: 700; text-align: right; white-space: nowrap; }
   .sl .x2 { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
   .sl .x2 .b { padding: 6px 10px; font-size: 13px; }
-  .pos { color: var(--in); } .neg { color: var(--out); }
+  .pos { color: #087f5b; } .neg { color: #c92a2a; }
   .st-MATCHED { --k: var(--ok); } .st-CREATED { --k: var(--tr); } .st-NEW { --k: var(--ask); } .st-IGNORED, .st-DUPLICATE { --k: #adb5bd; }
 
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 14px;
     font-size: 14px; z-index: 40; box-shadow: 0 8px 24px rgba(0,0,0,.2); max-width: 90vw; animation: up .2s; }
   .busy { position: fixed; inset: 0; background: rgba(255,255,255,.75); z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 20px; }
-  .spin { width: 44px; height: 44px; border-radius: 50%; border: 4px solid #ffe3e3; border-top-color: var(--brand); animation: sp 0.8s linear infinite; }
+  .spin { width: 44px; height: 44px; border-radius: 50%; border: 4px solid #e5dbff; border-top-color: var(--brand); animation: sp 0.8s linear infinite; }
   @keyframes sp { to { transform: rotate(360deg); } }
   .zoom { position: fixed; inset: 0; background: rgba(0,0,0,.88); display: flex; align-items: center; justify-content: center; z-index: 50; }
   .zoom img { max-width: 94vw; max-height: 92vh; border-radius: 8px; }
@@ -150,7 +165,7 @@
 <body>
 <div class="top"><div class="wrap">
   <div><h1>📒 สมุดจด</h1><p id="hello">กล่องรอเคลียร์ · ยืนยันทีเดียวจบ</p></div>
-  <a href="../index.html">← แอปหลัก</a>
+  <nav style="display:flex;gap:6px;flex-wrap:wrap"><a href="home.html">ภาพรวม</a><a href="../index.html">แอปหลัก</a></nav>
 </div></div>
 <div class="wrap">
   <div class="tabs" id="tabs">
@@ -181,7 +196,9 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
   const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const signed = n => `${n < 0 ? '−' : '+'}฿${money(Math.abs(n))}`;
+  /* ตัวเลข: ทศนิยม 2 ตำแหน่ง · , หลักพัน · ติดลบในวงเล็บ (สีแยกด้วย class neg) — กติกาทั้งแอป (North 2026-10-10) */
+  const signed = n => n < 0 ? `(${money(-n)})` : money(n);
+  const amtHtml = n => `<span class="${n < 0 ? 'neg' : 'pos'}">${signed(n)}</span>`;
   const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   const thDate = (d, withYear) => { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[3]} ${MONTHS[+m[2] - 1]}${withYear ? ' ' + (String(+m[1] + 543).slice(2)) : ''}` : (d || '-'); };
   const $ = sel => document.querySelector(sel);
@@ -191,7 +208,7 @@
     TRANSFER: { c: 'var(--tr)', icon: '🔁', word: 'โอนระหว่างบัญชี' }, ASK: { c: 'var(--ask)', icon: '🧾', word: 'ต้องเลือก' },
     CASH: { c: 'var(--cash)', icon: '🪙', word: 'เงินสด' }, STORE: { c: '#adb5bd', icon: '📎', word: 'เอกสาร' }, ERR: { c: 'var(--bad)', icon: '⚠️', word: 'อ่านไม่สำเร็จ' },
   };
-  const S = { meta: null, tab: 'inbox', docs: [], recent: [], filter: 'all', statements: [], stmt: null, stmtFilter: 'todo', thumbs: new Map() };
+  const S = { meta: null, tab: 'inbox', docs: [], recent: [], filter: 'all', acc: 'ALL', sort: 'desc', sel: -1, shown: [], statements: [], stmt: null, stmtFilter: 'todo', thumbs: new Map() };
 
   function toast(text, ms = 2600) {
     const t = document.createElement('div'); t.className = 'toast'; t.textContent = text;
@@ -239,6 +256,7 @@
       if (!S.meta) {
         S.meta = await api('/api/inbox/meta');
         $('#hello').textContent = `สวัสดี ${S.meta.user.name} · ยืนยันทีเดียวจบ`;
+        if (new URLSearchParams(location.search).get('add') === '1') setTimeout(openManual, 50);   // ปุ่ม "เพิ่มรายการ" จากแอปหลัก
       }
       if (S.tab === 'inbox') { S.docs = (await api('/api/inbox')).docs || []; renderInbox(); }
       else if (S.tab === 'done') { S.recent = ((await api('/api/inbox?status=all&limit=60')).docs || []).filter(d => ['DONE', 'DISMISSED'].includes(d.status)); renderDone(); }
@@ -285,19 +303,35 @@
     ['stmt', 'จาก statement', i => i.fromStatement],
   ];
   function renderInbox() {
-    const items = S.docs.map(d => ({ d, i: info(d) }));
+    const all = S.docs.map(d => ({ d, i: info(d) }));
+    const accIds = [...new Set(all.map(x => x.i.main?.account_id).filter(Boolean))];
+    if (S.acc !== 'ALL' && !accIds.includes(S.acc)) S.acc = 'ALL';
+    const items = all.filter(x => S.acc === 'ALL' || x.i.main?.account_id === S.acc);
+    const when = x => `${x.i.main?.date || x.i.ex.date || ''} ${x.i.main?.time || x.i.ex.time || ''}`;
+    items.sort((a, b) => S.sort === 'asc' ? when(a).localeCompare(when(b)) : when(b).localeCompare(when(a)));
     const f = FILTERS.find(x => x[0] === S.filter) || FILTERS[0];
     const shown = items.filter(x => f[2](x.i));
+    S.shown = shown.map(x => x.d.doc_id);
+    if (S.sel >= shown.length) S.sel = shown.length - 1;
     const ready = items.filter(x => FILTERS[1][2](x.i));
+    const sumIn = r2(items.reduce((t, x) => t + (x.i.pending.length && x.i.amount > 0 ? x.i.amount : 0), 0));
+    const sumOut = r2(items.reduce((t, x) => t + (x.i.pending.length && x.i.amount < 0 ? x.i.amount : 0), 0));
     $('#nInbox').textContent = S.docs.length;
     view.innerHTML = `
       <div class="quick">
+        <button class="addb" id="addBtn">＋ เพิ่มรายการ</button>
         <button class="upl" id="uplBtn">📷 ส่งสลิป/เอกสาร</button>
-        <form class="cash" id="cashForm"><input id="cashIn" placeholder="จดเงินสด เช่น กาแฟ 65" autocomplete="off"><button>จด</button></form>
+        <form class="cash" id="cashForm"><input id="cashIn" placeholder="จดเงินสด เช่น กาแฟ 65" autocomplete="off" aria-label="จดเงินสด"><button>จด</button></form>
+      </div>
+      <div class="tools">
+        <select id="accF" aria-label="กรองตามบัญชี"><option value="ALL">ทุกบัญชี (${all.length})</option>${accIds.map(id => `<option value="${esc(id)}" ${S.acc === id ? 'selected' : ''}>${esc(accName(id))} (${all.filter(x => x.i.main?.account_id === id).length})</option>`).join('')}</select>
+        <button class="b line" id="sortB">${S.sort === 'asc' ? '↑ เก่าก่อน' : '↓ ใหม่ก่อน'}</button>
+        <span class="sumline">เข้า ${amtHtml(sumIn)} · ออก ${amtHtml(sumOut)}</span>
       </div>
       <div class="filters">${FILTERS.map(([k, label, fn]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-f="${k}">${label}<small> ${items.filter(x => fn(x.i)).length}</small></button>`).join('')}</div>
       ${ready.length > 1 && (S.filter === 'all' || S.filter === 'ready') ? `<button class="bulk" id="bulkBtn">✓ ยืนยันทั้งหมดที่พร้อม (${ready.length} รายการ)</button>` : ''}
-      <div id="list">${shown.length ? shown.map(x => docCard(x.d, x.i)).join('') : emptyInbox(items.length)}</div>`;
+      <div id="list">${shown.length ? shown.map(x => docCard(x.d, x.i)).join('') : emptyInbox(items.length)}</div>
+      <div class="kbd">คีย์ลัด: ↑ ↓ เลือกรายการ · Enter ยืนยัน · E แก้ไข · Esc ปิด</div>`;
     bindInbox(shown);
   }
   const emptyInbox = total => total ? `<div class="empty"><div class="big">🔍</div><h3>ไม่มีรายการในกลุ่มนี้</h3></div>`
@@ -336,11 +370,11 @@
     } else {
       body = `<div class="acts"><button class="b ok" data-act="accept">✓ เสร็จ</button></div>`;
     }
-    return `<div class="doc" data-doc="${esc(d.doc_id)}" style="--k:${k.c}">
+    return `<div class="doc ${S.shown[S.sel] === d.doc_id ? 'sel' : ''}" data-doc="${esc(d.doc_id)}" style="--k:${k.c}">
       <div class="row">${thumb}
         <div class="main">
           <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-            <div class="amt">${i.amount ? signed(i.amount) : '฿ —'}</div><span class="badge">${k.icon} ${esc(i.status)}</span>
+            <div class="amt" style="color:${i.amount < 0 ? '#c92a2a' : i.amount > 0 ? '#087f5b' : 'var(--muted)'}">${i.amount ? signed(i.amount) : '—'}</div><span class="badge">${k.icon} ${esc(i.status)}</span>
           </div>
           <div class="who">${esc(i.party || (i.kind === 'STORE' ? (d.file_name || 'เอกสาร') : '—'))}</div>
           <div class="meta"><span>📅 ${thDate(i.main?.date || i.ex.date, true)}${i.main?.time || i.ex.time ? ' · ' + esc(String(i.main?.time || i.ex.time).slice(0, 5)) : ''}</span>
@@ -352,6 +386,9 @@
 
   function bindInbox(shown) {
     $('#uplBtn').onclick = () => $('#fileIn').click();
+    $('#addBtn').onclick = openManual;
+    $('#accF').onchange = e => { S.acc = e.target.value; S.sel = -1; renderInbox(); };
+    $('#sortB').onclick = () => { S.sort = S.sort === 'asc' ? 'desc' : 'asc'; renderInbox(); };
     $('#cashForm').onsubmit = async e => {
       e.preventDefault();
       const text = $('#cashIn').value.trim(); if (!text) return;
@@ -366,6 +403,7 @@
     view.querySelectorAll('.doc').forEach(el => el.addEventListener('click', e => {
       const b = e.target.closest('[data-act]'); if (!b || !b.dataset.act) return;
       const d = S.docs.find(x => x.doc_id === el.dataset.doc);
+      S.sel = S.shown.indexOf(d.doc_id);
       act(d, b.dataset.act, b.dataset, el);
     }));
     loadThumbs();
@@ -459,11 +497,15 @@
   }
 
   // ───────── แผ่นเลือก (ค้นหาได้) ─────────
-  function sheet(title, html, footer) {
-    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+  const wide = () => matchMedia('(min-width: 1024px)').matches;
+  function sheet(title, html, footer, opts = {}) {
+    document.querySelectorAll('.sheet-bg.side').forEach(x => { if (opts.side) x.remove(); });
+    const bg = document.createElement('div'); bg.className = 'sheet-bg' + (opts.side && wide() ? ' side' : '');
+    if (opts.side && wide()) document.body.classList.add('panel');
     bg.innerHTML = `<div class="sheet" role="dialog"><header><h2>${esc(title)}</h2><button class="x" data-close>✕</button></header>
       <div class="body">${html}</div>${footer ? `<footer>${footer}</footer>` : ''}</div>`;
-    const close = () => bg.remove();
+    const close = () => { bg.remove(); if (!document.querySelector('.sheet-bg.side')) document.body.classList.remove('panel'); };
+    bg._close = close;
     bg.addEventListener('click', e => { if (e.target === bg || e.target.closest('[data-close]')) close(); });
     document.body.appendChild(bg);
     return { el: bg, close };
@@ -487,7 +529,7 @@
     const key = sign > 0 ? 'uses_in' : 'uses_out';
     const want = sign > 0 ? 'INCOME' : 'EXPENSE';
     return [...S.meta.categories].sort((a, b) => (b[key] - a[key]) || ((b.default_type === want) - (a.default_type === want)) || a.name.localeCompare(b.name, 'th'))
-      .map(c => ({ id: c.category_id, name: c.name, sub: c[key] ? `★ ใช้ ${c[key]} ครั้ง` : (c.default_type === 'TRANSFER' ? 'โอน' : '') }));
+      .map(c => ({ id: c.category_id, name: c.name, sub: [c.group, c[key] ? `★ ${c[key]}` : (c.default_type === 'TRANSFER' ? 'โอน' : '')].filter(Boolean).join(' · ') }));
   }
   function pickAccountFor(d, el) {
     const items = [];
@@ -502,7 +544,10 @@
   function openEditor(d) {
     const i = info(d);
     if (!i.editable) return toast('รายการนี้แก้จากหน้านี้ไม่ได้');
-    const total = r2(i.main.total_amount), s = total < 0 ? -1 : 1;
+    let total = r2(i.main.total_amount);
+    const s = total < 0 ? -1 : 1;
+    const canTotal = ['MANUAL', 'CASH'].includes(d.doc_type);
+    const total0 = total;
     const E = {
       date: i.main.date, account_id: i.main.account_id,
       lines: (i.details.length ? i.details : [{ amount: total, category_id: S.meta.uncategorized }]).map(x => ({
@@ -513,13 +558,15 @@
     const gap = () => r2(total - E.lines.reduce((t, l) => t + s * l.a - l.f - s * l.w, 0));   // บวก/ลบตามเครื่องหมายจริง
     const remain = () => r2(s * gap());                                                        // มองแบบบวก: ต้องใส่เพิ่มอีกเท่าไร
     const sh = sheet(i.dir === 'IN' ? 'แก้ไขรายการรับ' : 'แก้ไขรายการจ่าย', '<div data-ed></div>',
-      `<button class="b line" data-save="0">บันทึกไว้ก่อน</button><button class="b ok" style="--k:${k.c}" data-save="1">✓ ยืนยันรายการ</button>`);
+      `<button class="b line" data-save="0">บันทึกไว้ก่อน</button><button class="b ok" style="--k:${k.c}" data-save="1">✓ ยืนยันรายการ</button>`, { side: true });
     const box = sh.el.querySelector('[data-ed]');
     const entOpts = sel => `<option value="">— ไม่ระบุบริษัท —</option>` + S.meta.entities.map(e => `<option value="${esc(e.entity_id)}" ${e.entity_id === sel ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
     const draw = () => {
       const rem = remain();
       box.innerHTML = `
-        <div class="tot" style="--k:${k.c}"><span>${k.icon} ${esc(i.party || 'ยอดทั้งหมด')}</span><b>${signed(total)}</b></div>
+        <div class="tot" style="--k:${k.c}"><span>${k.icon} ${esc(i.party || 'ยอดทั้งหมด')}</span>${canTotal
+          ? `<input class="inp" data-k="total" inputmode="decimal" aria-label="ยอดเงิน" value="${Math.abs(total)}" style="max-width:150px;text-align:right;font-weight:700;color:var(--ink)">`
+          : `<b>${signed(total)}</b>`}</div>
         <div class="g2">
           <div><label class="f">📅 วันที่</label><input class="inp" type="date" data-k="date" value="${esc(E.date)}"></div>
           <div><label class="f">🏦 บัญชี</label><select class="inp" data-k="account_id">${S.meta.accounts.map(a => `<option value="${esc(a.account_id)}" ${a.account_id === E.account_id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>
@@ -554,6 +601,11 @@
         </div>
         <div class="err" data-err></div>`;
       box.querySelector('[data-k=date]').onchange = e => { E.date = e.target.value; };
+      box.querySelector('[data-k=total]')?.addEventListener('change', e => {
+        const v = r2(String(e.target.value).replace(/,/g, ''));
+        if (v > 0) { const old = total; total = r2(s * v); if (E.lines.length === 1 && Math.abs(E.lines[0].a - Math.abs(old)) < 0.005) E.lines[0].a = v; }
+        draw();
+      });
       box.querySelector('[data-k=account_id]').onchange = e => { E.account_id = e.target.value; };
       box.querySelectorAll('.ln').forEach(ln => {
         const l = E.lines[+ln.dataset.n];
@@ -594,7 +646,7 @@
         contact_id: l.contact_id || null, note: l.note, head_owner: l.head_owner, project_id: l.project_id }));
       sh.el.querySelectorAll('[data-save]').forEach(x => { x.disabled = true; });
       try {
-        await api(`/api/inbox/${encodeURIComponent(d.doc_id)}/edit`, { json: { date: E.date,
+        await api(`/api/inbox/${encodeURIComponent(d.doc_id)}/edit`, { json: { date: E.date, total_amount: canTotal && total !== total0 ? total : undefined,
           account_id: E.account_id !== i.main.account_id ? E.account_id : undefined, details, confirm } });
         sh.close();
         toast(confirm ? `✅ บันทึกแล้ว${details.length > 1 ? ` (${details.length} บรรทัด · ครั้งหน้าระบบแตกให้เอง)` : ''}` : '💾 บันทึกไว้แล้ว ยังไม่ยืนยัน', 3200);
@@ -606,6 +658,56 @@
     });
   }
 
+  // ───────── เพิ่มรายการเอง (แทน "+ Add Item" ของหน้าเดิม) ─────────
+  function openManual() {
+    const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+    const sh = sheet('เพิ่มรายการ', `
+      <div class="g2"><div><label class="f" for="mDate">📅 วันที่</label><input class="inp" type="date" id="mDate" value="${today}"></div>
+        <div><label class="f" for="mAcc">🏦 บัญชี</label><select class="inp" id="mAcc">${S.meta.accounts.map(a => `<option value="${esc(a.account_id)}">${esc(a.name)}</option>`).join('')}</select></div></div>
+      <label class="f">ประเภท</label>
+      <div class="g2"><button class="b line" data-dir="OUT" style="border-color:var(--out)">💸 จ่าย</button><button class="b line" data-dir="IN">💰 รับ</button></div>
+      <label class="f" for="mAmt">ยอดเงิน</label><input class="inp" id="mAmt" inputmode="decimal" placeholder="0.00" style="font-size:22px;font-weight:700">
+      <label class="f" for="mNote">📝 รายการ</label><input class="inp" id="mNote" placeholder="เช่น ค่าน้ำ ต.ค.">
+      <div class="hint">บันทึกแล้วจะเปิดหน้าเลือกหมวด/แตกบรรทัดต่อ · พิมพ์ชื่อรายการที่เคยจด ระบบใส่หมวดให้เอง</div>
+      <div class="err" id="mErr"></div>`,
+      `<button class="b line" data-close>ยกเลิก</button><button class="b ok" style="--k:var(--brand)" id="mSave">บันทึก →</button>`);
+    let dir = 'OUT';
+    const dirBtns = sh.el.querySelectorAll('[data-dir]');
+    const paint = () => dirBtns.forEach(b => { b.style.borderColor = b.dataset.dir === dir ? (dir === 'OUT' ? 'var(--out)' : 'var(--in)') : 'var(--line)'; b.style.background = b.dataset.dir === dir ? (dir === 'OUT' ? '#fff5f5' : '#e6fcf5') : '#fff'; });
+    dirBtns.forEach(b => b.onclick = () => { dir = b.dataset.dir; paint(); }); paint();
+    setTimeout(() => sh.el.querySelector('#mAmt')?.focus(), 60);
+    sh.el.querySelector('#mSave').onclick = async () => {
+      const v = r2(String(sh.el.querySelector('#mAmt').value).replace(/,/g, ''));
+      if (!(v > 0)) { sh.el.querySelector('#mErr').textContent = 'ใส่ยอดเงิน'; return; }
+      try {
+        const out = await api('/api/inbox/manual', { json: { date: sh.el.querySelector('#mDate').value, account_id: sh.el.querySelector('#mAcc').value,
+          amount: dir === 'OUT' ? -v : v, note: sh.el.querySelector('#mNote').value } });
+        sh.close();
+        await load();
+        const d = S.docs.find(x => x.doc_id === out.doc_id);
+        if (d) openEditor(d);
+      } catch (e) { sh.el.querySelector('#mErr').textContent = e.message; }
+    };
+  }
+
+  // ───────── คีย์ลัด (Mac/PC) ─────────
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { const all = document.querySelectorAll('.sheet-bg'); const top = all[all.length - 1]; if (top) { top._close ? top._close() : top.remove(); } return; }
+    if (S.tab !== 'inbox' || document.querySelector('.sheet-bg') || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
+    const n = S.shown.length; if (!n) return;
+    const go = i => { S.sel = Math.max(0, Math.min(n - 1, i)); renderInbox(); view.querySelector('.doc.sel')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
+    if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); go(S.sel + 1); }
+    else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); go(S.sel - 1); }
+    else if (S.sel >= 0 && (e.key === 'Enter' || e.key === 'e' || e.key === 'E')) {
+      e.preventDefault();
+      const d = S.docs.find(x => x.doc_id === S.shown[S.sel]); if (!d) return;
+      const el = view.querySelector(`.doc[data-doc="${CSS.escape(d.doc_id)}"]`);
+      if (e.key === 'Enter') { if (info(d).pending.length) act(d, 'accept', {}, el); }
+      else if (info(d).editable) openEditor(d);
+    }
+  });
+
   // ───────── ล่าสุด ─────────
   function renderDone() {
     view.innerHTML = S.recent.length ? `<div class="hint" style="margin-top:14px">รายการที่ยืนยัน/ไม่บันทึกล่าสุด 60 รายการ</div>` + S.recent.map(d => {
@@ -614,7 +716,7 @@
       const cat = i.details.length > 1 ? `แตก ${i.details.length} บรรทัด` : i.details.length ? catName(i.details[0].category_id) : '';
       return `<div class="doc" style="--k:${k.c}"><div class="row">
         ${d.has_file ? `<img class="thumb" data-thumb="${esc(d.doc_id)}" alt="">` : `<div class="thumb">${(KIND[i.kind] || KIND.OUT).icon}</div>`}
-        <div class="main"><div style="display:flex;justify-content:space-between;gap:8px"><div class="amt" style="color:${i.amount < 0 ? 'var(--out)' : 'var(--in)'}">${i.amount ? signed(i.amount) : '—'}</div>
+        <div class="main"><div style="display:flex;justify-content:space-between;gap:8px"><div class="amt" style="color:${i.amount < 0 ? '#c92a2a' : '#087f5b'}">${i.amount ? signed(i.amount) : '—'}</div>
           <span class="badge">${d.status === 'DONE' ? '✅ บันทึกแล้ว' : '🗑️ ไม่บันทึก'}</span></div>
           <div class="who">${esc(i.party || '—')}</div>
           <div class="meta"><span>📅 ${thDate(i.main?.date || i.ex.date, true)}</span>${i.main ? `<span>🏦 ${esc(accName(i.main.account_id))}</span>` : ''}${cat ? `<span>🗂️ ${esc(cat)}</span>` : ''}</div>
@@ -736,16 +838,16 @@
           <div class="tile" style="background:#e6fcf5"><b>${sm.matched}</b><span>มีในระบบแล้ว</span></div>
           <div class="tile" style="background:#edf2ff"><b>${sm.created}</b><span>สร้างแล้ว</span></div>
           <div class="tile" style="background:#fff4e6"><b>${sm.new}</b><span>ยังไม่มีในระบบ</span></div>
-          <div class="tile"><b class="pos">+${money(sm.sum_in)}</b><span>เงินเข้า</span></div>
-          <div class="tile"><b class="neg">−${money(Math.abs(sm.sum_out))}</b><span>เงินออก</span></div>
+          <div class="tile"><b class="pos">${money(sm.sum_in)}</b><span>เงินเข้า</span></div>
+          <div class="tile"><b class="neg">${signed(sm.sum_out)}</b><span>เงินออก</span></div>
         </div>
         ${sm.read_gap == null ? '' : Math.abs(sm.read_gap) < 0.005
           ? `<div class="chk good">✅ <div>AI อ่านครบทุกบรรทัด — ผลรวมเท่ากับยอดปิด − ยอดยกมา พอดี</div></div>`
-          : `<div class="chk warn">⚠️ <div>ผลรวมบรรทัดต่างจากยอดปิด ฿${money(sm.read_gap)} — AI อาจอ่านตกหรืออ่านซ้ำบางบรรทัด ลองส่งหน้านั้นใหม่อีกครั้ง</div></div>`}
+          : `<div class="chk warn">⚠️ <div>ผลรวมบรรทัดต่างจากยอดปิด ${signed(sm.read_gap)} — AI อาจอ่านตกหรืออ่านซ้ำบางบรรทัด ลองส่งหน้านั้นใหม่อีกครั้ง</div></div>`}
         ${sm.balance_gap == null ? '' : `<div class="chk ${Math.abs(sm.balance_gap) < 0.005 ? 'good' : 'warn'}">${Math.abs(sm.balance_gap) < 0.005 ? '✅' : '⚖️'} <div>
-          ยอดปิดธนาคาร <b>฿${money(st.closing_balance)}</b> · ในระบบ ณ ${thDate(st.period_to)} <b>฿${money(sm.system_confirmed + sm.system_pending)}</b>
-          ${sm.system_pending ? `<br><small>(ยืนยันแล้ว ฿${money(sm.system_confirmed)} + รอยืนยัน ฿${money(sm.system_pending)})</small>` : ''}
-          ${Math.abs(sm.balance_gap) < 0.005 ? '<br>ตรงกันพอดี 🎉' : `<br>ต่างกัน <b>฿${money(sm.balance_gap)}</b> — สร้างบรรทัดที่ยังไม่มี และเช็ก "มีในระบบแต่ไม่มีใน statement" ด้านล่าง`}</div></div>`}
+          ยอดปิดธนาคาร <b>${signed(st.closing_balance)}</b> · ในระบบ ณ ${thDate(st.period_to)} <b>${signed(sm.system_confirmed + sm.system_pending)}</b>
+          ${sm.system_pending ? `<br><small>(ยืนยันแล้ว ${signed(sm.system_confirmed)} + รอยืนยัน ${signed(sm.system_pending)})</small>` : ''}
+          ${Math.abs(sm.balance_gap) < 0.005 ? '<br>ตรงกันพอดี 🎉' : `<br>ต่างกัน <b>${amtHtml(sm.balance_gap)}</b> — สร้างบรรทัดที่ยังไม่มี และเช็ก "มีในระบบแต่ไม่มีใน statement" ด้านล่าง`}</div></div>`}
         ${sm.new ? `<button class="bulk" id="stCreate" style="background:linear-gradient(135deg,#5c7cfa,#4c6ef5)">➕ สร้างรายการจาก ${sm.new} บรรทัดที่ยังไม่มี</button>` : ''}
         ${sm.created ? `<div class="hint" style="margin-top:8px">รายการที่สร้างแล้วอยู่ในแท็บ 📥 รอเคลียร์ — ร้าน/คู่ค้าที่เคยยืนยันแล้วระบบเดาหมวดให้</div>` : ''}
       </div>
@@ -799,6 +901,8 @@
     await openStatement(id);
   }
 
+  // ลิงก์ตรงไปแท็บ statement (จากหน้าภาพรวม: index.html#stmt)
+  if (location.hash === '#stmt') { S.tab = 'stmt'; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === 'stmt')); }
   load();
 })();
 </script>

@@ -6725,8 +6725,7 @@ function bindPDFUpload() {
                                 return;
                             }
                             
-                            // [DEBUG] Show password being used
-                            alert(`[ระบบทดสอบ] กำลังใช้รหัสผ่าน: "${pdfPassword}" สำหรับบัญชี ${accObj.name || selectedAccId}\n(ถ้ากด OK จะเริ่มถอดรหัส)`);
+                            // (เดิมมี alert แสดงรหัสผ่าน PDF บนจอ — ลบออก 2026-10-10 เพื่อความปลอดภัย)
 
                             try {
                                 let pdfDoc = await PDFLib.PDFDocument.load(fileBytes, { password: pdfPassword });

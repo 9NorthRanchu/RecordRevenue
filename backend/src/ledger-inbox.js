@@ -16,6 +16,7 @@
 //   POST /api/inbox/{doc_id}/dismiss         — ไม่ต้องบันทึก
 //   POST /api/inbox/{doc_id}/edit            — { date, account_id, details[], confirm } แก้/แตกบรรทัดจากหน้ากล่องรอเคลียร์
 //   GET  /api/inbox/meta                     — บัญชี/บริษัท/หมวด/คู่ค้าที่ใช้ได้ (สำหรับหน้าเว็บ)
+//   POST /api/inbox/manual                   — { date, time?, account_id, amount (เข้า + / ออก −), note } เพิ่มรายการเอง → รอยืนยัน
 //   ── ระยะ 2: statement ──
 //   POST /api/inbox/statement                — multipart: account_id + file (รูปหน้า statement หลายรูป)
 //   GET  /api/inbox/statements               — statement ที่นำเข้าแล้ว
@@ -100,6 +101,10 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
     }
 
     if (path === '/api/inbox/meta' && request.method === 'GET') return json(await inboxMeta(env, user), cors);
+    if (path === '/api/inbox/manual' && request.method === 'POST') {
+      const out = await createManual(env, user, await request.json().catch(() => ({})));
+      return json(out, cors, out.error ? (out.status || 400) : 201);
+    }
 
     if (path === '/api/inbox/statement' && request.method === 'POST') {
       let form;
@@ -645,15 +650,29 @@ async function learnFromDoc(env, user, doc, txIds) {
 // ───────────────────────── รายการในกล่อง ─────────────────────────
 async function listInbox(env, user, url) {
   const all = url.searchParams.get('status') === 'all';
+  if (!all) await adoptPendingTransactions(env, user);
   const limit = Math.min(Number(url.searchParams.get('limit')) || 100, 300);
   const marks = OPEN_STATUSES.map(() => '?').join(',');
-  const docs = (await env.DB.prepare(`SELECT * FROM LedgerDocs WHERE family_id=? ${all ? '' : `AND status IN (${marks})`}
+  let docs = (await env.DB.prepare(`SELECT * FROM LedgerDocs WHERE family_id=? ${all ? '' : `AND status IN (${marks})`}
     ORDER BY created_at DESC LIMIT ?`).bind(user.family_id, ...(all ? [] : OPEN_STATUSES), limit).all()).results || [];
   if (!docs.length) return { docs: [] };
   const ids = docs.map(d => d.doc_id);
   const links = (await env.DB.prepare(`SELECT l.doc_id, l.role, t.transaction_id, t.account_id, t.date, t.time, t.total_amount,
       t.status, t.statement_desc FROM LedgerDocLinks l JOIN Transactions t ON t.transaction_id=l.transaction_id
       WHERE l.doc_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
+  /* รายการถูกยืนยัน/ลบจากเมนูเก่า ("รอตรวจสอบ" ในแอปหลัก) → ปิดเอกสารในกล่องให้ตรงกัน ไม่ค้างซ้ำสองที่ */
+  if (!all) {
+    const sync = [];
+    for (const d of docs) {
+      if (d.status !== 'SUGGESTED') continue;
+      const mine = links.filter(l => l.doc_id === d.doc_id && l.role === 'CREATED');
+      const next = !mine.length ? 'DISMISSED' : mine.every(l => l.status === 'CONFIRMED') ? 'DONE' : null;
+      if (next) { d.status = next; sync.push(env.DB.prepare(`UPDATE LedgerDocs SET status=?, updated_at=? WHERE doc_id=?`).bind(next, nowIso(), d.doc_id)); }
+    }
+    if (sync.length) await env.DB.batch(sync);
+    docs = docs.filter(d => OPEN_STATUSES.includes(d.status));
+    if (!docs.length) return { docs: [] };
+  }
   const txIds = [...new Set(links.map(l => l.transaction_id))];
   const details = txIds.length ? (await env.DB.prepare(`SELECT * FROM TransactionDetails WHERE transaction_id IN (${txIds.map(() => '?').join(',')})`)
     .bind(...txIds).all()).results || [] : [];
@@ -1040,6 +1059,11 @@ async function inboxMeta(env, user) {
     permittedAccounts(env, user), permittedEntities(env, user),
     topCategories(env, user.family_id, 'EXPENSE', 2000), topCategories(env, user.family_id, 'INCOME', 2000)]);
   const usesIn = new Map(inCats.map(c => [c.category_id, c.uses]));
+  let captions = new Map();                                        // "หัวข้อ" ของหมวด (กลุ่ม) — ใช้ค้นหา/แสดงในตัวเลือกหมวด
+  try {
+    captions = new Map(((await env.DB.prepare(`SELECT c.category_id, at.name FROM Categories c JOIN Captions at ON at.type_id = c.caption_id
+      WHERE c.family_id = ? OR c.family_id IS NULL`).bind(user.family_id).all()).results || []).map(r => [r.category_id, displayName(r.name)]));
+  } catch { /* ไม่มีตารางหัวข้อ */ }
   let contacts = [];
   try {
     const rows = (await env.DB.prepare(`SELECT contact_id, name, contact_type, members FROM Contacts WHERE family_id=? ORDER BY name`)
@@ -1055,7 +1079,7 @@ async function inboxMeta(env, user) {
       account_type: a.account_type || 'BANK', pdf_password: a.pdf_password || null })),
     entities: entities.map(e => ({ entity_id: e.entity_id, name: displayName(e.name), is_company: e.is_company })),
     categories: outCats.map(c => ({ category_id: c.category_id, name: displayName(c.name), default_type: c.default_type,
-      uses_out: c.uses, uses_in: usesIn.get(c.category_id) || 0 })),
+      group: captions.get(c.category_id) || '', uses_out: c.uses, uses_in: usesIn.get(c.category_id) || 0 })),
     contacts,
     uncategorized: UNCATEGORIZED, transfer_category: TRANSFER_CATEGORY,
   };
@@ -1086,6 +1110,13 @@ export async function editDoc(env, user, docId, e = {}) {
     if (!Array.isArray(e.details) || !e.details.length) return { error: 'ต้องมีอย่างน้อย 1 บรรทัด', status: 400 };
     if (e.details.length > 40) return { error: 'แตกได้ไม่เกิน 40 บรรทัด', status: 400 };
     const head = await env.DB.prepare(`SELECT total_amount FROM Transactions WHERE transaction_id=?`).bind(txId).first();
+    // ยอดหัวแก้ได้เฉพาะรายการที่คนจดเอง (ไม่มีหลักฐานจากธนาคาร) · สลิป/statement ยอดต้องตรงหลักฐาน
+    if (e.total_amount != null && ['MANUAL', 'CASH'].includes(doc.doc_type)) {
+      const t = round2(e.total_amount);
+      if (!t) return { error: 'ยอดต้องไม่เป็นศูนย์', status: 400 };
+      head.total_amount = t;
+      ops.push(env.DB.prepare(`UPDATE Transactions SET total_amount=? WHERE transaction_id=?`).bind(t, txId));
+    }
     const entIds = new Set((await permittedEntities(env, user)).map(x => x.entity_id));
     const cats = new Map(((await env.DB.prepare(`SELECT category_id, default_type FROM Categories WHERE family_id=? OR family_id IS NULL`)
       .bind(user.family_id).all()).results || []).map(c => [c.category_id, c.default_type]));
@@ -1394,4 +1425,68 @@ async function markStatementLine(env, user, ex, fields) {
     Object.assign(l, fields);
     await saveStatementLines(env, ex.stmt_id, s.lines);
   } catch { /* ยังไม่มีตาราง statement — ข้าม */ }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// รวมเมนู "รอตรวจสอบ" เดิมเข้ากล่อง (2026-10-10)
+// ═══════════════════════════════════════════════════════════════
+const ADOPT_CHUNK = 25;   // D1 แผนฟรีจำกัดคำสั่งต่อคำขอ → รับเข้ากล่องทีละชุด (เปิดหน้าครั้งถัดไปรับต่อ)
+
+/* รายการ "รอตรวจสอบ" ที่มาจากทางเดิม (นำเข้า PDF แบบเก่า · Excel/Bulk · จดในแอปหลัก · LINE รุ่นเก่า)
+   ยังไม่มีเอกสารในกล่อง → สร้างเอกสารให้ (ไม่แตะตัวรายการ) เพื่อให้ยืนยัน/แก้/แตกบรรทัดได้ที่เดียว */
+export async function adoptPendingTransactions(env, user) {
+  let rows;
+  try {
+    rows = (await env.DB.prepare(`SELECT t.transaction_id, t.account_id, t.date, t.time, t.total_amount, t.statement_desc, t.source, t.ref_code,
+        (SELECT d.note FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id LIMIT 1) AS note
+      FROM Transactions t JOIN Accounts a ON a.account_id = t.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id
+      WHERE up.user_id = ? AND t.status = 'PENDING_REVIEW'
+        AND NOT EXISTS (SELECT 1 FROM LedgerDocLinks l WHERE l.transaction_id = t.transaction_id)
+      ORDER BY t.date DESC LIMIT ?`).bind(user.user_id, ADOPT_CHUNK).all()).results || [];
+  } catch { return 0; }
+  if (!rows.length) return 0;
+  const ops = [];
+  for (const t of rows) {
+    const side = t.total_amount > 0 ? 'IN' : 'OUT';
+    const desc = String(t.note || t.statement_desc || '').slice(0, 200);
+    const docType = t.source === 'PDF_IMPORT' ? 'STATEMENT_LINE' : t.source === 'WEB_GRID' ? 'MANUAL' : 'LEGACY';
+    const party = { name: desc };
+    const docId = newId('DOC');
+    ops.push(env.DB.prepare(`INSERT INTO LedgerDocs (doc_id, family_id, uploaded_by, source, doc_type, status, extracted, suggestion, transaction_id, created_at)
+      VALUES (?,?,?, 'WEB', ?, 'SUGGESTED', ?, ?, ?, ?)`).bind(docId, user.family_id, user.user_id, docType,
+      JSON.stringify({ doc_type: docType, adopted: true, date: t.date, time: t.time, amount: Math.abs(t.total_amount), memo: desc, ref_code: t.ref_code,
+        ...(side === 'IN' ? { sender: party } : { receiver: party }) }),
+      JSON.stringify({ direction: side, party: desc, legs: [{ side, account_id: t.account_id, kind: 'CREATED', transaction_id: t.transaction_id, how: 'adopted' }] }),
+      t.transaction_id, `${t.date}T${(t.time || '00:00:00').slice(0, 8)}Z`));
+    ops.push(env.DB.prepare(`INSERT OR IGNORE INTO LedgerDocLinks (doc_id, transaction_id, role) VALUES (?,?, 'CREATED')`).bind(docId, t.transaction_id));
+  }
+  await env.DB.batch(ops);
+  return rows.length;
+}
+
+/* เพิ่มรายการเอง (แทนปุ่ม "+ Add Item" ของหน้าเดิม) → รอยืนยัน แล้วหน้าเว็บเปิดตัวแก้ให้ใส่หมวด/แตกบรรทัด */
+export async function createManual(env, user, b = {}) {
+  const account = (await permittedAccounts(env, user)).find(a => a.account_id === b.account_id);
+  if (!account) return { error: 'เลือกบัญชีที่มีสิทธิ์ใช้', status: 403 };
+  const amount = round2(b.amount);
+  if (!amount) return { error: 'ใส่ยอดเงิน', status: 400 };
+  const date = validDate(b.date) || bangkokNow().slice(0, 10);
+  const time = /^\d{1,2}:\d{2}/.test(String(b.time || '')) ? String(b.time).slice(0, 5) + ':00' : bangkokNow().slice(11, 19);
+  const note = String(b.note || '').trim().slice(0, 200);
+  const side = amount > 0 ? 'IN' : 'OUT';
+  const rule = note ? await getRule(env, user.family_id, 'PARTY', partyKey(note)) : null;
+  const proposal = proposeLines({ total: amount, template: rule?.value && typeof rule.value === 'object' ? rule.value : null,
+    fallback: { category_id: UNCATEGORIZED, entity_id: account.entity_id, type: side === 'IN' ? 'INCOME' : 'EXPENSE', note } });
+  for (const d of proposal.lines) if (!d.note) d.note = note;
+  const txId = await createTransaction(env, user, { account_id: account.account_id, date, time, total_amount: amount, ref_code: null,
+    statement_desc: note || null, source: 'WEB_GRID', status: 'PENDING_REVIEW', details: proposal.lines });
+  const docId = newId('DOC');
+  const party = { name: note };
+  await env.DB.prepare(`INSERT INTO LedgerDocs (doc_id, family_id, uploaded_by, source, doc_type, status, extracted, suggestion, transaction_id, created_at)
+    VALUES (?,?,?, 'WEB', 'MANUAL', 'SUGGESTED', ?, ?, ?, ?)`).bind(docId, user.family_id, user.user_id,
+    JSON.stringify({ doc_type: 'MANUAL', date, time, amount: Math.abs(amount), memo: note, ...(side === 'IN' ? { sender: party } : { receiver: party }) }),
+    JSON.stringify({ direction: side, party: note, legs: [{ side, account_id: account.account_id, kind: 'CREATED', transaction_id: txId, how: proposal.how }] }),
+    txId, nowIso()).run();
+  await linkDoc(env, docId, txId, 'CREATED');
+  return { ok: true, doc_id: docId, transaction_id: txId, how: proposal.how };
 }

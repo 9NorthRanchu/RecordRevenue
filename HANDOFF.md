@@ -19,6 +19,21 @@ Stack: Cloudflare Pages (frontend) + Cloudflare Worker (backend) + D1 (`record-r
 - กด "ไม่ต้องบันทึก" ที่รายการจาก statement → บรรทัดนั้นเป็น IGNORED
 - ยังไม่ทำ: ปิดเดือน (ล็อกงวด) · statement บัตรเครดิตแยกตามรอบบิล (ระยะ 3)
 
+**ตัดสินใจเพิ่ม (North 2026-10-10)**: ปรับ UX/UI ทั้งแอปแบบ **ทำใหม่ทีละหน้า** ในสไตล์เดียวกับกล่องรอเคลียร์ (แอปเดิมใช้ได้ระหว่างทาง) ลำดับ ภาพรวม → ประวัติ → ลูกหนี้/เจ้าหนี้ → รายงาน → ตั้งค่า · "รอตรวจสอบ" จะรวมเข้ากล่องรอเคลียร์ · **ปิดเมนู Enjoy Life Trip** (comment ใน index.html) ข้อมูลทริปไม่ลบ รอเชื่อมภายหลัง
+- **รูปแบบตัวเลข (North สั่ง ใช้ทั้งแอป)**: ทศนิยม 2 ตำแหน่ง · มี , หลักพัน · ติดลบใส่วงเล็บ (1,234.56) และสีต่าง (แดง #c92a2a) · ต้องใช้งานง่ายบน Mac/PC/iPad/iPhone · หน้าภาพรวมตัวหนังสือน้อย ใช้ไอคอน เห็นทั้งระบบ (mockup: Design artifact "ภาพรวมสมุดจด 5 แบบ" ชุดแรก+ชุดสอง)
+- กล่องซิงก์กับเมนูเก่า: listInbox ปิดเอกสาร SUGGESTED เองเมื่อรายการถูกยืนยัน (DONE) หรือลบ (DISMISSED) จาก "รอตรวจสอบ"
+- ⚠️ ของเก่า `/api/transactions/confirm` และ `/delete` ไม่ตรวจสิทธิ์เจ้าของ และ delete ไม่ลบ TransactionDetails — แก้ตอนทำหน้าใหม่
+
+**รวม "รอตรวจสอบ" เข้ากล่อง + หน้าภาพรวมใหม่ (2026-10-10 ค่ำ)**
+- `adoptPendingTransactions`: listInbox สร้าง LedgerDocs ให้รายการ PENDING_REVIEW ที่มาจากทางเดิม (Excel/Bulk · PDF เก่า · จดในแอปหลัก) ทีละ 25 (ADOPT_CHUNK — โควตา D1) · doc_type: PDF_IMPORT→STATEMENT_LINE · WEB_GRID→MANUAL · อื่น→LEGACY
+- `POST /api/inbox/manual` เพิ่มรายการเอง (ใช้แบบที่จำของชื่อรายการ) · editDoc แก้ยอดหัวได้เฉพาะ MANUAL/CASH
+- meta หมวดมี `group` (ชื่อหัวข้อ Captions) · ปุ่มแอปหลัก: "เพิ่มรายการ" มือถือ → `ledger/index.html?add=1`
+- หน้า `ledger/index.html`: สีม่วง (แบบ 4) · ตัวเลขวงเล็บ · กรองบัญชี/เรียงวันที่/สรุปเข้า-ออก · จอ ≥1024px ตัวแก้เป็นแผงขวา · คีย์ลัด ↑↓ Enter E Esc · `#stmt` เปิดแท็บ statement
+- หน้า `ledger/home.html` ภาพรวมใหม่ (ใช้ /api/dashboard/summary เดิม + /api/inbox + /api/inbox/statements): เคลียร์ก่อน (รอเคลียร์/ไม่มีหมวด/บัญชีติดลบ/statement เดือนก่อน) · เงินที่มี · เดือนนี้ · สินทรัพย์/หนี้สิน/สุทธิ · สรุปทุกบริษัท · บัญชี/บัตร
+- เมนูแอปหลัก: "ภาพรวม (ใหม่)" · "กล่องรอเคลียร์" (มีตัวเลข badge-pending) · หน้าเดิมเหลือ "ภาพรวม (แบบเดิม)" และ "นำเข้า Excel (หน้าเดิม)" จนกว่าจะย้าย Excel import
+- ความปลอดภัย: `/api/transactions/confirm|delete` ตรวจสิทธิ์บัญชีแล้ว · delete ลบ TransactionDetails ด้วย · ลบ alert ที่โชว์รหัส PDF ใน app.js
+- ⚠️ Excel template เดิมใช้สูตร fee/wht ต่างจากสมุดจด (net = amt − sign×(|fee|+|wht|)) — ตอนย้าย import Excel ต้องตกลงสูตรกับ North ก่อน
+
 **Puii**: ไม่ต้องแก้โค้ด — บอทตอบ LINE ID ให้คนที่ยังไม่ผูก · สิทธิ์เห็นบัญชีมาจาก UserPermissions (ติ๊ก Puii ใน Company ที่หน้าตั้งค่า)
 
 ## 🚀 2026-10-07 (ค่ำ) — เริ่มยกเครื่องสมุดจด: ระยะ 0 + ระยะ 1 (หลังบ้าน) — **อ่านก่อนหัวข้อถัดไป**

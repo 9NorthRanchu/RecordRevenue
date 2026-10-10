@@ -397,8 +397,13 @@ export default {
       }
 
       // 4. Confirm Transaction
+      /* ยืนยัน/ลบ: ต้องเป็นรายการในบัญชีที่ผู้ใช้มีสิทธิ์ (เดิมไม่ตรวจ — ใครล็อกอินก็ยืนยัน/ลบรายการไหนก็ได้ · แก้ 2026-10-10) */
+      const ownTx = async (txId) => authUserId && txId ? await env.DB.prepare(`SELECT t.transaction_id FROM Transactions t
+          JOIN Accounts a ON a.account_id = t.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id
+          WHERE t.transaction_id = ? AND up.user_id = ?`).bind(txId, authUserId).first() : null;
       if (url.pathname === '/api/transactions/confirm' && request.method === 'POST') {
         const { transaction_id } = await request.json();
+        if (!(await ownTx(transaction_id))) return new Response(JSON.stringify({ error: 'ไม่พบรายการ หรือไม่มีสิทธิ์' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         await env.DB.prepare(`UPDATE Transactions SET status = 'CONFIRMED' WHERE transaction_id = ?`).bind(transaction_id).run();
         return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
@@ -406,7 +411,12 @@ export default {
       // 5. Delete Transaction
       if (url.pathname === '/api/transactions/delete' && request.method === 'POST') {
         const { transaction_id } = await request.json();
-        await env.DB.prepare(`DELETE FROM Transactions WHERE transaction_id = ?`).bind(transaction_id).run();
+        if (!(await ownTx(transaction_id))) return new Response(JSON.stringify({ error: 'ไม่พบรายการ หรือไม่มีสิทธิ์' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        // ลบรายการย่อยด้วย (เดิมลบแค่หัว รายการย่อยค้างในฐาน)
+        await env.DB.batch([
+          env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id = ?`).bind(transaction_id),
+          env.DB.prepare(`DELETE FROM Transactions WHERE transaction_id = ?`).bind(transaction_id),
+        ]);
         return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
