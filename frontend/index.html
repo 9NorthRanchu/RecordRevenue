@@ -87,7 +87,8 @@
                     <!-- 2026-10-10: "รอตรวจสอบ" รวมเข้า กล่องรอเคลียร์ แล้ว (รายการรอยืนยันทุกแหล่งขึ้นที่นั่น) · ตัวเลขแจ้งเตือนย้ายมาที่เมนูใหม่
                          หน้าเดิมเก็บไว้ชั่วคราวเพื่อ "นำเข้า Excel / Bulk" จนกว่าจะย้ายไปหน้าใหม่ -->
                     <a href="ledger/index.html" class="nav-item" data-href="ledger/index.html"><i class="fa-solid fa-inbox"></i> <span>กล่องรอเคลียร์ · Statement</span> <span id="badge-pending" class="badge">0</span></a>
-                    <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-file-invoice-dollar"></i> <span>ประวัติธุรกรรม</span></a>
+                    <a href="ledger/index.html#hist" class="nav-item" data-href="ledger/index.html#hist"><i class="fa-solid fa-file-invoice-dollar"></i> <span>ประวัติ (ใหม่)</span></a>
+                    <a href="#" class="nav-item" data-target="history" style="opacity:.75"><i class="fa-solid fa-clock-rotate-left"></i> <span>ประวัติธุรกรรม (แบบเดิม)</span></a>
                     <!-- grid-input merged into pending -->
                     <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i> <span>ทะเบียนลูกหนี้/เจ้าหนี้</span></a>
                     <!-- TRIPS (ระบบทริปเดิม) — พักใช้ 2026-08-02 เพราะ Unified Trip เข้ามาแทนที่
@@ -101,7 +102,8 @@
                             จึงต้องเป็นลิงก์ธรรมดาที่เปิดในแท็บเดิม ห้ามใส่ target="_blank" -->
                     <!-- ปิดเมนูไว้ 2026-10-10 (North): ระบบทริปแยกออกไปแล้ว รอเชื่อมภายหลัง · ข้อมูลทริปยังอยู่ครบ ไม่ได้ลบ
                     <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link"><i class="fa-solid fa-wand-sparkles"></i> <span>Enjoy Life Trip</span><small>ข้อมูลจริง</small></a> -->
-                    <a href="#" class="nav-item" data-target="pending" style="opacity:.75"><i class="fa-solid fa-file-excel"></i> <span>นำเข้า Excel (หน้าเดิม)</span></a>
+                    <!-- "รอตรวจสอบ" / "นำเข้า Excel (หน้าเดิม)" ปิดแล้ว 2026-10-10 — ย้ายไป ledger/index.html (กล่องรอเคลียร์ · ปุ่ม 📊 นำเข้า Excel) ครบทุกอย่าง
+                         โค้ดหน้าเดิม (view-pending) ยังอยู่ใน app.js ไม่ได้ลบ -->
                     <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-pie"></i> <span>รายงานทางการเงิน</span></a>
                     <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i> <span>ตั้งค่าระบบ</span></a>
                 </nav>
@@ -1466,7 +1468,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="travel.js?v=105"></script>
-    <script src="app.js?v=181"></script>
+    <script src="app.js?v=182"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">

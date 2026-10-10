@@ -32,7 +32,9 @@ Stack: Cloudflare Pages (frontend) + Cloudflare Worker (backend) + D1 (`record-r
 - หน้า `ledger/home.html` ภาพรวมใหม่ (ใช้ /api/dashboard/summary เดิม + /api/inbox + /api/inbox/statements): เคลียร์ก่อน (รอเคลียร์/ไม่มีหมวด/บัญชีติดลบ/statement เดือนก่อน) · เงินที่มี · เดือนนี้ · สินทรัพย์/หนี้สิน/สุทธิ · สรุปทุกบริษัท · บัญชี/บัตร
 - เมนูแอปหลัก: "ภาพรวม (ใหม่)" · "กล่องรอเคลียร์" (มีตัวเลข badge-pending) · หน้าเดิมเหลือ "ภาพรวม (แบบเดิม)" และ "นำเข้า Excel (หน้าเดิม)" จนกว่าจะย้าย Excel import
 - ความปลอดภัย: `/api/transactions/confirm|delete` ตรวจสิทธิ์บัญชีแล้ว · delete ลบ TransactionDetails ด้วย · ลบ alert ที่โชว์รหัส PDF ใน app.js
-- ⚠️ Excel template เดิมใช้สูตร fee/wht ต่างจากสมุดจด (net = amt − sign×(|fee|+|wht|)) — ตอนย้าย import Excel ต้องตกลงสูตรกับ North ก่อน
+- **นำเข้า Excel ย้ายแล้ว** (ปุ่ม 📊 ในกล่อง): `POST /api/inbox/import-rows` ทีละ 8 ชุด · คอลัมน์ A–L เหมือนแบบฟอร์มเดิม · ใช้สูตรสมุดจด (ค่าธรรมเนียมรายจ่าย = จ่ายเพิ่ม: 10,000 + 10 = (10,010.00) — แบบฟอร์มเดิมคิดกลับด้าน) · ข้ามรายการซ้ำ (บัญชี+วันที่+ยอด+หมายเหตุ) · ติ๊ก Bulk = CONFIRMED ไม่ผ่านกล่อง · doc_type EXCEL · ปุ่มแบบฟอร์มสร้าง xlsx ในเบราว์เซอร์ (xlsx@0.18.5 จาก jsdelivr/cdnjs) · เมนู "รอตรวจสอบ/นำเข้า Excel" เดิมปิดแล้ว · ลิงก์เก่า ?txId= → ledger/index.html
+- **ประวัติใหม่** = แท็บ 📜 ใน ledger/index.html (`#hist`): `GET /api/inbox/history?month=&account=&q=` (IN (...) แบ่งชุดละ 90 — D1 จำกัด 100 พารามิเตอร์) · แก้/แตกบรรทัด/ลบรายการที่ยืนยันแล้ว `POST /api/inbox/tx/{id}/edit|delete` (ยอดหัวแก้ได้เฉพาะ WEB_GRID/LINE_TEXT) · เมนูแอปหลัก "ประวัติ (ใหม่)" + "ประวัติธุรกรรม (แบบเดิม)" ยังเก็บ (มี export)
+- `diag-account.sh A04` ตรวจบัญชียอดผิด (อ่านอย่างเดียว): แยกที่มา · ยอดสะสมรายเดือน · เครื่องหมายหัว/บรรทัดขัดกัน · ก้อนใหญ่
 
 **Puii**: ไม่ต้องแก้โค้ด — บอทตอบ LINE ID ให้คนที่ยังไม่ผูก · สิทธิ์เห็นบัญชีมาจาก UserPermissions (ติ๊ก Puii ใน Company ที่หน้าตั้งค่า)
 

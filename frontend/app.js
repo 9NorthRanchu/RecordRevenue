@@ -1102,7 +1102,9 @@ async function initApp() {
         const urlParams = new URLSearchParams(window.location.search);
         const txIdParam = urlParams.get('txId');
         if (txIdParam) {
-            switchView('pending');
+            // ลิงก์เก่าจาก LINE → หน้า "รอตรวจสอบ" ย้ายไปกล่องรอเคลียร์แล้ว (2026-10-10)
+            location.href = 'ledger/index.html';
+            return;
         } else {
             switchView('dashboard');
         }

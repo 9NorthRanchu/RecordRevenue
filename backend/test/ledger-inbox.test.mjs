@@ -718,6 +718,54 @@ console.log('\n── รวม "รอตรวจสอบ" เดิมเข
   check('เพิ่มเองในบัญชีที่ไม่มีสิทธิ์ → ปฏิเสธ', bad.status === 403);
 }
 
+console.log('\n── นำเข้า Excel (ย้ายจากหน้าเดิม) ──');
+{
+  const out = await inbox.importRows(env, user, { groups: [
+    { row: 2, date: '2026-10-03', account_id: 'A02', total_amount: -10010, note: 'ค่าเช่า ต.ค.', details: [{ amount: -10000, fee: 10, category_id: 'T05' }] },
+    { row: 3, date: '2026-10-04', account_id: 'A09', total_amount: 9700, note: 'ค่าบริการ W16', details: [{ amount: 10000, wht: 300, category_id: 'Service', entity_id: 'Ent_Co_S01' }] },
+    { row: 4, date: '2026-10-04', account_id: 'A09', total_amount: 5000, note: 'แตก 2 บริษัท', details: [{ amount: 3000, category_id: 'Account', entity_id: 'Ent_Co_S01' }, { amount: 2000, category_id: 'Audit', entity_id: 'Ent_Co_S05' }] },
+    { row: 5, date: '2026-10-05', account_id: 'A02', total_amount: -500, note: 'ยอดไม่ลง', details: [{ amount: -400, category_id: 'T05' }] },
+    { row: 6, date: '2026-10-05', account_id: 'X99', total_amount: -1, note: 'บัญชีคนอื่น' },
+    { row: 7, date: '2026-10-05', account_id: 'A02', total_amount: -99, note: 'ไม่มีหมวด', details: [{ amount: 99 }] },
+  ] });
+  const r = n => out.results.find(x => x.row === n);
+  check('จ่ายพร้อมค่าธรรมเนียม 10,000 + 10 = 10,010 ลงตัว', r(2).ok && lines(r(2).transaction_id)[0].fee === 10);
+  check('รับหัก ณ ที่จ่าย 10,000 − 300 = 9,700 ลงตัว', r(3).ok && lines(r(3).transaction_id)[0].wht === 300);
+  check('แตก 2 บริษัท', r(4).ok && lines(r(4).transaction_id).length === 2);
+  check('ยอดไม่ลงตัว → บอกแถวและส่วนต่าง', /ต่าง/.test(r(5).error || ''));
+  check('บัญชีที่ไม่มีสิทธิ์ → ปฏิเสธ', /ไม่พบบัญชี/.test(r(6).error || ''));
+  check('ยอดย่อยใส่เป็นบวก → ใช้เครื่องหมายยอดรวม + ไม่มีหมวด = รอระบุ', r(7).ok && lines(r(7).transaction_id)[0].amount === -99 && lines(r(7).transaction_id)[0].category_id === 'Cat_Uncategorized');
+  check('นำเข้าแล้วอยู่ในกล่อง (EXCEL รอยืนยัน)', db.prepare(`SELECT doc_type, status FROM LedgerDocs WHERE doc_id=?`).get(r(2).doc_id)?.doc_type === 'EXCEL' && tx(r(2).transaction_id).status === 'PENDING_REVIEW');
+  const again = await inbox.importRows(env, user, { groups: [{ row: 2, date: '2026-10-03', account_id: 'A02', total_amount: -10010, note: 'ค่าเช่า ต.ค.', details: [{ amount: -10000, fee: 10, category_id: 'T05' }] }] });
+  check('นำเข้าไฟล์เดิมซ้ำ → ข้าม ไม่สร้างซ้ำ', again.results[0].duplicate === true);
+  const conf = await inbox.importRows(env, user, { confirmed: true, groups: [{ row: 9, date: '2026-10-06', account_id: 'A02', total_amount: -42, note: 'bulk ยืนยันเลย', details: [{ amount: -42, category_id: 'T01' }] }] });
+  check('Bulk แบบยืนยันแล้ว → CONFIRMED ไม่เข้ากล่อง', tx(conf.results[0].transaction_id).status === 'CONFIRMED' && !conf.results[0].doc_id);
+  const many = await inbox.importRows(env, user, { groups: Array.from({ length: 12 }, (_, i) => ({ row: 100 + i, date: '2026-10-07', account_id: 'A02', total_amount: -(i + 1), note: `ชุด ${i}` })) });
+  check('รับทีละ 8 ชุดต่อคำขอ', many.processed === 8 && many.results.length === 8);
+}
+
+console.log('\n── ประวัติ + แก้/ลบรายการที่ยืนยันแล้ว ──');
+{
+  const H = async q => (await (await inbox.handleLedgerInbox(new Request('https://api.example/api/inbox/history?' + q), env, new URL('https://api.example/api/inbox/history?' + q), {}, '9North')).json());
+  const sep = await H('month=2026-09');
+  check('ประวัติ ก.ย. มีรายการ + บรรทัดย่อย', sep.transactions.length > 3 && sep.transactions.every(t => t.date.startsWith('2026-09')) && sep.transactions.some(t => t.details.length));
+  check('ประวัติไม่มีรายการของครอบครัวอื่น', !sep.transactions.some(t => t.account_id === 'X99'));
+  const sal = (await H('month=2026-09&q=30000')).transactions;
+  check('ค้นด้วยยอดเงินในเดือน', sal.some(t => t.transaction_id === 'S-SAL'));
+  const allQ = (await H('q=ค่าเช่า')).transactions;
+  check('ค้นทุกเดือนด้วยคำ', allQ.length >= 1);
+  const ed = await inbox.editTransaction(env, user, 'S-SAL', { details: [{ amount: 20000, category_id: 'Account', entity_id: 'Ent_Co_S01' }, { amount: 10000, category_id: 'Service', entity_id: 'Ent_Co_S05' }] });
+  check('แตกบรรทัดรายการที่ยืนยันแล้ว', ed.ok && lines('S-SAL').length === 2 && tx('S-SAL').status === 'CONFIRMED');
+  const badTot = await inbox.editTransaction(env, user, 'S-SLIP', { total_amount: -1 });
+  check('รายการจากสลิปแก้ยอดไม่ได้', badTot.status === 400);
+  const gap = await inbox.editTransaction(env, user, 'S-SAL', { details: [{ amount: 1, category_id: 'Service' }] });
+  check('ยอดไม่ลงตัว → ไม่บันทึก', gap.status === 400 && lines('S-SAL').length === 2);
+  const otherEdit = await inbox.editTransaction(env, other, 'S-SAL', { date: '2026-09-01' });
+  check('ครอบครัวอื่นแก้ไม่ได้', otherEdit.status === 404);
+  const del = await inbox.deleteTransaction(env, user, 'S-EXTRA');
+  check('ลบรายการ + รายการย่อย', del.ok && !tx('S-EXTRA') && lines('S-EXTRA').length === 0);
+}
+
 console.log('\n── meta สำหรับหน้าเว็บ ──');
 {
   db.prepare(`INSERT INTO Contacts (contact_id, family_id, name, contact_type, members) VALUES ('W16','Fam_Default','W16 Co','CUSTOMER',NULL),('PRIV','Fam_Default','ส่วนตัว Puii','OTHER','["Puii"]')`).run();

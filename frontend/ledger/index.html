@@ -171,7 +171,7 @@
   <div class="tabs" id="tabs">
     <button data-tab="inbox" class="on">📥 รอเคลียร์<span class="n" id="nInbox">0</span></button>
     <button data-tab="stmt">🏦 Statement</button>
-    <button data-tab="done">✅ ล่าสุด</button>
+    <button data-tab="hist">📜 ประวัติ</button>
   </div>
   <div id="view"></div>
 </div>
@@ -208,7 +208,7 @@
     TRANSFER: { c: 'var(--tr)', icon: '🔁', word: 'โอนระหว่างบัญชี' }, ASK: { c: 'var(--ask)', icon: '🧾', word: 'ต้องเลือก' },
     CASH: { c: 'var(--cash)', icon: '🪙', word: 'เงินสด' }, STORE: { c: '#adb5bd', icon: '📎', word: 'เอกสาร' }, ERR: { c: 'var(--bad)', icon: '⚠️', word: 'อ่านไม่สำเร็จ' },
   };
-  const S = { meta: null, tab: 'inbox', docs: [], recent: [], filter: 'all', acc: 'ALL', sort: 'desc', sel: -1, shown: [], statements: [], stmt: null, stmtFilter: 'todo', thumbs: new Map() };
+  const S = { hMonth: new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7), hAcc: '', hQ: '', hAll: false, hType: 'all', hist: null, meta: null, tab: 'inbox', docs: [], recent: [], filter: 'all', acc: 'ALL', sort: 'desc', sel: -1, shown: [], statements: [], stmt: null, stmtFilter: 'todo', thumbs: new Map() };
 
   function toast(text, ms = 2600) {
     const t = document.createElement('div'); t.className = 'toast'; t.textContent = text;
@@ -260,6 +260,7 @@
       }
       if (S.tab === 'inbox') { S.docs = (await api('/api/inbox')).docs || []; renderInbox(); }
       else if (S.tab === 'done') { S.recent = ((await api('/api/inbox?status=all&limit=60')).docs || []).filter(d => ['DONE', 'DISMISSED'].includes(d.status)); renderDone(); }
+      else if (S.tab === 'hist') { S.hist = await api(`/api/inbox/history?${S.hQ && S.hAll ? '' : `month=${S.hMonth}&`}account=${encodeURIComponent(S.hAcc)}&q=${encodeURIComponent(S.hQ)}`); renderHistory(); }
       else if (S.stmt) await openStatement(S.stmt.statement.stmt_id);
       else { S.statements = (await api('/api/inbox/statements')).statements || []; renderStatements(); }
       $('#nInbox').textContent = S.tab === 'inbox' ? S.docs.length : $('#nInbox').textContent;
@@ -326,6 +327,7 @@
       <div class="tools">
         <select id="accF" aria-label="กรองตามบัญชี"><option value="ALL">ทุกบัญชี (${all.length})</option>${accIds.map(id => `<option value="${esc(id)}" ${S.acc === id ? 'selected' : ''}>${esc(accName(id))} (${all.filter(x => x.i.main?.account_id === id).length})</option>`).join('')}</select>
         <button class="b line" id="sortB">${S.sort === 'asc' ? '↑ เก่าก่อน' : '↓ ใหม่ก่อน'}</button>
+        <button class="b line" id="xlsB" title="นำเข้า Excel / Bulk">📊 นำเข้า Excel</button>
         <span class="sumline">เข้า ${amtHtml(sumIn)} · ออก ${amtHtml(sumOut)}</span>
       </div>
       <div class="filters">${FILTERS.map(([k, label, fn]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-f="${k}">${label}<small> ${items.filter(x => fn(x.i)).length}</small></button>`).join('')}</div>
@@ -389,6 +391,7 @@
     $('#addBtn').onclick = openManual;
     $('#accF').onchange = e => { S.acc = e.target.value; S.sel = -1; renderInbox(); };
     $('#sortB').onclick = () => { S.sort = S.sort === 'asc' ? 'desc' : 'asc'; renderInbox(); };
+    $('#xlsB').onclick = openExcel;
     $('#cashForm').onsubmit = async e => {
       e.preventDefault();
       const text = $('#cashIn').value.trim(); if (!text) return;
@@ -541,12 +544,13 @@
   }
 
   // ───────── แก้ไข / แตกบรรทัด ─────────
-  function openEditor(d) {
+  function openEditor(d, opts = {}) {
     const i = info(d);
     if (!i.editable) return toast('รายการนี้แก้จากหน้านี้ไม่ได้');
     let total = r2(i.main.total_amount);
     const s = total < 0 ? -1 : 1;
-    const canTotal = ['MANUAL', 'CASH'].includes(d.doc_type);
+    const txMode = !!opts.tx;                                        // แก้รายการจากแท็บประวัติ (ยืนยันแล้วก็แก้ได้)
+    const canTotal = txMode ? ['WEB_GRID', 'LINE_TEXT'].includes(opts.tx.source) : ['MANUAL', 'CASH', 'EXCEL'].includes(d.doc_type);
     const total0 = total;
     const E = {
       date: i.main.date, account_id: i.main.account_id,
@@ -558,7 +562,13 @@
     const gap = () => r2(total - E.lines.reduce((t, l) => t + s * l.a - l.f - s * l.w, 0));   // บวก/ลบตามเครื่องหมายจริง
     const remain = () => r2(s * gap());                                                        // มองแบบบวก: ต้องใส่เพิ่มอีกเท่าไร
     const sh = sheet(i.dir === 'IN' ? 'แก้ไขรายการรับ' : 'แก้ไขรายการจ่าย', '<div data-ed></div>',
-      `<button class="b line" data-save="0">บันทึกไว้ก่อน</button><button class="b ok" style="--k:${k.c}" data-save="1">✓ ยืนยันรายการ</button>`, { side: true });
+      txMode ? `<button class="b line" data-del style="color:var(--bad)">🗑️ ลบรายการ</button><button class="b ok" style="--k:${k.c}" data-save="${opts.tx.status === 'PENDING_REVIEW' ? '1' : '0'}">${opts.tx.status === 'PENDING_REVIEW' ? '✓ บันทึก + ยืนยัน' : '💾 บันทึกการแก้ไข'}</button>`
+        : `<button class="b line" data-save="0">บันทึกไว้ก่อน</button><button class="b ok" style="--k:${k.c}" data-save="1">✓ ยืนยันรายการ</button>`, { side: true });
+    sh.el.querySelector('[data-del]')?.addEventListener('click', async () => {
+      if (!window.confirm(`ลบรายการ ${signed(total)} นี้? ลบแล้วกู้คืนไม่ได้`)) return;
+      try { await api(`/api/inbox/tx/${encodeURIComponent(opts.tx.transaction_id)}/delete`, { json: {} }); sh.close(); toast('🗑️ ลบแล้ว'); load(); }
+      catch (e) { toast('⚠️ ' + e.message); }
+    });
     const box = sh.el.querySelector('[data-ed]');
     const entOpts = sel => `<option value="">— ไม่ระบุบริษัท —</option>` + S.meta.entities.map(e => `<option value="${esc(e.entity_id)}" ${e.entity_id === sel ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
     const draw = () => {
@@ -646,9 +656,11 @@
         contact_id: l.contact_id || null, note: l.note, head_owner: l.head_owner, project_id: l.project_id }));
       sh.el.querySelectorAll('[data-save]').forEach(x => { x.disabled = true; });
       try {
-        await api(`/api/inbox/${encodeURIComponent(d.doc_id)}/edit`, { json: { date: E.date, total_amount: canTotal && total !== total0 ? total : undefined,
-          account_id: E.account_id !== i.main.account_id ? E.account_id : undefined, details, confirm } });
+        const body = { date: E.date, total_amount: canTotal && total !== total0 ? total : undefined,
+          account_id: E.account_id !== i.main.account_id ? E.account_id : undefined, details, confirm };
+        await api(txMode ? `/api/inbox/tx/${encodeURIComponent(opts.tx.transaction_id)}/edit` : `/api/inbox/${encodeURIComponent(d.doc_id)}/edit`, { json: body });
         sh.close();
+        if (txMode) { toast('💾 บันทึกการแก้ไขแล้ว'); load(); return; }
         toast(confirm ? `✅ บันทึกแล้ว${details.length > 1 ? ` (${details.length} บรรทัด · ครั้งหน้าระบบแตกให้เอง)` : ''}` : '💾 บันทึกไว้แล้ว ยังไม่ยืนยัน', 3200);
         load();
       } catch (e) {
@@ -690,6 +702,109 @@
     };
   }
 
+  // ───────── นำเข้า Excel / Bulk (ย้ายจากหน้า "รอตรวจสอบ" เดิม) ─────────
+  async function loadXlsx() {
+    if (window.XLSX) return;
+    const add = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    try { await add('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'); }
+    catch { try { await add('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'); } catch { throw new Error('โหลดตัวอ่าน Excel ไม่สำเร็จ ลองรีเฟรชหน้า'); } }
+  }
+  const xNum = v => { if (v === undefined || v === null || v === '') return 0; if (typeof v === 'number') return v;
+    const t = String(v).trim(); const neg = /^\(.*\)$/.test(t) || /^-/.test(t); const n = parseFloat(t.replace(/[(),\s฿-]/g, '')); return isNaN(n) ? 0 : (neg ? -Math.abs(n) : n); };
+  const xDate = v => {
+    if (v === undefined || v === null || v === '') return '';
+    if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 864e5)); return d.toISOString().slice(0, 10); }   // วันที่แบบตัวเลขของ Excel
+    const t = String(v).trim();
+    let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) { let y = +m[1]; if (y > 2400) y -= 543; return `${y}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`; }
+    m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/); if (m) { let y = +m[3]; if (y < 100) y += 2000; if (y > 2400) y -= 543; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+    return '';
+  };
+  /* แถวที่ A,B ว่างแต่มียอดย่อย (I) = บรรทัดย่อยของรายการด้านบน — รูปแบบเดียวกับแบบฟอร์มเดิม */
+  function parseSheet(rows) {
+    const groups = []; let cur = null;
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i] || [];
+      const line = { category_id: r[5] ? String(r[5]).trim() : '', entity_id: r[6] ? String(r[6]).trim() : '', contact_id: r[7] ? String(r[7]).trim() : '',
+        amount: xNum(r[8]), fee: xNum(r[9]), wht: xNum(r[10]), note: r[11] ? String(r[11]).trim() : '' };
+      if (!r[0] && !r[1]) { if (cur && line.amount) cur.details.push(line); continue; }
+      const total = xNum(r[2]);
+      cur = { row: i + 1, date: xDate(r[0]), account_id: String(r[1] || '').trim(), total_amount: total, note: r[3] ? String(r[3]).trim() : '',
+        details: [{ ...line, amount: line.amount || total }] };
+      groups.push(cur);
+    }
+    // รายการบรรทัดเดียวที่ใส่ยอดย่อยเป็นบวก → ใช้เครื่องหมายตามยอดรวม (เหมือนฝั่งเซิร์ฟเวอร์)
+    for (const g of groups) if (g.details.length === 1 && g.total_amount && Math.sign(g.details[0].amount) !== Math.sign(g.total_amount)) g.details[0].amount = -g.details[0].amount;
+    return groups;
+  }
+  function openExcel() {
+    const sh = sheet('นำเข้า Excel / Bulk', `
+      <div class="hint">ใช้แบบฟอร์มเดิมได้ (คอลัมน์ A–L เหมือนเดิม) · 1 แถว = 1 รายการ · แถวที่วันที่และบัญชีว่าง = บรรทัดย่อยของรายการด้านบน</div>
+      <div class="note">สูตร: <b>ยอดรวม = ยอดย่อย − ค่าธรรมเนียม − หัก ณ ที่จ่าย</b> · เงินออกใส่ติดลบหรือวงเล็บ · ค่าธรรมเนียมใส่เป็นบวก
+        <br>ตัวอย่าง จ่าย 10,000 ค่าธรรมเนียม 10 → ยอดรวม (10,010.00) · รับ 10,000 หัก 3% → ยอดรวม 9,700.00</div>
+      <div class="acts"><button class="b line" id="xTpl">⬇️ ดาวน์โหลดแบบฟอร์ม</button><button class="b ok" style="--k:var(--brand)" id="xPick">📂 เลือกไฟล์ Excel</button></div>
+      <input type="file" id="xFile" accept=".xlsx,.xls,.csv" class="hidden">
+      <div id="xOut"></div>`);
+    const out = sh.el.querySelector('#xOut');
+    sh.el.querySelector('#xTpl').onclick = () => downloadTemplate().catch(e => toast('⚠️ ' + e.message));
+    sh.el.querySelector('#xPick').onclick = () => sh.el.querySelector('#xFile').click();
+    sh.el.querySelector('#xFile').onchange = async e => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      try {
+        await loadXlsx();
+        const wb = window.XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: 'array' });
+        const name = wb.SheetNames.find(n => n.includes('Import')) || wb.SheetNames[0];
+        const groups = parseSheet(window.XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true }));
+        if (!groups.length) { out.innerHTML = '<div class="err">ไม่พบรายการในไฟล์ (ต้องมีวันที่และ Account ID)</div>'; return; }
+        const gap = g => r2(g.total_amount - g.details.reduce((t, d) => { const sg = d.amount < 0 ? -1 : 1; return t + d.amount - Math.abs(d.fee) - sg * Math.abs(d.wht); }, 0));
+        const bad = groups.filter(g => !g.date || !g.account_id || Math.abs(gap(g)) >= 0.005);
+        out.innerHTML = `<div class="card" style="margin-top:12px"><b>${esc(f.name)}</b> · พบ ${groups.length} รายการ
+          ${bad.length ? `<div class="err">ตรวจเบื้องต้นไม่ผ่าน ${bad.length} รายการ (จะถูกข้าม): ${bad.slice(0, 6).map(g => `แถว ${g.row}${!g.date ? ' วันที่ผิด' : Math.abs(gap(g)) >= 0.005 ? ` ต่าง ${signed(gap(g))}` : ''}`).join(' · ')}${bad.length > 6 ? ' …' : ''}</div>` : '<div class="hint" style="color:#087f5b">✓ ยอดลงตัวทุกรายการ</div>'}
+          <label style="display:flex;gap:10px;align-items:center;margin-top:12px;min-height:44px"><input type="checkbox" id="xConf" style="width:22px;height:22px"> นำเข้าเป็น "ยืนยันแล้ว" เลย (Bulk · ไม่ผ่านกล่อง)</label>
+          <div class="acts"><button class="b ok" style="--k:var(--brand)" id="xGo">นำเข้า ${groups.length - bad.length} รายการ</button></div></div>`;
+        out.querySelector('#xGo').onclick = async () => {
+          const good = groups.filter(g => !bad.includes(g));
+          const confirmed = out.querySelector('#xConf').checked;
+          const b = busy(`กำลังนำเข้า ${good.length} รายการ…`);
+          const res = [];
+          try {
+            for (let i = 0; i < good.length; i += 8) {
+              const r = await api('/api/inbox/import-rows', { json: { groups: good.slice(i, i + 8), confirmed } });
+              res.push(...r.results); b.sub(`${Math.min(i + 8, good.length)} / ${good.length}`);
+            }
+          } catch (err) { toast('⚠️ ' + err.message); }
+          b.done();
+          const ok = res.filter(r => r.ok).length, dup = res.filter(r => r.duplicate).length, errs = res.filter(r => r.error);
+          out.innerHTML = `<div class="card" style="margin-top:12px"><h3>นำเข้าแล้ว ${ok} รายการ</h3>
+            ${dup ? `<div class="hint">ข้ามรายการซ้ำ ${dup} รายการ (เคยนำเข้าแล้ว)</div>` : ''}
+            ${errs.length || bad.length ? `<div class="err">${[...bad.map(g => `แถว ${g.row}: ตรวจไม่ผ่าน`), ...errs.map(r => `แถว ${r.row}: ${esc(r.error)}`)].slice(0, 20).join('<br>')}</div>` : ''}
+            <div class="hint">${confirmed ? 'บันทึกเป็นยืนยันแล้ว' : 'รายการอยู่ในกล่องรอเคลียร์ — ตรวจแล้วกดยืนยัน'}</div></div>`;
+          load();
+        };
+      } catch (err) { out.innerHTML = `<div class="err">${esc(err.message)}</div>`; }
+    };
+  }
+  async function downloadTemplate() {
+    await loadXlsx();
+    const X = window.XLSX, wb = X.utils.book_new();
+    const head = ['วันที่ (YYYY-MM-DD)', 'Account ID', 'ยอดรวม (ออก = ลบ)', 'หมายเหตุ', 'หัวข้อ (ไม่บังคับ)', 'Category ID', 'Entity ID', 'Contact ID', 'ยอดย่อย', 'ค่าธรรมเนียม', 'หัก ณ ที่จ่าย', 'รายละเอียด'];
+    const a = S.meta.accounts[0]?.account_id || 'A01', e = S.meta.entities[0]?.entity_id || '';
+    const ws = X.utils.aoa_to_sheet([head,
+      ['2026-10-01', a, -10010, 'ค่าเช่า ต.ค.', '', 'T05', e, '', -10000, 10, 0, 'ค่าเช่า'],
+      ['2026-10-02', a, 9700, 'ค่าบริการลูกค้า', '', '', e, '', 10000, 0, 300, 'หัก 3%'],
+      ['2026-10-03', a, 5000, 'ลูกค้าโอนรวม 2 บริษัท', '', '', e, '', 3000, 0, 0, 'บริษัทที่ 1'],
+      ['', '', '', '', '', '', e, '', 2000, 0, 0, 'บริษัทที่ 2 (บรรทัดย่อย)']]);
+    ws['!cols'] = head.map((_, i) => ({ wch: [14, 12, 16, 22, 14, 14, 14, 12, 12, 12, 12, 22][i] }));
+    X.utils.book_append_sheet(wb, ws, '📥 Import Template');
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['Account ID', 'ชื่อบัญชี', 'ธนาคาร'], ...S.meta.accounts.map(x => [x.account_id, x.name, x.bank_name || ''])]), 'บัญชี');
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['Category ID', 'ชื่อหมวด', 'หัวข้อ', 'ประเภท'], ...S.meta.categories.map(x => [x.category_id, x.name, x.group || '', x.default_type || ''])]), 'หมวด');
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['Entity ID', 'บริษัท'], ...S.meta.entities.map(x => [x.entity_id, x.name])]), 'บริษัท');
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['Contact ID', 'คู่ค้า', 'ประเภท'], ...S.meta.contacts.map(x => [x.contact_id, x.name, x.contact_type || ''])]), 'คู่ค้า');
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['วิธีใช้'], ['1 แถว = 1 รายการเงิน (ตรงกับ statement)'], ['แถวที่ วันที่ และ Account ID ว่าง = บรรทัดย่อยของรายการด้านบน (แตกหลายบริษัท/หลายหมวด)'],
+      ['ยอดรวม = ยอดย่อย − ค่าธรรมเนียม − หัก ณ ที่จ่าย'], ['เงินออกใส่ติดลบหรือในวงเล็บ เช่น (10,010.00) · ค่าธรรมเนียมใส่เป็นบวก · หัก ณ ที่จ่ายใส่เป็นบวก'],
+      ['Category ID ว่าง = รอระบุหมวด (ไปเลือกในกล่องรอเคลียร์) · Entity ID ว่าง = บริษัทเจ้าของบัญชี'], ['ดูรหัสได้ที่แท็บ บัญชี / หมวด / บริษัท / คู่ค้า']]), 'วิธีใช้');
+    X.writeFile(wb, 'แบบฟอร์มนำเข้า-สมุดจด.xlsx');
+  }
+
   // ───────── คีย์ลัด (Mac/PC) ─────────
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { const all = document.querySelectorAll('.sheet-bg'); const top = all[all.length - 1]; if (top) { top._close ? top._close() : top.remove(); } return; }
@@ -707,6 +822,68 @@
       else if (info(d).editable) openEditor(d);
     }
   });
+
+  // ───────── ประวัติรายการ (แทนหน้า "ประวัติธุรกรรม" เดิม) ─────────
+  const shiftM = (m, n) => { const [y, mm] = m.split('-').map(Number); return new Date(Date.UTC(y, mm - 1 + n, 1)).toISOString().slice(0, 7); };
+  const monthTH = m => { const [y, mm] = m.split('-').map(Number); return `${MONTHS[mm - 1]} ${String(y + 543).slice(2)}`; };
+  function txKind(t) {
+    const types = new Set(t.details.map(d => d.type));
+    if (types.has('TRANSFER') || t.details.some(d => d.category_id === S.meta.transfer_category)) return 'TRANSFER';
+    return t.total_amount < 0 ? 'OUT' : 'IN';
+  }
+  function renderHistory() {
+    const list = S.hist?.transactions || [];
+    const F = { all: () => true, IN: t => txKind(t) === 'IN', OUT: t => txKind(t) === 'OUT', TRANSFER: t => txKind(t) === 'TRANSFER', PENDING: t => t.status === 'PENDING_REVIEW' };
+    const shown = list.filter(F[S.hType] || F.all);
+    const sumType = ty => r2(list.reduce((x, t) => x + t.details.filter(d => d.type === ty).reduce((y, d) => y + Number(d.amount || 0), 0), 0));
+    const inc = sumType('INCOME'), exp = sumType('EXPENSE');
+    const days = new Map();
+    for (const t of shown) { const k = t.date.slice(0, 10); if (!days.has(k)) days.set(k, []); days.get(k).push(t); }
+    const now = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
+    view.innerHTML = `
+      <div class="tools" style="margin-top:14px">
+        ${S.hAll ? `<span class="badge" style="--k:var(--brand)">ค้นทุกเดือน</span>` : `<button class="b line" id="hPrev" aria-label="เดือนก่อน">‹</button><b style="min-width:80px;text-align:center">${monthTH(S.hMonth)}</b><button class="b line" id="hNext" aria-label="เดือนถัดไป" ${S.hMonth >= now ? 'disabled' : ''}>›</button>`}
+        <select id="hAcc" aria-label="บัญชี"><option value="">ทุกบัญชี</option>${S.meta.accounts.map(a => `<option value="${esc(a.account_id)}" ${S.hAcc === a.account_id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>
+      </div>
+      <form class="cash" id="hForm" style="margin-top:10px"><input id="hQ" placeholder="ค้นหา: ชื่อร้าน รายละเอียด ยอดเงิน เลขอ้างอิง" value="${esc(S.hQ)}" aria-label="ค้นหา"><button style="background:var(--brand)">ค้นหา</button></form>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:14px;color:var(--muted);min-height:36px"><input type="checkbox" id="hAll" ${S.hAll ? 'checked' : ''}> ค้นทุกเดือน</label>
+      <div class="tiles" style="margin-top:6px">
+        <div class="tile" style="background:#e6fcf5"><b class="pos">${money(inc)}</b><span>รับ</span></div>
+        <div class="tile" style="background:#fff5f5"><b class="neg">${signed(exp)}</b><span>จ่าย</span></div>
+        <div class="tile"><b class="${inc + exp < 0 ? 'neg' : 'pos'}">${signed(r2(inc + exp))}</b><span>สุทธิ (ไม่นับโอน)</span></div>
+      </div>
+      <div class="filters">${[['all', 'ทั้งหมด'], ['OUT', 'จ่าย'], ['IN', 'รับ'], ['TRANSFER', 'โอน'], ['PENDING', 'รอยืนยัน']].map(([k, l]) => `<button class="chip ${S.hType === k ? 'on' : ''}" data-ht="${k}">${l}<small> ${list.filter(F[k]).length}</small></button>`).join('')}</div>
+      ${shown.length ? [...days.entries()].map(([day, ts]) => `
+        <div style="display:flex;justify-content:space-between;margin:16px 4px 6px;color:var(--muted);font-size:14px"><b>${thDate(day, true)}</b><span>${amtHtml(r2(ts.reduce((x, t) => x + (txKind(t) === 'TRANSFER' ? 0 : t.total_amount), 0)))}</span></div>
+        <div class="card" style="margin-top:0;padding:4px 14px">${ts.map(t => {
+          const kd = txKind(t), k = KIND[kd];
+          const title = t.details[0]?.note || t.statement_desc || catName(t.details[0]?.category_id);
+          const cat = t.details.length > 1 ? `แตก ${t.details.length} บรรทัด` : catName(t.details[0]?.category_id);
+          return `<button class="hrow" data-tx="${esc(t.transaction_id)}" style="all:unset;box-sizing:border-box;cursor:pointer;display:flex;gap:12px;align-items:center;width:100%;padding:12px 0;border-bottom:1px solid var(--line);min-height:56px">
+            <span style="width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb, ${k.c} 14%, #fff);flex:none">${k.icon}</span>
+            <span style="flex:1;min-width:0"><span style="display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title || '-')}</span>
+              <span style="display:block;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cat)} · ${esc(accName(t.account_id))}${t.status === 'PENDING_REVIEW' ? ' · <b style="color:#b35c00">รอยืนยัน</b>' : ''}${t.doc?.has_file ? ' · 📎' : ''}</span></span>
+            <b style="white-space:nowrap" class="${t.total_amount < 0 ? 'neg' : 'pos'}">${signed(t.total_amount)}</b></button>`;
+        }).join('')}</div>`).join('') : `<div class="empty"><div class="big">📭</div><h3>ไม่มีรายการ</h3></div>`}
+      ${list.length >= 1500 ? '<div class="hint">แสดง 1,500 รายการแรกของเดือน</div>' : ''}`;
+    $('#hPrev')?.addEventListener('click', () => { S.hMonth = shiftM(S.hMonth, -1); load(); });
+    $('#hNext')?.addEventListener('click', () => { S.hMonth = shiftM(S.hMonth, 1); load(); });
+    $('#hAcc').onchange = e => { S.hAcc = e.target.value; load(); };
+    $('#hAll').onchange = e => { S.hAll = e.target.checked; if (S.hQ || !S.hAll) load(); };
+    $('#hForm').onsubmit = e => { e.preventDefault(); S.hQ = $('#hQ').value.trim(); load(); };
+    view.querySelectorAll('[data-ht]').forEach(b => b.onclick = () => { S.hType = b.dataset.ht; renderHistory(); });
+    view.querySelectorAll('.hrow').forEach(b => b.onclick = () => openTx(list.find(t => t.transaction_id === b.dataset.tx)));
+  }
+  /* เปิดตัวแก้ของกล่องกับรายการจากประวัติ (สร้างเอกสารจำลองให้ตัวแก้ใช้) */
+  function openTx(t) {
+    if (!t) return;
+    const kd = txKind(t);
+    const fake = { doc_id: 'tx:' + t.transaction_id, doc_type: t.doc?.doc_type || 'TX', status: 'SUGGESTED', source: 'WEB', has_file: false,
+      extracted: { memo: t.statement_desc || '', ...(kd === 'IN' ? { sender: { name: t.statement_desc || '' } } : { receiver: { name: t.statement_desc || '' } }) },
+      suggestion: { direction: kd === 'TRANSFER' ? (t.total_amount < 0 ? 'OUT' : 'IN') : kd },
+      transactions: [{ role: 'CREATED', transaction_id: t.transaction_id, account_id: t.account_id, date: t.date, time: t.time, total_amount: t.total_amount, status: 'PENDING_REVIEW', details: t.details }] };
+    openEditor(fake, { tx: t });
+  }
 
   // ───────── ล่าสุด ─────────
   function renderDone() {
@@ -902,7 +1079,8 @@
   }
 
   // ลิงก์ตรงไปแท็บ statement (จากหน้าภาพรวม: index.html#stmt)
-  if (location.hash === '#stmt') { S.tab = 'stmt'; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === 'stmt')); }
+  const h0 = location.hash.slice(1);
+  if (h0 === 'stmt' || h0 === 'hist') { S.tab = h0; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === h0)); }
   load();
 })();
 </script>
