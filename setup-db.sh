@@ -96,10 +96,16 @@ step "CREATE INDEX IF NOT EXISTS idx_transactions_account_date ON Transactions(a
 step "CREATE INDEX IF NOT EXISTS idx_transactions_ref ON Transactions(ref_code);" "ดัชนี idx_transactions_ref"
 
 echo
+echo "▶ สมุดจด ระยะ 2: นำเข้า statement + กระทบยอด (2026-10-10)"
+# บรรทัดของ statement เก็บเป็น JSON ในแถวเดียว — D1 แผนฟรีจำกัดจำนวนคำสั่งต่อคำขอ เขียนทีละบรรทัดไม่ไหว
+step "CREATE TABLE IF NOT EXISTS LedgerStatements (stmt_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, account_id TEXT NOT NULL, period_from TEXT, period_to TEXT, opening_balance REAL, closing_balance REAL, line_count INTEGER DEFAULT 0, lines TEXT, file_name TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME);" "ตาราง LedgerStatements"
+step "CREATE INDEX IF NOT EXISTS idx_ledgerstatements_account ON LedgerStatements(account_id, period_to);" "ดัชนี idx_ledgerstatements_account"
+
+echo
 echo "▶ ตรวจผลรวม"
-echo "  ตารางที่ต้องมี (ควรได้ 7 ชื่อ):"
+echo "  ตารางที่ต้องมี (ควรได้ 8 ชื่อ):"
 npx wrangler d1 execute "$DB" --remote --command \
-  "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('TripLegs','TripMemberSessions','TripDayPlans','TripBookings','LedgerDocs','LedgerDocLinks','LedgerRules');" 2>&1 \
+  "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('TripLegs','TripMemberSessions','TripDayPlans','TripBookings','LedgerDocs','LedgerDocLinks','LedgerRules','LedgerStatements');" 2>&1 \
   | grep -o '"name": "[A-Za-z]*"' | sed 's/"name": /    ✓ /;s/"//g'
 
 echo "  คอลัมน์ใน TripStops (ควรได้ 9 ชื่อ):"

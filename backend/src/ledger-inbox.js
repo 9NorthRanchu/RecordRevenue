@@ -14,6 +14,15 @@
 //   POST /api/inbox/{doc_id}/link            — { transaction_id } ผูกกับรายการเดิมที่เลือก
 //   POST /api/inbox/{doc_id}/account         — { account_id, side: 'OUT'|'IN' } บอกว่าบัญชีไหนของเรา
 //   POST /api/inbox/{doc_id}/dismiss         — ไม่ต้องบันทึก
+//   POST /api/inbox/{doc_id}/edit            — { date, account_id, details[], confirm } แก้/แตกบรรทัดจากหน้ากล่องรอเคลียร์
+//   GET  /api/inbox/meta                     — บัญชี/บริษัท/หมวด/คู่ค้าที่ใช้ได้ (สำหรับหน้าเว็บ)
+//   ── ระยะ 2: statement ──
+//   POST /api/inbox/statement                — multipart: account_id + file (รูปหน้า statement หลายรูป)
+//   GET  /api/inbox/statements               — statement ที่นำเข้าแล้ว
+//   GET  /api/inbox/statements/{id}          — บรรทัด + สถานะจับคู่ + รายการที่มีในระบบแต่ไม่มีใน statement + ยอดเทียบ
+//   POST /api/inbox/statements/{id}/create   — { line_ids? } สร้างรายการรอยืนยันจากบรรทัดที่ยังไม่มีในระบบ
+//   POST /api/inbox/statements/{id}/line/{line_id} — { action: match|ignore|reset, transaction_id }
+//   POST /api/inbox/statements/{id}/delete   — ลบ statement (ไม่ลบรายการที่สร้างไปแล้ว)
 //
 //   ตาราง (setup-db.sh): LedgerDocs · LedgerDocLinks · LedgerRules
 //   ไฟล์อยู่ใน R2 (binding ICONS) ใต้ ledger-docs/ — serveIcon ของทริปปฏิเสธ prefix นี้แล้ว
@@ -23,6 +32,7 @@
 import {
   round2, bankKey, last4, accountHintKey, partyKey, parseCashText, slipDirection,
   scoreCandidate, decideMatch, balanceGap, proposeLines, templateFromDetails,
+  fixStatementSigns, statementPartyKey, matchStatementLines,
 } from './ledger-match.js';
 import {
   displayName, moneyText, thaiDate, txCard, flexMessage, confirmButtons, accountButtons, categoryQuickItems, postback,
@@ -89,6 +99,37 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
       return json(out, cors, out.error ? (out.status || 400) : 200);
     }
 
+    if (path === '/api/inbox/meta' && request.method === 'GET') return json(await inboxMeta(env, user), cors);
+
+    if (path === '/api/inbox/statement' && request.method === 'POST') {
+      let form;
+      try { form = await request.formData(); } catch { return json({ error: 'อ่านไฟล์ที่อัปโหลดไม่สำเร็จ' }, cors, 400); }
+      const files = form.getAll('file').filter(f => f && typeof f !== 'string');
+      const out = await importStatement(env, user, {
+        account_id: String(form.get('account_id') || ''), file_name: String(form.get('file_name') || files[0]?.name || ''),
+        files: await Promise.all(files.map(async f => ({ bytes: new Uint8Array(await f.arrayBuffer()), mime: f.type || 'image/jpeg' }))),
+      });
+      return json(out, cors, out.error ? (out.status || 400) : 201);
+    }
+    if (path === '/api/inbox/statements' && request.method === 'GET') return json(await listStatements(env, user), cors);
+    const stmt = path.match(/^\/api\/inbox\/statements\/([\w-]+)(?:\/(create|delete|line)(?:\/([\w-]+))?)?$/);
+    if (stmt) {
+      const [, stmtId, sub, lineId] = stmt;
+      let out;
+      if (!sub && request.method === 'GET') out = await statementView(env, user, stmtId);
+      else if (sub === 'create' && request.method === 'POST') out = await createFromStatement(env, user, stmtId, await request.json().catch(() => ({})));
+      else if (sub === 'delete' && request.method === 'POST') out = await deleteStatement(env, user, stmtId);
+      else if (sub === 'line' && lineId && request.method === 'POST') out = await statementLineAction(env, user, stmtId, lineId, await request.json().catch(() => ({})));
+      else return json({ error: 'Not Found' }, cors, 404);
+      return json(out, cors, out.error ? (out.status || 400) : 200);
+    }
+
+    const edit = path.match(/^\/api\/inbox\/([\w-]+)\/edit$/);
+    if (edit && request.method === 'POST') {
+      const out = await editDoc(env, user, edit[1], await request.json().catch(() => ({})));
+      return json(out, cors, out.error ? (out.status || 400) : 200);
+    }
+
     const act = path.match(/^\/api\/inbox\/([\w-]+)\/(accept|link|account|dismiss)$/);
     if (act && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
@@ -104,7 +145,7 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
 // ───────────────────────── ข้อมูลพื้นฐาน ─────────────────────────
 async function permittedAccounts(env, user) {
   const rows = await env.DB.prepare(`
-    SELECT a.account_id, a.name, a.bank_name, a.account_number, a.entity_id, a.account_type
+    SELECT a.account_id, a.name, a.bank_name, a.account_number, a.entity_id, a.account_type, a.pdf_password
     FROM Accounts a JOIN UserPermissions up ON up.entity_id = a.entity_id
     WHERE up.user_id = ? ORDER BY a.account_id`).bind(user.user_id).all();
   return rows.results || [];
@@ -516,6 +557,8 @@ export async function runAction(env, user, docId, action, body = {}) {
     for (const l of createdPending) await deleteTx(env, l.transaction_id);
     await env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE doc_id=? AND role='CREATED'`).bind(docId).run();
     await setDoc(env, docId, { status: 'DISMISSED' });
+    // รายการที่สร้างจาก statement แล้วกด "ไม่ต้องบันทึก" → บรรทัดนั้นใน statement นับว่าข้ามแล้ว
+    if (doc.doc_type === 'STATEMENT_LINE') await markStatementLine(env, user, parse(doc.extracted, {}), { status: 'IGNORED', transaction_id: null });
     return { ok: true, status: 'DISMISSED' };
   }
 
@@ -590,7 +633,7 @@ async function learnFromDoc(env, user, doc, txIds) {
   }
   if (sug.direction === 'TRANSFER') return;
   const party = doc.doc_type === 'CASH' ? ex.note : (sug.direction === 'IN' ? ex.sender?.name : ex.receiver?.name);
-  const key = partyKey(party);
+  const key = doc.doc_type === 'STATEMENT_LINE' ? statementPartyKey(party) : partyKey(party);
   if (!key || !txIds.length) return;
   const rows = await env.DB.prepare(`SELECT amount, fee, wht, category_id, entity_id, contact_id, type, note
     FROM TransactionDetails WHERE transaction_id=?`).bind(txIds[0]).all();
@@ -981,4 +1024,374 @@ async function lineReplyMessages(env, replyToken, messages) {
 }
 async function lineReply(env, replyToken, text) {
   return lineReplyMessages(env, replyToken, [{ type: 'text', text: String(text).slice(0, 4900) }]);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// หน้าเว็บกล่องรอเคลียร์ (2026-10-10)
+// ═══════════════════════════════════════════════════════════════
+async function permittedEntities(env, user) {
+  return (await env.DB.prepare(`SELECT up.entity_id, COALESCE(e.name, up.entity_id) AS name, e.is_company FROM UserPermissions up
+    LEFT JOIN Entities e ON e.entity_id = up.entity_id WHERE up.user_id = ? ORDER BY name`).bind(user.user_id).all()).results || [];
+}
+
+/* ข้อมูลประกอบหน้าเว็บ: บัญชี บริษัท หมวด (เรียงตามที่ใช้บ่อย) คู่ค้า */
+async function inboxMeta(env, user) {
+  const [accounts, entities, outCats, inCats] = await Promise.all([
+    permittedAccounts(env, user), permittedEntities(env, user),
+    topCategories(env, user.family_id, 'EXPENSE', 2000), topCategories(env, user.family_id, 'INCOME', 2000)]);
+  const usesIn = new Map(inCats.map(c => [c.category_id, c.uses]));
+  let contacts = [];
+  try {
+    const rows = (await env.DB.prepare(`SELECT contact_id, name, contact_type, members FROM Contacts WHERE family_id=? ORDER BY name`)
+      .bind(user.family_id).all()).results || [];
+    contacts = rows.filter(c => {
+      if (user.role === 'admin' || !c.members) return true;
+      try { const m = JSON.parse(c.members); return !Array.isArray(m) || !m.length || m.includes(user.user_id); } catch { return true; }
+    }).map(({ members, ...c }) => c);
+  } catch { /* ไม่มีตารางคู่ค้า */ }
+  return {
+    user: { user_id: user.user_id, name: user.name, role: user.role },
+    accounts: accounts.map(a => ({ account_id: a.account_id, name: displayName(a.name), bank_name: a.bank_name, entity_id: a.entity_id,
+      account_type: a.account_type || 'BANK', pdf_password: a.pdf_password || null })),
+    entities: entities.map(e => ({ entity_id: e.entity_id, name: displayName(e.name), is_company: e.is_company })),
+    categories: outCats.map(c => ({ category_id: c.category_id, name: displayName(c.name), default_type: c.default_type,
+      uses_out: c.uses, uses_in: usesIn.get(c.category_id) || 0 })),
+    contacts,
+    uncategorized: UNCATEGORIZED, transfer_category: TRANSFER_CATEGORY,
+  };
+}
+
+/* แก้รายการที่รอยืนยัน: วันที่ · บัญชี · บรรทัดย่อยทั้งหมด (แตกหลายบริษัท/หลายหมวด/หัก ณ ที่จ่าย)
+   details ส่งมาแบบมีเครื่องหมายตามข้อมูลจริง (เงินออก = ลบ) · ต้องลงตัวกับยอดหัวเป๊ะ
+   confirm:true = ยืนยันต่อเลย (ระบบจำแบบการแตกบรรทัดของคู่ค้านี้ไว้ใช้ครั้งหน้า) */
+export async function editDoc(env, user, docId, e = {}) {
+  const doc = await getDoc(env, user, docId);
+  if (!doc) return { error: 'ไม่พบเอกสารนี้', status: 404 };
+  const links = (await env.DB.prepare(`SELECT l.transaction_id FROM LedgerDocLinks l JOIN Transactions t ON t.transaction_id=l.transaction_id
+    WHERE l.doc_id=? AND l.role='CREATED' AND t.status='PENDING_REVIEW'`).bind(docId).all()).results || [];
+  if (!links.length) return { error: 'รายการนี้บันทึกหรือยกเลิกไปแล้ว', status: 409 };
+  if (links.length > 1 && (e.details || e.account_id)) return { error: 'รายการโอนระหว่างบัญชีแก้ได้แค่วันที่', status: 400 };
+  const accounts = await permittedAccounts(env, user);
+  if (e.account_id && !accounts.some(a => a.account_id === e.account_id)) return { error: 'ไม่มีสิทธิ์ใช้บัญชีนี้', status: 403 };
+
+  const ops = [];
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(e.date || '') ? e.date : null;
+  for (const { transaction_id: txId } of links) {
+    if (date) ops.push(env.DB.prepare(`UPDATE Transactions SET date=? WHERE transaction_id=?`).bind(date, txId));
+  }
+  const txId = links[0].transaction_id;
+  if (e.account_id) ops.push(env.DB.prepare(`UPDATE Transactions SET account_id=? WHERE transaction_id=?`).bind(e.account_id, txId));
+
+  if (e.details) {
+    if (!Array.isArray(e.details) || !e.details.length) return { error: 'ต้องมีอย่างน้อย 1 บรรทัด', status: 400 };
+    if (e.details.length > 40) return { error: 'แตกได้ไม่เกิน 40 บรรทัด', status: 400 };
+    const head = await env.DB.prepare(`SELECT total_amount FROM Transactions WHERE transaction_id=?`).bind(txId).first();
+    const entIds = new Set((await permittedEntities(env, user)).map(x => x.entity_id));
+    const cats = new Map(((await env.DB.prepare(`SELECT category_id, default_type FROM Categories WHERE family_id=? OR family_id IS NULL`)
+      .bind(user.family_id).all()).results || []).map(c => [c.category_id, c.default_type]));
+    const clean = [];
+    for (const d of e.details) {
+      const amount = round2(d.amount);
+      if (!amount) return { error: 'ยอดแต่ละบรรทัดต้องไม่เป็นศูนย์', status: 400 };
+      const cat = d.category_id || UNCATEGORIZED;
+      if (cat !== UNCATEGORIZED && !cats.has(cat)) return { error: `ไม่พบหมวด ${cat}`, status: 400 };
+      if (d.entity_id && !entIds.has(d.entity_id)) return { error: 'ไม่มีสิทธิ์ใช้บริษัทนี้', status: 403 };
+      const dt = cats.get(cat);
+      clean.push({ amount, fee: round2(Math.abs(d.fee || 0)), wht: round2(d.wht || 0), category_id: cat,
+        entity_id: d.entity_id || null, contact_id: d.contact_id || null, project_id: d.project_id || null,
+        note: String(d.note || '').slice(0, 200), head_owner: d.head_owner || null,
+        type: ['INCOME', 'EXPENSE', 'TRANSFER'].includes(dt) ? dt : (amount < 0 ? 'EXPENSE' : 'INCOME') });
+    }
+    const gap = balanceGap(head.total_amount, clean);
+    if (Math.abs(gap) >= 0.005) return { error: `ยอดยังไม่ลงตัว ขาด/เกิน ${money(gap)} บาท`, gap, status: 400 };
+    ops.push(env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id=?`).bind(txId));
+    for (const d of clean) ops.push(detailInsert(env, txId, d));
+  }
+  if (ops.length) await env.DB.batch(ops);
+  if (e.account_id) {                                              // ให้การเรียนรู้บัญชีใช้บัญชีที่คนเลือก
+    const sug = parse(doc.suggestion, {}) || {};
+    for (const leg of sug.legs || []) if (leg.transaction_id === txId) leg.account_id = e.account_id;
+    await setDoc(env, docId, { suggestion: JSON.stringify(sug) });
+  }
+  if (e.confirm) return runAction(env, user, docId, 'accept', {});
+  return { ok: true, status: 'EDITED' };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ระยะ 2: นำเข้า statement → จับคู่ → สร้างรายการที่ขาด → กระทบยอด (2026-10-10)
+//
+//   ⚠️ D1 แผนฟรีจำกัดจำนวนคำสั่งต่อคำขอ (~50) → บรรทัด statement เก็บเป็น JSON ในแถวเดียว
+//      และการสร้างรายการทำทีละชุด (CREATE_CHUNK บรรทัดต่อคำขอ) หน้าเว็บเรียกซ้ำจนครบ
+//   สถานะบรรทัด: MATCHED (มีในระบบแล้ว) · NEW (ยังไม่มี) · CREATED (สร้างรอยืนยันแล้ว)
+//                IGNORED (ข้าม) · DUPLICATE (อยู่ใน statement ฉบับก่อนแล้ว)
+// ═══════════════════════════════════════════════════════════════
+const CREATE_CHUNK = 8;
+const STATEMENT_PROMPT = `You read a Thai bank account or credit-card statement (one or more page images, in page order).
+Return ONLY JSON:
+{"bank":"","account_number":"","period_from":"YYYY-MM-DD","period_to":"YYYY-MM-DD","opening_balance":null,"closing_balance":null,
+ "lines":[{"date":"YYYY-MM-DD","time":"HH:MM:SS","description":"","ref_code":"","withdrawal":0,"deposit":0,"balance":null}]}
+Rules:
+- List EVERY transaction row in printed order across all pages. Skip headers, page totals and summary rows.
+- A "balance brought forward / ยอดยกมา" row is not a transaction: put its amount in opening_balance.
+- withdrawal = money OUT (ถอน, โอนออก, ชำระ, หักบัญชี, Debit, DR). deposit = money IN (ฝาก, รับโอน, Credit, CR). Put 0 on the empty side. Both are positive numbers.
+- Credit card statement: purchases and fees are withdrawal, payments and refunds are deposit, balance null.
+- balance = the running balance printed on that row, else null. closing_balance = last balance shown (or statement ending balance).
+- Dates YYYY-MM-DD; convert Buddhist year (2569 or 69) to Christian (2026). time HH:MM:SS or null.
+- description = the details/channel text as printed, including the counterparty name if shown. ref_code = reference number if shown else null.`;
+
+async function extractStatement(env, files) {
+  if (env.__statementOverride) return env.__statementOverride(files);           // ใช้ในเทสเท่านั้น
+  if (!env.GEMINI_API_KEY) throw new Error('ยังไม่ได้ตั้ง GEMINI_API_KEY');
+  const base = 'https://generativelanguage.googleapis.com';
+  const model = env.GEMINI_STATEMENT_MODEL || env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+  const parts = [{ text: STATEMENT_PROMPT }];
+  for (const f of files) {                                                     // ส่งไบต์ดิบ (ไม่แปลง base64 → ไม่กิน CPU)
+    let part = null;
+    try {
+      const up = await fetch(`${base}/upload/v1beta/files?key=${env.GEMINI_API_KEY}`, {
+        method: 'POST', headers: { 'X-Goog-Upload-Protocol': 'raw', 'Content-Type': f.mime }, body: f.bytes });
+      const uri = up.ok ? (await up.json())?.file?.uri : null;
+      if (uri) part = { fileData: { mimeType: f.mime, fileUri: uri } };
+    } catch { /* ถอยไปใช้ base64 */ }
+    parts.push(part || { inlineData: { mimeType: f.mime, data: toBase64(f.bytes) } });
+  }
+  const res = await fetch(`${base}/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 60000 } }),
+  });
+  if (!res.ok) {
+    let reason = '';
+    try { const e = await res.json(); reason = e?.error?.message || e?.error?.status || ''; } catch { /* ไม่มีรายละเอียด */ }
+    throw new Error(`AI อ่าน statement ไม่สำเร็จ (${res.status})${reason ? ': ' + String(reason).slice(0, 160) : ''}`);
+  }
+  const data = await res.json();
+  const text = (data?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('') || '{}';
+  return JSON.parse(text.trim().replace(/^```json\s*|```$/g, ''));
+}
+
+const validDate = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) ? String(d) : null;
+const lineKey = l => `${l.date}|${round2(l.amount).toFixed(2)}|${l.balance == null ? '' : round2(l.balance).toFixed(2)}|${String(l.description || '').replace(/\s+/g, '').toLowerCase().slice(0, 40)}`;
+
+async function loadStatement(env, user, stmtId) {
+  const st = await env.DB.prepare(`SELECT * FROM LedgerStatements WHERE stmt_id=? AND family_id=?`).bind(stmtId, user.family_id).first();
+  if (!st) return null;
+  const account = (await permittedAccounts(env, user)).find(a => a.account_id === st.account_id);
+  if (!account) return null;
+  return { st, account, lines: parse(st.lines, []) || [] };
+}
+async function saveStatementLines(env, stmtId, lines) {
+  await env.DB.prepare(`UPDATE LedgerStatements SET lines=?, updated_at=? WHERE stmt_id=?`).bind(JSON.stringify(lines), nowIso(), stmtId).run();
+}
+/* บรรทัดใน statement อื่น ๆ ของบัญชีนี้ที่ช่วงวันซ้อนกัน → รายการที่ถูกจองไปแล้ว + บรรทัดที่เคยนำเข้า */
+async function overlappingStatements(env, accountId, from, to, exceptId = '') {
+  const rows = (await env.DB.prepare(`SELECT stmt_id, lines FROM LedgerStatements WHERE account_id=? AND stmt_id != ?
+    AND IFNULL(period_from,'0000') <= ? AND IFNULL(period_to,'9999') >= ?`).bind(accountId, exceptId, shiftDate(to, 3), shiftDate(from, -3)).all()).results || [];
+  const usedTx = new Set(), keys = new Map();
+  for (const r of rows) for (const l of parse(r.lines, []) || []) {
+    if (l.transaction_id && ['MATCHED', 'CREATED'].includes(l.status)) usedTx.add(l.transaction_id);
+    if (l.status !== 'DUPLICATE') keys.set(lineKey(l), (keys.get(lineKey(l)) || 0) + 1);
+  }
+  return { usedTx, keys };
+}
+
+export async function importStatement(env, user, { account_id, files, file_name }) {
+  const account = (await permittedAccounts(env, user)).find(a => a.account_id === account_id);
+  if (!account) return { error: 'เลือกบัญชีที่มีสิทธิ์ใช้ก่อน', status: 403 };
+  if (!files?.length) return { error: 'ไม่พบไฟล์ statement', status: 400 };
+  if (files.length > 30) return { error: 'ส่งได้ไม่เกิน 30 หน้าต่อครั้ง', status: 400 };
+  if (files.reduce((s, f) => s + f.bytes.length, 0) > 40 * 1024 * 1024) return { error: 'ไฟล์รวมใหญ่เกิน 40 MB', status: 400 };
+
+  let ex;
+  try { ex = await extractStatement(env, files); } catch (err) { return { error: err.message, status: 502 }; }
+  const raw = (ex?.lines || []).map(l => ({
+    date: validDate(l.date), time: /^\d{1,2}:\d{2}/.test(String(l.time || '')) ? String(l.time).slice(0, 8) : null,
+    description: String(l.description || '').trim().slice(0, 200), ref_code: l.ref_code ? String(l.ref_code).trim().slice(0, 60) : null,
+    amount: round2((Number(l.deposit) || 0) - (Number(l.withdrawal) || 0)),
+    balance: l.balance == null || l.balance === '' || !Number.isFinite(Number(l.balance)) ? null : round2(l.balance),
+  })).filter(l => l.date && l.amount);
+  if (!raw.length) return { error: 'ไม่พบรายการใน statement (ลองรูปที่ชัดขึ้น หรือส่งทีละหน้า)', status: 422 };
+
+  const fixed = fixStatementSigns(raw, ex.opening_balance, ex.closing_balance);
+  const dates = fixed.lines.map(l => l.date).sort();
+  const from = validDate(ex.period_from) && validDate(ex.period_from) <= dates[0] ? ex.period_from : dates[0];
+  const to = validDate(ex.period_to) && validDate(ex.period_to) >= dates.at(-1) ? ex.period_to : dates.at(-1);
+
+  // บรรทัดที่เคยนำเข้าจาก statement ฉบับอื่นแล้ว (อัปโหลดซ้ำ / ช่วงทับกัน) → ไม่สร้างซ้ำ
+  const { usedTx, keys } = await overlappingStatements(env, account_id, from, to);
+  const lines = fixed.lines.map((l, i) => ({ line_id: `L${i + 1}`, idx: i + 1, ...l, status: 'NEW', transaction_id: null, doc_id: null, score: null }));
+  for (const l of lines) {
+    const k = lineKey(l);
+    if (keys.get(k) > 0) { keys.set(k, keys.get(k) - 1); l.status = 'DUPLICATE'; }
+  }
+  const txs = ((await env.DB.prepare(`SELECT transaction_id, date, time, total_amount, ref_code, status FROM Transactions
+    WHERE account_id=? AND date >= ? AND date < ?`).bind(account_id, shiftDate(from, -3), shiftDate(to, 4)).all()).results || [])
+    .filter(t => !usedTx.has(t.transaction_id));
+  const open = lines.filter(l => l.status === 'NEW').map(l => ({ ...l, key: l.line_id }));
+  const matches = matchStatementLines(open, txs);
+  for (const l of lines) {
+    const m = matches.get(l.line_id);
+    if (m) Object.assign(l, { status: 'MATCHED', transaction_id: m.transaction_id, score: m.score });
+  }
+  const stmtId = newId('STM');
+  await env.DB.prepare(`INSERT INTO LedgerStatements (stmt_id, family_id, account_id, period_from, period_to, opening_balance, closing_balance,
+    line_count, lines, file_name, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(stmtId, user.family_id, account_id, from, to, fixed.opening, fixed.closing, lines.length, JSON.stringify(lines),
+      String(file_name || '').slice(0, 120) || null, user.user_id, nowIso(), nowIso()).run();
+  const view = await statementView(env, user, stmtId);
+  return { ...view, import: { flipped: fixed.flipped, read: raw.length } };
+}
+
+export async function listStatements(env, user) {
+  const accounts = await permittedAccounts(env, user);
+  const ids = accounts.map(a => a.account_id);
+  if (!ids.length) return { statements: [] };
+  const rows = (await env.DB.prepare(`SELECT stmt_id, account_id, period_from, period_to, opening_balance, closing_balance, line_count, lines, file_name, created_at
+    FROM LedgerStatements WHERE family_id=? AND account_id IN (${ids.map(() => '?').join(',')}) ORDER BY period_to DESC, created_at DESC LIMIT 100`)
+    .bind(user.family_id, ...ids).all()).results || [];
+  return { statements: rows.map(({ lines, ...r }) => {
+    const ls = parse(lines, []) || [];
+    const count = s => ls.filter(l => l.status === s).length;
+    return { ...r, account_name: displayName(accounts.find(a => a.account_id === r.account_id)?.name || r.account_id),
+      matched: count('MATCHED'), created: count('CREATED'), new: count('NEW'), ignored: count('IGNORED'), duplicate: count('DUPLICATE') };
+  }) };
+}
+
+export async function statementView(env, user, stmtId) {
+  const s = await loadStatement(env, user, stmtId);
+  if (!s) return { error: 'ไม่พบ statement นี้', status: 404 };
+  const { st, account, lines } = s;
+  // รายการในระบบช่วงเดียวกัน (กว้างกว่า 7 วัน เผื่อเลือกจับคู่เอง)
+  const txs = (await env.DB.prepare(`SELECT t.transaction_id, t.date, t.time, t.total_amount, t.ref_code, t.status, t.statement_desc, t.source,
+      (SELECT d.note FROM TransactionDetails d WHERE d.transaction_id=t.transaction_id LIMIT 1) AS note,
+      (SELECT d.category_id FROM TransactionDetails d WHERE d.transaction_id=t.transaction_id LIMIT 1) AS category_id
+    FROM Transactions t WHERE t.account_id=? AND t.date >= ? AND t.date < ?`)
+    .bind(st.account_id, shiftDate(st.period_from, -7), shiftDate(st.period_to, 8)).all()).results || [];
+  const byId = new Map(txs.map(t => [t.transaction_id, t]));
+  let changed = false;
+  for (const l of lines) {                                         // รายการถูกลบไปแล้ว → กลับเป็น "ยังไม่มีในระบบ"
+    if (['MATCHED', 'CREATED'].includes(l.status) && l.transaction_id && !byId.has(l.transaction_id)) {
+      const still = await env.DB.prepare(`SELECT 1 AS x FROM Transactions WHERE transaction_id=?`).bind(l.transaction_id).first();
+      if (!still) { Object.assign(l, { status: 'NEW', transaction_id: null, doc_id: null, score: null }); changed = true; }
+    }
+  }
+  if (changed) await saveStatementLines(env, stmtId, lines);
+  const { usedTx } = await overlappingStatements(env, st.account_id, st.period_from, st.period_to, stmtId);
+  const mine = new Set(lines.filter(l => l.transaction_id).map(l => l.transaction_id));
+  const free = txs.filter(t => !mine.has(t.transaction_id) && !usedTx.has(t.transaction_id));
+  const catIds = [...new Set(txs.map(t => t.category_id).filter(Boolean))];
+  const catNames = new Map(catIds.length ? ((await env.DB.prepare(`SELECT category_id, name FROM Categories WHERE category_id IN (${catIds.map(() => '?').join(',')})`)
+    .bind(...catIds).all()).results || []).map(c => [c.category_id, displayName(c.name)]) : []);
+  const txOut = t => t && { transaction_id: t.transaction_id, date: t.date, time: t.time, total_amount: t.total_amount, status: t.status,
+    desc: t.note || t.statement_desc || '', category: t.category_id === UNCATEGORIZED ? 'ยังไม่ระบุ' : (catNames.get(t.category_id) || t.category_id || ''), source: t.source };
+  const dayGap = (a, b) => Math.abs(Date.parse(a) - Date.parse(b)) / 864e5;
+  const outLines = lines.map(l => ({ ...l, tx: txOut(byId.get(l.transaction_id)),
+    candidates: l.status === 'NEW' ? free.filter(t => Math.abs(round2(t.total_amount) - l.amount) < 0.005 && dayGap(t.date, l.date) <= 7)
+      .sort((a, b) => dayGap(a.date, l.date) - dayGap(b.date, l.date)).slice(0, 3).map(txOut) : [] }));
+  const systemOnly = free.filter(t => t.date >= st.period_from && t.date <= st.period_to).sort((a, b) => a.date.localeCompare(b.date)).map(txOut);
+
+  const bal = await env.DB.prepare(`SELECT ROUND(COALESCE(SUM(CASE WHEN status='CONFIRMED' THEN total_amount END),0),2) AS confirmed,
+      ROUND(COALESCE(SUM(CASE WHEN status='PENDING_REVIEW' THEN total_amount END),0),2) AS pending
+    FROM Transactions WHERE account_id=? AND date <= ?`).bind(st.account_id, st.period_to).first();
+  const counted = lines.filter(l => l.status !== 'DUPLICATE');
+  const sum = round2(lines.reduce((x, l) => x + l.amount, 0));
+  const count = k => lines.filter(l => l.status === k).length;
+  return {
+    statement: { stmt_id: st.stmt_id, account_id: st.account_id, period_from: st.period_from, period_to: st.period_to,
+      opening_balance: st.opening_balance, closing_balance: st.closing_balance, file_name: st.file_name, created_at: st.created_at },
+    account: { account_id: account.account_id, name: displayName(account.name), bank_name: account.bank_name },
+    lines: outLines, system_only: systemOnly,
+    summary: {
+      total: lines.length, matched: count('MATCHED'), created: count('CREATED'), new: count('NEW'), ignored: count('IGNORED'), duplicate: count('DUPLICATE'),
+      sum_in: round2(counted.filter(l => l.amount > 0).reduce((x, l) => x + l.amount, 0)),
+      sum_out: round2(counted.filter(l => l.amount < 0).reduce((x, l) => x + l.amount, 0)),
+      // ผลรวมทุกบรรทัดต้องเท่ากับ ยอดปิด − ยอดยกมา · ไม่เท่า = AI อ่านตก/อ่านเกิน
+      read_gap: st.opening_balance != null && st.closing_balance != null ? round2(st.closing_balance - st.opening_balance - sum) : null,
+      system_confirmed: bal?.confirmed ?? 0, system_pending: bal?.pending ?? 0,
+      // ยอดในระบบ ณ วันสุดท้ายของ statement เทียบกับยอดปิดของธนาคาร (นับรายการรอยืนยันด้วย)
+      balance_gap: st.closing_balance != null ? round2(st.closing_balance - (bal?.confirmed ?? 0) - (bal?.pending ?? 0)) : null,
+    },
+  };
+}
+
+/* สร้างรายการรอยืนยันจากบรรทัดที่ยังไม่มีในระบบ — ทีละ CREATE_CHUNK บรรทัด (คืน remaining ให้หน้าเว็บเรียกต่อ)
+   ใช้แบบที่จำของคู่ค้า (คีย์จากคำอธิบายใน statement) · ยืนยันเองเมื่อคู่ค้านี้เคยยืนยันแบบเดิม ≥ 3 ครั้ง */
+export async function createFromStatement(env, user, stmtId, body = {}) {
+  const s = await loadStatement(env, user, stmtId);
+  if (!s) return { error: 'ไม่พบ statement นี้', status: 404 };
+  const { account, lines } = s;
+  const want = Array.isArray(body.line_ids) && body.line_ids.length ? new Set(body.line_ids) : null;
+  const todo = lines.filter(l => l.status === 'NEW' && (!want || want.has(l.line_id)));
+  const batch = todo.slice(0, CREATE_CHUNK);
+  const rules = await loadRules(env, user.family_id, 'PARTY');
+  let created = 0, confirmed = 0;
+  for (const l of batch) {
+    const side = l.amount > 0 ? 'IN' : 'OUT';
+    const rule = rules.get(statementPartyKey(l.description));
+    const template = rule?.value && typeof rule.value === 'object' ? rule.value : null;
+    const proposal = proposeLines({ total: l.amount, template,
+      fallback: { category_id: UNCATEGORIZED, entity_id: account.entity_id, type: l.amount > 0 ? 'INCOME' : 'EXPENSE', note: l.description } });
+    for (const d of proposal.lines) if (!d.note) d.note = l.description;
+    const confident = (rule?.hits || 0) >= 3 && proposal.how === 'template-exact';
+    const txId = newId('TX'), docId = newId('DOC');
+    const party = { name: l.description };
+    const ops = [env.DB.prepare(`INSERT INTO Transactions (transaction_id, account_id, ref_code, date, time, total_amount, statement_desc, status, source, slip_image_url, created_by_user_id)
+      VALUES (?,?,?,?,?,?,?,?, 'PDF_IMPORT', NULL, ?)`).bind(txId, account.account_id, l.ref_code || null, l.date, l.time || null, round2(l.amount),
+        l.description || null, confident ? 'CONFIRMED' : 'PENDING_REVIEW', user.user_id),
+      ...proposal.lines.map(d => detailInsert(env, txId, d)),
+      env.DB.prepare(`INSERT INTO LedgerDocs (doc_id, family_id, uploaded_by, source, doc_type, status, extracted, suggestion, transaction_id, created_at)
+        VALUES (?,?,?, 'WEB', 'STATEMENT_LINE', ?, ?, ?, ?, ?)`).bind(docId, user.family_id, user.user_id, confident ? 'DONE' : 'SUGGESTED',
+        JSON.stringify({ doc_type: 'STATEMENT_LINE', stmt_id: stmtId, line_id: l.line_id, date: l.date, time: l.time, amount: Math.abs(l.amount),
+          memo: l.description, ref_code: l.ref_code, ...(side === 'IN' ? { sender: party } : { receiver: party }) }),
+        JSON.stringify({ direction: side, party: l.description, legs: [{ side, account_id: account.account_id, kind: 'CREATED', transaction_id: txId, how: proposal.how }] }),
+        txId, nowIso()),
+      env.DB.prepare(`INSERT OR IGNORE INTO LedgerDocLinks (doc_id, transaction_id, role) VALUES (?,?, 'CREATED')`).bind(docId, txId)];
+    await env.DB.batch(ops);
+    Object.assign(l, { status: 'CREATED', transaction_id: txId, doc_id: docId });
+    created++; if (confident) confirmed++;
+  }
+  if (created) await saveStatementLines(env, stmtId, lines);
+  return { ok: true, created, auto_confirmed: confirmed, remaining: todo.length - batch.length };
+}
+
+/* จับคู่เอง / ข้าม / คืนสถานะ ของบรรทัดเดียว */
+export async function statementLineAction(env, user, stmtId, lineId, body = {}) {
+  const s = await loadStatement(env, user, stmtId);
+  if (!s) return { error: 'ไม่พบ statement นี้', status: 404 };
+  const l = s.lines.find(x => x.line_id === lineId);
+  if (!l) return { error: 'ไม่พบบรรทัดนี้', status: 404 };
+  if (body.action === 'match') {
+    const tx = await env.DB.prepare(`SELECT transaction_id, total_amount FROM Transactions WHERE transaction_id=? AND account_id=?`)
+      .bind(body.transaction_id, s.st.account_id).first();
+    if (!tx) return { error: 'ไม่พบรายการในบัญชีนี้', status: 404 };
+    if (Math.abs(round2(tx.total_amount) - l.amount) >= 0.005) return { error: 'ยอดไม่เท่ากัน จับคู่ไม่ได้', status: 400 };
+    if (s.lines.some(x => x !== l && x.transaction_id === tx.transaction_id)) return { error: 'รายการนี้จับคู่กับบรรทัดอื่นแล้ว', status: 409 };
+    Object.assign(l, { status: 'MATCHED', transaction_id: tx.transaction_id, score: null });
+  } else if (body.action === 'ignore') {
+    if (l.status === 'CREATED') return { error: 'สร้างรายการไปแล้ว — กด "ไม่ต้องบันทึก" ที่รายการในกล่องแทน', status: 409 };
+    Object.assign(l, { status: 'IGNORED', transaction_id: null });
+  } else if (body.action === 'reset') {
+    if (l.status === 'CREATED') return { error: 'สร้างรายการไปแล้ว', status: 409 };
+    Object.assign(l, { status: 'NEW', transaction_id: null, score: null });
+  } else return { error: 'ไม่รู้จักคำสั่งนี้', status: 400 };
+  await saveStatementLines(env, stmtId, s.lines);
+  return { ok: true, line: l };
+}
+
+export async function deleteStatement(env, user, stmtId) {
+  const s = await loadStatement(env, user, stmtId);
+  if (!s) return { error: 'ไม่พบ statement นี้', status: 404 };
+  await env.DB.prepare(`DELETE FROM LedgerStatements WHERE stmt_id=?`).bind(stmtId).run();
+  return { ok: true };
+}
+
+/* อัปเดตบรรทัดของ statement จากเอกสาร STATEMENT_LINE (เช่น กด "ไม่ต้องบันทึก" ในกล่อง) */
+async function markStatementLine(env, user, ex, fields) {
+  if (!ex?.stmt_id || !ex?.line_id) return;
+  try {
+    const s = await loadStatement(env, user, ex.stmt_id);
+    const l = s?.lines.find(x => x.line_id === ex.line_id);
+    if (!l) return;
+    Object.assign(l, fields);
+    await saveStatementLines(env, ex.stmt_id, s.lines);
+  } catch { /* ยังไม่มีตาราง statement — ข้าม */ }
 }

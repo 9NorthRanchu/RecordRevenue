@@ -1123,6 +1123,9 @@ function bindNavigation() {
     navItems.forEach(item => {
         item.addEventListener("click", (e) => {
             e.preventDefault();
+            // ลิงก์ออกไปหน้าอื่น (เช่น กล่องรอเคลียร์ของสมุดจด ledger/index.html)
+            const href = item.getAttribute("data-href");
+            if (href) { location.href = href; return; }
             const target = item.getAttribute("data-target");
             switchView(target);
         });

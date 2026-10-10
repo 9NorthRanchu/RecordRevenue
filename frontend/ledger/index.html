@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>กล่องรอเคลียร์ · สมุดจด</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  กล่องรอเคลียร์ + นำเข้า statement (สมุดจด ระยะ 1–2 · 2026-10-10)
+  ต้องล็อกอินจากหน้าแอปหลักก่อน (ใช้ session_token ใน localStorage เดียวกัน)
+  API: /api/inbox · /api/inbox/meta · /api/inbox/{doc}/accept|dismiss|account|link|retry|edit
+       /api/inbox/upload · /api/inbox/cash · /api/inbox/file/{doc}
+       /api/inbox/statement · /api/inbox/statements[/{id}[/create|delete|line/{line}]]
+  ?api=http://localhost:8787 = ยิงไปเซิร์ฟเวอร์ทดสอบ (จำเฉพาะแท็บนี้)
+-->
+<style>
+  :root {
+    --ink: #212529; --muted: #868e96; --line: #e9ecef; --bg: #f6f7fb; --card: #fff;
+    --out: #ff6b6b; --in: #12b886; --tr: #4c6ef5; --ask: #f59f00; --cash: #7950f2; --ok: #20c997; --bad: #e03131;
+    --brand: #ff6b6b; --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Anuphan', -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+  body { padding-bottom: 90px; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+  .top { background: linear-gradient(135deg, #ff8787, #ffa94d 55%, #ffd43b); color: #fff; padding: 18px 0 54px; }
+  .top .wrap { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .top h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+  .top p { margin: 2px 0 0; opacity: .92; font-size: 13px; }
+  .top a { color: #fff; text-decoration: none; background: rgba(255,255,255,.22); padding: 8px 12px; border-radius: 12px; font-size: 13px; white-space: nowrap; }
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px;
+    box-shadow: 0 8px 24px rgba(33,37,41,.08); position: sticky; top: 8px; z-index: 5; }
+  .tabs button { border: 0; background: transparent; padding: 11px 6px; border-radius: 12px; font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { background: var(--brand); color: #fff; box-shadow: 0 4px 12px rgba(255,107,107,.35); }
+  .tabs .n { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: rgba(0,0,0,.08); font-size: 12px; margin-left: 4px; }
+  .tabs button.on .n { background: rgba(255,255,255,.3); }
+
+  .quick { display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-top: 14px; }
+  .upl { border: 2px dashed #ffc9c9; background: #fff5f5; color: #e8590c; border-radius: 16px; padding: 12px 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .upl.drag { background: #ffe3e3; border-color: var(--out); }
+  .cash { display: flex; background: #fff; border-radius: 16px; border: 1.5px solid var(--line); overflow: hidden; }
+  .cash input { flex: 1; min-width: 0; border: 0; padding: 12px 14px; font-size: 15px; outline: none; background: transparent; }
+  .cash button { border: 0; background: var(--cash); color: #fff; padding: 0 16px; font-weight: 600; cursor: pointer; }
+
+  .filters { display: flex; gap: 8px; overflow-x: auto; padding: 14px 0 4px; scrollbar-width: none; }
+  .filters::-webkit-scrollbar { display: none; }
+  .chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; font-size: 14px; cursor: pointer; white-space: nowrap; }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .chip small { opacity: .7; margin-left: 2px; }
+  .bulk { margin-top: 10px; width: 100%; border: 0; border-radius: 14px; padding: 13px; font-weight: 700; color: #fff; cursor: pointer;
+    background: linear-gradient(135deg, #20c997, #12b886); box-shadow: 0 6px 16px rgba(18,184,134,.3); }
+
+  .doc { position: relative; background: var(--card); border-radius: var(--radius); margin-top: 12px; padding: 14px 14px 12px 18px; overflow: hidden;
+    box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(33,37,41,.05); transition: transform .25s, opacity .25s; }
+  .doc::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--k, var(--out)); }
+  .doc.gone { opacity: 0; transform: translateX(40px); }
+  .doc .row { display: flex; gap: 12px; align-items: flex-start; }
+  .thumb { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; background: var(--bg); flex: none; cursor: zoom-in; display: grid; place-items: center; font-size: 24px; }
+  .doc .main { flex: 1; min-width: 0; }
+  .doc .amt { font-size: 22px; font-weight: 700; color: var(--k); line-height: 1.2; }
+  .doc .who { font-weight: 600; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc .meta { color: var(--muted); font-size: 13px; margin-top: 2px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; background: color-mix(in srgb, var(--k) 14%, #fff); color: var(--k); white-space: nowrap; }
+  .cat { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 6px 12px; border-radius: 10px; background: var(--bg); font-size: 13px; border: 0; cursor: pointer; }
+  .cat.none { background: #fff5f5; color: var(--bad); font-weight: 600; }
+  .acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .b { border: 0; border-radius: 12px; padding: 10px 14px; font-weight: 600; font-size: 14px; cursor: pointer; background: var(--bg); }
+  .b.ok { background: var(--k, var(--ok)); color: #fff; flex: 1; min-width: 120px; }
+  .b.ghost { background: transparent; color: var(--muted); }
+  .b.line { background: #fff; border: 1.5px solid var(--line); }
+  .b:disabled { opacity: .5; cursor: default; }
+  .opts { display: grid; gap: 8px; margin-top: 10px; }
+  .opts .b { text-align: left; background: #fff; border: 1.5px solid var(--line); }
+  .empty { text-align: center; color: var(--muted); padding: 50px 20px; }
+  .empty .big { font-size: 56px; }
+  .empty h3 { color: var(--ink); margin: 10px 0 4px; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .err { color: var(--bad); font-size: 13px; margin-top: 6px; }
+  .note { background: #fff9db; color: #8a5a00; border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-top: 10px; }
+
+  /* แผ่นล่าง (แก้ไข / เลือก) */
+  .sheet-bg { position: fixed; inset: 0; background: rgba(33,37,41,.45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; animation: fade .15s; }
+  .sheet { background: #fff; width: 100%; max-width: 640px; max-height: 92vh; border-radius: 24px 24px 0 0; display: flex; flex-direction: column; animation: up .2s; }
+  @media (min-width: 700px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; max-height: 88vh; } }
+  .sheet header { padding: 16px 18px 10px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .sheet header h2 { margin: 0; font-size: 18px; }
+  .sheet .x { border: 0; background: var(--bg); width: 36px; height: 36px; border-radius: 50%; font-size: 18px; cursor: pointer; flex: none; }
+  .sheet .body { padding: 14px 18px; overflow-y: auto; flex: 1; }
+  .sheet footer { padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+  @keyframes up { from { transform: translateY(30px); opacity: .5; } }
+  @keyframes fade { from { opacity: 0; } }
+  label.f { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 5px; }
+  .inp, select.inp { width: 100%; border: 1.5px solid var(--line); border-radius: 12px; padding: 11px 12px; font-size: 16px; background: #fff; height: 46px; }
+  .inp:focus { outline: none; border-color: var(--brand); }
+  input[type=date].inp { -webkit-appearance: none; appearance: none; text-align: left; }
+  .g2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; align-items: end; }
+  .tot { border-radius: 16px; padding: 12px 14px; color: #fff; background: var(--k); display: flex; justify-content: space-between; align-items: baseline; }
+  .tot b { font-size: 24px; }
+  .ln { border: 1.5px solid var(--line); border-radius: 16px; padding: 12px; margin-top: 12px; position: relative; }
+  .ln .del { position: absolute; top: 8px; right: 8px; border: 0; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+  .ln .pick { width: 100%; text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 11px 12px; cursor: pointer; min-height: 46px; }
+  .ln .pick.none { color: var(--bad); border-color: #ffc9c9; background: #fff5f5; }
+  .mini { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .mini button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  .remain { position: sticky; bottom: 0; margin-top: 14px; border-radius: 14px; padding: 12px 14px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .remain.okk { background: #e6fcf5; color: #087f5b; }
+  .remain.need { background: #fff4e6; color: #d9480f; }
+  .remain.over { background: #fff5f5; color: var(--bad); }
+  .add { width: 100%; margin-top: 12px; border: 2px dashed var(--line); background: transparent; border-radius: 14px; padding: 12px; color: var(--muted); font-weight: 600; cursor: pointer; }
+  .plist { display: grid; gap: 6px; margin-top: 10px; }
+  .plist button { text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 11px 12px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+  .plist button small { color: var(--muted); white-space: nowrap; }
+  .plist button.on { border-color: var(--brand); background: #fff5f5; }
+
+  /* statement */
+  .card { background: #fff; border-radius: var(--radius); padding: 16px; margin-top: 14px; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(33,37,41,.05); }
+  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .stmt { cursor: pointer; }
+  .prog { height: 8px; border-radius: 99px; background: var(--bg); overflow: hidden; margin-top: 10px; display: flex; }
+  .prog i { display: block; height: 100%; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-top: 12px; }
+  .tile { border-radius: 14px; padding: 10px 12px; background: var(--bg); }
+  .tile b { display: block; font-size: 20px; }
+  .tile span { font-size: 12px; color: var(--muted); }
+  .chk { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; margin-top: 8px; font-size: 14px; }
+  .chk.good { background: #e6fcf5; color: #087f5b; }
+  .chk.warn { background: #fff4e6; color: #a34700; }
+  .sl { display: grid; grid-template-columns: 70px 1fr auto; gap: 4px 10px; padding: 12px 0; border-bottom: 1px solid var(--line); align-items: start; }
+  .sl:last-child { border-bottom: 0; }
+  .sl .d { color: var(--muted); font-size: 13px; }
+  .sl .t { font-size: 14px; word-break: break-word; }
+  .sl .a { font-weight: 700; text-align: right; white-space: nowrap; }
+  .sl .x2 { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+  .sl .x2 .b { padding: 6px 10px; font-size: 13px; }
+  .pos { color: var(--in); } .neg { color: var(--out); }
+  .st-MATCHED { --k: var(--ok); } .st-CREATED { --k: var(--tr); } .st-NEW { --k: var(--ask); } .st-IGNORED, .st-DUPLICATE { --k: #adb5bd; }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 14px;
+    font-size: 14px; z-index: 40; box-shadow: 0 8px 24px rgba(0,0,0,.2); max-width: 90vw; animation: up .2s; }
+  .busy { position: fixed; inset: 0; background: rgba(255,255,255,.75); z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 20px; }
+  .spin { width: 44px; height: 44px; border-radius: 50%; border: 4px solid #ffe3e3; border-top-color: var(--brand); animation: sp 0.8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .zoom { position: fixed; inset: 0; background: rgba(0,0,0,.88); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .zoom img { max-width: 94vw; max-height: 92vh; border-radius: 8px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap">
+  <div><h1>📒 สมุดจด</h1><p id="hello">กล่องรอเคลียร์ · ยืนยันทีเดียวจบ</p></div>
+  <a href="../index.html">← แอปหลัก</a>
+</div></div>
+<div class="wrap">
+  <div class="tabs" id="tabs">
+    <button data-tab="inbox" class="on">📥 รอเคลียร์<span class="n" id="nInbox">0</span></button>
+    <button data-tab="stmt">🏦 Statement</button>
+    <button data-tab="done">✅ ล่าสุด</button>
+  </div>
+  <div id="view"></div>
+</div>
+<input type="file" id="fileIn" accept="image/*,application/pdf" multiple class="hidden">
+
+<script>
+(function () {
+  'use strict';
+  // ───────── พื้นฐาน ─────────
+  const API = (() => {
+    const PROD = 'https://record-revenue.9nimz.workers.dev';
+    try {
+      const q = new URLSearchParams(location.search).get('api');
+      if (q) sessionStorage.setItem('api_base_override', q);
+      const o = sessionStorage.getItem('api_base_override');
+      if (o) return o.replace(/\/$/, '');
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787';
+    } catch (e) { /* ใช้ของจริง */ }
+    return PROD;
+  })();
+  const token = () => { try { return localStorage.getItem('session_token') || sessionStorage.getItem('session_token') || ''; } catch { return ''; } };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+  const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const signed = n => `${n < 0 ? '−' : '+'}฿${money(Math.abs(n))}`;
+  const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const thDate = (d, withYear) => { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[3]} ${MONTHS[+m[2] - 1]}${withYear ? ' ' + (String(+m[1] + 543).slice(2)) : ''}` : (d || '-'); };
+  const $ = sel => document.querySelector(sel);
+  const view = $('#view');
+  const KIND = {
+    OUT: { c: 'var(--out)', icon: '💸', word: 'จ่าย' }, IN: { c: 'var(--in)', icon: '💰', word: 'รับ' },
+    TRANSFER: { c: 'var(--tr)', icon: '🔁', word: 'โอนระหว่างบัญชี' }, ASK: { c: 'var(--ask)', icon: '🧾', word: 'ต้องเลือก' },
+    CASH: { c: 'var(--cash)', icon: '🪙', word: 'เงินสด' }, STORE: { c: '#adb5bd', icon: '📎', word: 'เอกสาร' }, ERR: { c: 'var(--bad)', icon: '⚠️', word: 'อ่านไม่สำเร็จ' },
+  };
+  const S = { meta: null, tab: 'inbox', docs: [], recent: [], filter: 'all', statements: [], stmt: null, stmtFilter: 'todo', thumbs: new Map() };
+
+  function toast(text, ms = 2600) {
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = text;
+    document.body.appendChild(t); setTimeout(() => t.remove(), ms);
+  }
+  function busy(text) {
+    const b = document.createElement('div'); b.className = 'busy';
+    b.innerHTML = `<div class="spin"></div><div><b>${esc(text)}</b></div><div class="hint" data-sub></div>`;
+    document.body.appendChild(b);
+    return { done: () => b.remove(), sub: s => { b.querySelector('[data-sub]').textContent = s; } };
+  }
+  async function api(path, opts = {}) {
+    const headers = new Headers(opts.headers || {});
+    headers.set('Authorization', `Bearer ${token()}`);
+    let body = opts.body;
+    if (opts.json !== undefined) { headers.set('Content-Type', 'application/json'); body = JSON.stringify(opts.json); }
+    const res = await fetch(API + path, { method: opts.method || (body ? 'POST' : 'GET'), headers, body });
+    if (res.status === 401) { showLogin(); throw new Error('กรุณาเข้าสู่ระบบ'); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { const e = new Error(data.error || `ผิดพลาด (${res.status})`); e.data = data; throw e; }
+    return data;
+  }
+  function showLogin() {
+    view.innerHTML = `<div class="card empty"><div class="big">🔐</div><h3>ยังไม่ได้เข้าสู่ระบบ</h3>
+      <p>เข้าสู่ระบบที่แอปหลักก่อน แล้วกลับมาที่หน้านี้</p>
+      <p style="margin-top:16px"><a class="b ok" style="--k:var(--brand);text-decoration:none;display:inline-block" href="../index.html">ไปหน้าเข้าสู่ระบบ</a></p></div>`;
+  }
+  const accName = id => S.meta?.accounts.find(a => a.account_id === id)?.name || id || '-';
+  const catOf = id => S.meta?.categories.find(c => c.category_id === id);
+  const catName = id => !id || id === S.meta?.uncategorized ? 'ยังไม่ระบุหมวด' : (catOf(id)?.name || id);
+  const entName = id => S.meta?.entities.find(e => e.entity_id === id)?.name || (id ? id : 'ไม่ระบุบริษัท');
+  const conName = id => S.meta?.contacts.find(c => c.contact_id === id)?.name || '';
+
+  // ───────── แท็บ ─────────
+  $('#tabs').addEventListener('click', e => {
+    const b = e.target.closest('button[data-tab]'); if (!b) return;
+    S.tab = b.dataset.tab; S.stmt = null;
+    document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+    load();
+  });
+
+  async function load() {
+    if (!token()) return showLogin();
+    try {
+      if (!S.meta) {
+        S.meta = await api('/api/inbox/meta');
+        $('#hello').textContent = `สวัสดี ${S.meta.user.name} · ยืนยันทีเดียวจบ`;
+      }
+      if (S.tab === 'inbox') { S.docs = (await api('/api/inbox')).docs || []; renderInbox(); }
+      else if (S.tab === 'done') { S.recent = ((await api('/api/inbox?status=all&limit=60')).docs || []).filter(d => ['DONE', 'DISMISSED'].includes(d.status)); renderDone(); }
+      else if (S.stmt) await openStatement(S.stmt.statement.stmt_id);
+      else { S.statements = (await api('/api/inbox/statements')).statements || []; renderStatements(); }
+      $('#nInbox').textContent = S.tab === 'inbox' ? S.docs.length : $('#nInbox').textContent;
+    } catch (err) {
+      if (err.message !== 'กรุณาเข้าสู่ระบบ') view.innerHTML = `<div class="card empty"><div class="big">📡</div><h3>โหลดไม่สำเร็จ</h3><p>${esc(err.message)}</p></div>`;
+    }
+  }
+
+  // ───────── ข้อมูลของเอกสาร 1 ใบ ─────────
+  function info(d) {
+    const ex = d.extracted || {}, sug = d.suggestion || {};
+    const txs = d.transactions || [];
+    const created = txs.filter(t => t.role === 'CREATED');
+    const main = created.find(t => t.status === 'PENDING_REVIEW') || created[0] || txs[0] || null;
+    const dir = sug.direction || (main ? (main.total_amount > 0 ? 'IN' : 'OUT') : 'OUT');
+    let kind = d.doc_type === 'CASH' ? 'CASH' : dir === 'TRANSFER' ? 'TRANSFER' : dir === 'IN' ? 'IN' : 'OUT';
+    if (['NEEDS_ACCOUNT', 'NEEDS_CHOICE'].includes(d.status)) kind = 'ASK';
+    if (d.status === 'ERROR' || d.status === 'READING') kind = 'ERR';
+    if (d.status === 'STORED') kind = 'STORE';
+    const amount = main ? main.total_amount : (dir === 'IN' ? 1 : -1) * (ex.amount || 0);
+    const party = d.doc_type === 'CASH' ? ex.note : d.doc_type === 'STATEMENT_LINE' ? ex.memo
+      : dir === 'IN' ? ex.sender?.name : dir === 'TRANSFER' ? `${accName(created.find(t => t.total_amount < 0)?.account_id)} → ${accName(created.find(t => t.total_amount > 0)?.account_id)}`
+      : (ex.receiver?.name || ex.merchant);
+    const details = main?.details || [];
+    const pending = created.filter(t => t.status === 'PENDING_REVIEW');
+    const uncategorized = details.some(x => x.category_id === S.meta.uncategorized);
+    const status = { SUGGESTED: 'รอยืนยัน', NEEDS_ACCOUNT: 'เลือกบัญชีของเรา', NEEDS_CHOICE: 'เลือกรายการที่ตรงกัน', ERROR: 'อ่านไม่สำเร็จ',
+      READING: 'ค้างอยู่ระหว่างอ่าน', STORED: 'เก็บไว้ ยังไม่ผูกรายการ', DONE: 'บันทึกแล้ว', DISMISSED: 'ไม่บันทึก' }[d.status] || d.status;
+    const src = { LINE: 'LINE', WEB: 'เว็บ' }[d.source] || d.source;
+    const learned = (sug.legs || []).some(l => String(l.how || '').startsWith('template'));
+    return { ex, sug, main, created, pending, dir, kind, amount, party: party || '', details, uncategorized, status, src, learned,
+      fromStatement: d.doc_type === 'STATEMENT_LINE', editable: pending.length === 1 && created.length === 1 };
+  }
+
+  // ───────── กล่องรอเคลียร์ ─────────
+  const FILTERS = [
+    ['all', 'ทั้งหมด', () => true],
+    ['ready', 'พร้อมยืนยัน', i => i.pending.length && !i.uncategorized],
+    ['nocat', 'ยังไม่ระบุหมวด', i => i.pending.length && i.uncategorized],
+    ['ask', 'ต้องเลือก', i => i.kind === 'ASK' || i.kind === 'ERR' || i.kind === 'STORE'],
+    ['stmt', 'จาก statement', i => i.fromStatement],
+  ];
+  function renderInbox() {
+    const items = S.docs.map(d => ({ d, i: info(d) }));
+    const f = FILTERS.find(x => x[0] === S.filter) || FILTERS[0];
+    const shown = items.filter(x => f[2](x.i));
+    const ready = items.filter(x => FILTERS[1][2](x.i));
+    $('#nInbox').textContent = S.docs.length;
+    view.innerHTML = `
+      <div class="quick">
+        <button class="upl" id="uplBtn">📷 ส่งสลิป/เอกสาร</button>
+        <form class="cash" id="cashForm"><input id="cashIn" placeholder="จดเงินสด เช่น กาแฟ 65" autocomplete="off"><button>จด</button></form>
+      </div>
+      <div class="filters">${FILTERS.map(([k, label, fn]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-f="${k}">${label}<small> ${items.filter(x => fn(x.i)).length}</small></button>`).join('')}</div>
+      ${ready.length > 1 && (S.filter === 'all' || S.filter === 'ready') ? `<button class="bulk" id="bulkBtn">✓ ยืนยันทั้งหมดที่พร้อม (${ready.length} รายการ)</button>` : ''}
+      <div id="list">${shown.length ? shown.map(x => docCard(x.d, x.i)).join('') : emptyInbox(items.length)}</div>`;
+    bindInbox(shown);
+  }
+  const emptyInbox = total => total ? `<div class="empty"><div class="big">🔍</div><h3>ไม่มีรายการในกลุ่มนี้</h3></div>`
+    : `<div class="empty"><div class="big">🎉</div><h3>เคลียร์หมดแล้ว!</h3><p>ส่งสลิปเข้า LINE หรือกด "ส่งสลิป/เอกสาร" ด้านบน</p></div>`;
+
+  function docCard(d, i) {
+    const k = KIND[i.kind];
+    const thumb = d.has_file ? `<img class="thumb" data-thumb="${esc(d.doc_id)}" alt="">` : `<div class="thumb">${k.icon}</div>`;
+    const acc = i.main ? accName(i.main.account_id) : '';
+    const cat = i.details.length > 1 ? `🧩 แตก ${i.details.length} บรรทัด · ${[...new Set(i.details.map(x => entName(x.entity_id)))].slice(0, 2).join(', ')}`
+      : i.details.length ? `🗂️ ${catName(i.details[0].category_id)}${i.learned ? ' ✨' : ''}` : '';
+    const memo = i.details[0]?.note || i.ex.memo || '';
+    let body = '';
+    if (d.status === 'NEEDS_ACCOUNT') {
+      const opts = (i.sug.options || []).slice(0, 4);
+      body = `<div class="opts">${opts.map(o => `<button class="b" data-act="account" data-acc="${esc(o.account_id)}" data-side="${esc(o.side)}">${o.side === 'IN' ? '💰 รับเข้า' : '💸 จ่ายจาก'} ${esc(o.name ? o.name.replace(/^\s*\[[^\]]+\]\s*/, '') : accName(o.account_id))}</button>`).join('')}
+        <button class="b line" data-act="account-other">🔎 บัญชีอื่น…</button></div>
+        <div class="acts"><button class="b ghost" data-act="dismiss">ไม่ต้องบันทึก</button></div>`;
+    } else if (d.status === 'NEEDS_CHOICE') {
+      const ch = ((i.sug.legs || []).find(l => l.kind === 'CHOOSE')?.choices || []).slice(0, 5);
+      body = `<div class="hint">ยอดนี้ตรงกับหลายรายการในระบบ — สลิปนี้คือรายการไหน?</div>
+        <div class="opts">${ch.map(c => `<button class="b" data-act="link" data-tx="${esc(c.transaction_id)}">${thDate(c.date)} · ${esc(c.statement_desc || '')} <b>${signed(c.total_amount)}</b></button>`).join('')}</div>
+        <div class="acts"><button class="b ghost" data-act="dismiss">ไม่ต้องบันทึก</button></div>`;
+    } else if (d.status === 'ERROR' || d.status === 'READING') {
+      body = `<div class="err">${esc(d.error || 'ระบบอ่านไม่จบ')}</div>
+        <div class="acts"><button class="b ok" style="--k:var(--ask)" data-act="retry">🔄 อ่านใหม่</button><button class="b ghost" data-act="dismiss">ทิ้ง</button></div>`;
+    } else if (d.status === 'STORED') {
+      body = `<div class="hint">${esc(i.sug.note || 'เก็บเอกสารไว้แล้ว')}</div><div class="acts"><button class="b ghost" data-act="dismiss">ปิดรายการนี้</button></div>`;
+    } else if (i.pending.length) {
+      body = `${cat ? `<button class="cat ${i.uncategorized ? 'none' : ''}" data-act="${i.editable ? 'edit' : ''}">${esc(cat)}${i.editable ? ' ›' : ''}</button>` : ''}
+        <div class="acts">
+          <button class="b ok" data-act="accept" ${i.uncategorized ? 'title="ยังไม่ระบุหมวด"' : ''}>✓ ยืนยัน</button>
+          ${i.editable ? '<button class="b line" data-act="edit">✏️ แก้ไข / แตกบรรทัด</button>' : ''}
+          <button class="b ghost" data-act="dismiss">ไม่บันทึก</button>
+        </div>`;
+    } else {
+      body = `<div class="acts"><button class="b ok" data-act="accept">✓ เสร็จ</button></div>`;
+    }
+    return `<div class="doc" data-doc="${esc(d.doc_id)}" style="--k:${k.c}">
+      <div class="row">${thumb}
+        <div class="main">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+            <div class="amt">${i.amount ? signed(i.amount) : '฿ —'}</div><span class="badge">${k.icon} ${esc(i.status)}</span>
+          </div>
+          <div class="who">${esc(i.party || (i.kind === 'STORE' ? (d.file_name || 'เอกสาร') : '—'))}</div>
+          <div class="meta"><span>📅 ${thDate(i.main?.date || i.ex.date, true)}${i.main?.time || i.ex.time ? ' · ' + esc(String(i.main?.time || i.ex.time).slice(0, 5)) : ''}</span>
+            ${acc ? `<span>🏦 ${esc(acc)}</span>` : ''}<span>📨 ${esc(i.src)}${i.fromStatement ? ' · statement' : ''}</span></div>
+          ${memo ? `<div class="meta">📝 ${esc(memo)}</div>` : ''}
+        </div>
+      </div>${body}</div>`;
+  }
+
+  function bindInbox(shown) {
+    $('#uplBtn').onclick = () => $('#fileIn').click();
+    $('#cashForm').onsubmit = async e => {
+      e.preventDefault();
+      const text = $('#cashIn').value.trim(); if (!text) return;
+      try {
+        const out = await api('/api/inbox/cash', { json: { text } });
+        toast(out.auto_confirmed ? `✅ จดแล้ว ฿${money(out.amount)} (ยืนยันให้เอง)` : `🪙 จดแล้ว ฿${money(out.amount)} — รอยืนยัน`);
+        load();
+      } catch (err) { toast('⚠️ ' + err.message); }
+    };
+    view.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.filter = b.dataset.f; renderInbox(); });
+    $('#bulkBtn')?.addEventListener('click', bulkAccept);
+    view.querySelectorAll('.doc').forEach(el => el.addEventListener('click', e => {
+      const b = e.target.closest('[data-act]'); if (!b || !b.dataset.act) return;
+      const d = S.docs.find(x => x.doc_id === el.dataset.doc);
+      act(d, b.dataset.act, b.dataset, el);
+    }));
+    loadThumbs();
+  }
+
+  async function act(d, action, ds, el) {
+    const id = encodeURIComponent(d.doc_id);
+    try {
+      if (action === 'edit') return openEditor(d);
+      if (action === 'account-other') return pickAccountFor(d, el);
+      el?.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      let out;
+      if (action === 'accept') {
+        const i = info(d);
+        if (i.uncategorized && i.editable) { el?.querySelectorAll('button').forEach(b => { b.disabled = false; }); toast('🗂️ เลือกหมวดก่อนยืนยัน'); return openEditor(d); }
+        out = await api(`/api/inbox/${id}/accept`, { json: {} });
+      } else if (action === 'dismiss') out = await api(`/api/inbox/${id}/dismiss`, { json: {} });
+      else if (action === 'retry') out = await api(`/api/inbox/${id}/retry`, { json: {} });
+      else if (action === 'account') out = await api(`/api/inbox/${id}/account`, { json: { account_id: ds.acc, side: ds.side } });
+      else if (action === 'link') out = await api(`/api/inbox/${id}/link`, { json: { transaction_id: ds.tx } });
+      if (['accept', 'dismiss', 'link'].includes(action) && el) { el.classList.add('gone'); await new Promise(r => setTimeout(r, 220)); }
+      toast({ accept: '✅ บันทึกแล้ว', dismiss: '🗑️ ไม่บันทึกแล้ว', retry: '🔄 อ่านใหม่แล้ว', account: '🏦 จำบัญชีนี้แล้ว', link: '🔗 จับคู่แล้ว' }[action] || 'เรียบร้อย');
+      if (out?.outcome === 'MATCHED') toast('🔗 เจอรายการเดิมในระบบ จับคู่ให้แล้ว');
+      load();
+    } catch (err) {
+      el?.querySelectorAll('button').forEach(b => { b.disabled = false; });
+      toast('⚠️ ' + err.message);
+    }
+  }
+
+  async function bulkAccept() {
+    const ready = S.docs.filter(d => FILTERS[1][2](info(d)));
+    const b = busy(`กำลังยืนยัน ${ready.length} รายการ…`);
+    let ok = 0, bad = 0;
+    for (const d of ready) {
+      try { await api(`/api/inbox/${encodeURIComponent(d.doc_id)}/accept`, { json: {} }); ok++; } catch { bad++; }
+      b.sub(`${ok + bad} / ${ready.length}`);
+    }
+    b.done();
+    toast(`✅ ยืนยันแล้ว ${ok} รายการ${bad ? ` · ไม่สำเร็จ ${bad}` : ''}`);
+    load();
+  }
+
+  // รูปสลิป (ต้องแนบ token จึงโหลดเป็น blob)
+  async function loadThumbs() {
+    for (const img of view.querySelectorAll('img[data-thumb]')) {
+      const id = img.dataset.thumb;
+      img.onclick = () => zoom(img.src);
+      if (S.thumbs.has(id)) { img.src = S.thumbs.get(id); continue; }
+      fetch(`${API}/api/inbox/file/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${token()}` } })
+        .then(r => r.ok ? r.blob() : null).then(b => {
+          if (!b) return;
+          if (!b.type.startsWith('image/')) { img.replaceWith(Object.assign(document.createElement('div'), { className: 'thumb', textContent: '📄' })); return; }
+          const u = URL.createObjectURL(b); S.thumbs.set(id, u); img.src = u;
+        }).catch(() => {});
+    }
+  }
+  function zoom(src) {
+    if (!src) return;
+    const z = document.createElement('div'); z.className = 'zoom'; z.innerHTML = `<img src="${src}" alt="">`;
+    z.onclick = () => z.remove(); document.body.appendChild(z);
+  }
+
+  // อัปโหลดหลายไฟล์ (อ่านทีละไฟล์ เพื่อให้เห็นความคืบหน้า)
+  $('#fileIn').addEventListener('change', async e => {
+    const files = [...e.target.files]; e.target.value = '';
+    if (files.length) uploadFiles(files);
+  });
+  ['dragenter', 'dragover'].forEach(ev => document.body.addEventListener(ev, e => { e.preventDefault(); $('#uplBtn')?.classList.add('drag'); }));
+  document.body.addEventListener('drop', e => {
+    e.preventDefault(); $('#uplBtn')?.classList.remove('drag');
+    const files = [...(e.dataTransfer?.files || [])].filter(f => /^image\/|pdf$/.test(f.type));
+    if (files.length && S.tab === 'inbox') uploadFiles(files);
+  });
+  async function uploadFiles(files) {
+    const b = busy(`กำลังให้ AI อ่าน ${files.length} ไฟล์…`);
+    let ok = 0, matched = 0, fail = 0;
+    for (const [n, f] of files.entries()) {
+      b.sub(`ไฟล์ที่ ${n + 1} / ${files.length} · ${f.name}`);
+      const fd = new FormData(); fd.append('file', f, f.name);
+      try {
+        const out = await api('/api/inbox/upload', { body: fd });
+        const r = out.results?.[0] || {};
+        if (r.outcome === 'MATCHED') matched++; else if (r.error || r.outcome === 'ERROR') fail++; else ok++;
+      } catch { fail++; }
+    }
+    b.done();
+    toast(`📥 รับ ${ok} ไฟล์${matched ? ` · จับคู่กับรายการเดิม ${matched}` : ''}${fail ? ` · อ่านไม่สำเร็จ ${fail}` : ''}`, 3500);
+    S.tab = 'inbox'; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === 'inbox'));
+    load();
+  }
+
+  // ───────── แผ่นเลือก (ค้นหาได้) ─────────
+  function sheet(title, html, footer) {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet" role="dialog"><header><h2>${esc(title)}</h2><button class="x" data-close>✕</button></header>
+      <div class="body">${html}</div>${footer ? `<footer>${footer}</footer>` : ''}</div>`;
+    const close = () => bg.remove();
+    bg.addEventListener('click', e => { if (e.target === bg || e.target.closest('[data-close]')) close(); });
+    document.body.appendChild(bg);
+    return { el: bg, close };
+  }
+  /* items: [{ id, name, sub }] เรียงมาแล้ว · คืนค่าที่เลือกผ่าน onPick */
+  function picker(title, items, current, onPick, opts = {}) {
+    const sh = sheet(title, `<input class="inp" type="search" placeholder="🔎 พิมพ์ค้นหา" data-q autocomplete="off"><div class="plist" data-list></div>`);
+    const list = sh.el.querySelector('[data-list]'), q = sh.el.querySelector('[data-q]');
+    const draw = () => {
+      const s = q.value.trim().toLowerCase();
+      const shown = (s ? items.filter(x => `${x.name} ${x.sub || ''} ${x.id}`.toLowerCase().includes(s)) : items).slice(0, 80);
+      list.innerHTML = (opts.none ? `<button data-id="">${esc(opts.none)}</button>` : '') + shown.map(x =>
+        `<button data-id="${esc(x.id)}" class="${x.id === current ? 'on' : ''}"><span>${esc(x.name)}</span><small>${esc(x.sub || '')}</small></button>`).join('')
+        + (!shown.length ? '<div class="hint">ไม่พบ</div>' : '');
+    };
+    list.addEventListener('click', e => { const b = e.target.closest('button[data-id]'); if (!b) return; sh.close(); onPick(b.dataset.id); });
+    q.addEventListener('input', draw); draw();
+    setTimeout(() => { if (matchMedia('(min-width:700px)').matches) q.focus(); }, 50);
+  }
+  function catItems(sign) {
+    const key = sign > 0 ? 'uses_in' : 'uses_out';
+    const want = sign > 0 ? 'INCOME' : 'EXPENSE';
+    return [...S.meta.categories].sort((a, b) => (b[key] - a[key]) || ((b.default_type === want) - (a.default_type === want)) || a.name.localeCompare(b.name, 'th'))
+      .map(c => ({ id: c.category_id, name: c.name, sub: c[key] ? `★ ใช้ ${c[key]} ครั้ง` : (c.default_type === 'TRANSFER' ? 'โอน' : '') }));
+  }
+  function pickAccountFor(d, el) {
+    const items = [];
+    for (const a of S.meta.accounts) {
+      items.push({ id: `${a.account_id}|OUT`, name: `💸 จ่ายจาก ${a.name}`, sub: a.bank_name || '' });
+      items.push({ id: `${a.account_id}|IN`, name: `💰 รับเข้า ${a.name}`, sub: a.bank_name || '' });
+    }
+    picker('บัญชีไหนของเรา?', items, '', v => { const [acc, side] = v.split('|'); act(d, 'account', { acc, side }, el); });
+  }
+
+  // ───────── แก้ไข / แตกบรรทัด ─────────
+  function openEditor(d) {
+    const i = info(d);
+    if (!i.editable) return toast('รายการนี้แก้จากหน้านี้ไม่ได้');
+    const total = r2(i.main.total_amount), s = total < 0 ? -1 : 1;
+    const E = {
+      date: i.main.date, account_id: i.main.account_id,
+      lines: (i.details.length ? i.details : [{ amount: total, category_id: S.meta.uncategorized }]).map(x => ({
+        a: r2(Math.abs(x.amount)), w: r2(Math.abs(x.wht || 0)), f: r2(x.fee || 0), category_id: x.category_id, entity_id: x.entity_id || '',
+        contact_id: x.contact_id || '', note: x.note || '', head_owner: x.head_owner || null, project_id: x.project_id || null, more: !!(x.wht || x.fee || x.contact_id) })),
+    };
+    const k = KIND[i.kind] || KIND.OUT;
+    const gap = () => r2(total - E.lines.reduce((t, l) => t + s * l.a - l.f - s * l.w, 0));   // บวก/ลบตามเครื่องหมายจริง
+    const remain = () => r2(s * gap());                                                        // มองแบบบวก: ต้องใส่เพิ่มอีกเท่าไร
+    const sh = sheet(i.dir === 'IN' ? 'แก้ไขรายการรับ' : 'แก้ไขรายการจ่าย', '<div data-ed></div>',
+      `<button class="b line" data-save="0">บันทึกไว้ก่อน</button><button class="b ok" style="--k:${k.c}" data-save="1">✓ ยืนยันรายการ</button>`);
+    const box = sh.el.querySelector('[data-ed]');
+    const entOpts = sel => `<option value="">— ไม่ระบุบริษัท —</option>` + S.meta.entities.map(e => `<option value="${esc(e.entity_id)}" ${e.entity_id === sel ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
+    const draw = () => {
+      const rem = remain();
+      box.innerHTML = `
+        <div class="tot" style="--k:${k.c}"><span>${k.icon} ${esc(i.party || 'ยอดทั้งหมด')}</span><b>${signed(total)}</b></div>
+        <div class="g2">
+          <div><label class="f">📅 วันที่</label><input class="inp" type="date" data-k="date" value="${esc(E.date)}"></div>
+          <div><label class="f">🏦 บัญชี</label><select class="inp" data-k="account_id">${S.meta.accounts.map(a => `<option value="${esc(a.account_id)}" ${a.account_id === E.account_id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>
+        </div>
+        ${E.lines.map((l, n) => `
+          <div class="ln" data-n="${n}">
+            ${E.lines.length > 1 ? `<button class="del" data-del="${n}" title="ลบบรรทัด">✕</button>` : ''}
+            <label class="f" style="margin-top:0">บรรทัด ${n + 1} · ${i.dir === 'IN' ? 'ยอดก่อนหักภาษี' : 'ยอด'}</label>
+            <div class="g2">
+              <input class="inp" inputmode="decimal" data-l="a" value="${l.a || ''}" placeholder="0.00">
+              <select class="inp" data-l="entity_id">${entOpts(l.entity_id)}</select>
+            </div>
+            <label class="f">🗂️ หมวด</label>
+            <button class="pick ${l.category_id === S.meta.uncategorized ? 'none' : ''}" data-pick="cat">${esc(catName(l.category_id))} ›</button>
+            <label class="f">📝 รายละเอียด</label>
+            <input class="inp" data-l="note" value="${esc(l.note)}" placeholder="เช่น ค่าทำบัญชี ต.ค.">
+            ${l.more ? `
+              <div class="g2">
+                <div><label class="f">หัก ณ ที่จ่าย</label><input class="inp" inputmode="decimal" data-l="w" value="${l.w || ''}" placeholder="0.00"></div>
+                <div><label class="f">ค่าธรรมเนียม</label><input class="inp" inputmode="decimal" data-l="f" value="${l.f || ''}" placeholder="0.00"></div>
+              </div>
+              <div class="mini">${[1, 2, 3, 5].map(p => `<button data-rate="${p}">หัก ${p}%</button>`).join('')}<button data-rate="0">ไม่หัก</button></div>
+              <label class="f">👤 คู่ค้า</label>
+              <button class="pick" data-pick="contact">${esc(conName(l.contact_id) || 'ไม่ระบุ')} ›</button>`
+            : `<div class="mini"><button data-more>+ หัก ณ ที่จ่าย / ค่าธรรมเนียม / คู่ค้า</button></div>`}
+            ${Math.abs(rem) >= 0.005 ? `<div class="mini"><button data-fill>${rem > 0 ? `ใส่ส่วนที่เหลือ ฿${money(rem)} ที่บรรทัดนี้` : `ลดบรรทัดนี้ลง ฿${money(-rem)}`}</button></div>` : ''}
+          </div>`).join('')}
+        <button class="add" data-add>+ แตกเพิ่มอีกบรรทัด (หลายบริษัท / หลายหมวด)</button>
+        <div class="remain ${Math.abs(rem) < 0.005 ? 'okk' : rem > 0 ? 'need' : 'over'}">
+          <span>${Math.abs(rem) < 0.005 ? '✓ ยอดลงตัวแล้ว' : rem > 0 ? `เหลืออีก ฿${money(rem)}` : `เกินมา ฿${money(-rem)}`}</span>
+          <small>${E.lines.length} บรรทัด</small>
+        </div>
+        <div class="err" data-err></div>`;
+      box.querySelector('[data-k=date]').onchange = e => { E.date = e.target.value; };
+      box.querySelector('[data-k=account_id]').onchange = e => { E.account_id = e.target.value; };
+      box.querySelectorAll('.ln').forEach(ln => {
+        const l = E.lines[+ln.dataset.n];
+        ln.querySelectorAll('[data-l]').forEach(inp => {
+          const key = inp.dataset.l;
+          const apply = () => { l[key] = ['a', 'w', 'f'].includes(key) ? r2(String(inp.value).replace(/,/g, '')) : inp.value; };
+          inp.addEventListener('input', () => { apply(); refreshRemain(); });
+          inp.addEventListener('change', () => { apply(); if (['a', 'w', 'f'].includes(key)) draw(); });
+        });
+        ln.querySelector('[data-pick=cat]').onclick = () => picker('เลือกหมวด', catItems(s), l.category_id, v => { l.category_id = v; draw(); });
+        ln.querySelector('[data-pick=contact]')?.addEventListener('click', () => picker('เลือกคู่ค้า', S.meta.contacts.map(c => ({ id: c.contact_id, name: c.name, sub: c.contact_type || '' })),
+          l.contact_id, v => { l.contact_id = v; draw(); }, { none: '— ไม่ระบุ —' }));
+        ln.querySelector('[data-more]')?.addEventListener('click', () => { l.more = true; draw(); });
+        ln.querySelectorAll('[data-rate]').forEach(b => b.onclick = () => { l.w = r2(l.a * Number(b.dataset.rate) / 100); draw(); });
+        ln.querySelector('[data-fill]')?.addEventListener('click', () => { l.a = r2(l.a + remain()); draw(); });
+        ln.querySelector('[data-del]')?.addEventListener('click', () => { E.lines.splice(+ln.dataset.n, 1); draw(); });
+      });
+      box.querySelector('[data-add]').onclick = () => {
+        const last = E.lines[E.lines.length - 1];
+        E.lines.push({ a: Math.max(remain(), 0), w: 0, f: 0, category_id: S.meta.uncategorized, entity_id: last?.entity_id || '', contact_id: last?.contact_id || '', note: '', more: false });
+        draw();
+        box.querySelector('.ln:last-of-type input[data-l=a]')?.focus();
+      };
+    };
+    const refreshRemain = () => {
+      const rem = remain(), el = box.querySelector('.remain');
+      el.className = `remain ${Math.abs(rem) < 0.005 ? 'okk' : rem > 0 ? 'need' : 'over'}`;
+      el.firstElementChild.textContent = Math.abs(rem) < 0.005 ? '✓ ยอดลงตัวแล้ว' : rem > 0 ? `เหลืออีก ฿${money(rem)}` : `เกินมา ฿${money(-rem)}`;
+    };
+    draw();
+    sh.el.querySelectorAll('[data-save]').forEach(btn => btn.onclick = async () => {
+      const confirm = btn.dataset.save === '1';
+      const err = box.querySelector('[data-err]');
+      if (Math.abs(remain()) >= 0.005) { err.textContent = 'ยอดยังไม่ลงตัว — ปรับยอดบรรทัดให้รวมแล้วเท่ากับยอดเงินจริง'; return; }
+      if (E.lines.some(l => !l.a)) { err.textContent = 'มีบรรทัดที่ยังไม่ใส่ยอด'; return; }
+      if (confirm && E.lines.some(l => l.category_id === S.meta.uncategorized)) { err.textContent = 'เลือกหมวดให้ครบทุกบรรทัดก่อนยืนยัน'; return; }
+      const details = E.lines.map(l => ({ amount: r2(s * l.a), wht: r2(s * l.w), fee: r2(l.f), category_id: l.category_id, entity_id: l.entity_id || null,
+        contact_id: l.contact_id || null, note: l.note, head_owner: l.head_owner, project_id: l.project_id }));
+      sh.el.querySelectorAll('[data-save]').forEach(x => { x.disabled = true; });
+      try {
+        await api(`/api/inbox/${encodeURIComponent(d.doc_id)}/edit`, { json: { date: E.date,
+          account_id: E.account_id !== i.main.account_id ? E.account_id : undefined, details, confirm } });
+        sh.close();
+        toast(confirm ? `✅ บันทึกแล้ว${details.length > 1 ? ` (${details.length} บรรทัด · ครั้งหน้าระบบแตกให้เอง)` : ''}` : '💾 บันทึกไว้แล้ว ยังไม่ยืนยัน', 3200);
+        load();
+      } catch (e) {
+        err.textContent = e.message;
+        sh.el.querySelectorAll('[data-save]').forEach(x => { x.disabled = false; });
+      }
+    });
+  }
+
+  // ───────── ล่าสุด ─────────
+  function renderDone() {
+    view.innerHTML = S.recent.length ? `<div class="hint" style="margin-top:14px">รายการที่ยืนยัน/ไม่บันทึกล่าสุด 60 รายการ</div>` + S.recent.map(d => {
+      const i = info(d);
+      const k = d.status === 'DONE' ? { c: 'var(--ok)' } : { c: '#adb5bd' };
+      const cat = i.details.length > 1 ? `แตก ${i.details.length} บรรทัด` : i.details.length ? catName(i.details[0].category_id) : '';
+      return `<div class="doc" style="--k:${k.c}"><div class="row">
+        ${d.has_file ? `<img class="thumb" data-thumb="${esc(d.doc_id)}" alt="">` : `<div class="thumb">${(KIND[i.kind] || KIND.OUT).icon}</div>`}
+        <div class="main"><div style="display:flex;justify-content:space-between;gap:8px"><div class="amt" style="color:${i.amount < 0 ? 'var(--out)' : 'var(--in)'}">${i.amount ? signed(i.amount) : '—'}</div>
+          <span class="badge">${d.status === 'DONE' ? '✅ บันทึกแล้ว' : '🗑️ ไม่บันทึก'}</span></div>
+          <div class="who">${esc(i.party || '—')}</div>
+          <div class="meta"><span>📅 ${thDate(i.main?.date || i.ex.date, true)}</span>${i.main ? `<span>🏦 ${esc(accName(i.main.account_id))}</span>` : ''}${cat ? `<span>🗂️ ${esc(cat)}</span>` : ''}</div>
+        </div></div></div>`;
+    }).join('') : `<div class="empty"><div class="big">🗂️</div><h3>ยังไม่มีรายการ</h3></div>`;
+    loadThumbs();
+  }
+
+  // ───────── Statement ─────────
+  function renderStatements() {
+    const accs = S.meta.accounts;
+    view.innerHTML = `
+      <div class="card">
+        <h3>🏦 นำเข้า statement</h3>
+        <div class="hint">ระบบอ่านทุกบรรทัด → จับคู่กับสลิป/รายการที่จดไว้แล้ว → ที่ยังไม่มีสร้างให้เป็น "รอยืนยัน" → เทียบยอดคงเหลือกับธนาคาร</div>
+        <label class="f">บัญชี</label>
+        <select class="inp" id="stAcc"><option value="">— เลือกบัญชี —</option>${accs.map(a => `<option value="${esc(a.account_id)}">${esc(a.name)}${a.bank_name ? ' · ' + esc(a.bank_name) : ''}</option>`).join('')}</select>
+        <div id="stPwBox" class="hidden"><label class="f">รหัสผ่าน PDF</label><input class="inp" id="stPw" type="password" autocomplete="off" placeholder="เช่น วันเกิด DDMMYYYY"></div>
+        <div class="acts"><button class="b ok" style="--k:var(--tr)" id="stPick">📄 เลือกไฟล์ PDF หรือรูป</button></div>
+        <input type="file" id="stFile" accept="application/pdf,image/*" multiple class="hidden">
+        <div class="err" id="stErr"></div>
+      </div>
+      ${S.statements.length ? S.statements.map(st => {
+        const done = st.matched + st.created + st.ignored + st.duplicate, tot = st.line_count || 1;
+        return `<div class="card stmt" data-st="${esc(st.stmt_id)}">
+          <div style="display:flex;justify-content:space-between;gap:10px"><h3>${esc(st.account_name)}</h3><span class="badge" style="--k:${st.new ? 'var(--ask)' : 'var(--ok)'}">${st.new ? `ยังไม่มีในระบบ ${st.new}` : '✓ ครบ'}</span></div>
+          <div class="hint">${thDate(st.period_from, true)} – ${thDate(st.period_to, true)} · ${st.line_count} บรรทัด${st.file_name ? ' · ' + esc(st.file_name) : ''}</div>
+          <div class="prog"><i style="width:${st.matched / tot * 100}%;background:var(--ok)"></i><i style="width:${st.created / tot * 100}%;background:var(--tr)"></i><i style="width:${(st.ignored + st.duplicate) / tot * 100}%;background:#ced4da"></i></div>
+          <div class="hint">✓ มีในระบบ ${st.matched} · ➕ สร้างแล้ว ${st.created} · ข้าม ${st.ignored + st.duplicate}</div>
+        </div>`;
+      }).join('') : `<div class="empty"><div class="big">🏦</div><h3>ยังไม่มี statement</h3><p>เลือกบัญชีแล้วส่งไฟล์ statement ของเดือนนั้น</p></div>`}`;
+    const acc = $('#stAcc');
+    acc.onchange = () => { const a = accs.find(x => x.account_id === acc.value); $('#stPw').value = a?.pdf_password || ''; $('#stPwBox').classList.add('hidden'); };
+    $('#stPick').onclick = () => { if (!acc.value) { $('#stErr').textContent = 'เลือกบัญชีก่อน'; return; } $('#stErr').textContent = ''; $('#stFile').click(); };
+    $('#stFile').onchange = e => { const files = [...e.target.files]; e.target.value = ''; if (files.length) importStatement(acc.value, files); };
+    view.querySelectorAll('[data-st]').forEach(c => c.onclick = () => openStatement(c.dataset.st));
+  }
+
+  async function loadPdfJs() {
+    if (window.pdfjsLib) return;
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = res; s.onerror = () => rej(new Error('โหลดตัวอ่าน PDF ไม่สำเร็จ'));
+      document.head.appendChild(s);
+    });
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  /* PDF → รูปทีละหน้า (ถอดรหัสในเครื่อง · ส่งเฉพาะรูปขึ้นไป) */
+  async function pdfToImages(file, password, onPage) {
+    await loadPdfJs();
+    let pdf;
+    try { pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), password: password || undefined }).promise; }
+    catch (e) {
+      if (e?.name === 'PasswordException') { const err = new Error(password ? 'รหัสผ่าน PDF ไม่ถูกต้อง' : 'ไฟล์นี้มีรหัสผ่าน ใส่รหัสแล้วเลือกไฟล์อีกครั้ง'); err.needPassword = true; throw err; }
+      throw new Error('เปิด PDF ไม่ได้: ' + (e?.message || e));
+    }
+    if (pdf.numPages > 30) throw new Error('PDF ยาวเกิน 30 หน้า — แยกส่งทีละเดือน');
+    const out = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      onPage?.(p, pdf.numPages);
+      const page = await pdf.getPage(p);
+      const vp = page.getViewport({ scale: 1.7 });
+      const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+      await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      out.push(await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82)));
+    }
+    return out;
+  }
+  async function importStatement(accountId, files) {
+    const b = busy('กำลังเตรียมไฟล์…');
+    try {
+      const pages = [];
+      for (const f of files) {
+        if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+          const imgs = await pdfToImages(f, $('#stPw').value.trim(), (p, n) => b.sub(`แปลง ${f.name} หน้า ${p}/${n}`));
+          imgs.forEach((x, n) => pages.push({ blob: x, name: `${f.name}-p${n + 1}.jpg` }));
+        } else pages.push({ blob: f, name: f.name });
+      }
+      if (pages.length > 30) throw new Error('รวมเกิน 30 หน้า — แยกส่งทีละเดือน');
+      const fd = new FormData();
+      fd.append('account_id', accountId); fd.append('file_name', files[0].name);
+      pages.forEach(p => fd.append('file', p.blob, p.name));
+      b.done();
+      const b2 = busy(`AI กำลังอ่าน statement ${pages.length} หน้า…`);
+      b2.sub('ใช้เวลาประมาณ 20–90 วินาที อย่าปิดหน้านี้');
+      try {
+        const out = await api('/api/inbox/statement', { body: fd });
+        S.stmt = out;
+        toast(`🏦 อ่านได้ ${out.lines.length} บรรทัด · มีในระบบแล้ว ${out.summary.matched}${out.import?.flipped ? ` · แก้เครื่องหมายเข้า/ออก ${out.import.flipped}` : ''}`, 4200);
+        renderStatement();
+      } finally { b2.done(); }
+    } catch (err) {
+      b.done();
+      if (err.needPassword) $('#stPwBox')?.classList.remove('hidden');
+      const e2 = $('#stErr'); if (e2) e2.textContent = err.message; else toast('⚠️ ' + err.message);
+    }
+  }
+
+  async function openStatement(id) {
+    try { S.stmt = await api(`/api/inbox/statements/${encodeURIComponent(id)}`); renderStatement(); }
+    catch (err) { toast('⚠️ ' + err.message); S.stmt = null; load(); }
+  }
+  const ST_LABEL = { MATCHED: '✓ มีในระบบ', CREATED: '➕ สร้างแล้ว', NEW: 'ยังไม่มีในระบบ', IGNORED: 'ข้าม', DUPLICATE: 'ซ้ำกับฉบับก่อน' };
+  function renderStatement() {
+    const v = S.stmt, sm = v.summary, st = v.statement;
+    const F = [['todo', 'ยังไม่มีในระบบ', l => l.status === 'NEW'], ['all', 'ทั้งหมด', () => true], ['MATCHED', 'มีในระบบ', l => l.status === 'MATCHED'],
+      ['CREATED', 'สร้างแล้ว', l => l.status === 'CREATED'], ['skip', 'ข้าม/ซ้ำ', l => ['IGNORED', 'DUPLICATE'].includes(l.status)]];
+    if (!sm.new && S.stmtFilter === 'todo') S.stmtFilter = 'all';
+    const f = F.find(x => x[0] === S.stmtFilter) || F[1];
+    const lines = v.lines.filter(f[2]);
+    view.innerHTML = `
+      <div class="acts"><button class="b line" id="stBack">← statement ทั้งหมด</button><button class="b ghost" id="stDel" style="margin-left:auto">ลบ statement นี้</button></div>
+      <div class="card">
+        <h3>🏦 ${esc(v.account.name)}</h3>
+        <div class="hint">${thDate(st.period_from, true)} – ${thDate(st.period_to, true)}${st.file_name ? ' · ' + esc(st.file_name) : ''}</div>
+        <div class="tiles">
+          <div class="tile"><b>${sm.total}</b><span>บรรทัด</span></div>
+          <div class="tile" style="background:#e6fcf5"><b>${sm.matched}</b><span>มีในระบบแล้ว</span></div>
+          <div class="tile" style="background:#edf2ff"><b>${sm.created}</b><span>สร้างแล้ว</span></div>
+          <div class="tile" style="background:#fff4e6"><b>${sm.new}</b><span>ยังไม่มีในระบบ</span></div>
+          <div class="tile"><b class="pos">+${money(sm.sum_in)}</b><span>เงินเข้า</span></div>
+          <div class="tile"><b class="neg">−${money(Math.abs(sm.sum_out))}</b><span>เงินออก</span></div>
+        </div>
+        ${sm.read_gap == null ? '' : Math.abs(sm.read_gap) < 0.005
+          ? `<div class="chk good">✅ <div>AI อ่านครบทุกบรรทัด — ผลรวมเท่ากับยอดปิด − ยอดยกมา พอดี</div></div>`
+          : `<div class="chk warn">⚠️ <div>ผลรวมบรรทัดต่างจากยอดปิด ฿${money(sm.read_gap)} — AI อาจอ่านตกหรืออ่านซ้ำบางบรรทัด ลองส่งหน้านั้นใหม่อีกครั้ง</div></div>`}
+        ${sm.balance_gap == null ? '' : `<div class="chk ${Math.abs(sm.balance_gap) < 0.005 ? 'good' : 'warn'}">${Math.abs(sm.balance_gap) < 0.005 ? '✅' : '⚖️'} <div>
+          ยอดปิดธนาคาร <b>฿${money(st.closing_balance)}</b> · ในระบบ ณ ${thDate(st.period_to)} <b>฿${money(sm.system_confirmed + sm.system_pending)}</b>
+          ${sm.system_pending ? `<br><small>(ยืนยันแล้ว ฿${money(sm.system_confirmed)} + รอยืนยัน ฿${money(sm.system_pending)})</small>` : ''}
+          ${Math.abs(sm.balance_gap) < 0.005 ? '<br>ตรงกันพอดี 🎉' : `<br>ต่างกัน <b>฿${money(sm.balance_gap)}</b> — สร้างบรรทัดที่ยังไม่มี และเช็ก "มีในระบบแต่ไม่มีใน statement" ด้านล่าง`}</div></div>`}
+        ${sm.new ? `<button class="bulk" id="stCreate" style="background:linear-gradient(135deg,#5c7cfa,#4c6ef5)">➕ สร้างรายการจาก ${sm.new} บรรทัดที่ยังไม่มี</button>` : ''}
+        ${sm.created ? `<div class="hint" style="margin-top:8px">รายการที่สร้างแล้วอยู่ในแท็บ 📥 รอเคลียร์ — ร้าน/คู่ค้าที่เคยยืนยันแล้วระบบเดาหมวดให้</div>` : ''}
+      </div>
+      <div class="filters">${F.map(([k, label, fn]) => `<button class="chip ${S.stmtFilter === k ? 'on' : ''}" data-sf="${k}">${label}<small> ${v.lines.filter(fn).length}</small></button>`).join('')}</div>
+      <div class="card" style="padding-top:4px;padding-bottom:4px">${lines.length ? lines.map(l => `
+        <div class="sl st-${l.status}" data-line="${esc(l.line_id)}">
+          <div class="d">${thDate(l.date)}${l.time ? '<br>' + esc(l.time.slice(0, 5)) : ''}</div>
+          <div class="t">${esc(l.description || '-')}</div>
+          <div class="a ${l.amount < 0 ? 'neg' : 'pos'}">${signed(l.amount)}</div>
+          <div class="x2"><span class="badge">${ST_LABEL[l.status] || l.status}</span>
+            ${l.tx ? `<span class="hint" style="margin:0">↔ ${thDate(l.tx.date)} ${esc(l.tx.desc || '')} · ${esc(l.tx.category)}${l.tx.status === 'PENDING_REVIEW' ? ' · รอยืนยัน' : ''}</span>` : ''}
+            ${l.status === 'NEW' ? `${(l.candidates || []).map(c => `<button class="b line" data-match="${esc(c.transaction_id)}">จับคู่: ${thDate(c.date)} ${esc((c.desc || '').slice(0, 24))}</button>`).join('')}
+              <button class="b line" data-one>➕ สร้าง</button><button class="b ghost" data-ign>ข้าม</button>` : ''}
+            ${['IGNORED', 'MATCHED'].includes(l.status) ? `<button class="b ghost" data-reset>${l.status === 'MATCHED' ? 'ยกเลิกจับคู่' : 'คืน'}</button>` : ''}
+          </div>
+        </div>`).join('') : '<div class="empty" style="padding:30px">ไม่มีบรรทัดในกลุ่มนี้</div>'}</div>
+      ${v.system_only.length ? `<div class="card"><h3>🤔 มีในระบบ แต่ไม่มีใน statement (${v.system_only.length})</h3>
+        <div class="hint">อาจจดซ้ำ จดผิดบัญชี หรือวันที่ผิด — ตรวจแล้วแก้ในแอปหลัก</div>
+        ${v.system_only.map(t => `<div class="sl"><div class="d">${thDate(t.date)}</div><div class="t">${esc(t.desc || '-')}<br><small class="hint">${esc(t.category)}${t.status === 'PENDING_REVIEW' ? ' · รอยืนยัน' : ''}</small></div><div class="a ${t.total_amount < 0 ? 'neg' : 'pos'}">${signed(t.total_amount)}</div></div>`).join('')}</div>` : ''}`;
+    $('#stBack').onclick = () => { S.stmt = null; load(); };
+    $('#stDel').onclick = async () => {
+      if (!window.confirm('ลบ statement นี้? (รายการที่สร้างไปแล้วยังอยู่)')) return;
+      try { await api(`/api/inbox/statements/${encodeURIComponent(st.stmt_id)}/delete`, { json: {} }); S.stmt = null; toast('ลบแล้ว'); load(); } catch (e) { toast('⚠️ ' + e.message); }
+    };
+    $('#stCreate')?.addEventListener('click', () => createLines());
+    view.querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { S.stmtFilter = b.dataset.sf; renderStatement(); });
+    view.querySelectorAll('.sl[data-line]').forEach(row => row.addEventListener('click', async e => {
+      const b = e.target.closest('button'); if (!b) return;
+      const lineId = row.dataset.line;
+      if (b.hasAttribute('data-one')) return createLines([lineId]);
+      const body = b.dataset.match ? { action: 'match', transaction_id: b.dataset.match } : b.hasAttribute('data-ign') ? { action: 'ignore' } : { action: 'reset' };
+      try { await api(`/api/inbox/statements/${encodeURIComponent(st.stmt_id)}/line/${encodeURIComponent(lineId)}`, { json: body }); await openStatement(st.stmt_id); }
+      catch (err) { toast('⚠️ ' + err.message); }
+    }));
+  }
+  /* สร้างทีละชุด (เซิร์ฟเวอร์ทำได้ครั้งละ 8 บรรทัด) จนครบ */
+  async function createLines(lineIds) {
+    const id = S.stmt.statement.stmt_id;
+    const b = busy('กำลังสร้างรายการรอยืนยัน…');
+    let made = 0, auto = 0;
+    try {
+      for (let guard = 0; guard < 60; guard++) {
+        const out = await api(`/api/inbox/statements/${encodeURIComponent(id)}/create`, { json: lineIds ? { line_ids: lineIds } : {} });
+        made += out.created; auto += out.auto_confirmed;
+        b.sub(`สร้างแล้ว ${made}${out.remaining ? ` · เหลือ ${out.remaining}` : ''}`);
+        if (!out.remaining || !out.created) break;
+      }
+      toast(`➕ สร้าง ${made} รายการ${auto ? ` · ยืนยันให้เอง ${auto} (ร้านเดิม)` : ''} — ไปยืนยันที่แท็บ "รอเคลียร์"`, 4200);
+    } catch (err) { toast('⚠️ ' + err.message); }
+    b.done();
+    await openStatement(id);
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

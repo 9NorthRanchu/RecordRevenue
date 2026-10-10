@@ -43,6 +43,8 @@ CREATE TABLE TransactionDetails (detail_id TEXT PRIMARY KEY, transaction_id TEXT
 CREATE TABLE LedgerDocs (doc_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, uploaded_by TEXT, source TEXT NOT NULL, file_key TEXT, file_hash TEXT, mime TEXT, file_name TEXT, doc_type TEXT, status TEXT NOT NULL DEFAULT 'NEW', extracted TEXT, suggestion TEXT, transaction_id TEXT, error TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME);
 CREATE TABLE LedgerDocLinks (doc_id TEXT NOT NULL, transaction_id TEXT NOT NULL, role TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (doc_id, transaction_id));
 CREATE TABLE LedgerRules (rule_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, kind TEXT NOT NULL, rkey TEXT NOT NULL, value TEXT NOT NULL, hits INTEGER NOT NULL DEFAULT 1, updated_at DATETIME, UNIQUE (family_id, kind, rkey));
+CREATE TABLE LedgerStatements (stmt_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, account_id TEXT NOT NULL, period_from TEXT, period_to TEXT, opening_balance REAL, closing_balance REAL, line_count INTEGER DEFAULT 0, lines TEXT, file_name TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME);
+CREATE TABLE Contacts (contact_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, name TEXT NOT NULL, contact_type TEXT, created_at DATETIME, entity_id TEXT, members TEXT);
 
 INSERT INTO Users VALUES ('9North','Fam_Default','9North',NULL,'Uline-north','admin',NULL,NULL), ('Puii','Fam_Default','Puii',NULL,'Uline-puii','member',NULL,NULL),
   ('Other','Fam_Other','Other',NULL,NULL,'admin',NULL,NULL);
@@ -550,9 +552,142 @@ console.log('\n── บันทึกช่วยจำ → รายละ�
   } finally { globalThis.fetch = realFetch; }
 }
 
+console.log('\n── statement: แก้เครื่องหมาย / คีย์คู่ค้า / จับคู่ (ฟังก์ชันล้วน) ──');
+{
+  const f = match.fixStatementSigns([{ amount: 100, balance: 900 }, { amount: 50, balance: 950 }, { amount: -20, balance: 930 }], 1000);
+  check('AI ใส่ "เข้า" แต่ยอดคงเหลือลด → กลับเป็นออก', f.lines[0].amount === -100 && f.flipped === 1 && f.gap === 0);
+  const miss = match.fixStatementSigns([{ amount: -100, balance: 900 }, { amount: -20, balance: 830 }], 1000, 830);
+  check('อ่านตกบรรทัด → ผลรวมไม่เท่ายอดปิด (gap ≠ 0)', miss.gap === -50, miss);
+  const nob = match.fixStatementSigns([{ amount: -100, balance: null }, { amount: 30, balance: null }], null, null);
+  check('บัตรเครดิตไม่มียอดคงเหลือ → ไม่แตะเครื่องหมาย', nob.lines[0].amount === -100 && nob.lines[1].amount === 30 && nob.gap === null);
+  check('คีย์คู่ค้าไม่สนเลขบัญชี', match.statementPartyKey('TR fr 123-4-56789-0 นาย สมชาย ใจดี') === match.statementPartyKey('TR fr 999-9 สมชาย ใจดี'));
+  check('คีย์คู่ค้าตัด x1234 / บจก.', match.statementPartyKey('โอนเงินพร้อมเพย์ x1234 บจก. ABC') === 'abc');
+  const m = match.matchStatementLines([{ key: 'a', date: '2026-10-01', amount: -100 }, { key: 'b', date: '2026-10-03', amount: -100 }, { key: 'c', date: '2026-10-03', amount: -5 }],
+    [{ transaction_id: 't1', date: '2026-10-03', total_amount: -100 }, { transaction_id: 't2', date: '2026-10-01', total_amount: -100 }]);
+  check('ยอดซ้ำสองรายการ → จับคู่ตามวันที่ใกล้สุด', m.get('a')?.transaction_id === 't2' && m.get('b')?.transaction_id === 't1' && !m.has('c'));
+  const r = match.matchStatementLines([{ key: 'a', date: '2026-10-20', amount: -70, ref_code: 'XR9' }], [{ transaction_id: 't9', date: '2026-10-01', total_amount: -70, ref_code: 'XR9' }]);
+  check('เลขอ้างอิงตรง → จับคู่แม้วันห่าง', r.get('a')?.score === 100);
+}
+
+console.log('\n── statement: นำเข้า → จับคู่ → สร้างที่ขาด → กระทบยอด ──');
+{
+  // บัญชี A09 (SCB): ยอดยกมา 10,000 · มีในระบบแล้ว 2 รายการ (จากสลิป 1 · ยืนยันแล้ว 1)
+  db.prepare(`INSERT INTO Transactions (transaction_id, account_id, date, time, total_amount, status, source, created_by_user_id) VALUES
+    ('S-OPEN','A09','2026-08-31',NULL,10000,'CONFIRMED','WEB_GRID','9North'),
+    ('S-SLIP','A09','2026-09-02','10:05:00',-1250,'PENDING_REVIEW','LINE_SLIP','9North'),
+    ('S-SAL','A09','2026-09-25',NULL,30000,'CONFIRMED','WEB_GRID','9North'),
+    ('S-EXTRA','A09','2026-09-15',NULL,-99,'CONFIRMED','WEB_GRID','9North')`).run();
+  for (const [id, amt] of [['S-OPEN', 10000], ['S-SLIP', -1250], ['S-SAL', 30000], ['S-EXTRA', -99]])
+    db.prepare(`INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, type) VALUES (?,?,?,?,?)`).run('DT-' + id, id, amt, 'T01', amt < 0 ? 'EXPENSE' : 'INCOME');
+  // ร้านเดิมเคยยืนยันมาแล้ว 3 ครั้ง (แบบหมวด T01) → บรรทัดใหม่ของร้านนี้ยืนยันให้เอง
+  db.prepare(`INSERT INTO LedgerRules (rule_id, family_id, kind, rkey, value, hits) VALUES ('R-ST','Fam_Default','PARTY',?,?,3)`)
+    .run(match.statementPartyKey('ร้านกาแฟดอยช้าง'), JSON.stringify({ lines: [{ category_id: 'T01', entity_id: 'Ent_North', type: 'EXPENSE', amount: 85, wht: 0, share: 1, wht_rate: 0 }] }));
+  const stmtJson = {
+    period_from: '2026-09-01', period_to: '2026-09-30', opening_balance: 10000, closing_balance: 38365,
+    lines: [
+      { date: '2026-09-02', time: '10:03:00', description: 'TR to xxx1234 ร้านข้าวมันไก่', withdrawal: 0, deposit: 1250, balance: 8750 },  // AI ใส่ช่องผิด
+      { date: '2026-09-10', description: 'ร้านกาแฟดอยช้าง', withdrawal: 85, deposit: 0, balance: 8665 },
+      { date: '2026-09-12', description: 'TR fr 111-2 นาย ลูกค้า ใหม่', withdrawal: 0, deposit: 2000, balance: 10665 },
+      { date: '2026-09-20', description: 'ค่าธรรมเนียม', withdrawal: 300, deposit: 0, balance: 10365 },
+      { date: '2026-09-26', description: 'SALARY', withdrawal: 0, deposit: 30000, balance: 40365 },
+      { date: '2026-09-28', description: 'ATM', withdrawal: 2000, deposit: 0, balance: 38365 },
+    ],
+  };
+  env.__statementOverride = async () => structuredClone(stmtJson);
+  const imp = await inbox.importStatement(env, user, { account_id: 'A09', files: [{ bytes: fakeFile(), mime: 'image/jpeg' }], file_name: 'scb-sep.pdf' });
+  const byDesc = d => imp.lines.find(l => l.description.includes(d));
+  check('นำเข้าได้ 6 บรรทัด', imp.lines?.length === 6, imp.error);
+  check('แก้เครื่องหมายจากยอดคงเหลือ (1,250 เป็นเงินออก)', byDesc('ข้าวมันไก่').amount === -1250 && imp.import.flipped === 1);
+  check('จับคู่กับสลิปที่จดไว้แล้ว (เวลาใกล้กัน)', byDesc('ข้าวมันไก่').status === 'MATCHED' && byDesc('ข้าวมันไก่').transaction_id === 'S-SLIP');
+  check('เงินเดือนห่าง 1 วัน → จับคู่', byDesc('SALARY').status === 'MATCHED' && byDesc('SALARY').transaction_id === 'S-SAL');
+  check('ที่เหลือยังไม่มีในระบบ 4 บรรทัด', imp.summary.new === 4 && imp.summary.matched === 2);
+  check('มีในระบบแต่ไม่มีใน statement (99 บาท)', imp.system_only.length === 1 && imp.system_only[0].transaction_id === 'S-EXTRA');
+  check('ผลรวมบรรทัดตรงกับยอดปิด (AI อ่านครบ)', imp.summary.read_gap === 0);
+  check('ยอดในระบบยังต่างจากธนาคาร', imp.summary.balance_gap !== 0);
+
+  const stmtId = imp.statement.stmt_id;
+  const c1 = await inbox.createFromStatement(env, user, stmtId, {});
+  check('สร้างรายการที่ขาด 4 รายการ', c1.created === 4 && c1.remaining === 0, c1);
+  check('ร้านที่ยืนยันแบบเดิม 3 ครั้ง → ยืนยันให้เอง', c1.auto_confirmed === 1);
+  const v = await inbox.statementView(env, user, stmtId);
+  const cafe = v.lines.find(l => l.description.includes('ดอยช้าง'));
+  check('ร้านกาแฟ: หมวด T01 ยืนยันแล้ว', cafe.status === 'CREATED' && cafe.tx.status === 'CONFIRMED' && lines(cafe.transaction_id)[0].category_id === 'T01');
+  const cust = v.lines.find(l => l.description.includes('ลูกค้า'));
+  const custDoc = db.prepare(`SELECT * FROM LedgerDocs WHERE doc_id=?`).get(cust.doc_id);
+  check('ลูกค้าใหม่ → รอยืนยันในกล่อง (STATEMENT_LINE)', custDoc.status === 'SUGGESTED' && custDoc.doc_type === 'STATEMENT_LINE' && tx(cust.transaction_id).source === 'PDF_IMPORT');
+  const box = await inbox.handleLedgerInbox(new Request('https://api.example/api/inbox'), env, new URL('https://api.example/api/inbox'), {}, '9North');
+  check('อยู่ในกล่องรอเคลียร์', (await box.json()).docs.some(d => d.doc_id === cust.doc_id));
+
+  // แตกบรรทัด: ลูกค้าโอน 2,000 = ค่าทำบัญชี 1,500 (บริษัท S01) + ค่าบริการ 500 (S05)
+  const bad = await inbox.editDoc(env, user, cust.doc_id, { details: [{ amount: 1500, category_id: 'Account', entity_id: 'Ent_Co_S01' }, { amount: 400, category_id: 'Service', entity_id: 'Ent_Co_S05' }] });
+  check('ยอดไม่ลงตัว → ไม่ยอมบันทึก บอกส่วนต่าง', bad.status === 400 && bad.gap === 100, bad);
+  const noPerm = await inbox.editDoc(env, user, cust.doc_id, { details: [{ amount: 2000, category_id: 'Account', entity_id: 'Ent_Other' }] });
+  check('บริษัทที่ไม่มีสิทธิ์ → ปฏิเสธ', noPerm.status === 403);
+  const ok = await inbox.editDoc(env, user, cust.doc_id, { date: '2026-09-13', confirm: true, details: [
+    { amount: 1500, category_id: 'Account', entity_id: 'Ent_Co_S01', note: 'ค่าทำบัญชี' }, { amount: 500, category_id: 'Service', entity_id: 'Ent_Co_S05' }] });
+  const custLines = lines(cust.transaction_id);
+  check('แตก 2 บรรทัด + ยืนยัน', ok.status === 'DONE' && custLines.length === 2 && custLines[1].category_id === 'Service' && tx(cust.transaction_id).status === 'CONFIRMED' && tx(cust.transaction_id).date === '2026-09-13', ok);
+  check('ประเภทบรรทัดตามหมวด (INCOME)', custLines.every(l => l.type === 'INCOME'));
+  const learned = db.prepare(`SELECT value FROM LedgerRules WHERE kind='PARTY' AND rkey=?`).get(match.statementPartyKey('TR fr 222 นาย ลูกค้า ใหม่'));
+  check('จำแบบแตกบรรทัดของลูกค้าคนนี้ (คีย์ไม่สนเลขบัญชี)', !!learned && JSON.parse(learned.value).lines.length === 2);
+
+  // ATM → ไม่ต้องบันทึก → บรรทัดใน statement เป็น "ข้าม"
+  const atm = v.lines.find(l => l.description === 'ATM');
+  await inbox.runAction(env, user, atm.doc_id, 'dismiss');
+  const v2 = await inbox.statementView(env, user, stmtId);
+  check('ไม่บันทึกจากกล่อง → บรรทัดเป็น IGNORED', v2.lines.find(l => l.description === 'ATM').status === 'IGNORED' && !tx(atm.transaction_id));
+  // จับคู่เอง: ค่าธรรมเนียม 300 → ยกเลิกรายการที่สร้าง แล้วจับคู่กับรายการที่มีอยู่
+  const fee = v2.lines.find(l => l.description === 'ค่าธรรมเนียม');
+  await inbox.runAction(env, user, fee.doc_id, 'dismiss');
+  db.prepare(`INSERT INTO Transactions (transaction_id, account_id, date, total_amount, status, source, created_by_user_id) VALUES ('S-FEE','A09','2026-09-24',-300,'CONFIRMED','WEB_GRID','9North')`).run();
+  db.prepare(`INSERT INTO TransactionDetails (detail_id, transaction_id, amount, category_id, type) VALUES ('DT-S-FEE','S-FEE',-300,'T05','EXPENSE')`).run();
+  await inbox.statementLineAction(env, user, stmtId, fee.line_id, { action: 'reset' });
+  const v3 = await inbox.statementView(env, user, stmtId);
+  const fee3 = v3.lines.find(l => l.line_id === fee.line_id);
+  check('บรรทัดที่ยังไม่มีคู่ → เสนอรายการยอดเท่ากันในช่วง 7 วัน', fee3.status === 'NEW' && fee3.candidates[0]?.transaction_id === 'S-FEE');
+  const mm = await inbox.statementLineAction(env, user, stmtId, fee.line_id, { action: 'match', transaction_id: 'S-FEE' });
+  const wrong = await inbox.statementLineAction(env, user, stmtId, fee.line_id, { action: 'match', transaction_id: 'S-EXTRA' });
+  check('จับคู่เองได้ · ยอดไม่เท่าจับไม่ได้', mm.ok && wrong.status === 400);
+
+  // อัปโหลดฉบับเดิมซ้ำ → ทุกบรรทัดเป็น DUPLICATE ไม่สร้างซ้ำ
+  const again = await inbox.importStatement(env, user, { account_id: 'A09', files: [{ bytes: fakeFile(), mime: 'image/jpeg' }] });
+  check('อัปโหลดซ้ำ → ซ้ำทั้งหมด ไม่มีบรรทัดใหม่', again.summary.duplicate === 6 && again.summary.new === 0, again.summary);
+  const c2 = await inbox.createFromStatement(env, user, again.statement.stmt_id, {});
+  check('ฉบับซ้ำไม่สร้างรายการเพิ่ม', c2.created === 0);
+  const list = await inbox.listStatements(env, user);
+  check('รายการ statement 2 ฉบับ', list.statements.length === 2 && list.statements.some(x => x.account_name === 'SCB'));
+  await inbox.deleteStatement(env, user, again.statement.stmt_id);
+  const otherView = await inbox.statementView(env, other, stmtId);
+  check('ครอบครัวอื่นเปิด statement ไม่ได้', otherView.status === 404);
+  const bigOk = await inbox.importStatement(env, user, { account_id: 'X99', files: [{ bytes: fakeFile(), mime: 'image/jpeg' }] });
+  check('บัญชีที่ไม่มีสิทธิ์ → ปฏิเสธ', bigOk.status === 403);
+
+  // ทีละชุด: 20 บรรทัดใหม่ → สร้างได้ทีละ 8
+  env.__statementOverride = async () => ({ period_from: '2026-11-01', period_to: '2026-11-30', lines: Array.from({ length: 20 }, (_, i) => ({ date: `2026-11-${String(i + 1).padStart(2, '0')}`, description: `ร้าน ${i}`, withdrawal: 10 + i, deposit: 0, balance: null })) });
+  const big = await inbox.importStatement(env, user, { account_id: 'A09', files: [{ bytes: fakeFile(), mime: 'image/jpeg' }] });
+  const b1 = await inbox.createFromStatement(env, user, big.statement.stmt_id, {});
+  check('สร้างทีละ 8 บรรทัด เหลือ 12', b1.created === 8 && b1.remaining === 12);
+  const sel = await inbox.createFromStatement(env, user, big.statement.stmt_id, { line_ids: ['L20'] });
+  check('เลือกสร้างเฉพาะบรรทัด', sel.created === 1 && sel.remaining === 0);
+  delete env.__statementOverride;
+}
+
+console.log('\n── meta สำหรับหน้าเว็บ ──');
+{
+  db.prepare(`INSERT INTO Contacts (contact_id, family_id, name, contact_type, members) VALUES ('W16','Fam_Default','W16 Co','CUSTOMER',NULL),('PRIV','Fam_Default','ส่วนตัว Puii','OTHER','["Puii"]')`).run();
+  const meta = await inbox.handleLedgerInbox(new Request('https://api.example/api/inbox/meta'), env, new URL('https://api.example/api/inbox/meta'), {}, '9North');
+  const m = await meta.json();
+  check('บัญชีชื่อไม่มีรหัส + บริษัทที่มีสิทธิ์', m.accounts.some(a => a.name === 'BK KBANK') && m.entities.length === 3 && !m.accounts.some(a => a.account_id === 'X99'));
+  check('หมวดเรียงตามที่ใช้บ่อย (มี uses)', m.categories.length > 3 && 'uses_out' in m.categories[0]);
+  check('คู่ค้า: admin เห็นทุกคน', m.contacts.length === 2);
+  const puiiMeta = await inbox.handleLedgerInbox(new Request('https://api.example/api/inbox/meta'), env, new URL('https://api.example/api/inbox/meta'), {}, 'Puii');
+  const pm = await puiiMeta.json();
+  check('Puii ยังไม่มีสิทธิ์บริษัท → ไม่เห็นบัญชี', pm.accounts.length === 0);
+}
+
 console.log('\n── ตรวจยอดทุกรายการที่ระบบสร้าง ──');
 {
-  const all = db.prepare(`SELECT transaction_id, total_amount FROM Transactions WHERE source != 'PDF_IMPORT'`).all();
+  const all = db.prepare(`SELECT transaction_id, total_amount FROM Transactions WHERE source != 'PDF_IMPORT' OR transaction_id LIKE 'TX-%'`).all();
   const bad = all.filter(t => Math.abs(match.balanceGap(t.total_amount, lines(t.transaction_id))) >= 0.005);
   check(`ทุกรายการลงตัว (${all.length} รายการ)`, bad.length === 0, bad.map(b => b.transaction_id).join(', '));
 }

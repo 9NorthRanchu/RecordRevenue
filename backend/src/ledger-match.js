@@ -170,3 +170,75 @@ export function templateFromDetails(details) {
     })),
   };
 }
+
+// ───────────────────────── Statement (ระยะ 2) ─────────────────────────
+
+/* เครื่องหมายของแต่ละบรรทัดใน statement — เชื่อ "ยอดคงเหลือ" มากกว่าที่ AI เดาว่าเข้า/ออก
+   (ปัญหาเดิมของการนำเข้า: AI ใส่เข้า/ออกสลับ ยอดในระบบเลยกลับเครื่องหมาย)
+   lines: [{ amount (บวก=เข้า ลบ=ออก ตามที่ AI อ่าน), balance (ยอดคงเหลือหลังรายการ หรือ null) }]
+   คืน { lines (แก้เครื่องหมายแล้ว), flipped: จำนวนที่กลับ, opening, closing, sum, gap }
+   gap ≠ 0 = ผลรวมไม่เท่ากับ (ยอดปิด − ยอดยกมา) → AI อาจอ่านตกหรืออ่านเกินบางบรรทัด */
+export function fixStatementSigns(lines, opening = null, closing = null) {
+  const out = (lines || []).map(l => ({ ...l, amount: round2(l.amount), balance: l.balance == null || l.balance === '' ? null : round2(l.balance) }));
+  let prev = opening == null || opening === '' ? null : round2(opening);
+  if (prev == null && out.length && out[0].balance != null) prev = round2(out[0].balance - out[0].amount);
+  const startBalance = prev;
+  let flipped = 0;
+  for (const l of out) {
+    if (l.balance != null && prev != null) {
+      const diff = round2(l.balance - prev);
+      if (Math.abs(Math.abs(diff) - Math.abs(l.amount)) < 0.01 && Math.sign(diff) !== Math.sign(l.amount) && diff !== 0) {
+        l.amount = diff; flipped++;
+      } else if (!l.amount && diff) l.amount = diff;
+    }
+    prev = l.balance != null ? l.balance : (prev == null ? null : round2(prev + l.amount));
+  }
+  const sum = round2(out.reduce((s, l) => s + l.amount, 0));
+  const end = closing == null || closing === '' ? (out.length ? out[out.length - 1].balance : null) : round2(closing);
+  const gap = startBalance != null && end != null ? round2(end - startBalance - sum) : null;
+  return { lines: out, flipped, opening: startBalance, closing: end, sum, gap };
+}
+
+/* คีย์จำคู่ค้าจากคำอธิบายใน statement ("TR fr 123-4-56789 นาย ก" → "นายก" ไม่สนตัวเลข/รหัส) */
+export function statementPartyKey(desc) {
+  const s = String(desc || '').toLowerCase()
+    .replace(/x{2,}[\dx-]*/g, ' ')
+    .replace(/\d+/g, ' ')
+    .replace(/\b(tr|trf|transfer|fr|from|to|ref|promptpay|pp|mobile|internet|atm|k plus|kplus|scb easy|online)\b/g, ' ');
+  const t = s.replace(/(โอนเงิน|รับโอน|โอนออก|ถอนเงิน|ฝากเงิน|ชำระเงิน|ชำระ|หักบัญชี|พร้อมเพย์|เพื่อ)/g, ' ')
+    .replace(/(^|\s)x+(?=\s|$)/g, ' ').replace(/[\s.,:;'"()\-_/]+/g, ' ').trim();
+  return partyKey(t).slice(0, 40);
+}
+
+/* จับคู่บรรทัด statement กับรายการที่มีในบัญชีเดียวกัน (ยอดเท่ากันเป๊ะ · วันห่างไม่เกิน 2 วัน · หรือเลขอ้างอิงตรง)
+   เลือกคู่ที่คะแนนสูงสุดก่อนทั้งฉบับ (ยอดซ้ำกันหลายรายการ → คู่ที่วัน/เวลาใกล้กว่าได้ก่อน)
+   คืน Map(key → { transaction_id, score }) */
+export function matchStatementLines(lines, txs) {
+  // จัดกลุ่มตามยอดก่อน — เทียบเฉพาะยอดเดียวกัน (Workers แผนฟรีมีเวลา CPU น้อย)
+  const byAmount = new Map(), byRef = new Map();
+  for (const tx of txs || []) {
+    const k = round2(tx.total_amount).toFixed(2);
+    if (!byAmount.has(k)) byAmount.set(k, []);
+    byAmount.get(k).push(tx);
+    if (tx.ref_code) byRef.set(String(tx.ref_code).trim(), tx);
+  }
+  const pairs = [];
+  for (const l of lines || []) {
+    const ev = { date: l.date, time: l.time, ref: l.ref_code, signedAmount: l.amount };
+    const pool = [...(byAmount.get(round2(l.amount).toFixed(2)) || [])];
+    const r = l.ref_code && byRef.get(String(l.ref_code).trim());
+    if (r && !pool.includes(r)) pool.push(r);
+    for (const tx of pool) {
+      const score = scoreCandidate(ev, tx);
+      if (score >= 35) pairs.push({ key: l.key, tx: tx.transaction_id, score, gap: dayDiff(l.date, tx.date) });
+    }
+  }
+  pairs.sort((a, b) => (b.score - a.score) || (a.gap - b.gap));
+  const usedLine = new Set(), usedTx = new Set(), out = new Map();
+  for (const p of pairs) {
+    if (usedLine.has(p.key) || usedTx.has(p.tx)) continue;
+    usedLine.add(p.key); usedTx.add(p.tx);
+    out.set(p.key, { transaction_id: p.tx, score: p.score });
+  }
+  return out;
+}
