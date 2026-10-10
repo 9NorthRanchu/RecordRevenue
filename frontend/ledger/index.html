@@ -30,9 +30,17 @@
   .top h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
   .top p { margin: 2px 0 0; opacity: .92; font-size: 13px; }
   .top a { color: #fff; text-decoration: none; background: rgba(255,255,255,.22); padding: 8px 12px; border-radius: 12px; font-size: 13px; white-space: nowrap; }
-  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px;
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px;
     box-shadow: 0 8px 24px rgba(33,37,41,.08); position: sticky; top: 8px; z-index: 5; }
-  .tabs button { border: 0; background: transparent; padding: 11px 6px; border-radius: 12px; font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer; }
+  .tabs button { border: 0; background: transparent; padding: 11px 6px; border-radius: 12px; font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer; min-height: 44px; }
+  @media (max-width: 480px) { .tabs button { font-size: 12.5px; padding: 8px 2px; } .tabs .n { display: block; margin: 2px auto 0; width: max-content; } }
+  .party { display: flex; gap: 12px; align-items: center; }
+  .avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 18px; flex: none; color: #fff; }
+  .seg2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: #fff; border-radius: 14px; padding: 5px; margin-top: 14px; }
+  .seg2 button { border: 0; border-radius: 10px; padding: 12px; font-weight: 700; background: transparent; color: var(--muted); cursor: pointer; min-height: 48px; }
+  .seg2 button.on { color: #fff; }
+  .meter { height: 8px; border-radius: 99px; background: #f1f3f5; overflow: hidden; margin-top: 8px; }
+  .meter i { display: block; height: 100%; border-radius: 99px; }
   .tabs button.on { background: var(--brand); color: #fff; box-shadow: 0 4px 12px rgba(95,61,196,.35); }
   .tabs .n { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: rgba(0,0,0,.08); font-size: 12px; margin-left: 4px; }
   .tabs button.on .n { background: rgba(255,255,255,.3); }
@@ -170,8 +178,9 @@
 <div class="wrap">
   <div class="tabs" id="tabs">
     <button data-tab="inbox" class="on">📥 รอเคลียร์<span class="n" id="nInbox">0</span></button>
-    <button data-tab="stmt">🏦 Statement</button>
     <button data-tab="hist">📜 ประวัติ</button>
+    <button data-tab="debt">🤝 ลูกหนี้</button>
+    <button data-tab="stmt">🏦 Statement</button>
   </div>
   <div id="view"></div>
 </div>
@@ -208,7 +217,7 @@
     TRANSFER: { c: 'var(--tr)', icon: '🔁', word: 'โอนระหว่างบัญชี' }, ASK: { c: 'var(--ask)', icon: '🧾', word: 'ต้องเลือก' },
     CASH: { c: 'var(--cash)', icon: '🪙', word: 'เงินสด' }, STORE: { c: '#adb5bd', icon: '📎', word: 'เอกสาร' }, ERR: { c: 'var(--bad)', icon: '⚠️', word: 'อ่านไม่สำเร็จ' },
   };
-  const S = { hMonth: new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7), hAcc: '', hQ: '', hAll: false, hType: 'all', hist: null, meta: null, tab: 'inbox', docs: [], recent: [], filter: 'all', acc: 'ALL', sort: 'desc', sel: -1, shown: [], statements: [], stmt: null, stmtFilter: 'todo', thumbs: new Map() };
+  const S = { dSide: 'AR', dQ: '', dClosed: false, parties: null, hMonth: new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7), hAcc: '', hQ: '', hAll: false, hType: 'all', hist: null, meta: null, tab: 'inbox', docs: [], recent: [], filter: 'all', acc: 'ALL', sort: 'desc', sel: -1, shown: [], statements: [], stmt: null, stmtFilter: 'todo', thumbs: new Map() };
 
   function toast(text, ms = 2600) {
     const t = document.createElement('div'); t.className = 'toast'; t.textContent = text;
@@ -260,6 +269,7 @@
       }
       if (S.tab === 'inbox') { S.docs = (await api('/api/inbox')).docs || []; renderInbox(); }
       else if (S.tab === 'done') { S.recent = ((await api('/api/inbox?status=all&limit=60')).docs || []).filter(d => ['DONE', 'DISMISSED'].includes(d.status)); renderDone(); }
+      else if (S.tab === 'debt') { S.parties = await api('/api/inbox/parties'); renderDebts(); }
       else if (S.tab === 'hist') { S.hist = await api(`/api/inbox/history?${S.hQ && S.hAll ? '' : `month=${S.hMonth}&`}account=${encodeURIComponent(S.hAcc)}&q=${encodeURIComponent(S.hQ)}`); renderHistory(); }
       else if (S.stmt) await openStatement(S.stmt.statement.stmt_id);
       else { S.statements = (await api('/api/inbox/statements')).statements || []; renderStatements(); }
@@ -885,6 +895,142 @@
     openEditor(fake, { tx: t });
   }
 
+  // ───────── ลูกหนี้ / เจ้าหนี้ ─────────
+  const SIDE = {
+    AR: { c: '#0b7285', soft: '#e3fafc', title: 'ลูกหนี้', who: 'เขาค้างเรา', add: '＋ ให้ยืม / ตั้งลูกหนี้', back: 'รับคืน', lentW: 'ให้ไป', backW: 'ได้คืน' },
+    AP: { c: '#9c36b5', soft: '#f8f0fc', title: 'เจ้าหนี้', who: 'เราค้างเขา', add: '＋ ยืมมา / ตั้งเจ้าหนี้', back: 'จ่ายคืน', lentW: 'ยืมมา', backW: 'จ่ายคืนแล้ว' },
+  };
+  const AV = ['#7950f2', '#0b7285', '#e8590c', '#2b8a3e', '#c2255c', '#1864ab', '#5f3dc4', '#9c36b5'];
+  const avColor = name => AV[[...String(name)].reduce((t, ch) => t + ch.charCodeAt(0), 0) % AV.length];
+  const debtCats = side => S.meta.categories.filter(c => c.behavior === (side === 'AR' ? 'ASSET' : 'LIABILITY') && c.sub_behavior !== 'INVESTMENT' && c.category_id !== S.meta.transfer_category);
+  function renderDebts() {
+    const all = S.parties?.parties || [], T = S.parties?.totals || { ar: 0, ap: 0, ar_n: 0, ap_n: 0 };
+    const sd = SIDE[S.dSide];
+    const q = S.dQ.toLowerCase();
+    const list = all.filter(p => p.side === S.dSide && (S.dClosed || Math.abs(p.balance) >= 0.005) && (!q || `${p.name} ${p.categories.map(c => c.name).join(' ')}`.toLowerCase().includes(q)));
+    const closedN = all.filter(p => p.side === S.dSide && Math.abs(p.balance) < 0.005).length;
+    view.innerHTML = `
+      <div class="tiles" style="margin-top:14px">
+        <div class="tile" style="background:${SIDE.AR.soft}"><b style="color:${SIDE.AR.c}">${money(T.ar)}</b><span>ลูกหนี้ · เขาค้างเรา (${T.ar_n})</span></div>
+        <div class="tile" style="background:${SIDE.AP.soft}"><b style="color:${SIDE.AP.c}">${money(T.ap)}</b><span>เจ้าหนี้ · เราค้างเขา (${T.ap_n})</span></div>
+        <div class="tile"><b class="${T.ar - T.ap < 0 ? 'neg' : 'pos'}">${signed(r2(T.ar - T.ap))}</b><span>สุทธิ</span></div>
+      </div>
+      <div class="seg2" role="tablist">${['AR', 'AP'].map(k => `<button role="tab" aria-selected="${S.dSide === k}" data-side="${k}" class="${S.dSide === k ? 'on' : ''}" style="${S.dSide === k ? `background:${SIDE[k].c}` : ''}">${k === 'AR' ? '🫴 ลูกหนี้' : '🙏 เจ้าหนี้'} <small>(${k === 'AR' ? T.ar_n : T.ap_n})</small></button>`).join('')}</div>
+      <div class="tools">
+        <button class="addb" id="dAdd" style="background:${sd.c}">${sd.add}</button>
+        <input class="inp" id="dQ" placeholder="🔎 ค้นหาชื่อ" value="${esc(S.dQ)}" style="flex:1;min-width:160px" aria-label="ค้นหา">
+        ${closedN ? `<label style="display:flex;gap:6px;align-items:center;font-size:14px;color:var(--muted);min-height:44px"><input type="checkbox" id="dClosed" ${S.dClosed ? 'checked' : ''}> ที่ปิดแล้ว (${closedN})</label>` : ''}
+      </div>
+      ${list.length ? list.map(p => {
+        const pct = p.lent > 0 ? Math.min(100, p.repaid / p.lent * 100) : 0;
+        const over = p.balance < -0.004;
+        return `<div class="doc" style="--k:${sd.c}" data-party="${esc(p.key)}">
+          <div class="party">
+            <span class="avatar" style="background:${avColor(p.name)}" aria-hidden="true">${esc([...p.name][0] || '?')}</span>
+            <div style="flex:1;min-width:0">
+              <div class="who" style="margin:0">${esc(p.name)}</div>
+              <div class="meta"><span>${esc(p.categories.map(c => c.name).join(', '))}</span><span>ล่าสุด ${thDate(p.last_date, true)}</span></div>
+            </div>
+            <div style="text-align:right"><div class="amt" style="color:${over ? '#c92a2a' : Math.abs(p.balance) < 0.005 ? 'var(--muted)' : sd.c}">${over ? signed(p.balance) : money(p.balance)}</div>
+              <div class="meta" style="justify-content:flex-end">${over ? (S.dSide === 'AR' ? 'ได้คืนเกิน' : 'จ่ายเกิน') : Math.abs(p.balance) < 0.005 ? 'ปิดแล้ว ✓' : sd.who}</div></div>
+          </div>
+          <div class="meter" title="คืนแล้ว ${Math.round(pct)}%"><i style="width:${pct}%;background:${sd.c}"></i></div>
+          <div class="meta" style="margin-top:4px"><span>${sd.lentW} ${money(p.lent)}</span><span>${sd.backW} ${money(p.repaid)} (${Math.round(pct)}%)</span></div>
+          <div class="acts">
+            ${Math.abs(p.balance) >= 0.005 ? `<button class="b ok" data-act="back">${sd.back}</button>` : ''}
+            <button class="b line" data-act="more">${S.dSide === 'AR' ? 'ให้ยืมเพิ่ม' : 'ยืมเพิ่ม'}</button>
+            <button class="b ghost" data-act="view">ดูรายการ ›</button>
+          </div>
+        </div>`;
+      }).join('') : `<div class="empty"><div class="big">${S.dSide === 'AR' ? '🫴' : '🙏'}</div><h3>${S.dQ ? 'ไม่พบชื่อนี้' : `ไม่มี${sd.title}ค้าง`}</h3>
+        <p>${debtCats(S.dSide).length ? `กด "${sd.add.replace('＋ ', '')}" เพื่อเริ่มบันทึก` : `ยังไม่มีหมวดที่หัวข้อเป็น${S.dSide === 'AR' ? 'สินทรัพย์ (ASSET)' : 'หนี้สิน (LIABILITY)'} — เพิ่มในหน้าตั้งค่าของแอปหลักก่อน`}</p></div>`}
+      <div class="hint" style="margin-top:12px">ยอดคิดจากรายการที่ยืนยันแล้วในหมวดลูกหนี้/เจ้าหนี้ · รายการที่สร้างจากหน้านี้บันทึกเป็นยืนยันแล้วทันที</div>`;
+    view.querySelectorAll('[data-side]').forEach(b => b.onclick = () => { S.dSide = b.dataset.side; renderDebts(); });
+    $('#dAdd').onclick = () => debtMove({ side: S.dSide, kind: 'new' });
+    $('#dQ').oninput = e => { S.dQ = e.target.value; const pos = e.target.selectionStart; renderDebts(); const n = $('#dQ'); n.focus(); n.setSelectionRange(pos, pos); };
+    $('#dClosed')?.addEventListener('change', e => { S.dClosed = e.target.checked; renderDebts(); });
+    view.querySelectorAll('[data-party]').forEach(el => el.addEventListener('click', e => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      const p = all.find(x => x.key === el.dataset.party && x.side === S.dSide);
+      if (b.dataset.act === 'view') return openParty(p);
+      debtMove({ side: S.dSide, kind: b.dataset.act === 'back' ? 'back' : 'new', party: p });
+    }));
+  }
+
+  /* บันทึกเงินลูกหนี้/เจ้าหนี้: ให้ยืม/ยืมมา (new) หรือ รับคืน/จ่ายคืน (back) → รายการยืนยันแล้ว 1 รายการ */
+  function debtMove({ side, kind, party }) {
+    const sd = SIDE[side];
+    const cats = debtCats(side);
+    if (!cats.length) return toast(`ยังไม่มีหมวด${sd.title} — เพิ่มในหน้าตั้งค่าของแอปหลักก่อน`);
+    const out = (side === 'AR') === (kind === 'new');               // ให้ยืม / จ่ายคืน = เงินออก
+    const title = kind === 'back' ? `${sd.back}${party ? ' · ' + party.name : ''}` : (side === 'AR' ? 'ให้ยืม / ตั้งลูกหนี้' : 'ยืมมา / ตั้งเจ้าหนี้');
+    const fixedCat = party?.key.startsWith('k:') ? party.key.slice(2) : null;
+    const defCat = fixedCat || party?.categories?.[0]?.category_id || cats[0].category_id;
+    const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+    const st = { contact_id: party?.contact_id || '', newName: '' };
+    const sh = sheet(title, `
+      <div class="tot" style="--k:${out ? 'var(--out)' : 'var(--in)'}"><span>${out ? '💸 เงินออกจากบัญชี' : '💰 เงินเข้าบัญชี'}</span><b>${kind === 'back' && party ? `ค้าง ${money(party.balance)}` : ''}</b></div>
+      ${fixedCat ? '' : `<label class="f">👤 ${side === 'AR' ? 'ใครยืม / ใครค้างเรา' : 'ยืมจากใคร / เราค้างใคร'}</label>
+        <button class="pick ln" id="mvWho" style="all:unset;box-sizing:border-box;display:block;width:100%;border:1.5px solid var(--line);border-radius:12px;padding:11px 12px;min-height:46px;cursor:pointer;background:#fff">${esc(party?.name || 'เลือกชื่อ ›')}</button>`}
+      <label class="f" for="mvCat">🗂️ หมวด</label>
+      <select class="inp" id="mvCat" ${fixedCat ? 'disabled' : ''}>${cats.map(c => `<option value="${esc(c.category_id)}" ${c.category_id === defCat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+      <div class="g2"><div><label class="f" for="mvAmt">ยอดเงิน</label><input class="inp" id="mvAmt" inputmode="decimal" placeholder="0.00" value="${kind === 'back' && party && party.balance > 0 ? party.balance : ''}" style="font-weight:700"></div>
+        <div><label class="f" for="mvDate">📅 วันที่</label><input class="inp" type="date" id="mvDate" value="${today}"></div></div>
+      <label class="f" for="mvAcc">🏦 ${out ? 'จ่ายจากบัญชี' : 'เข้าบัญชี'}</label>
+      <select class="inp" id="mvAcc">${S.meta.accounts.map(a => `<option value="${esc(a.account_id)}">${esc(a.name)}</option>`).join('')}</select>
+      <label class="f" for="mvNote">📝 รายละเอียด</label><input class="inp" id="mvNote" placeholder="${kind === 'back' ? 'เช่น คืนงวดที่ 1' : 'เช่น ให้ยืมค่าเทอม'}">
+      <div class="err" id="mvErr"></div>`,
+      `<button class="b line" data-close>ยกเลิก</button><button class="b ok" style="--k:${sd.c}" id="mvSave">บันทึก</button>`);
+    sh.el.querySelector('#mvWho')?.addEventListener('click', () => {
+      const items = S.meta.contacts.map(c => ({ id: c.contact_id, name: c.name, sub: c.contact_type || '' }));
+      const pk = sheet('เลือกชื่อ', `<input class="inp" id="pkNew" placeholder="＋ พิมพ์ชื่อใหม่ แล้วกดเพิ่ม"><div class="acts"><button class="b ok" style="--k:var(--brand)" id="pkAdd">เพิ่มชื่อใหม่</button></div>
+        <input class="inp" type="search" placeholder="🔎 ค้นหาชื่อเดิม" data-q style="margin-top:10px"><div class="plist" data-list></div>`);
+      const listEl = pk.el.querySelector('[data-list]'), qEl = pk.el.querySelector('[data-q]');
+      const draw = () => { const qq = qEl.value.trim().toLowerCase(); listEl.innerHTML = items.filter(x => !qq || x.name.toLowerCase().includes(qq)).slice(0, 80)
+        .map(x => `<button data-id="${esc(x.id)}"><span>${esc(x.name)}</span><small>${esc(x.sub)}</small></button>`).join('') || '<div class="hint">ไม่พบ</div>'; };
+      qEl.oninput = draw; draw();
+      const choose = (id, name) => { st.contact_id = id; st.newName = id ? '' : name; sh.el.querySelector('#mvWho').textContent = name; pk.close(); };
+      listEl.onclick = e => { const b = e.target.closest('button[data-id]'); if (b) choose(b.dataset.id, b.querySelector('span').textContent); };
+      pk.el.querySelector('#pkAdd').onclick = () => { const n = pk.el.querySelector('#pkNew').value.trim(); if (n) choose('', n); };
+    });
+    sh.el.querySelector('#mvSave').onclick = async () => {
+      const err = sh.el.querySelector('#mvErr');
+      const v = r2(String(sh.el.querySelector('#mvAmt').value).replace(/,/g, ''));
+      if (!(v > 0)) { err.textContent = 'ใส่ยอดเงิน'; return; }
+      if (!fixedCat && !st.contact_id && !st.newName) { err.textContent = 'เลือกชื่อก่อน'; return; }
+      const btn = sh.el.querySelector('#mvSave'); btn.disabled = true;
+      try {
+        let contactId = st.contact_id;
+        if (!contactId && st.newName) {
+          const c = await api('/api/inbox/contacts', { json: { name: st.newName, contact_type: 'OTHER' } });
+          contactId = c.contact_id;
+          if (!S.meta.contacts.some(x => x.contact_id === contactId)) S.meta.contacts.push({ contact_id: contactId, name: c.name, contact_type: 'OTHER' });
+        }
+        await api('/api/inbox/manual', { json: { account_id: sh.el.querySelector('#mvAcc').value, amount: out ? -v : v,
+          category_id: fixedCat || sh.el.querySelector('#mvCat').value, contact_id: contactId || null, confirm: true,
+          date: sh.el.querySelector('#mvDate').value, note: sh.el.querySelector('#mvNote').value.trim() || title } });
+        sh.close(); toast(`✅ บันทึกแล้ว ${out ? signed(-v) : money(v)}`); load();
+      } catch (e) { err.textContent = e.message; btn.disabled = false; }
+    };
+  }
+
+  async function openParty(p) {
+    try {
+      const d = await api(`/api/inbox/parties/${encodeURIComponent(p.key)}`);
+      const sd = SIDE[p.side], part = d[p.side];
+      const sh = sheet(p.name, `
+        <div class="tot" style="--k:${sd.c}"><span>${sd.title} · ${sd.who}</span><b>${part.balance < 0 ? signed(part.balance) : money(part.balance)}</b></div>
+        <div class="card" style="padding:4px 14px">${part.lines.map(l => `
+          <div style="display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:12px 0;border-bottom:1px solid var(--line)">
+            <div><b style="font-weight:600">${esc(l.note || l.category)}</b><div class="hint" style="margin:0">${thDate(l.date, true)} · ${esc(l.account)} · ${esc(l.category)}</div></div>
+            <div style="text-align:right"><b class="${l.delta < 0 ? 'pos' : ''}" style="${l.delta > 0 ? `color:${sd.c}` : ''}">${l.delta > 0 ? '+' + money(l.delta) : signed(l.delta)}</b><div class="hint" style="margin:0">คงค้าง ${money(l.balance)}</div></div>
+          </div>`).join('')}</div>
+        <div class="hint">+ = ค้างเพิ่ม (${sd.lentW}) · (วงเล็บ) = ${sd.backW} · แก้/ลบรายการได้ที่แท็บประวัติ</div>`,
+        Math.abs(part.balance) >= 0.005 ? `<button class="b line" data-close>ปิด</button><button class="b ok" style="--k:${sd.c}" id="pBack">${sd.back}</button>` : '');
+      sh.el.querySelector('#pBack')?.addEventListener('click', () => { sh.close(); debtMove({ side: p.side, kind: 'back', party: p }); });
+    } catch (e) { toast('⚠️ ' + e.message); }
+  }
+
   // ───────── ล่าสุด ─────────
   function renderDone() {
     view.innerHTML = S.recent.length ? `<div class="hint" style="margin-top:14px">รายการที่ยืนยัน/ไม่บันทึกล่าสุด 60 รายการ</div>` + S.recent.map(d => {
@@ -1080,7 +1226,7 @@
 
   // ลิงก์ตรงไปแท็บ statement (จากหน้าภาพรวม: index.html#stmt)
   const h0 = location.hash.slice(1);
-  if (h0 === 'stmt' || h0 === 'hist') { S.tab = h0; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === h0)); }
+  if (['stmt', 'hist', 'debt'].includes(h0)) { S.tab = h0; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === h0)); }
   load();
 })();
 </script>

@@ -19,6 +19,9 @@
 //   POST /api/inbox/manual                   — { date, time?, account_id, amount (เข้า + / ออก −), note } เพิ่มรายการเอง → รอยืนยัน
 //   GET  /api/inbox/history?month=YYYY-MM&account=&q=  — ประวัติรายการ (ทุกสถานะ) ของเดือน · q ไม่มี month = ค้นทุกเดือน 300 รายการ
 //   POST /api/inbox/tx/{transaction_id}/edit|delete     — แก้/ลบรายการที่ยืนยันแล้ว (ตรวจสิทธิ์บัญชี)
+//   GET  /api/inbox/parties                  — ลูกหนี้/เจ้าหนี้ทุกราย + ยอดค้าง (จากบรรทัดในหมวดสินทรัพย์/หนี้สิน)
+//   GET  /api/inbox/parties/{key}            — ความเคลื่อนไหวของรายนั้น (key = c:<contact_id> หรือ k:<category_id>) + ยอดสะสม
+//   POST /api/inbox/contacts                 — { name, contact_type } เพิ่มคู่ค้าใหม่
 //   POST /api/inbox/import-rows              — { groups: [{ row, date, account_id, total_amount, note, details[] }], confirmed } นำเข้า Excel ทีละ 8 ชุด
 //   ── ระยะ 2: statement ──
 //   POST /api/inbox/statement                — multipart: account_id + file (รูปหน้า statement หลายรูป)
@@ -104,6 +107,16 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
     }
 
     if (path === '/api/inbox/meta' && request.method === 'GET') return json(await inboxMeta(env, user), cors);
+    if (path === '/api/inbox/parties' && request.method === 'GET') return json(await listParties(env, user), cors);
+    const partyM = path.match(/^\/api\/inbox\/parties\/([^/]+)$/);
+    if (partyM && request.method === 'GET') {
+      const out = await partyLedger(env, user, decodeURIComponent(partyM[1]));
+      return json(out, cors, out.error ? (out.status || 400) : 200);
+    }
+    if (path === '/api/inbox/contacts' && request.method === 'POST') {
+      const out = await createContact(env, user, await request.json().catch(() => ({})));
+      return json(out, cors, out.error ? (out.status || 400) : 201);
+    }
     if (path === '/api/inbox/history' && request.method === 'GET') return json(await historyList(env, user, url), cors);
     const txAct = path.match(/^\/api\/inbox\/tx\/([\w.:-]+)\/(edit|delete)$/);
     if (txAct && request.method === 'POST') {
@@ -1075,8 +1088,8 @@ async function inboxMeta(env, user) {
   const usesIn = new Map(inCats.map(c => [c.category_id, c.uses]));
   let captions = new Map();                                        // "หัวข้อ" ของหมวด (กลุ่ม) — ใช้ค้นหา/แสดงในตัวเลือกหมวด
   try {
-    captions = new Map(((await env.DB.prepare(`SELECT c.category_id, at.name FROM Categories c JOIN Captions at ON at.type_id = c.caption_id
-      WHERE c.family_id = ? OR c.family_id IS NULL`).bind(user.family_id).all()).results || []).map(r => [r.category_id, displayName(r.name)]));
+    captions = new Map(((await env.DB.prepare(`SELECT c.category_id, at.name, at.behavior, at.sub_behavior FROM Categories c JOIN Captions at ON at.type_id = c.caption_id
+      WHERE c.family_id = ? OR c.family_id IS NULL`).bind(user.family_id).all()).results || []).map(r => [r.category_id, r]));
   } catch { /* ไม่มีตารางหัวข้อ */ }
   let contacts = [];
   try {
@@ -1093,7 +1106,8 @@ async function inboxMeta(env, user) {
       account_type: a.account_type || 'BANK', pdf_password: a.pdf_password || null })),
     entities: entities.map(e => ({ entity_id: e.entity_id, name: displayName(e.name), is_company: e.is_company })),
     categories: outCats.map(c => ({ category_id: c.category_id, name: displayName(c.name), default_type: c.default_type,
-      group: captions.get(c.category_id) || '', uses_out: c.uses, uses_in: usesIn.get(c.category_id) || 0 })),
+      group: displayName(captions.get(c.category_id)?.name || ''), behavior: captions.get(c.category_id)?.behavior || null,
+      sub_behavior: captions.get(c.category_id)?.sub_behavior || null, uses_out: c.uses, uses_in: usesIn.get(c.category_id) || 0 })),
     contacts,
     uncategorized: UNCATEGORIZED, transfer_category: TRANSFER_CATEGORY,
   };
@@ -1488,21 +1502,40 @@ export async function createManual(env, user, b = {}) {
   const time = /^\d{1,2}:\d{2}/.test(String(b.time || '')) ? String(b.time).slice(0, 5) + ':00' : bangkokNow().slice(11, 19);
   const note = String(b.note || '').trim().slice(0, 200);
   const side = amount > 0 ? 'IN' : 'OUT';
-  const rule = note ? await getRule(env, user.family_id, 'PARTY', partyKey(note)) : null;
-  const proposal = proposeLines({ total: amount, template: rule?.value && typeof rule.value === 'object' ? rule.value : null,
-    fallback: { category_id: UNCATEGORIZED, entity_id: account.entity_id, type: side === 'IN' ? 'INCOME' : 'EXPENSE', note } });
+  // ระบุหมวด/คู่ค้ามาเอง (เช่น ให้ยืม · รับคืน จากหน้าลูกหนี้) → บรรทัดเดียวตามนั้น ไม่เดาจากแบบที่จำ
+  let proposal;
+  if (b.category_id) {
+    const cat = await env.DB.prepare(`SELECT category_id, default_type FROM Categories WHERE category_id=? AND (family_id=? OR family_id IS NULL)`)
+      .bind(b.category_id, user.family_id).first();
+    if (!cat) return { error: 'ไม่พบหมวดนี้', status: 400 };
+    let contactId = null;
+    if (b.contact_id) {
+      const c = await env.DB.prepare(`SELECT contact_id FROM Contacts WHERE contact_id=? AND family_id=?`).bind(b.contact_id, user.family_id).first().catch(() => null);
+      if (!c) return { error: 'ไม่พบคู่ค้านี้', status: 400 };
+      contactId = c.contact_id;
+    }
+    const entIds = new Set((await permittedEntities(env, user)).map(x => x.entity_id));
+    const entity = b.entity_id && entIds.has(b.entity_id) ? b.entity_id : account.entity_id;
+    proposal = { how: 'manual', lines: [{ amount, fee: 0, wht: 0, category_id: cat.category_id, entity_id: entity, contact_id: contactId, note,
+      type: ['INCOME', 'EXPENSE', 'TRANSFER'].includes(cat.default_type) ? cat.default_type : (amount < 0 ? 'EXPENSE' : 'INCOME') }] };
+  } else {
+    const rule = note ? await getRule(env, user.family_id, 'PARTY', partyKey(note)) : null;
+    proposal = proposeLines({ total: amount, template: rule?.value && typeof rule.value === 'object' ? rule.value : null,
+      fallback: { category_id: UNCATEGORIZED, entity_id: account.entity_id, type: side === 'IN' ? 'INCOME' : 'EXPENSE', note } });
+  }
   for (const d of proposal.lines) if (!d.note) d.note = note;
+  const confirmNow = b.confirm === true && !!b.category_id;
   const txId = await createTransaction(env, user, { account_id: account.account_id, date, time, total_amount: amount, ref_code: null,
-    statement_desc: note || null, source: 'WEB_GRID', status: 'PENDING_REVIEW', details: proposal.lines });
+    statement_desc: note || null, source: 'WEB_GRID', status: confirmNow ? 'CONFIRMED' : 'PENDING_REVIEW', details: proposal.lines });
   const docId = newId('DOC');
   const party = { name: note };
   await env.DB.prepare(`INSERT INTO LedgerDocs (doc_id, family_id, uploaded_by, source, doc_type, status, extracted, suggestion, transaction_id, created_at)
-    VALUES (?,?,?, 'WEB', 'MANUAL', 'SUGGESTED', ?, ?, ?, ?)`).bind(docId, user.family_id, user.user_id,
+    VALUES (?,?,?, 'WEB', 'MANUAL', ?, ?, ?, ?, ?)`).bind(docId, user.family_id, user.user_id, confirmNow ? 'DONE' : 'SUGGESTED',
     JSON.stringify({ doc_type: 'MANUAL', date, time, amount: Math.abs(amount), memo: note, ...(side === 'IN' ? { sender: party } : { receiver: party }) }),
     JSON.stringify({ direction: side, party: note, legs: [{ side, account_id: account.account_id, kind: 'CREATED', transaction_id: txId, how: proposal.how }] }),
     txId, nowIso()).run();
   await linkDoc(env, docId, txId, 'CREATED');
-  return { ok: true, doc_id: docId, transaction_id: txId, how: proposal.how };
+  return { ok: true, doc_id: docId, transaction_id: txId, how: proposal.how, confirmed: confirmNow };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1689,4 +1722,93 @@ export async function deleteTransaction(env, user, txId) {
     env.DB.prepare(`DELETE FROM Transactions WHERE transaction_id=?`).bind(txId),
   ]);
   return { ok: true };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ลูกหนี้ / เจ้าหนี้ (2026-10-11)
+//
+//   ที่มาของตัวเลข = บรรทัดรายการ (TransactionDetails) ในหมวดที่หัวข้อเป็น ASSET (ลูกหนี้ · เงินให้ยืม · มัดจำ)
+//   หรือ LIABILITY (เจ้าหนี้ · เงินกู้) — กติกาเดียวกับการ์ดลูกหนี้/เจ้าหนี้ของหน้าภาพรวม
+//   ไม่นับ: หมวดลงทุน (sub_behavior INVESTMENT) · การโอนระหว่างบัญชี (ASSET + type TRANSFER) · รายการรอยืนยัน
+//   1 ราย = คู่ค้า (contact) ถ้ามี ไม่มีก็ใช้หมวดเป็นราย
+//   เครื่องหมาย: ให้ยืม = เงินออก (ลบ) → ลูกหนี้ค้าง = −Σ · ยืมมา = เงินเข้า (บวก) → เจ้าหนี้ค้าง = +Σ
+//   ตาราง Debts เดิม (ทะเบียนสัญญา) ยังไม่แตะ — หน้าเดิม "ทะเบียนลูกหนี้/เจ้าหนี้ (แบบเดิม)" ยังใช้ได้
+// ═══════════════════════════════════════════════════════════════
+const PARTY_WHERE = `t.status = 'CONFIRMED' AND cp.behavior IN ('ASSET','LIABILITY') AND IFNULL(cp.sub_behavior,'') != 'INVESTMENT'
+  AND NOT (cp.behavior = 'ASSET' AND IFNULL(d.type,'') = 'TRANSFER')`;
+const PARTY_FROM = `FROM TransactionDetails d JOIN Transactions t ON t.transaction_id = d.transaction_id
+  JOIN Accounts a ON a.account_id = t.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id
+  JOIN Categories c ON c.category_id = d.category_id JOIN Captions cp ON cp.type_id = c.caption_id
+  LEFT JOIN Contacts co ON co.contact_id = d.contact_id`;
+const partyKeyOf = r => r.contact_id ? `c:${r.contact_id}` : `k:${r.category_id}`;
+
+export async function listParties(env, user) {
+  let rows;
+  try {
+    rows = (await env.DB.prepare(`SELECT cp.behavior, d.category_id, c.name AS category_name, d.contact_id, co.name AS contact_name,
+        ROUND(SUM(d.amount - IFNULL((SELECT SUM(s.settled_amount) FROM Settlements s WHERE s.parent_detail_id = d.detail_id), 0)), 2) AS net,
+        ROUND(SUM(CASE WHEN d.amount < 0 THEN -d.amount ELSE 0 END), 2) AS out_sum, ROUND(SUM(CASE WHEN d.amount > 0 THEN d.amount ELSE 0 END), 2) AS in_sum,
+        COUNT(*) AS n, MIN(t.date) AS first_date, MAX(t.date) AS last_date
+      ${PARTY_FROM} WHERE up.user_id = ? AND ${PARTY_WHERE}
+      GROUP BY cp.behavior, d.contact_id, d.category_id`).bind(user.user_id).all()).results || [];
+  } catch (err) {
+    return { parties: [], totals: { ar: 0, ap: 0, ar_n: 0, ap_n: 0 }, error_note: 'ยังไม่มีหัวข้อสินทรัพย์/หนี้สิน' };
+  }
+  const map = new Map();
+  for (const r of rows) {
+    const side = r.behavior === 'ASSET' ? 'AR' : 'AP';
+    const key = `${side}|${partyKeyOf(r)}`;
+    const p = map.get(key) || { key: partyKeyOf(r), side, name: r.contact_name || displayName(r.category_name) || '-', contact_id: r.contact_id || null,
+      categories: [], net: 0, out_sum: 0, in_sum: 0, n: 0, first_date: r.first_date, last_date: r.last_date };
+    p.net = round2(p.net + r.net); p.out_sum = round2(p.out_sum + r.out_sum); p.in_sum = round2(p.in_sum + r.in_sum); p.n += r.n;
+    if (!p.categories.some(c => c.category_id === r.category_id)) p.categories.push({ category_id: r.category_id, name: displayName(r.category_name) });
+    if (r.first_date < p.first_date) p.first_date = r.first_date;
+    if (r.last_date > p.last_date) p.last_date = r.last_date;
+    map.set(key, p);
+  }
+  const parties = [...map.values()].map(p => ({ ...p,
+    // ยอดค้างแบบบวก: ลูกหนี้ = เงินที่ให้ไปแล้วยังไม่ได้คืน · เจ้าหนี้ = เงินที่ยืมมาแล้วยังไม่ได้คืน
+    balance: p.side === 'AR' ? round2(-p.net) : round2(p.net),
+    lent: p.side === 'AR' ? p.out_sum : p.in_sum, repaid: p.side === 'AR' ? p.in_sum : p.out_sum }))
+    .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
+  const open = x => Math.abs(x.balance) >= 0.005;
+  return { parties, totals: {
+    ar: round2(parties.filter(p => p.side === 'AR' && open(p)).reduce((t, p) => t + p.balance, 0)),
+    ap: round2(parties.filter(p => p.side === 'AP' && open(p)).reduce((t, p) => t + p.balance, 0)),
+    ar_n: parties.filter(p => p.side === 'AR' && open(p)).length, ap_n: parties.filter(p => p.side === 'AP' && open(p)).length } };
+}
+
+export async function partyLedger(env, user, key) {
+  const m = String(key).match(/^(c|k):(.+)$/);
+  if (!m) return { error: 'ไม่รู้จักรายนี้', status: 400 };
+  const cond = m[1] === 'c' ? 'd.contact_id = ?' : '(d.contact_id IS NULL OR d.contact_id = \'\') AND d.category_id = ?';
+  const rows = (await env.DB.prepare(`SELECT t.transaction_id, t.date, t.account_id, t.statement_desc, cp.behavior, d.detail_id, d.amount, d.note,
+      d.category_id, c.name AS category_name, d.entity_id, co.name AS contact_name,
+      IFNULL((SELECT SUM(s.settled_amount) FROM Settlements s WHERE s.parent_detail_id = d.detail_id), 0) AS settled
+    ${PARTY_FROM} WHERE up.user_id = ? AND ${PARTY_WHERE} AND ${cond} ORDER BY t.date, t.time`).bind(user.user_id, m[2]).all()).results || [];
+  if (!rows.length) return { error: 'ไม่พบรายการของรายนี้', status: 404 };
+  const accounts = await permittedAccounts(env, user);
+  const accName = id => displayName(accounts.find(a => a.account_id === id)?.name || id);
+  const out = { AR: { balance: 0, lines: [] }, AP: { balance: 0, lines: [] } };
+  for (const r of rows) {
+    const side = r.behavior === 'ASSET' ? 'AR' : 'AP';
+    const amt = round2(r.amount - r.settled);
+    const delta = side === 'AR' ? -amt : amt;                       // บวก = ยอดค้างเพิ่ม · ลบ = ได้คืน/จ่ายคืน
+    out[side].balance = round2(out[side].balance + delta);
+    out[side].lines.push({ transaction_id: r.transaction_id, date: r.date, account: accName(r.account_id), category: displayName(r.category_name),
+      note: r.note || r.statement_desc || '', amount: r.amount, delta, balance: out[side].balance });
+  }
+  for (const k of ['AR', 'AP']) out[k].lines.reverse();             // ใหม่สุดก่อน
+  return { key, name: rows[0].contact_name || displayName(rows[0].category_name), contact_id: m[1] === 'c' ? m[2] : null, ...out };
+}
+
+export async function createContact(env, user, b = {}) {
+  const name = String(b.name || '').trim().slice(0, 120);
+  if (!name) return { error: 'ใส่ชื่อ', status: 400 };
+  const type = ['CUSTOMER', 'VENDOR', 'OTHER'].includes(b.contact_type) ? b.contact_type : 'OTHER';
+  const dup = await env.DB.prepare(`SELECT contact_id, name FROM Contacts WHERE family_id=? AND LOWER(name)=LOWER(?)`).bind(user.family_id, name).first();
+  if (dup) return { ok: true, contact_id: dup.contact_id, name: dup.name, existed: true };
+  const id = `CT-${Date.now().toString(36)}${crypto.randomUUID().slice(0, 4)}`;
+  await env.DB.prepare(`INSERT INTO Contacts (contact_id, family_id, name, contact_type) VALUES (?,?,?,?)`).bind(id, user.family_id, name, type).run();
+  return { ok: true, contact_id: id, name };
 }

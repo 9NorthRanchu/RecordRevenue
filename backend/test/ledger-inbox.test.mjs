@@ -45,6 +45,8 @@ CREATE TABLE LedgerDocLinks (doc_id TEXT NOT NULL, transaction_id TEXT NOT NULL,
 CREATE TABLE LedgerRules (rule_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, kind TEXT NOT NULL, rkey TEXT NOT NULL, value TEXT NOT NULL, hits INTEGER NOT NULL DEFAULT 1, updated_at DATETIME, UNIQUE (family_id, kind, rkey));
 CREATE TABLE LedgerStatements (stmt_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, account_id TEXT NOT NULL, period_from TEXT, period_to TEXT, opening_balance REAL, closing_balance REAL, line_count INTEGER DEFAULT 0, lines TEXT, file_name TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME);
 CREATE TABLE Contacts (contact_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, name TEXT NOT NULL, contact_type TEXT, created_at DATETIME, entity_id TEXT, members TEXT);
+CREATE TABLE Captions (type_id TEXT PRIMARY KEY, family_id TEXT, name TEXT, behavior TEXT, sub_behavior TEXT);
+CREATE TABLE Settlements (settlement_id TEXT PRIMARY KEY, parent_detail_id TEXT, child_detail_id TEXT, settled_amount REAL);
 
 INSERT INTO Users VALUES ('9North','Fam_Default','9North',NULL,'Uline-north','admin',NULL,NULL), ('Puii','Fam_Default','Puii',NULL,'Uline-puii','member',NULL,NULL),
   ('Other','Fam_Other','Other',NULL,NULL,'admin',NULL,NULL);
@@ -766,6 +768,40 @@ console.log('\n── ประวัติ + แก้/ลบรายการ
   check('ลบรายการ + รายการย่อย', del.ok && !tx('S-EXTRA') && lines('S-EXTRA').length === 0);
 }
 
+console.log('\n── ลูกหนี้ / เจ้าหนี้ ──');
+{
+  db.exec(`INSERT INTO Captions VALUES ('CAP_AR','Fam_Default','[AR] ลูกหนี้/เงินให้ยืม','ASSET',NULL),('CAP_AP','Fam_Default','[AP] เจ้าหนี้/เงินกู้','LIABILITY',NULL),('CAP_INV','Fam_Default','ลงทุน','ASSET','INVESTMENT');
+    INSERT INTO Categories (category_id, family_id, name, caption_id, default_type) VALUES ('LOAN','Fam_Default','[L01] เงินให้ยืม','CAP_AR',NULL),('BORROW','Fam_Default','[B01] เงินกู้','CAP_AP',NULL),('STOCK','Fam_Default','หุ้น','CAP_INV',NULL),('DEPOSIT','Fam_Default','เงินมัดจำ','CAP_AR',NULL);`);
+  const c1 = await inbox.createContact(env, user, { name: 'พี่เอ' });
+  const c1b = await inbox.createContact(env, user, { name: 'พี่เอ' });
+  check('เพิ่มคู่ค้า · ชื่อซ้ำใช้ของเดิม', c1.ok && c1b.existed && c1b.contact_id === c1.contact_id);
+  const c2 = await inbox.createContact(env, user, { name: 'ธนาคารบ้าน' });
+  const lend = await inbox.createManual(env, user, { account_id: 'A02', amount: -5000, category_id: 'LOAN', contact_id: c1.contact_id, confirm: true, note: 'ให้พี่เอยืม', date: '2026-08-01' });
+  check('ให้ยืม → ยืนยันเลย (ไม่เข้ากล่อง)', lend.ok && lend.confirmed && tx(lend.transaction_id).status === 'CONFIRMED' && lines(lend.transaction_id)[0].contact_id === c1.contact_id);
+  await inbox.createManual(env, user, { account_id: 'A02', amount: 2000, category_id: 'LOAN', contact_id: c1.contact_id, confirm: true, note: 'พี่เอคืน', date: '2026-09-01' });
+  await inbox.createManual(env, user, { account_id: 'A09', amount: 10000, category_id: 'BORROW', contact_id: c2.contact_id, confirm: true, note: 'กู้', date: '2026-07-01' });
+  await inbox.createManual(env, user, { account_id: 'A09', amount: -4000, category_id: 'BORROW', contact_id: c2.contact_id, confirm: true, note: 'ผ่อน', date: '2026-08-01' });
+  await inbox.createManual(env, user, { account_id: 'A02', amount: -3000, category_id: 'DEPOSIT', confirm: true, note: 'มัดจำบ้านเช่า', date: '2026-08-05' });
+  await inbox.createManual(env, user, { account_id: 'A02', amount: -7000, category_id: 'STOCK', confirm: true, note: 'ซื้อหุ้น' });
+  const pend = await inbox.createManual(env, user, { account_id: 'A02', amount: -999, category_id: 'LOAN', contact_id: c1.contact_id, note: 'ยังไม่ยืนยัน' });
+  check('ไม่ส่ง confirm → รอยืนยัน', tx(pend.transaction_id).status === 'PENDING_REVIEW');
+  const L = await inbox.listParties(env, user);
+  const pa = L.parties.find(p => p.contact_id === c1.contact_id && p.side === 'AR');
+  const pb = L.parties.find(p => p.contact_id === c2.contact_id && p.side === 'AP');
+  const dep = L.parties.find(p => p.key === 'k:DEPOSIT');
+  check('ลูกหนี้พี่เอ ค้าง 3,000 (ให้ 5,000 คืน 2,000) ไม่นับที่รอยืนยัน', pa?.balance === 3000 && pa.lent === 5000 && pa.repaid === 2000, pa);
+  check('เจ้าหนี้ธนาคารบ้าน ค้าง 6,000', pb?.balance === 6000 && pb.lent === 10000 && pb.repaid === 4000, pb);
+  check('ไม่มีคู่ค้า → ใช้หมวดเป็นราย (มัดจำ 3,000)', dep?.balance === 3000 && dep.name === 'เงินมัดจำ');
+  check('ไม่นับเงินลงทุน', !L.parties.some(p => p.key === 'k:STOCK'));
+  check('ยอดรวม ลูกหนี้ 6,000 · เจ้าหนี้ 6,000', L.totals.ar === 6000 && L.totals.ap === 6000 && L.totals.ar_n === 2, L.totals);
+  const led = await inbox.partyLedger(env, user, 'c:' + c1.contact_id);
+  check('ความเคลื่อนไหว + ยอดสะสม (ใหม่สุดก่อน)', led.AR.balance === 3000 && led.AR.lines[0].delta === -2000 && led.AR.lines[0].balance === 3000 && led.AR.lines[1].balance === 5000);
+  const oth = await inbox.listParties(env, other);
+  check('ครอบครัวอื่นไม่เห็น', oth.parties.length === 0);
+  const badCat = await inbox.createManual(env, user, { account_id: 'A02', amount: -1, category_id: 'NOPE', confirm: true });
+  check('หมวดไม่มีจริง → ปฏิเสธ', badCat.status === 400);
+}
+
 console.log('\n── meta สำหรับหน้าเว็บ ──');
 {
   db.prepare(`INSERT INTO Contacts (contact_id, family_id, name, contact_type, members) VALUES ('W16','Fam_Default','W16 Co','CUSTOMER',NULL),('PRIV','Fam_Default','ส่วนตัว Puii','OTHER','["Puii"]')`).run();
@@ -773,7 +809,7 @@ console.log('\n── meta สำหรับหน้าเว็บ ──');
   const m = await meta.json();
   check('บัญชีชื่อไม่มีรหัส + บริษัทที่มีสิทธิ์', m.accounts.some(a => a.name === 'BK KBANK') && m.entities.length === 3 && !m.accounts.some(a => a.account_id === 'X99'));
   check('หมวดเรียงตามที่ใช้บ่อย (มี uses)', m.categories.length > 3 && 'uses_out' in m.categories[0]);
-  check('คู่ค้า: admin เห็นทุกคน', m.contacts.length === 2);
+  check('คู่ค้า: admin เห็นทุกคน (รวมของส่วนตัว)', m.contacts.some(c => c.contact_id === 'PRIV') && m.contacts.length === 4);
   const puiiMeta = await inbox.handleLedgerInbox(new Request('https://api.example/api/inbox/meta'), env, new URL('https://api.example/api/inbox/meta'), {}, 'Puii');
   const pm = await puiiMeta.json();
   check('Puii ยังไม่มีสิทธิ์บริษัท → ไม่เห็นบัญชี', pm.accounts.length === 0);

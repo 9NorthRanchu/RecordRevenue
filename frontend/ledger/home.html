@@ -95,6 +95,7 @@
     <a class="on" href="home.html"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>ภาพรวม</a>
     <a href="index.html"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5 5h14l3 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></svg>รอเคลียร์ <span id="navN"></span></a>
     <a href="index.html#hist">ประวัติ</a>
+    <a href="index.html#debt">ลูกหนี้</a>
     <a href="../index.html">แอปหลัก</a>
   </nav>
 </div></div>
@@ -147,7 +148,7 @@
   const icon = (k, color) => `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="${color || 'currentColor'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
 
   const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
-  const S = { month: today.slice(0, 7), member: 'ALL', showAll: false, data: null, inbox: [], statements: [] };
+  const S = { month: today.slice(0, 7), member: 'ALL', showAll: false, data: null, inbox: [], statements: [], parties: null };
 
   async function get(path) {
     const res = await fetch(API + path, { headers: { Authorization: `Bearer ${token()}` } });
@@ -162,12 +163,13 @@
     $('#monthL').textContent = monthLabel(S.month);
     $('#nextM').disabled = S.month >= today.slice(0, 7);
     try {
-      const [sum, box, st] = await Promise.all([
+      const [sum, box, st, pt] = await Promise.all([
         get(`/api/dashboard/summary?month=${S.month}&period=month&member=${encodeURIComponent(S.member)}`),
         get('/api/inbox').catch(() => ({ docs: [] })),
         get('/api/inbox/statements').catch(() => ({ statements: [] })),
+        get('/api/inbox/parties').catch(() => null),
       ]);
-      S.data = sum; S.inbox = box.docs || []; S.statements = st.statements || [];
+      S.data = sum; S.inbox = box.docs || []; S.statements = st.statements || []; S.parties = pt?.totals ? pt : null;
       render();
     } catch (e) {
       if (e.login) return showLogin();
@@ -195,8 +197,10 @@
     const cashSum = r2(cash.reduce((t, a) => t + a.balance, 0));
     const creditOwed = r2(credit.reduce((t, a) => t + (a.balance < 0 ? -a.balance : 0), 0));
     const creditOver = r2(credit.reduce((t, a) => t + (a.balance > 0 ? a.balance : 0), 0));
-    const arSum = r2((d.ar || []).reduce((t, x) => t + x.amount, 0));
-    const apSum = r2((d.ap || []).reduce((t, x) => t + x.amount, 0));
+    // ลูกหนี้/เจ้าหนี้: ใช้ตัวเลขชุดเดียวกับแท็บ 🤝 ลูกหนี้ (ทุกสมาชิกที่มีสิทธิ์) · ถ้าโหลดไม่ได้ใช้ของภาพรวมเดิม
+    const arSum = S.parties ? r2(S.parties.totals.ar) : r2((d.ar || []).reduce((t, x) => t + x.amount, 0));
+    const apSum = S.parties ? r2(S.parties.totals.ap) : r2((d.ap || []).reduce((t, x) => t + x.amount, 0));
+    const arN = S.parties ? S.parties.totals.ar_n : (d.ar || []).length, apN = S.parties ? S.parties.totals.ap_n : (d.ap || []).length;
     const invNet = r2(-(d.investment || []).reduce((t, x) => t + Number(x.amount || 0), 0));
     const assets = r2(cashSum + arSum + creditOver);
     const debts = r2(creditOwed + apSum);
@@ -287,14 +291,14 @@
         <section class="card">
           <h2>สินทรัพย์</h2>
           <div class="kv"><span>${icon('bank', '#087f5b')} เงินฝาก / เงินสด</span><b>${num(cashSum)}</b></div>
-          <div class="kv"><span>${icon('user', '#5f3dc4')} ลูกหนี้ / เงินให้ยืม <small>${(d.ar || []).length} ราย</small></span><b>${num(arSum)}</b></div>
+          <div class="kv"><span>${icon('user', '#5f3dc4')} ลูกหนี้ / เงินให้ยืม <small><a href="index.html#debt">${arN} ราย ›</a></small></span><b>${num(arSum)}</b></div>
           ${creditOver ? `<div class="kv"><span>${icon('card', '#087f5b')} บัตรเครดิตจ่ายเกิน</span><b>${num(creditOver)}</b></div>` : ''}
           <div class="kv total"><span>รวมสินทรัพย์</span><span class="pos">${fmt(assets)}</span></div>
         </section>
         <section class="card">
           <h2>หนี้สิน</h2>
           <div class="kv"><span>${icon('card', '#c92a2a')} บัตรเครดิต <small>${credit.length} ใบ</small></span><b>${fmt(creditOwed)}</b></div>
-          <div class="kv"><span>${icon('build', '#9c36b5')} เจ้าหนี้ / เงินกู้ <small>${(d.ap || []).length} ราย</small></span><b>${fmt(apSum)}</b></div>
+          <div class="kv"><span>${icon('build', '#9c36b5')} เจ้าหนี้ / เงินกู้ <small><a href="index.html#debt">${apN} ราย ›</a></small></span><b>${fmt(apSum)}</b></div>
           <div class="kv total"><span>รวมหนี้สิน</span><span class="neg">${fmt(debts)}</span></div>
         </section>
         <section class="card net">

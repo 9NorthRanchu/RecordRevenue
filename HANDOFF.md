@@ -36,6 +36,14 @@ Stack: Cloudflare Pages (frontend) + Cloudflare Worker (backend) + D1 (`record-r
 - **ประวัติใหม่** = แท็บ 📜 ใน ledger/index.html (`#hist`): `GET /api/inbox/history?month=&account=&q=` (IN (...) แบ่งชุดละ 90 — D1 จำกัด 100 พารามิเตอร์) · แก้/แตกบรรทัด/ลบรายการที่ยืนยันแล้ว `POST /api/inbox/tx/{id}/edit|delete` (ยอดหัวแก้ได้เฉพาะ WEB_GRID/LINE_TEXT) · เมนูแอปหลัก "ประวัติ (ใหม่)" + "ประวัติธุรกรรม (แบบเดิม)" ยังเก็บ (มี export)
 - `diag-account.sh A04` ตรวจบัญชียอดผิด (อ่านอย่างเดียว): แยกที่มา · ยอดสะสมรายเดือน · เครื่องหมายหัว/บรรทัดขัดกัน · ก้อนใหญ่
 
+**ลูกหนี้/เจ้าหนี้ใหม่ (2026-10-11)** = แท็บ 🤝 ใน ledger/index.html (`#debt`)
+- `GET /api/inbox/parties` ยอดค้างต่อราย จากบรรทัดในหมวดที่ Captions.behavior = ASSET (ลูกหนี้) / LIABILITY (เจ้าหนี้) · ไม่นับ INVESTMENT · ไม่นับ ASSET+TRANSFER · เฉพาะ CONFIRMED · หัก Settlements เดิม · 1 ราย = contact (ไม่มี = หมวด) · ลูกหนี้ค้าง = −Σamount · เจ้าหนี้ค้าง = +Σamount
+- `GET /api/inbox/parties/{c:contact|k:category}` ความเคลื่อนไหว + ยอดสะสม · `POST /api/inbox/contacts` เพิ่มคู่ค้า (ชื่อซ้ำใช้ของเดิม)
+- `createManual` รับ category_id/contact_id/entity_id/confirm:true → บรรทัดเดียวตามนั้น สถานะ CONFIRMED (ใช้กับ ให้ยืม · รับคืน · ยืมมา · จ่ายคืน)
+- meta หมวดมี behavior/sub_behavior · home.html ใช้ยอด parties ชุดเดียวกัน
+- ตาราง Debts เดิม (ทะเบียนสัญญาผ่อน) ยังไม่แตะ · หน้าเดิมคิดยอด start_balance − Σprincipal (เครื่องหมายผิดถ้าจ่ายคืนเป็นยอดลบ) — ถ้าจะย้ายต้องคุยกับ North
+- เมนูแอปหลัก: "ลูกหนี้/เจ้าหนี้ (ใหม่)" + "ทะเบียนลูกหนี้/เจ้าหนี้ (แบบเดิม)"
+
 **Puii**: ไม่ต้องแก้โค้ด — บอทตอบ LINE ID ให้คนที่ยังไม่ผูก · สิทธิ์เห็นบัญชีมาจาก UserPermissions (ติ๊ก Puii ใน Company ที่หน้าตั้งค่า)
 
 ## 🚀 2026-10-07 (ค่ำ) — เริ่มยกเครื่องสมุดจด: ระยะ 0 + ระยะ 1 (หลังบ้าน) — **อ่านก่อนหัวข้อถัดไป**
