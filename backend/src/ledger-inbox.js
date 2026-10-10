@@ -19,6 +19,7 @@
 //   POST /api/inbox/manual                   — { date, time?, account_id, amount (เข้า + / ออก −), note } เพิ่มรายการเอง → รอยืนยัน
 //   GET  /api/inbox/history?month=YYYY-MM&account=&q=  — ประวัติรายการ (ทุกสถานะ) ของเดือน · q ไม่มี month = ค้นทุกเดือน 300 รายการ
 //   POST /api/inbox/tx/{transaction_id}/edit|delete     — แก้/ลบรายการที่ยืนยันแล้ว (ตรวจสิทธิ์บัญชี)
+//   GET  /api/inbox/report?kind=pnl|wht|tb|export&from=YYYY-MM-DD&to=YYYY-MM-DD&entity= — รายงาน (เฉพาะยืนยันแล้ว)
 //   GET  /api/inbox/parties                  — ลูกหนี้/เจ้าหนี้ทุกราย + ยอดค้าง (จากบรรทัดในหมวดสินทรัพย์/หนี้สิน)
 //   GET  /api/inbox/parties/{key}            — ความเคลื่อนไหวของรายนั้น (key = c:<contact_id> หรือ k:<category_id>) + ยอดสะสม
 //   POST /api/inbox/contacts                 — { name, contact_type } เพิ่มคู่ค้าใหม่
@@ -107,6 +108,10 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
     }
 
     if (path === '/api/inbox/meta' && request.method === 'GET') return json(await inboxMeta(env, user), cors);
+    if (path === '/api/inbox/report' && request.method === 'GET') {
+      const out = await reportData(env, user, url);
+      return json(out, cors, out.error ? (out.status || 400) : 200);
+    }
     if (path === '/api/inbox/parties' && request.method === 'GET') return json(await listParties(env, user), cors);
     const partyM = path.match(/^\/api\/inbox\/parties\/([^/]+)$/);
     if (partyM && request.method === 'GET') {
@@ -1811,4 +1816,77 @@ export async function createContact(env, user, b = {}) {
   const id = `CT-${Date.now().toString(36)}${crypto.randomUUID().slice(0, 4)}`;
   await env.DB.prepare(`INSERT INTO Contacts (contact_id, family_id, name, contact_type) VALUES (?,?,?,?)`).bind(id, user.family_id, name, type).run();
   return { ok: true, contact_id: id, name };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// รายงาน (2026-10-11) — แทนหน้า "รายงานทางการเงิน" เดิม
+//   pnl    รายรับ-รายจ่ายตามหมวด/บริษัท (จัดฝั่งด้วย d.type แบบเดียวกับภาพรวม: INCOME·CREDIT_AR = รับ · EXPENSE·DEBIT_AR = จ่าย · TRANSFER ไม่นับ · ลงทุนแยก)
+//   wht    ภาษีหัก ณ ที่จ่าย ทั้ง 2 ฝั่ง — ถูกหัก (บรรทัดรับ) และ เราหัก (บรรทัดจ่าย · wht ติดลบตามกติกาเครื่องหมาย)
+//          ⚠️ ของเดิมกรอง wht > 0 → ฝั่ง "เราหัก" ไม่เคยแสดงเลย
+//   tb     งบทดลองตามหมวด (เดบิต = ยอดลบ · เครดิต = ยอดบวก) — ของเดิมไม่ตรวจสิทธิ์บริษัท
+//   export รายการแบบแบน 1 แถว = 1 บรรทัดย่อย (หน้าเว็บขอทีละเดือน · จำกัด 3,000 แถว)
+//   ทุกชนิดกรองด้วยบัญชีที่ผู้ใช้มีสิทธิ์ · entity = บริษัทของบรรทัด (d.entity_id)
+// ═══════════════════════════════════════════════════════════════
+export async function reportData(env, user, url) {
+  const kind = url.searchParams.get('kind') || 'pnl';
+  const from = validDate(url.searchParams.get('from')), to = validDate(url.searchParams.get('to'));
+  if (!from || !to || from > to) return { error: 'ช่วงวันที่ไม่ถูกต้อง', status: 400 };
+  const days = (Date.parse(to) - Date.parse(from)) / 864e5;
+  if (kind === 'export' && days > 62) return { error: 'ส่งออกได้ครั้งละไม่เกิน 2 เดือน', status: 400 };
+  if (days > 3700) return { error: 'ช่วงยาวเกินไป', status: 400 };
+  const entity = url.searchParams.get('entity') || '';
+  const toNext = shiftDate(to, 1);
+  const args = [user.user_id, from, toNext];
+  let where = `up.user_id = ? AND t.status = 'CONFIRMED' AND t.date >= ? AND t.date < ?`;
+  if (entity) { where += ' AND d.entity_id = ?'; args.push(entity); }
+  const FROM = `FROM TransactionDetails d JOIN Transactions t ON t.transaction_id = d.transaction_id
+    JOIN Accounts a ON a.account_id = t.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id
+    LEFT JOIN Categories c ON c.category_id = d.category_id LEFT JOIN Captions cp ON cp.type_id = c.caption_id
+    LEFT JOIN Entities e ON e.entity_id = d.entity_id LEFT JOIN Contacts co ON co.contact_id = d.contact_id`;
+  const q = async (sql, extra = []) => (await env.DB.prepare(sql).bind(...args, ...extra).all()).results || [];
+
+  if (kind === 'pnl') {
+    const rows = await q(`SELECT d.type, d.category_id, c.name AS category_name, cp.name AS caption_name, cp.behavior, cp.sub_behavior,
+        d.entity_id, e.name AS entity_name, ROUND(SUM(d.amount),2) AS amount, ROUND(SUM(IFNULL(d.wht,0)),2) AS wht, ROUND(SUM(IFNULL(d.fee,0)),2) AS fee, COUNT(*) AS n
+      ${FROM} WHERE ${where} GROUP BY d.type, d.category_id, d.entity_id`);
+    const lines = [];
+    for (const r of rows) {
+      const typ = String(r.type || '').toUpperCase();
+      let side = null;
+      if (r.sub_behavior === 'INVESTMENT') side = 'INV';
+      else if (typ === 'INCOME' || typ === 'CREDIT_AR') side = 'IN';
+      else if (typ === 'EXPENSE' || typ === 'DEBIT_AR') side = 'OUT';
+      else if (typ === 'TRANSFER') side = null;
+      else if (r.behavior === 'REVENUE') side = 'IN';
+      else if (r.behavior === 'EXPENSE') side = 'OUT';
+      if (!side) continue;
+      lines.push({ side, category_id: r.category_id, category: r.category_id === UNCATEGORIZED ? 'ยังไม่ระบุหมวด' : displayName(r.category_name || r.category_id),
+        group: displayName(r.caption_name || '') || (side === 'IN' ? 'รายรับอื่น' : side === 'OUT' ? 'รายจ่ายอื่น' : 'ลงทุน'),
+        entity_id: r.entity_id, entity: displayName(r.entity_name || '') || (r.entity_id || 'ไม่ระบุบริษัท'), amount: r.amount, wht: r.wht, fee: r.fee, n: r.n });
+    }
+    return { kind, from, to, entity, lines };
+  }
+  if (kind === 'wht') {
+    const rows = await q(`SELECT t.date, t.transaction_id, d.amount, d.wht, d.note, t.statement_desc, c.name AS category_name, d.entity_id, e.name AS entity_name,
+        co.name AS contact_name ${FROM} WHERE ${where} AND IFNULL(d.wht,0) != 0 ORDER BY t.date`);
+    return { kind, from, to, entity, rows: rows.map(r => ({ date: String(r.date).slice(0, 10), side: r.amount >= 0 ? 'RECEIVED' : 'WITHHELD',
+      base: round2(Math.abs(r.amount)), wht: round2(Math.abs(r.wht)), rate: r.amount ? Math.round(Math.abs(r.wht / r.amount) * 1000) / 10 : 0,
+      company: displayName(r.entity_name || '') || '-', party: r.contact_name || r.statement_desc || '-', title: r.note || displayName(r.category_name || ''),
+      transaction_id: r.transaction_id })) };
+  }
+  if (kind === 'tb') {
+    const rows = await q(`SELECT d.category_id, c.name AS category_name, cp.name AS caption_name, cp.behavior,
+        ROUND(SUM(CASE WHEN d.amount < 0 THEN -d.amount ELSE 0 END),2) AS debit, ROUND(SUM(CASE WHEN d.amount > 0 THEN d.amount ELSE 0 END),2) AS credit, COUNT(*) AS n
+      ${FROM} WHERE ${where} GROUP BY d.category_id ORDER BY cp.behavior, c.name`);
+    return { kind, from, to, entity, rows: rows.map(r => ({ category_id: r.category_id, category: displayName(r.category_name || r.category_id),
+      group: displayName(r.caption_name || '') || '-', behavior: r.behavior || '-', debit: r.debit, credit: r.credit, net: round2(r.credit - r.debit), n: r.n })) };
+  }
+  if (kind === 'export') {
+    const rows = await q(`SELECT t.date, t.time, t.transaction_id, t.account_id, a.name AS account_name, t.ref_code, t.statement_desc, t.total_amount, t.source,
+        d.amount, d.fee, d.wht, d.type, d.category_id, c.name AS category_name, cp.name AS caption_name, d.entity_id, e.name AS entity_name,
+        d.contact_id, co.name AS contact_name, d.note
+      ${FROM} WHERE ${where} ORDER BY t.date, t.time, t.transaction_id LIMIT 3000`);
+    return { kind, from, to, entity, rows };
+  }
+  return { error: 'ไม่รู้จักรายงานนี้', status: 400 };
 }

@@ -633,6 +633,9 @@ export default {
         if (!entityId) {
           return new Response(JSON.stringify({ error: 'Missing entityId' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
+        // ตรวจสิทธิ์บริษัท (เดิมไม่ตรวจ — ใครก็ขอดูงบทดลองของบริษัทไหนก็ได้ · แก้ 2026-10-11)
+        const tbPerm = authUserId ? await env.DB.prepare(`SELECT 1 AS ok FROM UserPermissions WHERE user_id = ? AND entity_id = ?`).bind(authUserId, entityId).first() : null;
+        if (!tbPerm) return new Response(JSON.stringify({ error: 'ไม่มีสิทธิ์ดูบริษัทนี้' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
         // Calculates sum of Dr (debit) and Cr (credit) grouped by Category
         const trialBalance = await env.DB.prepare(`

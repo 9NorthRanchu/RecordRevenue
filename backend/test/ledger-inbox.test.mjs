@@ -802,6 +802,31 @@ console.log('\n── ลูกหนี้ / เจ้าหนี้ ──');
   check('หมวดไม่มีจริง → ปฏิเสธ', badCat.status === 400);
 }
 
+console.log('\n── รายงาน ──');
+{
+  const R = async qs => inbox.reportData(env, user, new URL('https://api.example/api/inbox/report?' + qs));
+  await inbox.importRows(env, user, { confirmed: true, groups: [
+    { row: 1, date: '2026-10-15', account_id: 'A09', total_amount: 9700, note: 'รายงาน: ค่าบริการ', details: [{ amount: 10000, wht: 300, category_id: 'Service', entity_id: 'Ent_Co_S01' }] },
+    { row: 2, date: '2026-10-16', account_id: 'A02', total_amount: -9709.91, note: 'รายงาน: จ้างทำบัญชี', details: [{ amount: -9990, wht: 280.09, category_id: 'T05', entity_id: 'Ent_Co_S01' }] }] });
+  const pnl = await R('kind=pnl&from=2026-10-01&to=2026-10-31');
+  const inc = pnl.lines.filter(l => l.side === 'IN').reduce((t, l) => t + l.amount, 0);
+  const exp = pnl.lines.filter(l => l.side === 'OUT').reduce((t, l) => t + l.amount, 0);
+  check('กำไรขาดทุน ต.ค.: มีทั้งรับและจ่าย · ไม่นับโอน/ลูกหนี้', inc > 0 && exp < 0 && !pnl.lines.some(l => l.category_id === 'LOAN' || l.category_id === 'Bank_Transfer'));
+  const s01 = await R('kind=pnl&from=2026-10-01&to=2026-10-31&entity=Ent_Co_S01');
+  check('กรองบริษัท S01', s01.lines.length > 0 && s01.lines.every(l => l.entity_id === 'Ent_Co_S01'));
+  const wht = await R('kind=wht&from=2026-01-01&to=2026-12-31');
+  check('WHT ถูกหัก (รายรับ)', wht.rows.some(r => r.side === 'RECEIVED' && r.wht === 300 && r.base === 10000 && r.rate === 3));
+  check('WHT เราหัก (รายจ่าย wht ติดลบ) แสดงด้วย', wht.rows.some(r => r.side === 'WITHHELD' && r.wht === 280.09));
+  const tb = await R('kind=tb&from=2026-01-01&to=2026-12-31');
+  check('งบทดลอง: เดบิต/เครดิตต่อหมวด', tb.rows.length > 3 && tb.rows.every(r => r.debit >= 0 && r.credit >= 0));
+  const ex = await R('kind=export&from=2026-10-01&to=2026-10-31');
+  check('ส่งออก 1 แถว = 1 บรรทัดย่อย', ex.rows.length > 5 && ex.rows.every(r => r.date.startsWith('2026-10')));
+  const tooLong = await R('kind=export&from=2026-01-01&to=2026-12-31');
+  check('ส่งออกเกิน 2 เดือน → ปฏิเสธ', tooLong.status === 400);
+  const oth = await inbox.reportData(env, other, new URL('https://api.example/api/inbox/report?kind=pnl&from=2026-01-01&to=2026-12-31'));
+  check('ครอบครัวอื่นไม่เห็นตัวเลขเรา', !oth.lines.some(l => l.entity_id && l.entity_id.startsWith('Ent_Co')));
+}
+
 console.log('\n── meta สำหรับหน้าเว็บ ──');
 {
   db.prepare(`INSERT INTO Contacts (contact_id, family_id, name, contact_type, members) VALUES ('W16','Fam_Default','W16 Co','CUSTOMER',NULL),('PRIV','Fam_Default','ส่วนตัว Puii','OTHER','["Puii"]')`).run();
