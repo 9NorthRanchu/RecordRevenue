@@ -10,7 +10,7 @@
   ตั้งค่าใหม่ (2026-10-11) แทนหน้า "ตั้งค่าระบบ" เดิม — ใช้ API เดิมทั้งหมด:
     GET /api/settings · POST /api/settings/save · POST /api/settings/delete (admin) · GET/POST /api/users (บันทึก = admin)
   ชื่อข้อมูลหลักใช้รูปแบบเดิม "[ID] ชื่อ" — หน้านี้ให้พิมพ์แค่ชื่อ แล้วเติม [ID] ให้เอง (ถ้าชื่อเดิมมีแบบนั้น หรือเป็นรายการใหม่)
-  ไม่ทำในหน้านี้ (ยังอยู่ที่หน้าเดิม): ลบสมาชิก (ลบข้อมูลบริษัทที่ถือคนเดียวทั้งหมด) · สำรอง/กู้คืน · ธีม · โปรเจกต์/ทริป
+  2026-10-11 ย้ายมาแล้ว: ลบสมาชิก (ดูก่อนลบ) · สำรอง/กู้ข้อมูล · โปรเจกต์ — ยังอยู่หน้าเดิม: ธีม · ล้างข้อมูล
 -->
 <style>
   :root { --ink: #212529; --muted: #5c636a; --line: #ece8f8; --bg: #f8f7fd; --brand: #5f3dc4; --pos: #087f5b; --neg: #c92a2a; --bad: #e03131; --radius: 20px; }
@@ -87,7 +87,7 @@
 <body>
 <div class="top"><div class="wrap row">
   <div><h1>ตั้งค่า</h1><p id="sub">บัญชี · บริษัท · หมวด · คู่ค้า · สมาชิก</p></div>
-  <nav class="nav" aria-label="เมนู"><a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a href="reports.html">รายงาน</a><a href="close.html">ปิดเดือน</a><a class="on" href="settings.html">ตั้งค่า</a><a href="../index.html?classic=1">แอปหลัก</a></nav>
+  <nav class="nav" aria-label="เมนู"><a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a href="cards.html">บัตร & เงินกู้</a><a href="reports.html">รายงาน</a><a href="close.html">ปิดเดือน</a><a class="on" href="settings.html">ตั้งค่า</a><a href="../index.html?classic=1">แอปหลัก</a></nav>
 </div></div>
 <main class="wrap">
   <div class="tabs" id="tabs" role="tablist">
@@ -400,7 +400,20 @@
       <label class="f">บทบาท</label><div class="seg" id="uR"><button type="button" data-v="member" class="${role === 'member' ? 'on' : ''}">🙂 สมาชิก</button><button type="button" data-v="admin" class="${role === 'admin' ? 'on' : ''}">⭐ ผู้ดูแล</button></div>
       <label class="f" for="uLine">LINE User ID</label><input class="inp" id="uLine" value="${esc(u?.line_user_id || '')}" placeholder="U… (บอทตอบให้เมื่อแอดบอทแล้วพิมพ์อะไรก็ได้)">
       <label class="f">บริษัทที่เห็นได้</label><div class="checks">${ents.map(e => `<label><input type="checkbox" value="${esc(e.entity_id)}" ${allowed.has(e.entity_id) ? 'checked' : ''}> ${esc(plain(e.name))}</label>`).join('')}</div>
-      ${u ? '<div class="note">ลบสมาชิกทำได้ที่หน้าตั้งค่าแบบเดิม (ลบแล้วข้อมูลของบริษัทที่ถือคนเดียวจะหายด้วย)</div>' : ''}`, `<button class="b main" data-save>บันทึก</button>`);
+      ${u && isAdmin() && u.user_id !== S.me?.user_id ? '<div class="note">ลบสมาชิก: บริษัทที่คนนี้ถือ "คนเดียว" จะถูกลบข้อมูลทั้งหมดด้วย · ระบบจะแสดงรายชื่อให้ตรวจก่อนลบ</div>' : ''}`,
+      `${u && isAdmin() && u.user_id !== S.me?.user_id ? '<button class="b danger" data-delu>ลบสมาชิก</button>' : ''}<button class="b main" data-save>บันทึก</button>`);
+    sh.el.querySelector('[data-delu]')?.addEventListener('click', async () => {
+      try {
+        const pv = await api('/api/users/delete', { user_id: u.user_id, preview: true });
+        const del = pv.report?.deleted_companies || [], keep = pv.report?.kept_shared_companies || [];
+        const msg = `ลบสมาชิก "${u.name}"?\n\n` + (del.length ? `⚠️ ลบข้อมูลทั้งหมดของบริษัทที่ถือคนเดียว:\n· ${del.map(plain).join('\n· ')}\n(รายการเงิน บัญชี และบริษัทเหล่านี้จะหายถาวร)\n\n` : 'ไม่มีบริษัทที่ถือคนเดียว — ไม่มีข้อมูลการเงินถูกลบ\n\n')
+          + (keep.length ? `บริษัทที่ถือร่วม (เก็บไว้ แค่ถอนสิทธิ์):\n· ${keep.map(plain).join('\n· ')}\n\n` : '') + 'แนะนำให้สำรองข้อมูลก่อน (ตั้งค่า → อื่น ๆ)';
+        if (!window.confirm(msg)) return;
+        if (del.length && window.prompt(`พิมพ์รหัสผู้ใช้  ${u.user_id}  เพื่อยืนยันการลบ`) !== u.user_id) return toast('ยกเลิก');
+        const out = await api('/api/users/delete', { user_id: u.user_id });
+        sh.close(); toast(`🗑️ ลบ ${u.name} แล้ว`); await load();
+      } catch (e) { sh.err(e.message); }
+    });
     sh.el.querySelectorAll('#uR [data-v]').forEach(b => b.onclick = () => { role = b.dataset.v; sh.el.querySelectorAll('#uR [data-v]').forEach(x => x.classList.toggle('on', x === b)); });
     sh.el.querySelector('[data-save]').onclick = async () => {
       const id = sh.v('uId'), name = sh.v('uName'), email = sh.v('uMail'), pw = sh.el.querySelector('#uPw').value;
@@ -417,13 +430,107 @@
   }
 
   // ── อื่น ๆ ──
+  /* ── อื่น ๆ: สำรอง/กู้ข้อมูล · โปรเจกต์ (ย้ายจากหน้าเดิม 2026-10-11) ── */
+  const BACKUP_SHEETS = [['Transactions', 'transactions'], ['TransactionDetails', 'transaction_details'], ['Settlements', 'settlements'], ['Debts', 'debts'],
+    ['Contacts', 'contacts'], ['Projects', 'projects'], ['Entities', 'entities'], ['Accounts', 'accounts'], ['Categories', 'categories'], ['Captions', 'captions'],
+    ['TripStops', 'trip_stops'], ['TripExpenses', 'trip_expenses'], ['UserPermissions', 'user_permissions']];
+  async function loadXlsx() {
+    if (window.XLSX) return;
+    const add = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    try { await add('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'); }
+    catch { try { await add('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'); } catch { throw new Error('โหลดตัวสร้าง Excel ไม่สำเร็จ ลองรีเฟรชหน้า'); } }
+  }
+  async function doBackup(btn) {
+    btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '⏳ กำลังสำรอง…';
+    try {
+      await loadXlsx();
+      const db = await api('/api/backup/full');
+      const X = window.XLSX, wb = X.utils.book_new();
+      X.utils.book_append_sheet(wb, X.utils.json_to_sheet([{ ข้อมูล: 'Exported At', ค่า: db.exported_at }, { ข้อมูล: 'Family ID', ค่า: db.family_id }, { ข้อมูล: 'Exported By', ค่า: S.me?.name || '' },
+        ...BACKUP_SHEETS.map(([sh, k]) => ({ ข้อมูล: `จำนวน ${sh}`, ค่า: (db[k] || []).length + ' rows' }))]), '_Info');
+      for (const [sh, k] of BACKUP_SHEETS) { const rows = db[k] || []; X.utils.book_append_sheet(wb, rows.length ? X.utils.json_to_sheet(rows) : X.utils.aoa_to_sheet([['(ไม่มีข้อมูล)']]), sh); }
+      X.writeFile(wb, `RecordRevenue_Backup_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`);
+      toast(`💾 สำรองแล้ว · ${(db.transactions || []).length.toLocaleString()} รายการ`);
+    } catch (e) { toast('⚠️ สำรองไม่สำเร็จ: ' + e.message); }
+    btn.disabled = false; btn.innerHTML = old;
+  }
+  function restoreForm() {
+    let mode = 'upsert';
+    const sh = sheet('กู้ข้อมูลจากไฟล์สำรอง', `
+      <label class="f">ไฟล์สำรอง (.xlsx จากปุ่ม "สำรองข้อมูล")</label><input class="inp" id="rFile" type="file" accept=".xlsx" style="padding-top:10px">
+      <label class="f">วิธีกู้</label><div class="seg" id="rM"><button type="button" data-v="upsert" class="on">➕ เพิ่ม/อัปเดต (ไม่ลบของเดิม)</button><button type="button" data-v="replace">⚠️ แทนที่ทั้งหมด</button></div>
+      <div class="note" id="rNote">เพิ่มรายการที่ยังไม่มี และอัปเดตรายการที่รหัสตรงกัน — ของเดิมที่ไม่มีในไฟล์ยังอยู่</div>
+      <div class="note">ถ้ามีเดือนที่ปิดบัญชีแล้ว ต้องเปิดเดือนก่อนจึงจะกู้ได้</div>`, `<button class="b main" data-save>เริ่มกู้ข้อมูล</button>`);
+    sh.el.querySelector('#rM').onclick = e => { const b = e.target.closest('button[data-v]'); if (!b) return; mode = b.dataset.v;
+      sh.el.querySelectorAll('#rM button').forEach(x => x.classList.toggle('on', x === b));
+      sh.el.querySelector('#rNote').textContent = mode === 'replace' ? 'ลบข้อมูลการเงินและข้อมูลหลักของครอบครัวทั้งหมด แล้วใส่จากไฟล์ — ข้อมูลจะกลับไปตรงกับไฟล์เป๊ะ (สมาชิกไม่ถูกลบ)' : 'เพิ่มรายการที่ยังไม่มี และอัปเดตรายการที่รหัสตรงกัน — ของเดิมที่ไม่มีในไฟล์ยังอยู่'; };
+    sh.el.querySelector('[data-save]').onclick = async e => {
+      const f = sh.el.querySelector('#rFile').files[0];
+      if (!f) return sh.err('เลือกไฟล์ก่อน');
+      if (mode === 'replace') {
+        if (!window.confirm(`⚠️ แทนที่ทั้งหมด\n\nลบข้อมูลเดิมทั้งหมดของครอบครัว แล้วใส่จาก "${f.name}"\nแถวที่ไม่มีในไฟล์จะหายถาวร — ดำเนินการต่อ?`)) return;
+        if (window.prompt('พิมพ์  RESET  เพื่อยืนยัน') !== 'RESET') return toast('ยกเลิก');
+      } else if (!window.confirm(`กู้ข้อมูลจาก "${f.name}" แบบเพิ่ม/อัปเดต?`)) return;
+      e.target.disabled = true; sh.err('');
+      try {
+        await loadXlsx();
+        const wb = window.XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: 'array' });
+        const payload = {};
+        for (const [name, key] of BACKUP_SHEETS) { if (!wb.SheetNames.includes(name)) continue; const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[name]); if (rows.length && !(rows.length === 1 && Object.values(rows[0])[0] === '(ไม่มีข้อมูล)')) payload[key] = rows; }
+        if (!Object.keys(payload).length) throw new Error('ไม่พบชีตข้อมูลในไฟล์ — ใช่ไฟล์จากปุ่มสำรองข้อมูลไหม');
+        if (mode === 'replace') payload.mode = 'replace';
+        e.target.textContent = '⏳ กำลังกู้… (อาจใช้เวลาหลายนาที)';
+        let out;
+        try { out = await api('/api/restore/full', payload); }
+        catch (err) {
+          if (!/น้อยกว่าครึ่ง/.test(err.message) || !window.confirm(`⚠️ ${err.message}\n\nยืนยันแทนที่ด้วยไฟล์นี้?`)) throw err;
+          payload.confirm_shrink = true; out = await api('/api/restore/full', payload);
+        }
+        sh.close();
+        try { Object.keys(sessionStorage).filter(k => k.startsWith('mdcache:')).forEach(k => sessionStorage.removeItem(k)); } catch { /* */ }
+        window.alert('✅ กู้ข้อมูลสำเร็จ\n\n' + Object.entries(out.stats || {}).map(([k, v]) => `${k}: ${v}`).join('\n'));
+        await load();
+      } catch (err) { sh.err(err.message); e.target.disabled = false; e.target.textContent = 'เริ่มกู้ข้อมูล'; }
+    };
+  }
+  function projForm(p) {
+    const ids = (S.st.projects || []).map(x => x.project_id);
+    let status = p?.status || 'active';
+    const sh = sheet(p ? 'แก้ไขโปรเจกต์' : 'เพิ่มโปรเจกต์', `
+      <div class="g2"><div><label class="f" for="pId">รหัส</label><input class="inp" id="pId" value="${esc(p?.project_id || nextId(ids, 'P'))}"></div>
+      <div><label class="f" for="pN">ชื่อโปรเจกต์</label><input class="inp" id="pN" value="${esc(plain(p?.name || ''))}"></div></div>
+      <label class="f">สถานะ</label><div class="seg" id="pS"><button type="button" data-v="active" class="${status === 'active' ? 'on' : ''}">🟢 กำลังทำ</button><button type="button" data-v="closed" class="${status !== 'active' ? 'on' : ''}">⚪ ปิดแล้ว</button></div>
+      <div class="note">ใช้ติดป้ายรายการว่าเป็นของงาน/โปรเจกต์ไหน (บรรทัดย่อยของแต่ละรายการ)</div>`, footer(!!p));
+    sh.el.querySelector('#pS').onclick = e => { const b = e.target.closest('button[data-v]'); if (!b) return; status = b.dataset.v; sh.el.querySelectorAll('#pS button').forEach(x => x.classList.toggle('on', x === b)); };
+    sh.el.querySelector('[data-save]').onclick = () => {
+      const id = sh.v('pId'), name = sh.v('pN');
+      if (!id || !name) return sh.err('ใส่รหัสและชื่อ');
+      sh.el.querySelector('[data-save]').disabled = true;
+      save(sh, { type: 'project', old_id: p?.project_id || null, new_id: id, name: withCode(id, name, p?.name), project_status: status });
+    };
+    sh.el.querySelector('[data-del]')?.addEventListener('click', () => del(sh, 'project', p.project_id, plain(p.name)));
+  }
   function renderEtc() {
-    view.innerHTML = `<div class="group"><div class="list">
-      <a class="item" href="../index.html#settings" style="text-decoration:none;color:inherit"><span class="ic" style="background:#fff9db">💾</span><span class="t"><b>สำรอง / กู้คืนข้อมูล · ธีม · โปรเจกต์</b><small>ยังอยู่ที่หน้าตั้งค่าแบบเดิม</small></span><span class="r mut">›</span></a>
-      <a class="item" href="reports.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#e6fcf5">⬇️</span><span class="t"><b>ส่งออกรายการเป็น Excel</b><small>หน้ารายงาน · แท็บส่งออก</small></span><span class="r mut">›</span></a>
-      <a class="item" href="index.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#f3f0ff">📊</span><span class="t"><b>นำเข้า Excel / Bulk</b><small>กล่องรอเคลียร์ · ปุ่มนำเข้า Excel</small></span><span class="r mut">›</span></a>
-    </div></div>
-    <div class="note">ผู้ใช้ปัจจุบัน: ${esc(S.me?.name || '-')} (${S.me?.role === 'admin' ? 'ผู้ดูแล' : 'สมาชิก'})</div>`;
+    const projects = S.st.projects || [];
+    view.innerHTML = `
+      <div class="group"><h3>💾 สำรอง / กู้ข้อมูล ${isAdmin() ? '' : '<span class="pill">เฉพาะผู้ดูแล</span>'}</h3><div class="list">
+        <button class="item" id="bk" ${isAdmin() ? '' : 'disabled'}><span class="ic" style="background:#e6fcf5">💾</span><span class="t"><b>สำรองข้อมูลทั้งหมด</b><small>ดาวน์โหลดไฟล์ Excel เก็บไว้ (รายการ บัญชี หมวด คู่ค้า ฯลฯ)</small></span><span class="r mut">⬇️</span></button>
+        <button class="item" id="rs" ${isAdmin() ? '' : 'disabled'}><span class="ic" style="background:#fff5f5">♻️</span><span class="t"><b>กู้ข้อมูลจากไฟล์สำรอง</b><small>เพิ่ม/อัปเดต หรือแทนที่ทั้งหมด</small></span><span class="r mut">›</span></button>
+      </div></div>
+      <div class="group"><h3>📁 โปรเจกต์ <span>${isAdmin() ? '<button class="b" id="addP" style="min-height:36px;padding:6px 12px">＋ เพิ่ม</button>' : ''}</span></h3><div class="list">
+        ${projects.length ? projects.map(p => `<button class="item" data-p="${esc(p.project_id)}"><span class="ic" style="background:#f3f0ff">${p.status === 'active' ? '🟢' : '⚪'}</span><span class="t"><b>${esc(plain(p.name))}</b><small>${esc(p.project_id)} · ${p.status === 'active' ? 'กำลังทำ' : 'ปิดแล้ว'}</small></span><span class="r mut">›</span></button>`).join('') : '<div class="empty">ยังไม่มีโปรเจกต์</div>'}
+      </div></div>
+      <div class="group"><h3>อื่น ๆ</h3><div class="list">
+        <a class="item" href="reports.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#e6fcf5">⬇️</span><span class="t"><b>ส่งออกรายการเป็น Excel</b><small>หน้ารายงาน · แท็บส่งออก</small></span><span class="r mut">›</span></a>
+        <a class="item" href="index.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#f3f0ff">📊</span><span class="t"><b>นำเข้า Excel / Bulk</b><small>กล่องรอเคลียร์ · ปุ่มนำเข้า Excel</small></span><span class="r mut">›</span></a>
+        <a class="item" href="close.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#fff9db">🔒</span><span class="t"><b>ปิดเดือน</b><small>ตรวจยอดกับ statement แล้วล็อกเดือน</small></span><span class="r mut">›</span></a>
+        <a class="item" href="../index.html?classic=1#settings" style="text-decoration:none;color:inherit"><span class="ic" style="background:#f1f3f5">🎨</span><span class="t"><b>ธีม · ล้างข้อมูล</b><small>ยังอยู่ที่หน้าตั้งค่าแบบเดิม</small></span><span class="r mut">›</span></a>
+      </div></div>
+      <div class="note">ผู้ใช้ปัจจุบัน: ${esc(S.me?.name || '-')} (${S.me?.role === 'admin' ? 'ผู้ดูแล' : 'สมาชิก'})</div>`;
+    $('#bk')?.addEventListener('click', e => doBackup(e.currentTarget));
+    $('#rs')?.addEventListener('click', restoreForm);
+    $('#addP')?.addEventListener('click', () => projForm(null));
+    view.querySelectorAll('[data-p]').forEach(b => b.onclick = () => isAdmin() ? projForm(projects.find(p => p.project_id === b.dataset.p)) : null);
   }
 
   load();

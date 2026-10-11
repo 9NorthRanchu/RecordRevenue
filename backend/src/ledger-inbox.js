@@ -39,6 +39,7 @@
 // ═══════════════════════════════════════════════════════════════
 import { planSettlementKeep } from './settle-keep.js';
 import { handlePeriods, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
+import { handleCardsLoans } from './cards-loans.js';
 import {
   round2, bankKey, last4, accountHintKey, partyKey, parseCashText, slipDirection,
   scoreCandidate, decideMatch, balanceGap, proposeLines, templateFromDetails,
@@ -180,6 +181,8 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
     }
     const per = await handlePeriods(request, env, url, cors, user);   // ปิดเดือน /api/inbox/periods…
     if (per) return per;
+    const cl = await handleCardsLoans(request, env, url, cors, user);  // บัตรเครดิต /api/inbox/cards · เงินกู้ /api/inbox/loans
+    if (cl) return cl;
     return json({ error: 'Not Found' }, cors, 404);
   } catch (err) {
     return json({ error: err.message }, cors, 500);

@@ -3486,3 +3486,14 @@ frontend
   · ledger-inbox json() แปลง error PERIOD_CLOSED ทุกจุด → 409 ข้อความคน
   · quota regex ของ dbErrorResponse แคบลง (ไม่จับ D1_ERROR ทั่วไปเป็น 503)
 - หน้า frontend/ledger/close.html (เมนู "ปิดเดือน" ทุกหน้า ledger + แอปหลัก) · เทส backend/test/period.test.mjs (25 เคส)
+
+## 2026-10-11 — บัตรเครดิต + เงินกู้/ผ่อน + ย้ายตั้งค่าที่เหลือ
+- backend/src/cards-loans.js (route ผ่าน handleLedgerInbox): GET /api/inbox/cards · /api/inbox/loans · /api/inbox/loans/{debt_id}
+  · บัตร: cycleDates(today, statement_day, due_day) → last_cut / due / next_cut · billed = หนี้ ณ วันตัดรอบ (date < cut+1) · due_left = billed − ยอดเข้าบัตรหลังตัดรอบ · spent_this_cycle · status OVERDUE/DUE_SOON(≤7วัน)/UPCOMING/PAID/NO_BILL/NO_CYCLE · วันนี้ = เวลาไทย (env.__today ใช้ในเทส)
+  · เงินกู้: ใช้ตาราง Debts เดิม · ชำระแล้ว = −Σเงินต้น (PAYABLE) / +Σ (RECEIVABLE) · คงเหลือ = start_balance − ชำระแล้ว (แก้สูตรกลับด้านของหน้าเก่า) · นับเฉพาะ CONFIRMED, contact + หมวดเงินต้น/ดอกเบี้ย, date ≥ start_date · หมวดดอกเบี้ย = หมวดเงินต้น → นับเป็นเงินต้นทั้งหมด + เตือน · เคารพ members
+  · บันทึก/ลบสัญญาใช้ /api/debts และ /api/debts/delete เดิม
+- frontend/ledger/cards.html (แท็บ 💳 บัตร / 🏦 เงินกู้ · #loans) · home.html งานค้างเพิ่ม "บัตรใกล้/เลยกำหนด" (โหลด /api/inbox/cards ครั้งเดียวต่อหน้า) · เมนู "บัตร & เงินกู้" ทุกหน้า + แอปหลัก
+- settings.html แท็บอื่น ๆ: สำรองข้อมูล (xlsx เหมือนแอปเดิม) · กู้ข้อมูล (เพิ่ม/อัปเดต หรือแทนที่ + พิมพ์ RESET + ยืนยันกรณีไฟล์เล็กกว่าครึ่ง) · โปรเจกต์ (เพิ่ม/แก้/ลบ) · แท็บสมาชิก: ลบสมาชิก (ดูก่อนว่าบริษัทไหนจะถูกลบ + พิมพ์รหัสยืนยัน)
+- /api/users/delete: รับ preview:true (ไม่ลบ คืน report) · มีเดือนปิด + มีบริษัทที่ถือคนเดียว → 409
+- ยังอยู่หน้าเดิม: ธีม · ล้างข้อมูล (/api/reset) · ทะเบียนหนี้แบบเดิม (เมนู "แบบเดิม" ยังอยู่)
+- เทส backend/test/cards-loans.test.mjs (15 เคส)

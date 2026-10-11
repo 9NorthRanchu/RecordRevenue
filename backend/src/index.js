@@ -1327,7 +1327,7 @@ export default {
         if (!me || me.role !== 'admin') {
           return new Response(JSON.stringify({ error: 'เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่ลบสมาชิกได้' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
-        const { user_id: target } = await request.json();
+        const { user_id: target, preview } = await request.json();
         if (!target) return new Response(JSON.stringify({ error: 'กรุณาระบุสมาชิกที่ต้องการลบ' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         if (target === userId) return new Response(JSON.stringify({ error: 'ลบตัวเองไม่ได้' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -1354,6 +1354,13 @@ export default {
         const soleIds = soleEntities.map(r => r.entity_id);
 
         const report = { deleted_companies: soleEntities.map(r => r.name), kept_shared_companies: sharedEntities.map(r => r.name) };
+        /* preview = ดูก่อนว่าจะลบอะไร (หน้าตั้งค่าใหม่ใช้ยืนยันกับผู้ใช้) */
+        if (preview) return new Response(JSON.stringify({ preview: true, report }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        /* มีเดือนที่ปิดแล้ว → ลบข้อมูลบริษัทไม่ได้ (เดิมจะลบได้ครึ่ง ๆ เพราะข้าม error เงียบ) */
+        if (soleIds.length) {
+          const closedAny = await env.DB.prepare(`SELECT period FROM LedgerPeriods WHERE family_id = ? AND status = 'CLOSED' LIMIT 1`).bind(me.family_id).first().catch(() => null);
+          if (closedAny) return new Response(JSON.stringify({ error: `มีเดือนที่ปิดบัญชีแล้ว (${closedAny.period}) — ลบสมาชิกที่ถือบริษัทคนเดียวไม่ได้ ต้องเปิดเดือนก่อน` }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
 
         // 1) ลบข้อมูลของบริษัทที่ถือคนเดียว (child-first)
         if (soleIds.length > 0) {

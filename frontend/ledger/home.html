@@ -105,6 +105,7 @@
     <a href="index.html#hist">ประวัติ</a>
     <a href="index.html#debt">ลูกหนี้</a>
     <a href="reports.html">รายงาน</a>
+    <a href="cards.html">บัตร & เงินกู้</a>
     <a href="close.html">ปิดเดือน</a>
     <a href="settings.html">ตั้งค่า</a>
     <a href="../index.html?classic=1">แอปหลัก</a>
@@ -196,13 +197,14 @@
     $('#monthL').textContent = monthLabel(S.month);
     $('#nextM').disabled = S.month >= today.slice(0, 7);
     try {
-      const [sum, box, st, pt] = await Promise.all([
+      const [sum, box, st, pt, cd] = await Promise.all([
         get(`/api/dashboard/summary?month=${S.month}&period=month&member=${encodeURIComponent(S.member)}`),
         get('/api/inbox').catch(() => ({ docs: [] })),
         get('/api/inbox/statements').catch(() => ({ statements: [] })),
         get('/api/inbox/parties').catch(() => null),
+        S.cards ? Promise.resolve(S.cards) : get('/api/inbox/cards').catch(() => null),   // บัตรเปลี่ยนไม่บ่อย โหลดครั้งเดียวต่อหน้า
       ]);
-      S.data = sum; S.inbox = box.docs || []; S.statements = st.statements || []; S.parties = pt?.totals ? pt : null;
+      S.data = sum; S.inbox = box.docs || []; S.statements = st.statements || []; S.parties = pt?.totals ? pt : null; S.cards = cd;
       render();
     } catch (e) {
       if (e.login) return showLogin();
@@ -261,6 +263,7 @@
       { show: pending > 0, href: 'index.html', ic: 'inbox', bg: '#fff4e6', col: '#d9480f', big: `${pending}`, label: 'รายการรอเคลียร์' },
       { show: uncat > 0, href: 'index.html', ic: 'tag', bg: '#fff9db', col: '#b35c00', big: fmt(uncat), label: `ยังไม่ระบุหมวด (${monthLabel(S.month)})` },
       { show: negAccs.length > 0, href: '#accounts', ic: 'alert', bg: '#fff5f5', col: '#c92a2a', big: `${negAccs.length} บัญชี`, label: `เงินฝากติดลบ · ${negAccs.slice(0, 2).map(a => a.name).join(', ')}` },
+      { show: !!S.cards?.totals?.alert_count, href: 'cards.html', ic: 'card', bg: '#fff5f5', col: '#c92a2a', big: fmt(S.cards?.totals?.due_left || 0), label: `บัตรเครดิตใกล้/เลยกำหนด ${S.cards?.totals?.alert_count || 0} ใบ` },
       { show: banks.length > 0 && stDone < banks.length, href: 'index.html#stmt', ic: 'file', bg: '#e7f5ff', col: '#1864ab', big: `${stDone}/${banks.length}`, label: `Statement ${monthLabel(pm)} ที่นำเข้าแล้ว` },
     ].filter(t => t.show);
 

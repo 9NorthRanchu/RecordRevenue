@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>บัตร & เงินกู้ · สมุดจด</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  บัตรเครดิต + เงินกู้/ผ่อนชำระ (2026-10-11)
+    GET /api/inbox/cards · GET /api/inbox/loans · GET /api/inbox/loans/{id} · GET /api/inbox/meta
+    บันทึกสัญญา: POST /api/debts (เดิม) · ลบ: POST /api/debts/delete (เดิม)
+  สูตรอยู่ใน backend/src/cards-loans.js
+-->
+<style>
+  :root { --ink: #212529; --muted: #5c636a; --line: #ece8f8; --bg: #f8f7fd; --brand: #5f3dc4; --pos: #087f5b; --neg: #c92a2a; --bad: #e03131; --radius: 20px; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Anuphan', -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+  body { padding-bottom: 40px; }
+  button, select, input { font: inherit; color: inherit; }
+  a { color: var(--brand); }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+  .top { background: linear-gradient(135deg, #5f3dc4, #7950f2 60%, #9775fa); color: #fff; padding: 18px 0 60px; }
+  .top .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .top h1 { margin: 0; font-size: 24px; } .top p { margin: 2px 0 0; font-size: 14px; color: #e5dbff; }
+  .nav { display: flex; gap: 6px; flex-wrap: wrap; }
+  .nav a { color: #fff; text-decoration: none; background: rgba(255,255,255,.18); padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 600; min-height: 44px; display: inline-flex; align-items: center; }
+  .nav a.on { background: #fff; color: var(--brand); }
+  .tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px; box-shadow: 0 8px 24px rgba(95,61,196,.12); position: sticky; top: 8px; z-index: 5; }
+  .tabs button { border: 0; background: transparent; border-radius: 12px; padding: 8px 2px; font-weight: 700; color: var(--muted); cursor: pointer; min-height: 52px; font-size: 13px; line-height: 1.25; }
+  .tabs button span { display: block; font-size: 20px; }
+  .tabs button.on { background: var(--brand); color: #fff; }
+  @media (max-width: 520px) { .tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .tools { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .inp, select.inp { width: 100%; height: 46px; border: 1.5px solid var(--line); border-radius: 12px; padding: 0 12px; background: #fff; font-size: 16px; }
+  .inp:focus { outline: none; border-color: var(--brand); }
+  .tools .inp { flex: 1; min-width: 180px; width: auto; }
+  .b { border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 700; cursor: pointer; min-height: 46px; background: #f3f0ff; color: var(--brand); white-space: nowrap; }
+  .b.main { background: var(--brand); color: #fff; }
+  .b.danger { background: #fff5f5; color: var(--bad); }
+  .b:disabled { opacity: .5; }
+  .group { margin-top: 18px; }
+  .group h3 { margin: 0 4px 8px; font-size: 14px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .list { background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(95,61,196,.05); }
+  .item { all: unset; box-sizing: border-box; display: flex; gap: 12px; align-items: center; width: 100%; padding: 13px 16px; border-bottom: 1px solid #f3f0ff; cursor: pointer; min-height: 60px; }
+  .item:last-child { border-bottom: 0; }
+  .item:hover, .item:focus-visible { background: #faf8ff; }
+  .ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none; font-size: 20px; }
+  .item .t { flex: 1; min-width: 0; }
+  .item .t b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .t small { display: block; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .r { text-align: right; white-space: nowrap; font-weight: 700; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 9px; background: #f3f0ff; color: var(--brand); margin-left: 4px; }
+  .neg { color: var(--neg); } .pos { color: var(--pos); } .mut { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 30px; }
+  .note { background: #fff9db; color: #7a4a00; border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-top: 12px; }
+  .sheet-bg { position: fixed; inset: 0; background: rgba(33,37,41,.45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { background: #fff; width: 100%; max-width: 560px; max-height: 92vh; border-radius: 24px 24px 0 0; display: flex; flex-direction: column; }
+  @media (min-width: 700px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+  .sheet header { padding: 16px 18px 10px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .sheet header h2 { margin: 0; font-size: 18px; }
+  .sheet .x { border: 0; background: var(--bg); width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+  .sheet .body { padding: 8px 18px 16px; overflow-y: auto; }
+  .sheet footer { padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); display: flex; gap: 10px; }
+  .sheet footer .b.main { flex: 1; }
+  label.f { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 5px; }
+  .g2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { flex: 1; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 8px; cursor: pointer; font-weight: 600; min-height: 46px; }
+  .seg button.on { border-color: var(--brand); background: #f3f0ff; color: var(--brand); }
+  .checks { display: grid; gap: 6px; }
+  .checks label { display: flex; gap: 10px; align-items: center; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 46px; cursor: pointer; }
+  .checks input { width: 20px; height: 20px; }
+  .err { color: var(--bad); font-size: 14px; margin-top: 10px; min-height: 1em; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 14px; font-size: 14px; z-index: 40; max-width: 90vw; }
+  .loading { text-align: center; padding: 50px; color: var(--muted); }
+  /* ── จอใหญ่ Mac/PC: ขยายทั้งหน้า + ตัวอักษรเข้มคมขึ้น (มือถือ/iPad ไม่เปลี่ยน) ── */
+  @media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+    :root { --muted: #464c53; }
+    html, body { -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto; }
+    html { zoom: 1.1; }
+  }
+  @media (min-width: 1280px) and (hover: hover) and (pointer: fine) { html { zoom: 1.2; } }
+  @media (min-width: 1600px) and (hover: hover) and (pointer: fine) { html { zoom: 1.3; } }
+</style>
+<style>
+  .tabs2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px; box-shadow: 0 8px 24px rgba(95,61,196,.12); }
+  .tabs2 button { border: 0; background: transparent; border-radius: 12px; padding: 10px; font-weight: 700; color: var(--muted); cursor: pointer; min-height: 52px; font-size: 15px; }
+  .tabs2 button.on { background: var(--brand); color: #fff; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+  .kpi { background: #fff; border-radius: 16px; padding: 14px; box-shadow: 0 1px 0 var(--line); } .kpi small { color: var(--muted); display: block; font-size: 13px; } .kpi b { font-size: clamp(18px, 5vw, 22px); white-space: nowrap; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 14px; }
+  .card { background: #fff; border-radius: 20px; padding: 16px; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(95,61,196,.05); border: 2px solid transparent; }
+  .card.over { border-color: #ffc9c9; } .card.soon { border-color: #ffe066; }
+  .card h3 { margin: 0; font-size: 17px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .card .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .big { font-size: 26px; font-weight: 700; margin: 10px 0 2px; }
+  .rows { display: grid; gap: 4px; font-size: 14px; margin-top: 8px; } .rows div { display: flex; justify-content: space-between; gap: 8px; } .rows span:first-child { color: var(--muted); }
+  .bar { height: 8px; border-radius: 99px; background: #f1f3f5; overflow: hidden; margin-top: 10px; } .bar i { display: block; height: 100%; background: var(--brand); border-radius: 99px; }
+  .tag { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+  .tag.over { background: #fff5f5; color: var(--neg); } .tag.soon { background: #fff9db; color: #8a5a00; } .tag.ok { background: #e6fcf5; color: var(--pos); } .tag.mut { background: #f1f3f5; color: var(--muted); }
+  .card .btns { display: flex; gap: 8px; margin-top: 12px; } .card .btns .b { flex: 1; min-height: 42px; padding: 8px; font-size: 14px; }
+  table.lines { width: 100%; border-collapse: collapse; font-size: 14px; } table.lines td, table.lines th { padding: 8px 6px; border-bottom: 1px solid #f3f0ff; text-align: left; } table.lines td.n, table.lines th.n { text-align: right; white-space: nowrap; }
+  .sec { display: flex; justify-content: space-between; align-items: center; margin: 18px 4px 0; } .sec h2 { margin: 0; font-size: 17px; }
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap row">
+  <div><h1>บัตร & เงินกู้</h1><p>รอบบิล · ยอดต้องจ่าย · สัญญาผ่อน</p></div>
+  <nav class="nav" aria-label="เมนู"><a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a class="on" href="cards.html">บัตร & เงินกู้</a><a href="reports.html">รายงาน</a><a href="close.html">ปิดเดือน</a><a href="settings.html">ตั้งค่า</a><a href="../index.html?classic=1">แอปหลัก</a></nav>
+</div></div>
+<main class="wrap">
+  <div class="tabs2" id="tabs"><button data-t="cards" class="on">💳 บัตรเครดิต</button><button data-t="loans">🏦 เงินกู้ / ผ่อน</button></div>
+  <div id="view"><div class="loading">กำลังโหลด…</div></div>
+</main>
+<script>
+/* ⏱️ ทุกคำขอมีเวลารอสูงสุด (2026-10-11) — เดิมถ้าเซิร์ฟเวอร์ค้าง หน้าจอหมุนไม่รู้จบ
+   อ่านเอกสาร/statement ด้วย AI ใช้เวลานาน ให้รอได้ 3 นาที · อย่างอื่น 40 วินาที
+   และแปลง error ให้อ่านรู้เรื่อง แทน "Failed to fetch" */
+(function () {
+  const orig = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    if (init.signal || typeof AbortController === 'undefined') return orig(input, init);
+    const url = typeof input === 'string' ? input : (input?.url || '');
+    const ms = /\/(upload|statement|import|retry|backup|restore|ocr)/i.test(url) ? 180000 : 40000;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), ms);
+    return orig(input, { ...init, signal: ac.signal })
+      .catch(err => {
+        if (err?.name === 'AbortError') throw new Error('เซิร์ฟเวอร์ตอบช้าเกินไป — ลองใหม่อีกครั้ง');
+        if (err instanceof TypeError) throw new Error('เชื่อมต่อไม่ได้ — ตรวจอินเทอร์เน็ตแล้วลองใหม่');
+        throw err;
+      })
+      .finally(() => clearTimeout(timer));
+  };
+})();
+</script>
+<script>
+(function () {
+  'use strict';
+  const API = (() => {
+    const PROD = 'https://record-revenue.9nimz.workers.dev';
+    try {
+      const q = new URLSearchParams(location.search).get('api');
+      if (q) sessionStorage.setItem('api_base_override', q);
+      const o = sessionStorage.getItem('api_base_override');
+      if (o) return o.replace(/\/$/, '');
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787';
+    } catch (e) { /* ใช้ของจริง */ }
+    return PROD;
+  })();
+  const token = () => { try { return localStorage.getItem('session_token') || sessionStorage.getItem('session_token') || ''; } catch { return ''; } };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = n => Number(n) < 0 ? `(${money(-n)})` : money(n);
+  const $ = s => document.querySelector(s);
+  const view = $('#view');
+  const plain = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '').trim() || String(n || '');
+  const neg = n => Number(n) < 0 ? `<span class="neg">${fmt(n)}</span>` : fmt(n);
+  const S = { tab: location.hash === '#loans' ? 'loans' : 'cards', cards: null, loans: null, meta: null };
+  function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 3000); }
+  async function api(path, body) {
+    const res = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) throw Object.assign(new Error('กรุณาเข้าสู่ระบบ'), { login: true });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) throw new Error(d.error || `ผิดพลาด (${res.status})`);
+    return d;
+  }
+  const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const thd = s => { if (!s) return '-'; const [y, m, d] = s.slice(0, 10).split('-').map(Number); return `${d} ${TH_M[m - 1]} ${String(y + 543).slice(2)}`; };
+  function sheet(title, html, footer) {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet" role="dialog" aria-label="${esc(title)}"><header><h2>${esc(title)}</h2><button class="x" data-close aria-label="ปิด">✕</button></header><div class="body">${html}<div class="err" data-err></div></div>${footer ? `<footer>${footer}</footer>` : ''}</div>`;
+    const close = () => bg.remove();
+    bg.addEventListener('click', e => { if (e.target === bg || e.target.closest('[data-close]')) close(); });
+    document.addEventListener('keydown', function k(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', k); } });
+    document.body.appendChild(bg);
+    const el = bg.querySelector('.sheet');
+    return { el, close, err: t => { el.querySelector('[data-err]').textContent = t; }, v: id => el.querySelector('#' + id)?.value?.trim() ?? '' };
+  }
+  $('#tabs').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; S.tab = b.dataset.t; history.replaceState(null, '', S.tab === 'loans' ? '#loans' : '#'); syncTabs(); render(); };
+  const syncTabs = () => document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.t === S.tab));
+
+  async function load() {
+    if (!token()) { view.innerHTML = `<div class="empty"><h3>ยังไม่ได้เข้าสู่ระบบ</h3><a href="../index.html">ไปหน้าเข้าสู่ระบบ</a></div>`; return; }
+    syncTabs();
+    try {
+      [S.cards, S.loans] = await Promise.all([api('/api/inbox/cards'), api('/api/inbox/loans')]);
+      render();
+    } catch (e) { view.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
+  }
+  const render = () => S.tab === 'loans' ? renderLoans() : renderCards();
+
+  // ───── บัตรเครดิต ─────
+  const ST = { OVERDUE: ['over', 'เลยกำหนด'], DUE_SOON: ['soon', 'ใกล้ครบกำหนด'], UPCOMING: ['mut', 'ยังไม่ถึงกำหนด'], PAID: ['ok', 'จ่ายครบแล้ว'], NO_BILL: ['ok', 'ไม่มียอดบิล'], UNPAID: ['soon', 'ยังไม่จ่าย'], NO_CYCLE: ['mut', 'ยังไม่ตั้งรอบบิล'] };
+  function renderCards() {
+    const C = S.cards, cards = C.cards || [];
+    if (!cards.length) { view.innerHTML = `<div class="empty" style="margin-top:20px">ยังไม่มีบัญชีบัตรเครดิต — เพิ่มได้ที่ <a href="settings.html">ตั้งค่า → บัญชี</a> (เลือกประเภท บัตรเครดิต)</div>`; return; }
+    view.innerHTML = `<div class="kpis">
+        <div class="kpi"><small>💳 หนี้บัตรทั้งหมด</small><b class="${C.totals.owed ? 'neg' : ''}">${money(C.totals.owed)}</b></div>
+        <div class="kpi"><small>📅 ต้องจ่ายตามบิล</small><b>${money(C.totals.due_left)}</b></div>
+        <div class="kpi"><small>⚠️ ใกล้/เลยกำหนด</small><b class="${C.totals.alert_count ? 'neg' : ''}">${C.totals.alert_count} ใบ</b></div></div>
+      <div class="cards">${cards.map(c => {
+        const [cls, label] = ST[c.status] || ['mut', c.status];
+        const used = c.credit_limit > 0 ? Math.min(100, Math.round(c.owed / c.credit_limit * 100)) : null;
+        const dueTxt = c.days_to_due == null ? '' : c.days_to_due < 0 ? `เลยมา ${-c.days_to_due} วัน` : c.days_to_due === 0 ? 'วันนี้!' : `อีก ${c.days_to_due} วัน`;
+        return `<div class="card ${cls === 'over' ? 'over' : cls === 'soon' ? 'soon' : ''}">
+          <h3><span>💳 ${esc(plain(c.name))}</span><span class="tag ${cls}">${label}</span></h3>
+          <div class="sub">${c.statement_day ? `ตัดรอบทุกวันที่ ${c.statement_day}${c.due_day ? ` · จ่ายภายในวันที่ ${c.due_day}` : ''}` : 'ตั้งวันตัดรอบ/วันครบกำหนดใน ตั้งค่า → บัญชี'}</div>
+          ${c.status === 'NO_CYCLE' ? `<div class="big neg">${money(c.owed)}</div><div class="sub">หนี้บัตรตอนนี้</div>` : `
+          <div class="big ${c.due_left ? 'neg' : 'pos'}">${money(c.due_left)}</div><div class="sub">ต้องจ่ายอีก${c.due ? ` ภายใน ${thd(c.due)} ${dueTxt ? '· ' + dueTxt : ''}` : ''}</div>
+          <div class="rows">
+            <div><span>ยอดตามบิล (ตัดรอบ ${thd(c.last_cut)})</span><b>${money(c.billed)}</b></div>
+            <div><span>จ่ายแล้วหลังตัดรอบ</span><b class="pos">${money(c.paid_since_cut)}</b></div>
+            <div><span>ใช้ไปรอบนี้ (บิลถัดไป ${thd(c.next_cut)})</span><b>${money(c.spent_this_cycle)}</b></div>
+            <div><span>หนี้บัตรทั้งหมดตอนนี้</span><b class="${c.owed ? 'neg' : ''}">${money(c.owed)}</b></div>
+          </div>`}
+          ${used != null ? `<div class="bar" title="ใช้วงเงิน ${used}%"><i style="width:${used}%;${used > 80 ? 'background:var(--neg)' : ''}"></i></div>
+            <div class="sub" style="margin-top:4px">วงเงิน ${money(c.credit_limit)} · เหลือใช้ได้ ${money(c.available)} (${100 - used}%)</div>` : ''}
+          <div class="btns"><a class="b" href="index.html#hist" style="text-align:center;text-decoration:none">📜 ดูรายการ</a></div>
+        </div>`; }).join('')}</div>
+      <div class="note">นับเฉพาะรายการที่ยืนยันแล้ว · จ่ายบัตรแล้วแต่ยังไม่ขึ้น = ยังไม่ได้บันทึก/ยืนยันรายการโอนเข้าบัตร</div>`;
+  }
+
+  // ───── เงินกู้ / ผ่อน ─────
+  function renderLoans() {
+    const L = S.loans, loans = L.loans || [];
+    const group = (type, title) => {
+      const xs = loans.filter(l => l.type === type);
+      return `<div class="sec"><h2>${title}</h2><button class="b main" data-add="${type}">＋ เพิ่มสัญญา</button></div>
+        ${xs.length ? `<div class="cards">${xs.map(l => `<div class="card">
+          <h3><span>${type === 'PAYABLE' ? '🏦' : '🤝'} ${esc(l.name)}</span>${l.outstanding <= 0.005 ? '<span class="tag ok">ปิดยอดแล้ว</span>' : ''}</h3>
+          <div class="sub">${esc(plain(l.contact_name))}${l.start_date ? ` · เริ่ม ${thd(l.start_date)}` : ''}</div>
+          <div class="big ${type === 'PAYABLE' && l.outstanding > 0 ? 'neg' : ''}">${l.outstanding < 0 ? fmt(l.outstanding) : money(l.outstanding)}</div><div class="sub">คงเหลือ</div>
+          <div class="bar"><i style="width:${l.progress}%"></i></div>
+          <div class="rows">
+            <div><span>ยอดตั้งต้น</span><b>${money(l.start_balance)}</b></div>
+            <div><span>${type === 'PAYABLE' ? 'จ่ายเงินต้นแล้ว' : 'รับคืนแล้ว'} (${l.payments} ครั้ง)</span><b class="pos">${fmt(l.paid_principal)}</b></div>
+            ${l.interest_category_id && !l.same_category ? `<div><span>ดอกเบี้ย${type === 'PAYABLE' ? 'จ่าย' : 'รับ'}</span><b>${money(l.interest)}</b></div>` : ''}
+            ${l.installment_amount ? `<div><span>ค่างวด ${money(l.installment_amount)}</span><b>เหลือ ~${l.installments_left} งวด</b></div>` : ''}
+            ${l.last_date ? `<div><span>ล่าสุด</span><b>${thd(l.last_date)}</b></div>` : ''}
+          </div>
+          ${l.same_category ? '<div class="note">หมวดเงินต้นกับดอกเบี้ยเป็นหมวดเดียวกัน — นับทั้งหมดเป็นเงินต้น (แยกหมวดดอกเบี้ยจะแม่นกว่า)</div>' : ''}
+          <div class="btns"><button class="b" data-view="${esc(l.debt_id)}">📜 ประวัติ</button><button class="b" data-edit="${esc(l.debt_id)}">✏️ แก้ไข</button></div>
+        </div>`).join('')}</div>` : '<div class="empty">ยังไม่มีสัญญา</div>'}`;
+    };
+    view.innerHTML = `<div class="kpis">
+        <div class="kpi"><small>🏦 เราเป็นหนี้คงเหลือ</small><b class="${L.totals.payable ? 'neg' : ''}">${money(L.totals.payable)}</b></div>
+        <div class="kpi"><small>🤝 เขาเป็นหนี้เราคงเหลือ</small><b>${money(L.totals.receivable)}</b></div></div>
+      ${group('PAYABLE', 'เราเป็นหนี้ (เงินกู้ · ผ่อน)')}${group('RECEIVABLE', 'เขาเป็นหนี้เรา (ให้ยืม)')}
+      <div class="note">ยอดคิดจากรายการที่ยืนยันแล้วของ <b>คู่ค้า + หมวดเงินต้น/ดอกเบี้ย</b> ของสัญญา ตั้งแต่วันเริ่ม · บันทึกการจ่าย/รับคืนให้เลือกคู่ค้าและหมวดตรงกับสัญญา</div>`;
+    view.querySelectorAll('[data-add]').forEach(b => b.onclick = () => loanForm(null, b.dataset.add));
+    view.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => loanForm(loans.find(l => l.debt_id === b.dataset.edit)));
+    view.querySelectorAll('[data-view]').forEach(b => b.onclick = () => loanHistory(b.dataset.view));
+  }
+  async function loanHistory(id) {
+    const sh = sheet('ประวัติสัญญา', '<div class="loading">กำลังโหลด…</div>', '');
+    try {
+      const d = await api('/api/inbox/loans/' + encodeURIComponent(id));
+      sh.el.querySelector('.body').innerHTML = `<p><b>${esc(d.name)}</b> · ยอดตั้งต้น ${money(d.start_balance)} · คงเหลือ <b>${money(d.outstanding)}</b></p>
+        ${d.lines.length ? `<table class="lines"><thead><tr><th>วันที่</th><th>รายการ</th><th class="n">ยอด</th><th class="n">คงเหลือ</th></tr></thead><tbody>
+        ${d.lines.map(l => `<tr><td>${thd(l.date)}</td><td>${l.kind === 'INTEREST' ? 'ดอกเบี้ย' : 'เงินต้น'}<br><small class="mut">${esc(plain(l.account_name))}${l.note ? ' · ' + esc(l.note) : ''}</small></td>
+          <td class="n">${neg(l.amount)}</td><td class="n">${l.balance_after == null ? '' : money(l.balance_after)}</td></tr>`).join('')}</tbody></table>`
+        : '<div class="empty">ยังไม่มีรายการจ่าย/รับคืน</div>'}<div class="err" data-err></div>`;
+    } catch (e) { sh.err(e.message); }
+  }
+  async function loanForm(l, type) {
+    if (!S.meta) { try { S.meta = await api('/api/inbox/meta'); } catch (e) { toast('⚠️ ' + e.message); return; } }
+    const t = l ? l.type : type;
+    const cats = (S.meta.categories || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'th'));
+    const catOpts = sel => cats.map(c => `<option value="${esc(c.category_id)}" ${c.category_id === sel ? 'selected' : ''}>${esc(plain(c.name))}${c.group ? ` · ${esc(plain(c.group))}` : ''}</option>`).join('');
+    const cons = (S.meta.contacts || []);
+    const sh = sheet(l ? 'แก้ไขสัญญา' : (t === 'PAYABLE' ? 'เพิ่มเงินกู้ / ผ่อน' : 'เพิ่มให้ยืม'), `
+      <label class="f">ประเภท</label><div class="seg" id="lt"><button type="button" data-v="PAYABLE" class="${t === 'PAYABLE' ? 'on' : ''}">🏦 เราเป็นหนี้</button><button type="button" data-v="RECEIVABLE" class="${t === 'RECEIVABLE' ? 'on' : ''}">🤝 เขาเป็นหนี้เรา</button></div>
+      <label class="f" for="lN">ชื่อสัญญา</label><input class="inp" id="lN" value="${esc(l?.name || '')}" placeholder="เช่น กู้บ้าน กรุงศรี">
+      <label class="f" for="lC">คู่ค้า (ธนาคาร / ผู้ยืม)</label><select class="inp" id="lC"><option value="">— เลือก —</option>${cons.map(c => `<option value="${esc(c.contact_id)}" ${c.contact_id === l?.contact_id ? 'selected' : ''}>${esc(plain(c.name))}</option>`).join('')}</select>
+      <label class="f" for="lP">หมวดเงินต้น</label><select class="inp" id="lP"><option value="">— เลือก —</option>${catOpts(l?.principal_category_id)}</select>
+      <label class="f" for="lI">หมวดดอกเบี้ย (ไม่บังคับ)</label><select class="inp" id="lI"><option value="">— ไม่มี —</option>${catOpts(l?.interest_category_id)}</select>
+      <div class="g2"><div><label class="f" for="lB">ยอดตั้งต้น</label><input class="inp" id="lB" inputmode="decimal" value="${l ? l.start_balance : ''}"></div>
+      <div><label class="f" for="lD">วันเริ่มนับ</label><input class="inp" id="lD" type="date" value="${esc(l?.start_date || '')}"></div></div>
+      <label class="f" for="lK">ค่างวด (ไม่บังคับ)</label><input class="inp" id="lK" inputmode="decimal" value="${l?.installment_amount ?? ''}">
+      <div class="note">ระบบนับรายการตั้งแต่ "วันเริ่มนับ" — ใส่ยอดตั้งต้น = ยอดหนี้ ณ วันนั้น</div>`,
+      `${l ? '<button class="b danger" data-del>ลบ</button>' : ''}<button class="b main" data-save>บันทึก</button>`);
+    let tt = t;
+    sh.el.querySelector('#lt').onclick = e => { const b = e.target.closest('button[data-v]'); if (!b) return; tt = b.dataset.v; sh.el.querySelectorAll('#lt button').forEach(x => x.classList.toggle('on', x === b)); };
+    const num = v => Number(String(v).replace(/,/g, ''));
+    sh.el.querySelector('[data-save]').onclick = async e => {
+      const name = sh.v('lN'), contact = sh.v('lC'), pc = sh.v('lP'), bal = num(sh.v('lB'));
+      if (!name || !contact || !pc) return sh.err('กรอก ชื่อ · คู่ค้า · หมวดเงินต้น ให้ครบ');
+      if (!Number.isFinite(bal) || bal <= 0) return sh.err('ยอดตั้งต้นต้องมากกว่า 0');
+      const inst = sh.v('lK') ? num(sh.v('lK')) : null;
+      e.target.disabled = true;
+      try {
+        await api('/api/debts', { debt_id: l?.debt_id, name, type: tt, contact_id: contact, principal_category_id: pc, interest_category_id: sh.v('lI') || null,
+          start_balance: bal, installment_amount: Number.isFinite(inst) ? inst : null, start_date: sh.v('lD') || null, icon_type: l?.icon_type || 'zodiac_1.png' });
+        sh.close(); toast('✅ บันทึกแล้ว'); S.loans = await api('/api/inbox/loans'); render();
+      } catch (err) { sh.err(err.message); e.target.disabled = false; }
+    };
+    sh.el.querySelector('[data-del]')?.addEventListener('click', async () => {
+      if (!confirm(`ลบสัญญา "${l.name}" ?\n(ลบแค่ทะเบียนสัญญา รายการเงินที่บันทึกไว้ไม่หาย)`)) return;
+      try { await api('/api/debts/delete', { debt_id: l.debt_id }); sh.close(); toast('🗑️ ลบแล้ว'); S.loans = await api('/api/inbox/loans'); render(); } catch (err) { sh.err(err.message); }
+    });
+  }
+  load();
+})();
+</script>
+</body>
+</html>
