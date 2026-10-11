@@ -3470,3 +3470,8 @@ frontend
 - หน้าเว็บ: ทุกหน้า ledger มี fetch timeout (40 วิ / งาน AI-นำเข้า 180 วิ) + ข้อความ error ภาษาคน · app.js v184: timeout 45/180 วิ + แจ้ง 503 "ฐานข้อมูลไม่พร้อมชั่วคราว"
 - เทส endpoints.test.mjs เพิ่ม: การตัดชำระไม่หายตอนแก้ (FK cascade จริง), กู้ข้อมูลไฟล์ไม่ครบไม่ล้าง
 - ยังไม่ทำ: users/delete และ /api/reset ยังทีละคำสั่ง (ใช้น้อย, admin เท่านั้น) · .catch(()=>[]) ใน dashboard (เฉพาะตารางงบ/แผนที่อาจไม่มี)
+
+## 2026-10-11 — ระยะ 3 จัดบ้าน + หน้าแรกใหม่
+- ย้ายไฟล์ใช้ครั้งเดียว 182 ไฟล์จากโฟลเดอร์หลัก → archive/scripts (139) · archive/sql (40) · archive/misc (3) — ตรวจแล้วไม่มีโค้ดอ้างถึง (เว้น link_trip_members.sql ที่ข้อความในทริปอ้างชื่อ → คงไว้ที่เดิม)
+  · archive/sql/backup-before-trip-finance.sql (ข้อมูลจริง) เพิ่มใน .gitignore แล้ว · ไม่มีไฟล์ใหม่หลุดเข้า git (ทุกไฟล์ที่ย้ายเคย track อยู่แล้ว)
+- หน้าแรก = ledger/home.html: app.js goNewHomeIfDefault() เรียกตอนเปิดแอป (ล็อกอินค้าง) และหลังล็อกอิน · ข้ามเมื่อ ?classic=1 (จำใน sessionStorage rr_classic ทั้งแท็บ), ?txId, หรือมี #hash · ปุ่ม "แอปหลัก" ในหน้า ledger → ../index.html?classic=1 · app.js v185

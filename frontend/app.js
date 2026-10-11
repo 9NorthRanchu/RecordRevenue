@@ -1092,6 +1092,19 @@ function downloadTemplateFlat() {
     }
 }
 
+/* 🏠 หน้าแรก = ภาพรวมใหม่ ledger/home.html (2026-10-11 · North สั่ง)
+   แอปหลักเดิมเปิดครั้งเดียวกินโควตามากที่สุด และหน้าใหม่ครอบคลุมงานประจำแล้ว
+   · เปิดแอปเดิม: ?classic=1 (ปุ่ม "แอปหลัก" ในหน้าใหม่ส่งมาแบบนี้) แล้วจำไว้ทั้งแท็บ
+   · ลิงก์เฉพาะเรื่อง (txId จาก LINE ฯลฯ) ไม่ถูกพาไป */
+function goNewHomeIfDefault() {
+    const p = new URLSearchParams(location.search);
+    if (p.has('classic')) { try { sessionStorage.setItem('rr_classic', '1'); } catch { /* */ } return false; }
+    if (p.has('txId') || location.hash) return false;
+    try { if (sessionStorage.getItem('rr_classic') === '1') return false; } catch { /* */ }
+    location.replace('ledger/home.html' + location.search);
+    return true;
+}
+
 async function initApp() {
     // Restore session if exists — localStorage ก่อน (จำข้ามการปิดเบราว์เซอร์) แล้วค่อย sessionStorage (ของเก่า)
     const storedUser = localStorage.getItem("logged_in_user") || sessionStorage.getItem("logged_in_user");
@@ -1121,6 +1134,8 @@ async function initApp() {
         if (isMobile) {
             document.querySelector(".bottom-nav").classList.remove("hidden");
         }
+
+        if (goNewHomeIfDefault()) return;
 
         await fetchMasterData();
 
@@ -1214,6 +1229,7 @@ function bindNavigation() {
                token หมดอายุแล้วเซิร์ฟเวอร์ปฏิเสธเองอยู่ดี ไม่ใช่เข้าได้ตลอดไป */
             localStorage.setItem("logged_in_user", JSON.stringify(user));
             if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
+            if (goNewHomeIfDefault()) return;   // ล็อกอินเสร็จ → ไปหน้าภาพรวมใหม่
 
             document.getElementById("current-user-name").innerText = AppState.userName;
             document.querySelector(".user-role").innerText = AppState.userRole === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : 'สมาชิกครอบครัว';
