@@ -3444,4 +3444,4 @@ npx wrangler pages deploy frontend  # frontend
 - POST /api/transactions + /bulk-import: ตรวจบัญชีเป็นของผู้ใช้ + ห้ามเขียนทับ transaction_id ของบัญชีอื่น
 - resolveUserId อยู่ใน try แล้ว · error ทั้งหมดผ่าน dbErrorResponse(): ไม่ส่ง stack, D1 เกินโควตา/ล่ม → 503 code DB_UNAVAILABLE
 - เทส: backend/test/security.test.mjs (20 เคส)
-- ยังเปิดอยู่: ALLOW_HEADER_FALLBACK=true (session.js) — ผู้ใช้เดียวที่ยังพึ่ง x-user-id คือ GoogleSheetsSync.js (Apps Script) รอ North ยืนยันว่ายังใช้ไหม
+- ALLOW_HEADER_FALLBACK = false แล้ว (North ยืนยันเลิกใช้ GoogleSheetsSync) — x-user-id อย่างเดียวเข้าไม่ได้ ต้องมี Bearer token · quick.html (ลิงก์ลงชื่อ) และ guest.html (ทริป) ถูกจัดการก่อนประตู ไม่กระทบ

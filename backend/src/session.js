@@ -15,7 +15,8 @@
    false = บังคับใช้ token เท่านั้น ← เปลี่ยนเป็น false หลังจากยืนยันว่า
            ทุกหน้าจอส่ง token แล้ว (ดูวิธีตรวจใน HANDOFF)
    ตราบใดที่ยังเป็น true ช่องโหว่เดิมยังเปิดอยู่ — นี่เป็นแค่ขั้นระหว่างทาง */
-export const ALLOW_HEADER_FALLBACK = true;
+/* 2026-10-11: ปิดแล้ว — ทุกหน้าเว็บส่ง token แล้ว ตัวสุดท้ายที่พึ่ง x-user-id (GoogleSheetsSync) เลิกใช้แล้ว */
+export const ALLOW_HEADER_FALLBACK = false;
 
 const DAYS = 30;
 

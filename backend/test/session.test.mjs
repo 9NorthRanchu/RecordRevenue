@@ -101,9 +101,9 @@ check('แต่อุปกรณ์อื่นยังใช้ได้ ไ
 check('ยกเลิก token ว่างไม่พัง', (await revokeSession(env, '')) === false);
 
 console.log('\n── ช่วงเปลี่ยนผ่าน ─────────────────────────────');
-check('ALLOW_HEADER_FALLBACK ยังเปิดอยู่ (ตั้งใจ)', mod.ALLOW_HEADER_FALLBACK === true);
-check('ไม่มี token → ยังใช้ x-user-id ได้ หน้าเว็บเก่าจึงไม่พัง',
-  await resolveUserId(req({ 'x-user-id': '9North' }), env) === '9North');
+check('ALLOW_HEADER_FALLBACK ปิดแล้ว (2026-10-11)', mod.ALLOW_HEADER_FALLBACK === false);
+check('ไม่มี token → x-user-id อย่างเดียวเข้าไม่ได้แล้ว',
+  await resolveUserId(req({ 'x-user-id': '9North' }), env) === '');
 check('ไม่มีอะไรเลย → ไม่ได้ตัวตน', await resolveUserId(req({}), env) === '');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);

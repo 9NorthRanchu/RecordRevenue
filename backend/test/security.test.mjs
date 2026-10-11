@@ -60,13 +60,18 @@ INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,sou
 INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id) VALUES ('D-OTHER','TX-OTHER',-100,'X_SECRET'),('D-MINE','TX-MINE',-50,'T01');`);
 const env = { DB: { prepare: toD1, batch: async ops => { db.exec('BEGIN'); try { ops.forEach(o => o._run()); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; } } } };
 const call = async (path, { user, method = 'GET', body } = {}) => {
-  const h = { 'Content-Type': 'application/json' }; if (user) h['x-user-id'] = user;
+  const h = { 'Content-Type': 'application/json' }; if (user) h['Authorization'] = `Bearer tok-${user}`;
   const res = await worker.fetch(new Request('https://w.test' + path, { method, headers: h, body: body ? JSON.stringify(body) : undefined }), env, {});
   let j; try { j = await res.json(); } catch { j = null; } return { s: res.status, j };
 };
+/* session token จริงในฐานทดสอบ (เก็บ hash แบบเดียวกับ session.js) */
+const hashTok = async t => Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t))).toString('base64url');
+for (const u of ['9North', 'Other']) db.prepare(`INSERT INTO Sessions VALUES (?,?,?)`).run(await hashTok(`tok-${u}`), u, '2099-01-01T00:00:00Z');
 let ok = 0, bad = 0; const check = (n, c, x) => { if (c) ok++; else { bad++; console.log('  ❌', n, JSON.stringify(x)?.slice(0,200)); } };
 let r;
 r = await call('/api/export?table=Accounts'); check('export no login 401', r.s === 401, r);
+{ const rx = await worker.fetch(new Request('https://w.test/api/categories', { headers: { 'x-user-id': '9North' } }), env, {});
+  check('x-user-id ปลอม (ไม่มี token) → 401', rx.status === 401, { s: rx.status }); }
 r = await call('/api/export?table=Accounts', { user: '9North' }); check('export logged in 410', r.s === 410, r);
 r = await call('/api/categories'); check('categories no login 401', r.s === 401, r);
 r = await call('/api/categories', { user: '9North' }); check('categories own family only', r.s === 200 && !r.j.some(c => c.category_id === 'X_SECRET') && r.j.length > 0, r);
@@ -89,6 +94,6 @@ r = await call('/api/settings', { user: '9North' }); check('settings works', r.s
 r = await call('/api/login', { method: 'POST', body: { username: 'x', password: 'y' } }); check('login still public (401 wrong pw, not gate)', r.s === 401 && /รหัสผ่าน/.test(r.j.error), r);
 // quota error path
 const envBad = { DB: { prepare: () => { throw new Error('D1_ERROR: Exceeded daily rows read limit'); } } };
-const rb = await worker.fetch(new Request('https://w.test/api/categories', { headers: { 'x-user-id': '9North' } }), envBad, {});
+const rb = await worker.fetch(new Request('https://w.test/api/categories', { headers: { Authorization: 'Bearer tok-9North' } }), envBad, {});
 const jb = await rb.json(); check('quota → 503 json no stack', rb.status === 503 && jb.code === 'DB_UNAVAILABLE' && !jb.stack && rb.headers.get('Access-Control-Allow-Origin'), { s: rb.status, jb });
 console.log(`${bad ? "❌" : "✅"} ผ่าน ${ok} · ไม่ผ่าน ${bad}`); if (bad) process.exit(1);
