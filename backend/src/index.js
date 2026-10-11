@@ -805,6 +805,22 @@ export default {
           return new Response(JSON.stringify({ error: 'กรุณากรอกข้อมูลหลักให้ครบถ้วน' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
+        /* แก้/ลบได้เฉพาะข้อมูลของครอบครัวตัวเอง (เดิมไม่ตรวจ · แก้ 2026-10-11) */
+        const OWN_SQL = {
+          account: `SELECT 1 AS ok FROM Accounts a JOIN Entities e ON e.entity_id = a.entity_id WHERE a.account_id = ? AND e.family_id = ?`,
+          entity: `SELECT 1 AS ok FROM Entities WHERE entity_id = ? AND family_id = ?`,
+          caption: `SELECT 1 AS ok FROM Captions WHERE type_id = ? AND (family_id = ? OR family_id IS NULL)`,
+          category: `SELECT 1 AS ok FROM Categories WHERE category_id = ? AND (family_id = ? OR family_id IS NULL)`,
+          contact: `SELECT 1 AS ok FROM Contacts WHERE contact_id = ? AND family_id = ?`,
+          project: `SELECT 1 AS ok FROM Projects WHERE project_id = ? AND family_id = ?`,
+        };
+        if (old_id && OWN_SQL[type] && !(await env.DB.prepare(OWN_SQL[type]).bind(old_id, userCheck.family_id).first())) {
+          return new Response(JSON.stringify({ error: 'ไม่พบข้อมูลนี้ในครอบครัวของคุณ' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        if (type === 'account' && body_entity_id && !(await env.DB.prepare(OWN_SQL.entity).bind(body_entity_id, userCheck.family_id).first())) {
+          return new Response(JSON.stringify({ error: 'ไม่พบบริษัทนี้ในครอบครัวของคุณ' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
         const statements = [];
 
         // CASE 1: Create New Master Data Item
@@ -1336,7 +1352,7 @@ export default {
         if (!userId) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
-        const userCheck = await env.DB.prepare(`SELECT role FROM Users WHERE user_id = ?`).bind(userId).first();
+        const userCheck = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck || userCheck.role !== 'admin') {
           return new Response(JSON.stringify({ error: 'เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถลบข้อมูลหลักได้' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -1344,6 +1360,18 @@ export default {
         const body = await request.json();
         const { type, id } = body;
 
+        /* ลบได้เฉพาะข้อมูลของครอบครัวตัวเอง (เดิมไม่ตรวจ · แก้ 2026-10-11) */
+        const OWN_SQL = {
+          account: `SELECT 1 AS ok FROM Accounts a JOIN Entities e ON e.entity_id = a.entity_id WHERE a.account_id = ? AND e.family_id = ?`,
+          entity: `SELECT 1 AS ok FROM Entities WHERE entity_id = ? AND family_id = ?`,
+          caption: `SELECT 1 AS ok FROM Captions WHERE type_id = ? AND (family_id = ? OR family_id IS NULL)`,
+          category: `SELECT 1 AS ok FROM Categories WHERE category_id = ? AND (family_id = ? OR family_id IS NULL)`,
+          contact: `SELECT 1 AS ok FROM Contacts WHERE contact_id = ? AND family_id = ?`,
+          project: `SELECT 1 AS ok FROM Projects WHERE project_id = ? AND family_id = ?`,
+        };
+        if (type && id && OWN_SQL[type] && !(await env.DB.prepare(OWN_SQL[type]).bind(id, userCheck.family_id).first())) {
+          return new Response(JSON.stringify({ error: 'ไม่พบข้อมูลนี้ในครอบครัวของคุณ' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
         if (!type || !id) {
           return new Response(JSON.stringify({ error: 'กรุณาระบุประเภทและรหัสข้อมูลที่ต้องการลบ' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }

@@ -173,7 +173,7 @@
 <body>
 <div class="top"><div class="wrap">
   <div><h1>📒 สมุดจด</h1><p id="hello">กล่องรอเคลียร์ · ยืนยันทีเดียวจบ</p></div>
-  <nav style="display:flex;gap:6px;flex-wrap:wrap"><a href="home.html">ภาพรวม</a><a href="reports.html">รายงาน</a><a href="../index.html">แอปหลัก</a></nav>
+  <nav style="display:flex;gap:6px;flex-wrap:wrap"><a href="home.html">ภาพรวม</a><a href="reports.html">รายงาน</a><a href="settings.html">ตั้งค่า</a><a href="../index.html">แอปหลัก</a></nav>
 </div></div>
 <div class="wrap">
   <div class="tabs" id="tabs">
@@ -943,7 +943,7 @@
           </div>
         </div>`;
       }).join('') : `<div class="empty"><div class="big">${S.dSide === 'AR' ? '🫴' : '🙏'}</div><h3>${S.dQ ? 'ไม่พบชื่อนี้' : `ไม่มี${sd.title}ค้าง`}</h3>
-        <p>${debtCats(S.dSide).length ? `กด "${sd.add.replace('＋ ', '')}" เพื่อเริ่มบันทึก` : `ยังไม่มีหมวดที่หัวข้อเป็น${S.dSide === 'AR' ? 'สินทรัพย์ (ASSET)' : 'หนี้สิน (LIABILITY)'} — เพิ่มในหน้าตั้งค่าของแอปหลักก่อน`}</p></div>`}
+        <p>${debtCats(S.dSide).length ? `กด "${sd.add.replace('＋ ', '')}" เพื่อเริ่มบันทึก` : `ยังไม่มีหมวดที่หัวข้อเป็น${S.dSide === 'AR' ? 'สินทรัพย์ (ASSET)' : 'หนี้สิน (LIABILITY)'} — เพิ่มในหน้าตั้งค่าก่อน`}</p></div>`}
       <div class="hint" style="margin-top:12px">ยอดคิดจากรายการที่ยืนยันแล้วในหมวดลูกหนี้/เจ้าหนี้ · รายการที่สร้างจากหน้านี้บันทึกเป็นยืนยันแล้วทันที</div>`;
     view.querySelectorAll('[data-side]').forEach(b => b.onclick = () => { S.dSide = b.dataset.side; renderDebts(); });
     $('#dAdd').onclick = () => debtMove({ side: S.dSide, kind: 'new' });
@@ -961,7 +961,7 @@
   function debtMove({ side, kind, party }) {
     const sd = SIDE[side];
     const cats = debtCats(side);
-    if (!cats.length) return toast(`ยังไม่มีหมวด${sd.title} — เพิ่มในหน้าตั้งค่าของแอปหลักก่อน`);
+    if (!cats.length) return toast(`ยังไม่มีหมวด${sd.title} — เพิ่มในหน้าตั้งค่าก่อน`);
     const out = (side === 'AR') === (kind === 'new');               // ให้ยืม / จ่ายคืน = เงินออก
     const title = kind === 'back' ? `${sd.back}${party ? ' · ' + party.name : ''}` : (side === 'AR' ? 'ให้ยืม / ตั้งลูกหนี้' : 'ยืมมา / ตั้งเจ้าหนี้');
     const fixedCat = party?.key.startsWith('k:') ? party.key.slice(2) : null;

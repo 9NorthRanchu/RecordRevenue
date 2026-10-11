@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ตั้งค่า · สมุดจด</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  ตั้งค่าใหม่ (2026-10-11) แทนหน้า "ตั้งค่าระบบ" เดิม — ใช้ API เดิมทั้งหมด:
+    GET /api/settings · POST /api/settings/save · POST /api/settings/delete (admin) · GET/POST /api/users (บันทึก = admin)
+  ชื่อข้อมูลหลักใช้รูปแบบเดิม "[ID] ชื่อ" — หน้านี้ให้พิมพ์แค่ชื่อ แล้วเติม [ID] ให้เอง (ถ้าชื่อเดิมมีแบบนั้น หรือเป็นรายการใหม่)
+  ไม่ทำในหน้านี้ (ยังอยู่ที่หน้าเดิม): ลบสมาชิก (ลบข้อมูลบริษัทที่ถือคนเดียวทั้งหมด) · สำรอง/กู้คืน · ธีม · โปรเจกต์/ทริป
+-->
+<style>
+  :root { --ink: #212529; --muted: #5c636a; --line: #ece8f8; --bg: #f8f7fd; --brand: #5f3dc4; --pos: #087f5b; --neg: #c92a2a; --bad: #e03131; --radius: 20px; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Anuphan', -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+  body { padding-bottom: 40px; }
+  button, select, input { font: inherit; color: inherit; }
+  a { color: var(--brand); }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+  .top { background: linear-gradient(135deg, #5f3dc4, #7950f2 60%, #9775fa); color: #fff; padding: 18px 0 60px; }
+  .top .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .top h1 { margin: 0; font-size: 24px; } .top p { margin: 2px 0 0; font-size: 14px; color: #e5dbff; }
+  .nav { display: flex; gap: 6px; flex-wrap: wrap; }
+  .nav a { color: #fff; text-decoration: none; background: rgba(255,255,255,.18); padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 600; min-height: 44px; display: inline-flex; align-items: center; }
+  .nav a.on { background: #fff; color: var(--brand); }
+  .tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px; box-shadow: 0 8px 24px rgba(95,61,196,.12); position: sticky; top: 8px; z-index: 5; }
+  .tabs button { border: 0; background: transparent; border-radius: 12px; padding: 8px 2px; font-weight: 700; color: var(--muted); cursor: pointer; min-height: 52px; font-size: 13px; line-height: 1.25; }
+  .tabs button span { display: block; font-size: 20px; }
+  .tabs button.on { background: var(--brand); color: #fff; }
+  @media (max-width: 520px) { .tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .tools { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .inp, select.inp { width: 100%; height: 46px; border: 1.5px solid var(--line); border-radius: 12px; padding: 0 12px; background: #fff; font-size: 16px; }
+  .inp:focus { outline: none; border-color: var(--brand); }
+  .tools .inp { flex: 1; min-width: 180px; width: auto; }
+  .b { border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 700; cursor: pointer; min-height: 46px; background: #f3f0ff; color: var(--brand); white-space: nowrap; }
+  .b.main { background: var(--brand); color: #fff; }
+  .b.danger { background: #fff5f5; color: var(--bad); }
+  .b:disabled { opacity: .5; }
+  .group { margin-top: 18px; }
+  .group h3 { margin: 0 4px 8px; font-size: 14px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .list { background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(95,61,196,.05); }
+  .item { all: unset; box-sizing: border-box; display: flex; gap: 12px; align-items: center; width: 100%; padding: 13px 16px; border-bottom: 1px solid #f3f0ff; cursor: pointer; min-height: 60px; }
+  .item:last-child { border-bottom: 0; }
+  .item:hover, .item:focus-visible { background: #faf8ff; }
+  .ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none; font-size: 20px; }
+  .item .t { flex: 1; min-width: 0; }
+  .item .t b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .t small { display: block; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .r { text-align: right; white-space: nowrap; font-weight: 700; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 9px; background: #f3f0ff; color: var(--brand); margin-left: 4px; }
+  .neg { color: var(--neg); } .pos { color: var(--pos); } .mut { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 30px; }
+  .note { background: #fff9db; color: #7a4a00; border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-top: 12px; }
+  .sheet-bg { position: fixed; inset: 0; background: rgba(33,37,41,.45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { background: #fff; width: 100%; max-width: 560px; max-height: 92vh; border-radius: 24px 24px 0 0; display: flex; flex-direction: column; }
+  @media (min-width: 700px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+  .sheet header { padding: 16px 18px 10px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .sheet header h2 { margin: 0; font-size: 18px; }
+  .sheet .x { border: 0; background: var(--bg); width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+  .sheet .body { padding: 8px 18px 16px; overflow-y: auto; }
+  .sheet footer { padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); display: flex; gap: 10px; }
+  .sheet footer .b.main { flex: 1; }
+  label.f { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 5px; }
+  .g2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { flex: 1; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 8px; cursor: pointer; font-weight: 600; min-height: 46px; }
+  .seg button.on { border-color: var(--brand); background: #f3f0ff; color: var(--brand); }
+  .checks { display: grid; gap: 6px; }
+  .checks label { display: flex; gap: 10px; align-items: center; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 46px; cursor: pointer; }
+  .checks input { width: 20px; height: 20px; }
+  .err { color: var(--bad); font-size: 14px; margin-top: 10px; min-height: 1em; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 14px; font-size: 14px; z-index: 40; max-width: 90vw; }
+  .loading { text-align: center; padding: 50px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap row">
+  <div><h1>ตั้งค่า</h1><p id="sub">บัญชี · บริษัท · หมวด · คู่ค้า · สมาชิก</p></div>
+  <nav class="nav" aria-label="เมนู"><a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a href="reports.html">รายงาน</a><a class="on" href="settings.html">ตั้งค่า</a><a href="../index.html">แอปหลัก</a></nav>
+</div></div>
+<main class="wrap">
+  <div class="tabs" id="tabs" role="tablist">
+    <button data-t="acc" class="on"><span>🏦</span>บัญชี</button><button data-t="ent"><span>🏢</span>บริษัท</button><button data-t="cat"><span>🗂️</span>หมวด</button>
+    <button data-t="con"><span>👥</span>คู่ค้า</button><button data-t="usr"><span>👨‍👩‍👧</span>สมาชิก</button><button data-t="etc"><span>⚙️</span>อื่น ๆ</button>
+  </div>
+  <div id="view"><div class="loading">กำลังโหลด…</div></div>
+</main>
+<script>
+(function () {
+  'use strict';
+  const API = (() => {
+    const PROD = 'https://record-revenue.9nimz.workers.dev';
+    try {
+      const q = new URLSearchParams(location.search).get('api');
+      if (q) sessionStorage.setItem('api_base_override', q);
+      const o = sessionStorage.getItem('api_base_override');
+      if (o) return o.replace(/\/$/, '');
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787';
+    } catch (e) { /* ใช้ของจริง */ }
+    return PROD;
+  })();
+  const token = () => { try { return localStorage.getItem('session_token') || sessionStorage.getItem('session_token') || ''; } catch { return ''; } };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = n => Number(n) < 0 ? `(${money(-n)})` : money(n);
+  const $ = s => document.querySelector(s);
+  const view = $('#view');
+  const plain = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '').trim() || String(n || '');
+  const hasCode = n => /^\s*\[[^\]]+\]/.test(String(n || ''));
+  /* ชื่อที่บันทึก: รายการใหม่ หรือชื่อเดิมมี [ID] → "[ID] ชื่อ" · ชื่อเดิมไม่มี → ตามที่พิมพ์ */
+  const withCode = (id, name, orig) => (orig === undefined || hasCode(orig)) ? `[${id}] ${name}` : name;
+  /* เดารหัสถัดไปจากรหัสที่มีอยู่ (A01, A02 … → A03) */
+  function nextId(ids, prefix) {
+    const groups = new Map();
+    for (const id of ids) { const m = String(id).match(/^(.*?)(\d+)$/); if (m) { const g = groups.get(m[1]) || { n: 0, max: 0, w: m[2].length }; g.n++; g.max = Math.max(g.max, +m[2]); g.w = Math.max(g.w, m[2].length); groups.set(m[1], g); } }
+    let p = prefix, g = prefix != null ? groups.get(prefix) : null;
+    if (prefix == null) { for (const [k, v] of groups) if (!g || v.n > g.n) { g = v; p = k; } }
+    if (!g) return `${p || 'X'}01`;
+    return `${p}${String(g.max + 1).padStart(g.w, '0')}`;
+  }
+  const BEH = { REVENUE: ['รายรับ', '#087f5b', '#e6fcf5'], EXPENSE: ['รายจ่าย', '#c92a2a', '#fff5f5'], ASSET: ['สินทรัพย์ / ลูกหนี้', '#0b7285', '#e3fafc'],
+    LIABILITY: ['หนี้สิน / เจ้าหนี้', '#9c36b5', '#f8f0fc'], TRANSFER: ['โอนระหว่างบัญชี', '#1c4fd6', '#edf2ff'], INVESTMENT: ['ลงทุน', '#e8590c', '#fff4e6'] };
+  const behOf = cp => cp?.sub_behavior === 'INVESTMENT' ? 'INVESTMENT' : (cp?.behavior || 'EXPENSE');
+  const ACC_T = { BANK: ['🏦', 'ธนาคาร', '#edf2ff'], CASH: ['🪙', 'เงินสด', '#fff9db'], CREDIT: ['💳', 'บัตรเครดิต', '#fff5f5'] };
+  const CON_T = { CUSTOMER: 'ลูกค้า', VENDOR: 'ผู้ขาย / ร้านค้า', OTHER: 'อื่น ๆ' };
+  const S = { tab: 'acc', q: '', st: null, users: [], me: null };
+
+  function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2600); }
+  async function api(path, body) {
+    const res = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) throw Object.assign(new Error('กรุณาเข้าสู่ระบบ'), { login: true });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) throw new Error(d.error || `ผิดพลาด (${res.status})`);
+    return d;
+  }
+  function sheet(title, html, footer) {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet" role="dialog" aria-label="${esc(title)}"><header><h2>${esc(title)}</h2><button class="x" data-close aria-label="ปิด">✕</button></header><div class="body">${html}<div class="err" data-err></div></div><footer>${footer}</footer></div>`;
+    const close = () => bg.remove();
+    bg.addEventListener('click', e => { if (e.target === bg || e.target.closest('[data-close]')) close(); });
+    document.addEventListener('keydown', function k(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', k); } });
+    document.body.appendChild(bg);
+    const el = bg.querySelector('.sheet');
+    return { el, close, err: t => { el.querySelector('[data-err]').textContent = t; }, v: id => el.querySelector('#' + id)?.value?.trim() ?? '' };
+  }
+  const isAdmin = () => S.me?.role === 'admin';
+
+  async function load() {
+    if (!token()) { view.innerHTML = `<div class="empty"><h3>ยังไม่ได้เข้าสู่ระบบ</h3><a href="../index.html">ไปหน้าเข้าสู่ระบบ</a></div>`; return; }
+    try {
+      const [st, users] = await Promise.all([api('/api/settings'), api('/api/users').catch(() => [])]);
+      S.st = st; S.users = Array.isArray(users) ? users : [];
+      let meId = ''; try { meId = JSON.parse(localStorage.getItem('logged_in_user') || sessionStorage.getItem('logged_in_user') || '{}').user_id || ''; } catch { /* ไม่มี */ }
+      S.me = S.users.find(u => u.user_id === meId) || null;
+      render();
+    } catch (e) { view.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
+  }
+  $('#tabs').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; S.tab = b.dataset.t; S.q = ''; document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b)); render(); };
+  const tools = (ph, addLabel) => `<div class="tools"><input class="inp" id="q" placeholder="🔎 ${ph}" value="${esc(S.q)}" aria-label="ค้นหา">${addLabel ? `<button class="b main" id="add">${addLabel}</button>` : ''}</div>`;
+  const match = (...xs) => !S.q || xs.join(' ').toLowerCase().includes(S.q.toLowerCase());
+  function bindTools(onAdd) {
+    const q = $('#q'); if (q) q.oninput = () => { S.q = q.value; const p = q.selectionStart; render(); const n = $('#q'); n.focus(); n.setSelectionRange(p, p); };
+    $('#add')?.addEventListener('click', onAdd);
+  }
+  function render() { ({ acc: renderAcc, ent: renderEnt, cat: renderCat, con: renderCon, usr: renderUsr, etc: renderEtc })[S.tab](); }
+  async function save(sh, payload, msg) {
+    try { await api('/api/settings/save', payload); sh.close(); toast(msg || '✅ บันทึกแล้ว'); await load(); }
+    catch (e) { sh.err(e.message); sh.el.querySelectorAll('footer button').forEach(b => { b.disabled = false; }); }
+  }
+  async function del(sh, type, id, label) {
+    if (!window.confirm(`ลบ "${label}" ?`)) return;
+    try { await api('/api/settings/delete', { type, id }); sh.close(); toast('🗑️ ลบแล้ว'); await load(); } catch (e) { sh.err(e.message); }
+  }
+  const footer = (canDel) => `${canDel && isAdmin() ? '<button class="b danger" data-del>ลบ</button>' : ''}<button class="b main" data-save>บันทึก</button>`;
+
+  // ── บัญชี ──
+  function renderAcc() {
+    const ents = S.st.entities || [];
+    const accs = (S.st.accounts || []).filter(a => match(a.account_id, a.name, a.bank_name, a.entity_name));
+    const byEnt = new Map();
+    for (const a of accs) { const k = a.entity_id || '-'; if (!byEnt.has(k)) byEnt.set(k, []); byEnt.get(k).push(a); }
+    view.innerHTML = tools('ค้นหาบัญชี ธนาคาร', '＋ เพิ่มบัญชี') + ([...byEnt.entries()].map(([eid, list]) => `
+      <div class="group"><h3>${esc(plain(ents.find(e => e.entity_id === eid)?.name || eid))}<span>${list.length} บัญชี · ${fmt(list.reduce((t, a) => t + Number(a.balance || 0), 0))}</span></h3><div class="list">
+      ${list.map(a => { const t = ACC_T[a.account_type] || ACC_T.BANK; return `<button class="item" data-id="${esc(a.account_id)}"><span class="ic" style="background:${t[2]}">${t[0]}</span>
+        <span class="t"><b>${esc(plain(a.name))}</b><small>${esc(a.account_id)} · ${esc(a.bank_name || t[1])}${a.account_number ? ' · ' + esc(a.account_number) : ''}${a.pdf_password ? ' · 🔑' : ''}</small></span>
+        <span class="r ${Number(a.balance) < 0 ? 'neg' : ''}">${fmt(a.balance)}</span></button>`; }).join('')}</div></div>`).join('') || '<div class="empty">ไม่พบบัญชี</div>');
+    bindTools(() => accForm(null));
+    view.querySelectorAll('[data-id]').forEach(b => b.onclick = () => accForm((S.st.accounts || []).find(a => a.account_id === b.dataset.id)));
+  }
+  function accForm(a) {
+    const ents = S.st.entities || [];
+    let type = a?.account_type || 'BANK';
+    const ids = (S.st.accounts || []).map(x => x.account_id);
+    const sh = sheet(a ? 'แก้ไขบัญชี' : 'เพิ่มบัญชี', `
+      <label class="f">ประเภท</label><div class="seg" id="aT">${Object.entries(ACC_T).map(([k, t]) => `<button type="button" data-v="${k}" class="${type === k ? 'on' : ''}">${t[0]} ${t[1]}</button>`).join('')}</div>
+      <div class="g2"><div><label class="f" for="aId">รหัส</label><input class="inp" id="aId" value="${esc(a?.account_id || nextId(ids, type === 'CREDIT' ? 'C' : 'A'))}" ${a ? 'readonly' : ''}></div>
+        <div><label class="f" for="aBank">ธนาคาร</label><input class="inp" id="aBank" list="banks" value="${esc(a?.bank_name || '')}" placeholder="เช่น Kbank"></div></div>
+      <datalist id="banks">${['Kbank', 'SCB', 'KTB', 'BBL', 'BAY', 'TTB', 'GSB', 'KKP', 'UOB', 'Cash', 'TrueMoney'].map(b => `<option value="${b}">`).join('')}</datalist>
+      <label class="f" for="aName">ชื่อบัญชี</label><input class="inp" id="aName" value="${esc(plain(a?.name || ''))}" placeholder="เช่น BK KBANK">
+      <label class="f" for="aEnt">บริษัทเจ้าของบัญชี</label><select class="inp" id="aEnt">${ents.map(e => `<option value="${esc(e.entity_id)}" ${e.entity_id === a?.entity_id ? 'selected' : ''}>${esc(plain(e.name))}</option>`).join('')}</select>
+      <label class="f" for="aNo">เลขบัญชี / เลขบัตร (ไม่บังคับ)</label><input class="inp" id="aNo" value="${esc(a?.account_number || '')}" placeholder="ช่วยให้ระบบจับคู่สลิปได้แม่นขึ้น">
+      <label class="f" for="aPw">รหัสผ่าน PDF statement (ไม่บังคับ)</label><input class="inp" id="aPw" type="password" value="${esc(a?.pdf_password || '')}" autocomplete="off">
+      <div id="aCredit" style="${type === 'CREDIT' ? '' : 'display:none'}"><div class="g2"><div><label class="f" for="aLim">วงเงิน</label><input class="inp" id="aLim" inputmode="decimal" value="${a?.credit_limit || ''}"></div>
+        <div><label class="f" for="aDue">วันครบกำหนดชำระ</label><input class="inp" id="aDue" inputmode="numeric" value="${a?.due_day || ''}" placeholder="1–31"></div></div>
+        <label class="f" for="aSt">วันตัดรอบบัญชี</label><input class="inp" id="aSt" inputmode="numeric" value="${a?.statement_day || ''}" placeholder="1–31"></div>
+      ${a ? `<div class="note">ยอดคงเหลือ ${fmt(a.balance)} · ลบได้เฉพาะบัญชีที่ยังไม่มีรายการ</div>` : ''}`, footer(!!a));
+    sh.el.querySelectorAll('#aT [data-v]').forEach(b => b.onclick = () => {
+      type = b.dataset.v; sh.el.querySelectorAll('#aT [data-v]').forEach(x => x.classList.toggle('on', x === b));
+      sh.el.querySelector('#aCredit').style.display = type === 'CREDIT' ? '' : 'none';
+      if (!a) sh.el.querySelector('#aId').value = nextId(ids, type === 'CREDIT' ? 'C' : 'A');
+    });
+    sh.el.querySelector('[data-save]').onclick = () => {
+      const id = sh.v('aId'), name = sh.v('aName');
+      if (!id || !name) return sh.err('ใส่รหัสและชื่อบัญชี');
+      sh.el.querySelector('[data-save]').disabled = true;
+      save(sh, { type: 'account', old_id: a?.account_id || null, new_id: id, name: withCode(id, name, a?.name), bank_name: sh.v('aBank'), account_number: sh.v('aNo'),
+        pdf_password: sh.v('aPw'), entity_id: sh.v('aEnt'), account_type: type, credit_limit: Number(sh.v('aLim')) || 0, statement_day: sh.v('aSt'), due_day: sh.v('aDue') });
+    };
+    sh.el.querySelector('[data-del]')?.addEventListener('click', () => del(sh, 'account', a.account_id, plain(a.name)));
+  }
+
+  // ── บริษัท ──
+  function renderEnt() {
+    const ents = (S.st.entities || []).filter(e => match(e.entity_id, e.name));
+    const eu = S.st.entity_users || [];
+    const accN = id => (S.st.accounts || []).filter(a => a.entity_id === id).length;
+    view.innerHTML = tools('ค้นหาบริษัท', '＋ เพิ่มบริษัท') + `<div class="group"><div class="list">${ents.map(e => `<button class="item" data-id="${esc(e.entity_id)}">
+      <span class="ic" style="background:${e.is_company ? '#f3f0ff' : '#e6fcf5'}">${e.is_company ? '🏢' : '🏠'}</span>
+      <span class="t"><b>${esc(plain(e.name))}</b><small>${esc(e.entity_id)} · ${e.is_company ? 'นิติบุคคล' : 'ส่วนตัว'} · ${accN(e.entity_id)} บัญชี</small></span>
+      <span class="r mut" style="font-weight:500;font-size:13px">👤 ${esc(eu.filter(x => x.entity_id === e.entity_id).map(x => x.user_name).join(', ') || '-')}</span></button>`).join('') || '<div class="empty">ไม่พบ</div>'}</div></div>
+      <div class="note">ผู้ถือบริษัท = สมาชิกที่เห็นบัญชีและรายการของบริษัทนั้น (เช่น ติ๊ก Puii เพื่อให้ Puii ใช้บัญชีของบริษัทนี้ได้)</div>`;
+    bindTools(() => entForm(null));
+    view.querySelectorAll('[data-id]').forEach(b => b.onclick = () => entForm((S.st.entities || []).find(x => x.entity_id === b.dataset.id)));
+  }
+  function entForm(e) {
+    const holders = new Set((S.st.entity_users || []).filter(x => x.entity_id === e?.entity_id).map(x => x.user_id));
+    if (!e && S.me) holders.add(S.me.user_id);
+    const sh = sheet(e ? 'แก้ไขบริษัท' : 'เพิ่มบริษัท', `
+      <div class="g2"><div><label class="f" for="eId">รหัส</label><input class="inp" id="eId" value="${esc(e?.entity_id || nextId((S.st.entities || []).map(x => x.entity_id)))}" ${e ? 'readonly' : ''}></div>
+        <div><label class="f">ประเภท</label><div class="seg" id="eT"><button type="button" data-v="1" class="${e?.is_company ? 'on' : ''}">🏢 บริษัท</button><button type="button" data-v="0" class="${e && !e.is_company ? 'on' : (!e ? 'on' : '')}">🏠 ส่วนตัว</button></div></div></div>
+      <label class="f" for="eName">ชื่อ</label><input class="inp" id="eName" value="${esc(plain(e?.name || ''))}" placeholder="เช่น BKP Co., Ltd.">
+      <label class="f">สมาชิกที่ถือ / เห็นบริษัทนี้</label><div class="checks">${S.users.map(u => `<label><input type="checkbox" value="${esc(u.user_id)}" ${holders.has(u.user_id) ? 'checked' : ''}> ${esc(u.name)} <span class="mut">(${u.role === 'admin' ? 'ผู้ดูแล' : 'สมาชิก'})</span></label>`).join('')}</div>
+      ${e ? '<div class="note">ลบได้เฉพาะบริษัทที่ไม่มีบัญชีผูกอยู่</div>' : ''}`, footer(!!e));
+    let isCo = e ? (e.is_company ? 1 : 0) : 0;
+    sh.el.querySelectorAll('#eT [data-v]').forEach(b => b.onclick = () => { isCo = +b.dataset.v; sh.el.querySelectorAll('#eT [data-v]').forEach(x => x.classList.toggle('on', x === b)); });
+    sh.el.querySelector('[data-save]').onclick = () => {
+      const id = sh.v('eId'), name = sh.v('eName');
+      const members = [...sh.el.querySelectorAll('.checks input:checked')].map(i => i.value);
+      if (!id || !name) return sh.err('ใส่รหัสและชื่อ');
+      if (!members.length) return sh.err('เลือกสมาชิกอย่างน้อย 1 คน');
+      if (S.me && e && holders.has(S.me.user_id) && !members.includes(S.me.user_id) && !window.confirm('คุณเอาตัวเองออกจากบริษัทนี้ — จะมองไม่เห็นบัญชีของบริษัทนี้อีก ยืนยัน?')) return;
+      sh.el.querySelector('[data-save]').disabled = true;
+      save(sh, { type: 'entity', old_id: e?.entity_id || null, new_id: id, name: withCode(id, name, e?.name), is_company: isCo, entity_members: members });
+    };
+    sh.el.querySelector('[data-del]')?.addEventListener('click', () => del(sh, 'entity', e.entity_id, plain(e.name)));
+  }
+
+  // ── หมวด (หัวข้อ → หมวด) ──
+  function renderCat() {
+    const caps = S.st.captions || [], cats = S.st.categories || [];
+    const order = ['REVENUE', 'EXPENSE', 'ASSET', 'LIABILITY', 'INVESTMENT', 'TRANSFER'];
+    const capsSorted = [...caps].sort((a, b) => order.indexOf(behOf(a)) - order.indexOf(behOf(b)) || String(a.name).localeCompare(String(b.name), 'th'));
+    view.innerHTML = tools('ค้นหาหมวด', '＋ เพิ่มหัวข้อ') + capsSorted.map(cp => {
+      const list = cats.filter(c => c.caption_id === cp.type_id && match(c.category_id, c.name, cp.name));
+      if (S.q && !list.length && !match(cp.name)) return '';
+      const [label, col, soft] = BEH[behOf(cp)] || BEH.EXPENSE;
+      return `<div class="group"><h3><span><button class="b" style="min-height:36px;padding:6px 10px;background:${soft};color:${col}" data-cap="${esc(cp.type_id)}">${esc(plain(cp.name))} ✎</button> <span class="pill" style="background:${soft};color:${col}">${label}</span></span>
+        <button class="b" style="min-height:36px;padding:6px 12px" data-addcat="${esc(cp.type_id)}">＋ หมวด</button></h3>
+        <div class="list">${list.map(c => `<button class="item" data-cat="${esc(c.category_id)}"><span class="t"><b>${esc(plain(c.name))}</b><small>${esc(c.category_id)}${c.default_type ? ' · ' + ({ INCOME: 'รายรับ', EXPENSE: 'รายจ่าย', TRANSFER: 'โอน' }[c.default_type] || c.default_type) : ''}</small></span><span class="r mut">›</span></button>`).join('') || '<div class="empty" style="padding:14px">ยังไม่มีหมวด</div>'}</div></div>`;
+    }).join('');
+    bindTools(() => capForm(null));
+    view.querySelectorAll('[data-cap]').forEach(b => b.onclick = () => capForm(caps.find(c => c.type_id === b.dataset.cap)));
+    view.querySelectorAll('[data-addcat]').forEach(b => b.onclick = () => catForm(null, b.dataset.addcat));
+    view.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => catForm(cats.find(c => c.category_id === b.dataset.cat)));
+  }
+  function capForm(cp) {
+    let beh = cp ? behOf(cp) : 'EXPENSE';
+    const sh = sheet(cp ? 'แก้ไขหัวข้อ' : 'เพิ่มหัวข้อ', `
+      <div class="g2"><div><label class="f" for="cId">รหัส</label><input class="inp" id="cId" value="${esc(cp?.type_id || nextId((S.st.captions || []).map(x => x.type_id)))}" ${cp ? 'readonly' : ''}></div>
+        <div><label class="f" for="cName">ชื่อหัวข้อ</label><input class="inp" id="cName" value="${esc(plain(cp?.name || ''))}" placeholder="เช่น ค่าใช้จ่ายบ้าน"></div></div>
+      <label class="f">ประเภท (ใช้จัดกลุ่มในรายงาน และหน้าลูกหนี้)</label><div class="seg" id="cB">${Object.entries(BEH).map(([k, v]) => `<button type="button" data-v="${k}" class="${beh === k ? 'on' : ''}">${v[0]}</button>`).join('')}</div>
+      ${cp ? '<div class="note">ลบได้เฉพาะหัวข้อที่ไม่มีหมวดอยู่ข้างใน</div>' : ''}`, footer(!!cp));
+    sh.el.querySelectorAll('#cB [data-v]').forEach(b => b.onclick = () => { beh = b.dataset.v; sh.el.querySelectorAll('#cB [data-v]').forEach(x => x.classList.toggle('on', x === b)); });
+    sh.el.querySelector('[data-save]').onclick = () => {
+      const id = sh.v('cId'), name = sh.v('cName');
+      if (!id || !name) return sh.err('ใส่รหัสและชื่อ');
+      sh.el.querySelector('[data-save]').disabled = true;
+      save(sh, { type: 'caption', old_id: cp?.type_id || null, new_id: id, name: withCode(id, name, cp?.name), category_type: beh,
+        default_entity_id: cp?.default_entity_id || null, default_contact_id: cp?.default_contact_id || null, default_type: cp?.default_type || null });
+    };
+    sh.el.querySelector('[data-del]')?.addEventListener('click', () => del(sh, 'caption', cp.type_id, plain(cp.name)));
+  }
+  function catForm(c, capId) {
+    const caps = S.st.captions || [];
+    const cap0 = c?.caption_id || capId;
+    const sh = sheet(c ? 'แก้ไขหมวด' : 'เพิ่มหมวด', `
+      <div class="g2"><div><label class="f" for="kId">รหัส</label><input class="inp" id="kId" value="${esc(c?.category_id || nextId((S.st.categories || []).map(x => x.category_id)))}" ${c ? 'readonly' : ''}></div>
+        <div><label class="f" for="kName">ชื่อหมวด</label><input class="inp" id="kName" value="${esc(plain(c?.name || ''))}" placeholder="เช่น ค่าอาหาร"></div></div>
+      <label class="f" for="kCap">อยู่ใต้หัวข้อ</label><select class="inp" id="kCap">${caps.map(x => `<option value="${esc(x.type_id)}" ${x.type_id === cap0 ? 'selected' : ''}>${esc(plain(x.name))} · ${(BEH[behOf(x)] || BEH.EXPENSE)[0]}</option>`).join('')}</select>
+      <label class="f" for="kType">ประเภทรายการเมื่อเลือกหมวดนี้</label><select class="inp" id="kType">
+        ${[['', 'ตามเงินเข้า/ออก (แนะนำ)'], ['INCOME', 'รายรับ'], ['EXPENSE', 'รายจ่าย'], ['TRANSFER', 'โอนระหว่างบัญชี (ไม่นับรับ-จ่าย)']].map(([v, l]) => `<option value="${v}" ${(c?.default_type || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <label class="f" for="kEnt">บริษัทตั้งต้น (ไม่บังคับ)</label><select class="inp" id="kEnt"><option value="">—</option>${(S.st.entities || []).map(e => `<option value="${esc(e.entity_id)}" ${e.entity_id === c?.default_entity_id ? 'selected' : ''}>${esc(plain(e.name))}</option>`).join('')}</select>
+      ${c ? '<div class="note">ลบได้เฉพาะหมวดที่ยังไม่มีรายการใช้</div>' : ''}`, footer(!!c));
+    sh.el.querySelector('[data-save]').onclick = () => {
+      const id = sh.v('kId'), name = sh.v('kName');
+      if (!id || !name) return sh.err('ใส่รหัสและชื่อ');
+      sh.el.querySelector('[data-save]').disabled = true;
+      save(sh, { type: 'category', old_id: c?.category_id || null, new_id: id, name: withCode(id, name, c?.name), category_type: sh.v('kCap'),
+        default_type: sh.v('kType') || null, default_entity_id: sh.v('kEnt') || null, default_contact_id: c?.default_contact_id || null });
+    };
+    sh.el.querySelector('[data-del]')?.addEventListener('click', () => del(sh, 'category', c.category_id, plain(c.name)));
+  }
+
+  // ── คู่ค้า ──
+  function renderCon() {
+    const cons = (S.st.contacts || []).filter(c => match(c.contact_id, c.name, CON_T[c.contact_type]));
+    view.innerHTML = tools('ค้นหาคู่ค้า', '＋ เพิ่มคู่ค้า') + `<div class="group"><h3>${cons.length} ราย</h3><div class="list">${cons.slice(0, 300).map(c => {
+      let priv = false; try { const m = JSON.parse(c.members || '[]'); priv = Array.isArray(m) && m.length > 0; } catch { /* ไม่มี */ }
+      return `<button class="item" data-id="${esc(c.contact_id)}"><span class="ic" style="background:#f3f0ff">${c.contact_type === 'CUSTOMER' ? '🤝' : c.contact_type === 'VENDOR' ? '🏪' : '👤'}</span>
+        <span class="t"><b>${esc(plain(c.name))}</b><small>${esc(c.contact_id)} · ${CON_T[c.contact_type] || 'อื่น ๆ'}${priv ? ' · 🔒 ส่วนตัว' : ''}</small></span><span class="r mut">›</span></button>`;
+    }).join('') || '<div class="empty">ไม่พบ</div>'}</div>${cons.length > 300 ? '<div class="note">แสดง 300 รายแรก — พิมพ์ค้นหาเพื่อหาคนที่เหลือ</div>' : ''}</div>`;
+    bindTools(() => conForm(null));
+    view.querySelectorAll('[data-id]').forEach(b => b.onclick = () => conForm((S.st.contacts || []).find(x => x.contact_id === b.dataset.id)));
+  }
+  function conForm(c) {
+    let type = c?.contact_type || 'CUSTOMER';
+    let mem = []; try { mem = JSON.parse(c?.members || '[]') || []; } catch { mem = []; }
+    const sh = sheet(c ? 'แก้ไขคู่ค้า' : 'เพิ่มคู่ค้า', `
+      <div class="g2"><div><label class="f" for="pId">รหัส</label><input class="inp" id="pId" value="${esc(c?.contact_id || nextId((S.st.contacts || []).map(x => x.contact_id)))}" ${c ? 'readonly' : ''}></div>
+        <div><label class="f" for="pName">ชื่อ</label><input class="inp" id="pName" value="${esc(plain(c?.name || ''))}"></div></div>
+      <label class="f">ประเภท</label><div class="seg" id="pT">${Object.entries(CON_T).map(([k, v]) => `<button type="button" data-v="${k}" class="${type === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+      <label class="f">ใครเห็นคู่ค้านี้ (ไม่ติ๊กเลย = ทุกคนในครอบครัว)</label><div class="checks">${S.users.map(u => `<label><input type="checkbox" value="${esc(u.user_id)}" ${mem.includes(u.user_id) ? 'checked' : ''}> ${esc(u.name)}</label>`).join('')}</div>
+      ${c ? '<div class="note">ลบคู่ค้า: รายการเก่าที่ใช้คู่ค้านี้ยังอยู่ แค่ไม่มีชื่อคู่ค้า</div>' : ''}`, footer(!!c));
+    sh.el.querySelectorAll('#pT [data-v]').forEach(b => b.onclick = () => { type = b.dataset.v; sh.el.querySelectorAll('#pT [data-v]').forEach(x => x.classList.toggle('on', x === b)); });
+    sh.el.querySelector('[data-save]').onclick = () => {
+      const id = sh.v('pId'), name = sh.v('pName');
+      if (!id || !name) return sh.err('ใส่รหัสและชื่อ');
+      sh.el.querySelector('[data-save]').disabled = true;
+      save(sh, { type: 'contact', old_id: c?.contact_id || null, new_id: id, name: withCode(id, name, c?.name ?? (hasCode((S.st.contacts || [])[0]?.name) ? undefined : '')),
+        contact_type: type, contact_members: [...sh.el.querySelectorAll('.checks input:checked')].map(i => i.value) });
+    };
+    sh.el.querySelector('[data-del]')?.addEventListener('click', () => del(sh, 'contact', c.contact_id, plain(c.name)));
+  }
+
+  // ── สมาชิก ──
+  function renderUsr() {
+    const ents = S.st.entities || [];
+    view.innerHTML = tools('ค้นหาสมาชิก', isAdmin() ? '＋ เพิ่มสมาชิก' : '') + `<div class="group"><div class="list">${S.users.filter(u => match(u.user_id, u.name, u.email)).map(u => `
+      <button class="item" data-id="${esc(u.user_id)}"><span class="ic" style="background:#f3f0ff">${u.role === 'admin' ? '⭐' : '🙂'}</span>
+        <span class="t"><b>${esc(u.name)}</b><small>${esc(u.email || u.user_id)} · ${u.role === 'admin' ? 'ผู้ดูแล' : 'สมาชิก'} · ${u.line_user_id ? '💬 ผูก LINE แล้ว' : 'ยังไม่ผูก LINE'}</small>
+        <small>เห็น: ${esc((u.allowed_entities || []).map(id => plain(ents.find(e => e.entity_id === id)?.name || id)).join(', ') || 'ยังไม่มีบริษัท')}</small></span><span class="r mut">›</span></button>`).join('')}</div></div>
+      <div class="note">ผูก LINE: ให้สมาชิกแอดบอทแล้วพิมพ์อะไรก็ได้ บอทจะตอบ LINE ID กลับมา นำมาวางในช่อง LINE User ID${isAdmin() ? '' : ' · แก้ไขสมาชิกได้เฉพาะผู้ดูแล'}</div>`;
+    bindTools(() => usrForm(null));
+    view.querySelectorAll('[data-id]').forEach(b => b.onclick = () => isAdmin() ? usrForm(S.users.find(x => x.user_id === b.dataset.id)) : toast('แก้ไขสมาชิกได้เฉพาะผู้ดูแล'));
+  }
+  function usrForm(u) {
+    const ents = S.st.entities || [];
+    const allowed = new Set(u?.allowed_entities || []);
+    let role = u?.role || 'member';
+    const sh = sheet(u ? 'แก้ไขสมาชิก' : 'เพิ่มสมาชิก', `
+      <div class="g2"><div><label class="f" for="uId">รหัสผู้ใช้</label><input class="inp" id="uId" value="${esc(u?.user_id || '')}" ${u ? 'readonly' : ''} placeholder="เช่น Puii"></div>
+        <div><label class="f" for="uName">ชื่อที่แสดง</label><input class="inp" id="uName" value="${esc(u?.name || '')}"></div></div>
+      <label class="f" for="uMail">ชื่อเข้าระบบ / อีเมล</label><input class="inp" id="uMail" value="${esc(u?.email || '')}" autocomplete="off">
+      <label class="f" for="uPw">${u ? 'รหัสผ่านใหม่ (เว้นว่าง = ใช้รหัสเดิม)' : 'รหัสผ่าน'}</label><input class="inp" id="uPw" type="password" autocomplete="new-password">
+      <label class="f">บทบาท</label><div class="seg" id="uR"><button type="button" data-v="member" class="${role === 'member' ? 'on' : ''}">🙂 สมาชิก</button><button type="button" data-v="admin" class="${role === 'admin' ? 'on' : ''}">⭐ ผู้ดูแล</button></div>
+      <label class="f" for="uLine">LINE User ID</label><input class="inp" id="uLine" value="${esc(u?.line_user_id || '')}" placeholder="U… (บอทตอบให้เมื่อแอดบอทแล้วพิมพ์อะไรก็ได้)">
+      <label class="f">บริษัทที่เห็นได้</label><div class="checks">${ents.map(e => `<label><input type="checkbox" value="${esc(e.entity_id)}" ${allowed.has(e.entity_id) ? 'checked' : ''}> ${esc(plain(e.name))}</label>`).join('')}</div>
+      ${u ? '<div class="note">ลบสมาชิกทำได้ที่หน้าตั้งค่าแบบเดิม (ลบแล้วข้อมูลของบริษัทที่ถือคนเดียวจะหายด้วย)</div>' : ''}`, `<button class="b main" data-save>บันทึก</button>`);
+    sh.el.querySelectorAll('#uR [data-v]').forEach(b => b.onclick = () => { role = b.dataset.v; sh.el.querySelectorAll('#uR [data-v]').forEach(x => x.classList.toggle('on', x === b)); });
+    sh.el.querySelector('[data-save]').onclick = async () => {
+      const id = sh.v('uId'), name = sh.v('uName'), email = sh.v('uMail'), pw = sh.el.querySelector('#uPw').value;
+      if (!id || !name || !email) return sh.err('ใส่รหัสผู้ใช้ ชื่อ และชื่อเข้าระบบ');
+      if (!u && !pw) return sh.err('สมาชิกใหม่ต้องตั้งรหัสผ่าน');
+      const ents2 = [...sh.el.querySelectorAll('.checks input:checked')].map(i => i.value);
+      if (S.me && u?.user_id === S.me.user_id && (u.allowed_entities || []).some(x => !ents2.includes(x)) && !window.confirm('คุณเอาบริษัทออกจากตัวเอง — จะมองไม่เห็นบัญชีของบริษัทนั้นอีก ยืนยัน?')) return;
+      sh.el.querySelector('[data-save]').disabled = true;
+      try {
+        await api('/api/users', { user_id: id, old_user_id: u?.user_id || null, name, email, password: pw || '', role, line_user_id: sh.v('uLine') || null, allowed_entities: ents2 });
+        sh.close(); toast('✅ บันทึกแล้ว'); await load();
+      } catch (e) { sh.err(e.message); sh.el.querySelector('[data-save]').disabled = false; }
+    };
+  }
+
+  // ── อื่น ๆ ──
+  function renderEtc() {
+    view.innerHTML = `<div class="group"><div class="list">
+      <a class="item" href="../index.html#settings" style="text-decoration:none;color:inherit"><span class="ic" style="background:#fff9db">💾</span><span class="t"><b>สำรอง / กู้คืนข้อมูล · ธีม · โปรเจกต์</b><small>ยังอยู่ที่หน้าตั้งค่าแบบเดิม</small></span><span class="r mut">›</span></a>
+      <a class="item" href="reports.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#e6fcf5">⬇️</span><span class="t"><b>ส่งออกรายการเป็น Excel</b><small>หน้ารายงาน · แท็บส่งออก</small></span><span class="r mut">›</span></a>
+      <a class="item" href="index.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#f3f0ff">📊</span><span class="t"><b>นำเข้า Excel / Bulk</b><small>กล่องรอเคลียร์ · ปุ่มนำเข้า Excel</small></span><span class="r mut">›</span></a>
+    </div></div>
+    <div class="note">ผู้ใช้ปัจจุบัน: ${esc(S.me?.name || '-')} (${S.me?.role === 'admin' ? 'ผู้ดูแล' : 'สมาชิก'})</div>`;
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

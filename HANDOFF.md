@@ -3423,3 +3423,10 @@ npx wrangler pages deploy frontend  # frontend
 - backend เป็น ES module — เช็ค syntax: `cp backend/src/index.js /tmp/x.mjs && node --check /tmp/x.mjs`
 - frontend: `node --check frontend/app.js`
 - element หน้าทริปจริง: `#travel-trips-list`, `#travel-details-panel`, `.trip-detail-content`, `#travel-empty-state` (อย่าใช้ `#view-trip-detail` — ไม่มี)
+
+## 2026-10-11 (ต่อ) — หน้าตั้งค่าใหม่ `frontend/ledger/settings.html`
+- ใช้ API เดิม: GET /api/settings · POST /api/settings/save · POST /api/settings/delete (admin) · GET/POST /api/users (บันทึก = admin)
+- แท็บ: บัญชี (ธนาคาร/เงินสด/บัตรเครดิต + รหัส PDF) · บริษัท (สมาชิกที่เห็น) · หมวด (หัวข้อ+หมวด) · คู่ค้า · สมาชิก (admin) · อื่น ๆ (ลิงก์หน้าเดิม: สำรองข้อมูล/ธีม/โปรเจกต์)
+- ยังไม่มีในหน้าใหม่: ลบสมาชิก, โปรเจกต์/ทริป, สำรองข้อมูล → ใช้ "ตั้งค่าระบบ (แบบเดิม)"
+- backend: /api/settings/save และ /delete กันแก้/ลบ/สร้างข้ามครอบครัว (OWN_SQL) — ทดสอบมือแล้ว: แก้ของครอบครัวอื่น 404, สร้างบัญชีใส่บริษัทคนอื่น 400
+- เมนูแอปหลัก: "ตั้งค่า (ใหม่)" + "ตั้งค่าระบบ (แบบเดิม)"; ทุกหน้า ledger มีลิงก์ ตั้งค่า
