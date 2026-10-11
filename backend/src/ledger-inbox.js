@@ -348,7 +348,7 @@ export async function retryDoc(env, user, docId) {
   if (!doc) return { error: 'ไม่พบเอกสารนี้', status: 404 };
   if (!['READING', 'ERROR'].includes(doc.status)) return { doc: publicDoc(doc), outcome: 'ALREADY', status: 409 };
   const obj = doc.file_key && env.ICONS ? await env.ICONS.get(doc.file_key) : null;
-  if (!obj) return { error: 'ไม่พบไฟล์ต้นฉบับ', status: 404 };
+  if (!obj) return { error: 'ไม่พบไฟล์ต้นฉบับ (ระบบลบไฟล์อัตโนมัติหลัง 30 วัน) — ส่งรูปใหม่อีกครั้ง', status: 404 };
   const bytes = new Uint8Array(await obj.arrayBuffer());
   let extracted;
   try {
@@ -1396,13 +1396,17 @@ export async function createFromStatement(env, user, stmtId, body = {}) {
       fallback: { category_id: UNCATEGORIZED, entity_id: account.entity_id, type: l.amount > 0 ? 'INCOME' : 'EXPENSE', note: l.description } });
     for (const d of proposal.lines) if (!d.note) d.note = l.description;
     const confident = (rule?.hits || 0) >= 3 && proposal.how === 'template-exact';
-    const txId = newId('TX'), docId = newId('DOC');
+    /* รหัสคงที่ต่อบรรทัด (2026-10-11): ถ้าสร้างสำเร็จแต่บันทึกสถานะบรรทัดไม่ทัน (เน็ตหลุด/โควตาเต็ม)
+       กดซ้ำจะเจอรายการเดิมแล้วแค่ติ๊กว่าสร้างแล้ว — ไม่เกิดรายการซ้อน */
+    const txId = `TX-${stmtId}-${l.line_id}`, docId = `DOC-${stmtId}-${l.line_id}`;
+    const already = await env.DB.prepare(`SELECT transaction_id FROM Transactions WHERE transaction_id = ?`).bind(txId).first();
+    if (already) { Object.assign(l, { status: 'CREATED', transaction_id: txId, doc_id: docId }); created++; continue; }
     const party = { name: l.description };
     const ops = [env.DB.prepare(`INSERT INTO Transactions (transaction_id, account_id, ref_code, date, time, total_amount, statement_desc, status, source, slip_image_url, created_by_user_id)
       VALUES (?,?,?,?,?,?,?,?, 'PDF_IMPORT', NULL, ?)`).bind(txId, account.account_id, l.ref_code || null, l.date, l.time || null, round2(l.amount),
         l.description || null, confident ? 'CONFIRMED' : 'PENDING_REVIEW', user.user_id),
       ...proposal.lines.map(d => detailInsert(env, txId, d)),
-      env.DB.prepare(`INSERT INTO LedgerDocs (doc_id, family_id, uploaded_by, source, doc_type, status, extracted, suggestion, transaction_id, created_at)
+      env.DB.prepare(`INSERT OR IGNORE INTO LedgerDocs (doc_id, family_id, uploaded_by, source, doc_type, status, extracted, suggestion, transaction_id, created_at)
         VALUES (?,?,?, 'WEB', 'STATEMENT_LINE', ?, ?, ?, ?, ?)`).bind(docId, user.family_id, user.user_id, confident ? 'DONE' : 'SUGGESTED',
         JSON.stringify({ doc_type: 'STATEMENT_LINE', stmt_id: stmtId, line_id: l.line_id, date: l.date, time: l.time, amount: Math.abs(l.amount),
           memo: l.description, ref_code: l.ref_code, ...(side === 'IN' ? { sender: party } : { receiver: party }) }),
@@ -1741,9 +1745,12 @@ export async function deleteTransaction(env, user, txId) {
 // ═══════════════════════════════════════════════════════════════
 const PARTY_WHERE = `t.status = 'CONFIRMED' AND cp.behavior IN ('ASSET','LIABILITY') AND IFNULL(cp.sub_behavior,'') != 'INVESTMENT'
   AND NOT (cp.behavior = 'ASSET' AND IFNULL(d.type,'') = 'TRANSFER')`;
-const PARTY_FROM = `FROM TransactionDetails d JOIN Transactions t ON t.transaction_id = d.transaction_id
+/* ลำดับตารางบังคับด้วย CROSS JOIN (2026-10-11): เริ่มจากหัวข้อสินทรัพย์/หนี้สิน → หมวด → บรรทัดย่อย (idx_td_category)
+   อ่านเฉพาะบรรทัดลูกหนี้/เจ้าหนี้ แทนการไล่ทุกรายการที่ยืนยันแล้ว (~124k แถว/ครั้ง → หลักร้อย) */
+const PARTY_FROM = `FROM Captions cp CROSS JOIN Categories c ON c.caption_id = cp.type_id
+  CROSS JOIN TransactionDetails d ON d.category_id = c.category_id
+  JOIN Transactions t ON t.transaction_id = d.transaction_id
   JOIN Accounts a ON a.account_id = t.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id
-  JOIN Categories c ON c.category_id = d.category_id JOIN Captions cp ON cp.type_id = c.caption_id
   LEFT JOIN Contacts co ON co.contact_id = d.contact_id`;
 const partyKeyOf = r => r.contact_id ? `c:${r.contact_id}` : `k:${r.category_id}`;
 
@@ -1833,7 +1840,7 @@ export async function reportData(env, user, url) {
   if (!from || !to || from > to) return { error: 'ช่วงวันที่ไม่ถูกต้อง', status: 400 };
   const days = (Date.parse(to) - Date.parse(from)) / 864e5;
   if (kind === 'export' && days > 62) return { error: 'ส่งออกได้ครั้งละไม่เกิน 2 เดือน', status: 400 };
-  if (days > 3700) return { error: 'ช่วงยาวเกินไป', status: 400 };
+  if (days > 731) return { error: 'เลือกช่วงได้ไม่เกิน 2 ปีต่อครั้ง', status: 400 };   // เดิม 10 ปี = อ่านทั้งฐาน (2026-10-11)
   const entity = url.searchParams.get('entity') || '';
   const toNext = shiftDate(to, 1);
   const args = [user.user_id, from, toNext];

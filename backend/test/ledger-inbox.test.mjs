@@ -671,6 +671,17 @@ console.log('\n── statement: นำเข้า → จับคู่ → �
   check('สร้างทีละ 8 บรรทัด เหลือ 12', b1.created === 8 && b1.remaining === 12);
   const sel = await inbox.createFromStatement(env, user, big.statement.stmt_id, { line_ids: ['L20'] });
   check('เลือกสร้างเฉพาะบรรทัด', sel.created === 1 && sel.remaining === 0);
+  /* จำลองหยุดกลางทาง: สร้างรายการแล้ว แต่บันทึกสถานะบรรทัดไม่ทัน → กดซ้ำต้องไม่เกิดรายการซ้อน */
+  const sid = big.statement.stmt_id;
+  const txBefore = db.prepare(`SELECT COUNT(*) c FROM Transactions`).get().c;
+  const raw = JSON.parse(db.prepare(`SELECT lines FROM LedgerStatements WHERE stmt_id=?`).get(sid).lines);
+  for (const l of raw) if (l.status === 'CREATED') Object.assign(l, { status: 'NEW', transaction_id: null, doc_id: null });
+  db.prepare(`UPDATE LedgerStatements SET lines=? WHERE stmt_id=?`).run(JSON.stringify(raw), sid);
+  for (let g = 0; g < 5; g++) { const r = await inbox.createFromStatement(env, user, sid, {}); if (!r.remaining) break; }
+  const after = JSON.parse(db.prepare(`SELECT lines FROM LedgerStatements WHERE stmt_id=?`).get(sid).lines);
+  check('กดซ้ำหลังหยุดกลางทาง: ไม่มีรายการซ้อน + ครบ 20 บรรทัด',
+    after.filter(l => l.status === 'CREATED').length === 20 && db.prepare(`SELECT COUNT(*) c FROM Transactions`).get().c === txBefore + 11,
+    { created: after.filter(l => l.status === 'CREATED').length, added: db.prepare(`SELECT COUNT(*) c FROM Transactions`).get().c - txBefore });
   delete env.__statementOverride;
 }
 

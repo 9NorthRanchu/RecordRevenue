@@ -3445,3 +3445,18 @@ npx wrangler pages deploy frontend  # frontend
 - resolveUserId อยู่ใน try แล้ว · error ทั้งหมดผ่าน dbErrorResponse(): ไม่ส่ง stack, D1 เกินโควตา/ล่ม → 503 code DB_UNAVAILABLE
 - เทส: backend/test/security.test.mjs (20 เคส)
 - ALLOW_HEADER_FALLBACK = false แล้ว (North ยืนยันเลิกใช้ GoogleSheetsSync) — x-user-id อย่างเดียวเข้าไม่ได้ ต้องมี Bearer token · quick.html (ลิงก์ลงชื่อ) และ guest.html (ทริป) ถูกจัดการก่อนประตู ไม่กระทบ
+
+## 2026-10-11 — ระยะ 1 ลดการอ่าน + รูป + นำเข้าทำต่อได้
+backend
+- GET /api/transactions?count=1 → {count} (ป้าย badge) · auto-match: ค้นทีละคีย์ ref_code/statement_desc (+t2.status บังคับใช้ดัชนีคีย์) จำกัด 30 คีย์ เฉพาะบัญชีที่เห็น
+- /api/stats/date-range: MIN/MAX/COUNT ต่อบัญชีผ่านดัชนี · /api/reports/wht: month เป็นช่วงวันที่ (เลิก strftime)
+- dashboard/summary: ยอดบัญชี GROUP BY เฉพาะบัญชีใน scope + first_date · range คำนวณจากผลรายบัญชี (ตัด query rangeRow) · arap เริ่มจาก Captions→Categories→Details (CROSS JOIN, idx_td_category)
+- ledger-inbox PARTY_FROM ใช้ CROSS JOIN แบบเดียวกัน (~124k → หลักร้อย) · reportData ≤ 731 วัน
+- createFromStatement: รหัสคงที่ TX-{stmt}-{line} / DOC-{stmt}-{line} + เช็กมีอยู่แล้ว → กดซ้ำหลังหยุดกลางทางไม่ซ้อน (เทสแล้ว)
+- retryDoc: ไฟล์หาย → บอกว่าลบอัตโนมัติหลัง 30 วัน
+- ดัชนีเพิ่ม: idx_tx_desc · ลบซ้ำ idx_td_tx (มี idx_transactiondetails_tx_id) — อยู่ใน add-indexes.sh (รันซ้ำได้)
+frontend
+- app.js v183: แคชข้อมูลหลัก 10 นาทีใน sessionStorage (mdcache:) ยกเว้น /api/accounts · ล้างเมื่อ POST settings/users/contacts/... (ใน fetch wrapper) และใน ledger/settings.html · badge ใช้ count=1 · backup อัตโนมัติล้มแล้วพัก 6 ชม.
+- ledger/index.html: shrinkImage() ย่อรูป >350KB เป็น JPEG 1600px q0.82 (statement 2200px q0.85) ก่อนอัปโหลด · สร้างรายการจาก statement ได้สูงสุด ~2,000 บรรทัด/คลิก + ข้อความทำต่อเมื่อหยุดกลางทาง
+- R2: `setup-r2-lifecycle.sh` ลบ ledger-docs/ อัตโนมัติ 30 วัน (North ต้องรัน)
+- เทสใหม่: backend/test/endpoints.test.mjs (ผลถูก + แผนคำสั่งใช้ดัชนี)

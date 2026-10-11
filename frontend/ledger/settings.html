@@ -174,13 +174,15 @@
     $('#add')?.addEventListener('click', onAdd);
   }
   function render() { ({ acc: renderAcc, ent: renderEnt, cat: renderCat, con: renderCon, usr: renderUsr, etc: renderEtc })[S.tab](); }
+  /* ล้างข้อมูลหลักที่แอปหลักจำไว้ (mdcache:) ให้ dropdown เห็นของใหม่ */
+  const clearMasterCache = () => { try { Object.keys(sessionStorage).filter(k => k.startsWith('mdcache:')).forEach(k => sessionStorage.removeItem(k)); } catch { /* ไม่เป็นไร */ } };
   async function save(sh, payload, msg) {
-    try { await api('/api/settings/save', payload); sh.close(); toast(msg || '✅ บันทึกแล้ว'); await load(); }
+    try { await api('/api/settings/save', payload); clearMasterCache(); sh.close(); toast(msg || '✅ บันทึกแล้ว'); await load(); }
     catch (e) { sh.err(e.message); sh.el.querySelectorAll('footer button').forEach(b => { b.disabled = false; }); }
   }
   async function del(sh, type, id, label) {
     if (!window.confirm(`ลบ "${label}" ?`)) return;
-    try { await api('/api/settings/delete', { type, id }); sh.close(); toast('🗑️ ลบแล้ว'); await load(); } catch (e) { sh.err(e.message); }
+    try { await api('/api/settings/delete', { type, id }); clearMasterCache(); sh.close(); toast('🗑️ ลบแล้ว'); await load(); } catch (e) { sh.err(e.message); }
   }
   const footer = (canDel) => `${canDel && isAdmin() ? '<button class="b danger" data-del>ลบ</button>' : ''}<button class="b main" data-save>บันทึก</button>`;
 

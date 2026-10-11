@@ -118,6 +118,10 @@ window.getSessionToken = () => {
         if (!token || !url.startsWith(API_BASE)) return original(input, init);
         const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
         if (!headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
+        /* บันทึกการตั้งค่า/คู่ค้า/ผู้ใช้ → ล้างแคชข้อมูลหลัก ให้ dropdown เห็นของใหม่ทันที */
+        if ((init.method || 'GET').toUpperCase() !== 'GET' && /\/api\/(settings|users|contacts|projects|categories|entities|restore|reset)/.test(url)) {
+            try { Object.keys(sessionStorage).filter(k => k.startsWith('mdcache:')).forEach(k => sessionStorage.removeItem(k)); } catch { /* ไม่เป็นไร */ }
+        }
         return original(input, { ...init, headers }).then(res => {
             /* token หมดอายุ (30 วัน) → เซิร์ฟเวอร์ตอบ 401 ทุกคำขอ แต่หน้าจอเดิมไม่รู้ตัว
                แสดงหน้าว่างเปล่าเหมือนข้อมูลหาย (เจอจริง 2026-10-08: หน้าตั้งค่าว่าง)
@@ -677,8 +681,12 @@ async function checkScheduledBackup() {
     const moment = lastScheduledMoment(s, new Date());
     if (!moment) return;
     if (s.lastRun && new Date(s.lastRun) >= moment) return; // สำรองไปแล้วในรอบนี้
+    /* ล้มแล้วพักไว้ 6 ชม. — เดิมลองใหม่ทุกครั้งที่เปิดแอป = อ่านทั้งฐานซ้ำ ๆ ตอนระบบมีปัญหา (2026-10-11) */
+    if (s.failedAt && Date.now() - new Date(s.failedAt).getTime() < 6 * 3600 * 1000) return;
     const ok = await runFullBackup('', '', { silent: true, tag: 'auto' });
-    if (ok) { s.lastRun = new Date().toISOString(); localStorage.setItem(SCHED_KEY, JSON.stringify(s)); }
+    if (ok) { s.lastRun = new Date().toISOString(); delete s.failedAt; }
+    else s.failedAt = new Date().toISOString();
+    localStorage.setItem(SCHED_KEY, JSON.stringify(s));
 }
 
 // ดาวน์โหลด Full Backup (.xlsx) — ใช้ซ้ำได้ทั้งปุ่ม, ก่อน reset, และตามกำหนดเวลา
@@ -1365,11 +1373,25 @@ async function fetchMasterData() {
     try {
         const headers = { 'x-user-id': encodeURIComponent(getUserIdHeader()) };
         
-        const safeJson = async (url) => {
+        /* ข้อมูลหลักที่เปลี่ยนไม่บ่อย (หัวข้อ/หมวด/คู่ค้า/โปรเจกต์/บริษัท) จำไว้ในแท็บ 10 นาที (2026-10-11)
+           เดิมดึงใหม่ทุกครั้งที่เปิดแอปและทุกครั้งที่บันทึก · ล้างอัตโนมัติเมื่อบันทึกการตั้งค่า (ดู fetch wrapper)
+           ยอดบัญชี (/api/accounts) ไม่จำ เพราะเปลี่ยนทุกครั้งที่ยืนยันรายการ */
+        const CACHE_MS = 10 * 60 * 1000;
+        const safeJson = async (url, cache = false) => {
+            const key = 'mdcache:' + url;
+            if (cache) {
+                try {
+                    const hit = JSON.parse(sessionStorage.getItem(key) || 'null');
+                    if (hit && Date.now() - hit.t < CACHE_MS && Array.isArray(hit.d)) return hit.d;
+                } catch { /* ไม่มีแคช */ }
+            }
             try {
                 const r = await fetch(url, { headers });
                 const data = await r.json();
-                return Array.isArray(data) ? data : [];
+                if (!r.ok && data?.error) window.showToast?.(data.error, 'error');
+                const list = Array.isArray(data) ? data : [];
+                if (cache && r.ok) { try { sessionStorage.setItem(key, JSON.stringify({ t: Date.now(), d: list })); } catch { /* เต็ม */ } }
+                return list;
             } catch(e) {
                 console.error(`fetchMasterData: failed to fetch ${url}`, e);
                 return [];
@@ -1377,12 +1399,12 @@ async function fetchMasterData() {
         };
 
         const [captions, categories, contacts, projects, accounts, entities] = await Promise.all([
-            safeJson(`${API_BASE}/api/account-types`),
-            safeJson(`${API_BASE}/api/categories`),
-            safeJson(`${API_BASE}/api/contacts`),
-            safeJson(`${API_BASE}/api/projects`),
+            safeJson(`${API_BASE}/api/account-types`, true),
+            safeJson(`${API_BASE}/api/categories`, true),
+            safeJson(`${API_BASE}/api/contacts`, true),
+            safeJson(`${API_BASE}/api/projects`, true),
             safeJson(`${API_BASE}/api/accounts`),
-            safeJson(`${API_BASE}/api/entities`)
+            safeJson(`${API_BASE}/api/entities`, true)
         ]);
 
         AppState.captions = captions;
@@ -1423,16 +1445,18 @@ async function fetchMasterData() {
 
 async function updatePendingBadge() {
     try {
-        const res = await fetch(`${API_BASE}/api/transactions?status=PENDING_REVIEW`, {
+        /* นับอย่างเดียว (?count=1) ไม่ต้องดึงรายการทั้งหมดมานับ (2026-10-11) */
+        const res = await fetch(`${API_BASE}/api/transactions?status=PENDING_REVIEW&count=1`, {
             headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) }
         });
-        const pending = await res.json();
+        const n = Number((await res.json())?.count) || 0;
         const badge = document.getElementById("badge-pending");
         const badgeMobile = document.getElementById("badge-pending-mobile");
-        if (pending.length > 0) {
+        if (!badge) return;
+        if (n > 0) {
             badge.style.display = "inline-block";
-            badge.innerText = pending.length;
-            if (badgeMobile) { badgeMobile.style.display = "inline-block"; badgeMobile.innerText = pending.length; }
+            badge.innerText = n;
+            if (badgeMobile) { badgeMobile.style.display = "inline-block"; badgeMobile.innerText = n; }
         } else {
             badge.style.display = "none";
             if (badgeMobile) badgeMobile.style.display = "none";

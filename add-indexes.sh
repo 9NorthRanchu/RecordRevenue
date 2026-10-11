@@ -14,10 +14,11 @@ step() {
 echo "▶ เพิ่มดัชนี"
 step "CREATE INDEX IF NOT EXISTS idx_tx_acc_status_amt ON Transactions(account_id, status, total_amount);" "ยอดคงเหลือรายบัญชี"
 step "CREATE INDEX IF NOT EXISTS idx_tx_status_date ON Transactions(status, date);" "รายการตามช่วงวันที่"
-step "CREATE INDEX IF NOT EXISTS idx_td_tx ON TransactionDetails(transaction_id);" "บรรทัดย่อยของรายการ"
 step "CREATE INDEX IF NOT EXISTS idx_td_category ON TransactionDetails(category_id);" "บรรทัดย่อยตามหมวด"
 step "CREATE INDEX IF NOT EXISTS idx_settle_parent ON Settlements(parent_detail_id, settled_amount);" "ยอดตัดชำระลูกหนี้/เจ้าหนี้"
 step "CREATE INDEX IF NOT EXISTS idx_userperm_entity ON UserPermissions(entity_id, user_id);" "สิทธิ์เห็นบริษัท"
+step "CREATE INDEX IF NOT EXISTS idx_tx_desc ON Transactions(statement_desc);" "เดาหมวดจากรายละเอียดเดิม"
+step "DROP INDEX IF EXISTS idx_td_tx;" "ลบดัชนีซ้ำ (มี idx_transactiondetails_tx_id แล้ว)"
 step "PRAGMA optimize;" "ปรับสถิติฐานข้อมูล"
 echo
 echo "▶ ดัชนีทั้งหมดในตารางหลัก"

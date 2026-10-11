@@ -175,6 +175,13 @@ export default {
             endDate = `${mm === 12 ? yy + 1 : yy}-${String(mm === 12 ? 1 : mm + 1).padStart(2, '0')}-01`;
             endDate = new Date(new Date(endDate) - 86400000).toISOString().substring(0, 10);
           }
+          /* ?count=1 → นับอย่างเดียว (ป้ายตัวเลข "รอตรวจ") ไม่ต้องดึงรายการทั้งหมดมานับในเบราว์เซอร์ */
+          if (url.searchParams.get('count') === '1') {
+            const c = await env.DB.prepare(`SELECT COUNT(*) AS n FROM Transactions t
+                JOIN Accounts a ON t.account_id = a.account_id JOIN UserPermissions up ON a.entity_id = up.entity_id
+               WHERE up.user_id = ?${statusFilter ? ' AND t.status = ?' : ''}`).bind(...(statusFilter ? [userId, statusFilter] : [userId])).first();
+            return new Response(JSON.stringify({ count: c?.n || 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
           const limitParam = url.searchParams.get('limit');
           const noRange = !startDate && !endDate && !search;
           const limit = limitParam !== null ? Math.max(0, parseInt(limitParam, 10) || 0) : (noRange ? 500 : 0);
@@ -278,25 +285,31 @@ export default {
 
           const result = Array.from(txMap.values());
 
-          // Perform auto-match queries sequentially ONLY for PENDING_REVIEW transactions (usually very small list)
-          for (const tx of result) {
-            if (tx.status === 'PENDING_REVIEW' && (tx.statement_desc || tx.ref_code)) {
-               const matchQuery = `
-                 SELECT d.category_id, d.contact_id, d.project_id, d.entity_id, d.note, c.name as category_name, co.name as contact_name
+          /* เดาหมวดจากรายการที่เคยยืนยัน (2026-10-11 แก้ให้เบา)
+             เดิม: 1 คำสั่งต่อรายการรอตรวจ + OR ข้ามสองคอลัมน์ → สแกนทั้งตาราง ~27k แถว/รายการ
+             ใหม่: ค้นทีละคีย์ที่ไม่ซ้ำ (ใช้ดัชนี) · จำกัด 30 คีย์ · เฉพาะบัญชีที่ผู้ใช้เห็น */
+          const AM_SQL = col => `SELECT d.category_id, d.contact_id, d.project_id, d.entity_id, d.note, c.name as category_name, co.name as contact_name
                  FROM Transactions t2
+                 JOIN Accounts a2 ON a2.account_id = t2.account_id JOIN UserPermissions up2 ON up2.entity_id = a2.entity_id AND up2.user_id = ?
                  JOIN TransactionDetails d ON t2.transaction_id = d.transaction_id
                  JOIN Categories c ON d.category_id = c.category_id
                  LEFT JOIN Contacts co ON d.contact_id = co.contact_id
-                 WHERE t2.status = 'CONFIRMED' 
-                   AND ((t2.statement_desc = ? AND t2.statement_desc IS NOT NULL AND t2.statement_desc != '') 
-                        OR (t2.ref_code = ? AND t2.ref_code IS NOT NULL AND t2.ref_code != ''))
-                 ORDER BY t2.date DESC LIMIT 1
-               `;
-               const match = await env.DB.prepare(matchQuery).bind(tx.statement_desc || '', tx.ref_code || '').first();
-               if (match) {
-                 tx.auto_match = match;
-               }
-            }
+                 WHERE t2.${col} = ? AND +t2.status = 'CONFIRMED'   -- เครื่องหมาย + บังคับให้ใช้ดัชนีของ ${col} ไม่ใช่ดัชนีสถานะ
+                 ORDER BY t2.date DESC LIMIT 1`;
+          const amCache = new Map();
+          const lookup = async (col, val) => {
+            const key = col + '|' + val;
+            if (amCache.has(key)) return amCache.get(key);
+            if (amCache.size >= 30) return null;
+            const m = await env.DB.prepare(AM_SQL(col)).bind(userId, val).first();
+            amCache.set(key, m || null);
+            return m || null;
+          };
+          for (const tx of result) {
+            if (tx.status !== 'PENDING_REVIEW') continue;
+            const m = (tx.ref_code ? await lookup('ref_code', tx.ref_code) : null)
+              || (tx.statement_desc ? await lookup('statement_desc', tx.statement_desc) : null);
+            if (m) tx.auto_match = m;
           }
 
           return new Response(JSON.stringify(result), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -717,9 +730,11 @@ export default {
         `;
         const params = [userId];
 
-        if (yearMonth) {
-          query += ` AND strftime('%Y-%m', t.date) = ?`;
-          params.push(yearMonth);
+        if (yearMonth && /^\d{4}-\d{2}$/.test(yearMonth)) {
+          /* ช่วงวันที่แทน strftime() เพื่อให้ใช้ดัชนีวันที่ได้ */
+          const [yy, mm] = yearMonth.split('-').map(Number);
+          query += ` AND t.date >= ? AND t.date < ?`;
+          params.push(`${yearMonth}-01`, `${mm === 12 ? yy + 1 : yy}-${String(mm === 12 ? 1 : mm + 1).padStart(2, '0')}-01`);
         }
 
         const entityId = url.searchParams.get('entityId');
@@ -1588,12 +1603,14 @@ export default {
           return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
         const fid = userCheck.family_id;
+        /* หาวันแรก/วันสุดท้ายทีละบัญชีด้วยดัชนี (account_id, date) = อ่านบัญชีละ 2 แถว
+           จำนวนรายการนับจากดัชนี covering · เดิมสแกน ~42k แถว/ครั้ง (2026-10-11) */
         const result = await env.DB.prepare(`
-          SELECT MIN(t.date) AS min_date, MAX(t.date) AS max_date, COUNT(*) AS total_count
-          FROM Transactions t
-          JOIN Accounts a ON t.account_id = a.account_id
-          JOIN Entities e ON a.entity_id = e.entity_id
-          WHERE e.family_id = ?
+          SELECT MIN(x.mn) AS min_date, MAX(x.mx) AS max_date, SUM(x.n) AS total_count FROM (
+            SELECT (SELECT MIN(date) FROM Transactions WHERE account_id = a.account_id) AS mn,
+                   (SELECT MAX(date) FROM Transactions WHERE account_id = a.account_id) AS mx,
+                   (SELECT COUNT(*) FROM Transactions WHERE account_id = a.account_id) AS n
+              FROM Accounts a JOIN Entities e ON a.entity_id = e.entity_id WHERE e.family_id = ?) x
         `).bind(fid).first();
         return new Response(JSON.stringify({
           min_date: result.min_date || null,
@@ -1988,24 +2005,6 @@ export default {
         }
         const ph = scope.map(() => '?').join(',');
 
-        // ── 0) ช่วงข้อมูลที่มีจริง + ตัวกรองวันที่ตามช่วงที่เลือก ──
-        const rangeRow = await env.DB.prepare(
-          `SELECT MIN(t.date) AS first_date, MAX(t.date) AS last_date, COUNT(*) AS n
-             FROM Transactions t JOIN Accounts a ON t.account_id = a.account_id
-            WHERE a.entity_id IN (${ph}) AND t.status = 'CONFIRMED'`
-        ).bind(...scope).first();
-        const range = { first_date: (rangeRow?.first_date || '').substring(0, 10) || null,
-                        last_date:  (rangeRow?.last_date  || '').substring(0, 10) || null,
-                        count: rangeRow?.n || 0 };
-        if (month === 'latest') month = range.last_date ? range.last_date.substring(0, 7) : new Date().toISOString().substring(0, 7);
-        const year = month.substring(0, 4);
-        // dateWhere/dateArgs ใช้กับทุก query ที่จำกัดช่วงเวลา
-        /* ใช้ช่วง >= / < แทน substr() เพื่อให้ idx_transactions_date ทำงาน — substr() บังคับสแกนทั้งตาราง
-           (14k แถวต่อ query × หลาย query ต่อการเปิดหน้า = ฟรีเทียร์ D1 เต็มใน 1 วัน · 2026-09-08) */
-        const nextMonth = (() => { const [yy, mm] = month.split('-').map(Number); return `${mm === 12 ? yy + 1 : yy}-${String(mm === 12 ? 1 : mm + 1).padStart(2, '0')}`; })();
-        const dateWhere = period === 'all' ? '' : ' AND t.date >= ? AND t.date < ?';
-        const dateArgs  = period === 'all' ? [] : (period === 'year' ? [`${year}-01-01`, `${Number(year) + 1}-01-01`] : [`${month}-01`, `${nextMonth}-01`]);
-
         // ── 1) บัญชี: แยก BANK/CASH กับ CREDIT ──
         // balance คำนวณสดจาก SUM(Transactions.total_amount) เหมือน /api/accounts
         // (คอลัมน์ Accounts.balance ไม่ได้ถูกอัปเดตที่ไหนเลย ใช้ไม่ได้)
@@ -2017,15 +2016,33 @@ export default {
                   IFNULL(a.credit_limit,0)      AS credit_limit,
                   a.statement_day, a.due_day,
                   a.entity_id, e.name AS entity_name,
-                  substr(s.last_date, 1, 10) AS last_date,
+                  substr(s.last_date, 1, 10) AS last_date, substr(s.first_date, 1, 10) AS first_date,
                   IFNULL(s.n, 0) AS tx_count
              FROM Accounts a
              LEFT JOIN Entities e ON a.entity_id = e.entity_id
-             LEFT JOIN (SELECT t.account_id, SUM(t.total_amount) AS bal, MAX(t.date) AS last_date, COUNT(*) AS n
-                          FROM Transactions t WHERE t.status = 'CONFIRMED' GROUP BY t.account_id) s
+             LEFT JOIN (SELECT t.account_id, SUM(t.total_amount) AS bal, MIN(t.date) AS first_date, MAX(t.date) AS last_date, COUNT(*) AS n
+                          FROM Transactions t
+                         WHERE t.status = 'CONFIRMED' AND t.account_id IN (SELECT account_id FROM Accounts WHERE entity_id IN (${ph}))
+                         GROUP BY t.account_id) s
                     ON s.account_id = a.account_id
             WHERE a.entity_id IN (${ph})`
-        ).bind(...scope).all();
+        ).bind(...scope, ...scope).all();
+
+        // ── 0) ช่วงข้อมูลที่มีจริง — คำนวณจากผลรวมรายบัญชีข้างบน ไม่ต้องอ่านตารางซ้ำ (2026-10-11) ──
+        const accRows = accounts.results || [];
+        const firsts = accRows.map(r => r.first_date).filter(Boolean).sort();
+        const lasts  = accRows.map(r => r.last_date).filter(Boolean).sort();
+        const range = { first_date: firsts[0] || null, last_date: lasts[lasts.length - 1] || null,
+                        count: accRows.reduce((n, r) => n + (r.tx_count || 0), 0) };
+        if (month === 'latest') month = range.last_date ? range.last_date.substring(0, 7) : new Date().toISOString().substring(0, 7);
+        const year = month.substring(0, 4);
+        // dateWhere/dateArgs ใช้กับทุก query ที่จำกัดช่วงเวลา
+        /* ใช้ช่วง >= / < แทน substr() เพื่อให้ idx_transactions_date ทำงาน — substr() บังคับสแกนทั้งตาราง
+           (14k แถวต่อ query × หลาย query ต่อการเปิดหน้า = ฟรีเทียร์ D1 เต็มใน 1 วัน · 2026-09-08) */
+        const nextMonth = (() => { const [yy, mm] = month.split('-').map(Number); return `${mm === 12 ? yy + 1 : yy}-${String(mm === 12 ? 1 : mm + 1).padStart(2, '0')}`; })();
+        const dateWhere = period === 'all' ? '' : ' AND t.date >= ? AND t.date < ?';
+        const dateArgs  = period === 'all' ? [] : (period === 'year' ? [`${year}-01-01`, `${Number(year) + 1}-01-01`] : [`${month}-01`, `${nextMonth}-01`]);
+
 
         // ── 2) รายการในเดือนที่เลือก (แยกตาม behavior) ──
         // entity_id/entity_name = Company (Owner) ผู้รับรายได้/ค่าใช้จ่าย
@@ -2122,11 +2139,11 @@ export default {
                   SUM(d.amount - IFNULL((SELECT SUM(s.settled_amount) FROM Settlements s
                                           WHERE s.parent_detail_id = d.detail_id), 0)) AS remaining,
                   COUNT(*) AS cnt
-             FROM TransactionDetails d
+             FROM Captions cp
+             CROSS JOIN Categories c ON c.caption_id = cp.type_id
+             CROSS JOIN TransactionDetails d ON d.category_id = c.category_id   -- เริ่มจากหมวดลูกหนี้/เจ้าหนี้ (idx_td_category)
              JOIN Transactions t ON d.transaction_id = t.transaction_id
              JOIN Accounts a     ON t.account_id = a.account_id
-             JOIN Categories c   ON d.category_id = c.category_id
-             JOIN Captions  cp   ON c.caption_id  = cp.type_id
              LEFT JOIN Contacts co ON d.contact_id = co.contact_id
              LEFT JOIN Entities e  ON d.entity_id  = e.entity_id
             WHERE a.entity_id IN (${ph})

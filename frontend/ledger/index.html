@@ -500,12 +500,30 @@
     const files = [...(e.dataTransfer?.files || [])].filter(f => /^image\/|pdf$/.test(f.type));
     if (files.length && S.tab === 'inbox') uploadFiles(files);
   });
+  /* ย่อรูปก่อนส่ง (2026-10-11): รูปจากมือถือ 2–5 MB → ~200 KB ยังอ่านตัวเลขบนสลิปชัด
+     ส่งเร็วขึ้น AI อ่านเร็วขึ้น และพื้นที่เก็บไฟล์ไม่บวม · PDF และรูปเล็กอยู่แล้วส่งตามเดิม
+     ย่อไม่ได้ (เบราว์เซอร์เก่า/ไฟล์เสีย) → ส่งไฟล์เดิม ไม่ให้งานสะดุด */
+  async function shrinkImage(f, maxSide = 1600, quality = 0.82) {
+    if (!/^image\/(jpe?g|png|webp|heic|heif)$/i.test(f.type) || f.size < 350 * 1024) return f;
+    try {
+      const bmp = await createImageBitmap(f);
+      const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(bmp, 0, 0, c.width, c.height); bmp.close?.();
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', quality));
+      if (!blob || blob.size >= f.size) return f;
+      return new File([blob], f.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+    } catch { return f; }
+  }
   async function uploadFiles(files) {
     const b = busy(`กำลังให้ AI อ่าน ${files.length} ไฟล์…`);
     let ok = 0, matched = 0, fail = 0;
     for (const [n, f] of files.entries()) {
       b.sub(`ไฟล์ที่ ${n + 1} / ${files.length} · ${f.name}`);
-      const fd = new FormData(); fd.append('file', f, f.name);
+      const small = await shrinkImage(f);
+      const fd = new FormData(); fd.append('file', small, small.name);
       try {
         const out = await api('/api/inbox/upload', { body: fd });
         const r = out.results?.[0] || {};
@@ -1126,7 +1144,7 @@
         if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
           const imgs = await pdfToImages(f, $('#stPw').value.trim(), (p, n) => b.sub(`แปลง ${f.name} หน้า ${p}/${n}`));
           imgs.forEach((x, n) => pages.push({ blob: x, name: `${f.name}-p${n + 1}.jpg` }));
-        } else pages.push({ blob: f, name: f.name });
+        } else { const sm = await shrinkImage(f, 2200, 0.85); pages.push({ blob: sm, name: sm.name }); }   // statement ตัวเล็ก → ย่อน้อยกว่าสลิป
       }
       if (pages.length > 30) throw new Error('รวมเกิน 30 หน้า — แยกส่งทีละเดือน');
       const fd = new FormData();
@@ -1221,14 +1239,17 @@
     const b = busy('กำลังสร้างรายการรอยืนยัน…');
     let made = 0, auto = 0;
     try {
-      for (let guard = 0; guard < 60; guard++) {
+      for (let guard = 0; guard < 250; guard++) {   // ครั้งละ 8 บรรทัด · สูงสุด ~2,000 บรรทัดต่อการกด
         const out = await api(`/api/inbox/statements/${encodeURIComponent(id)}/create`, { json: lineIds ? { line_ids: lineIds } : {} });
         made += out.created; auto += out.auto_confirmed;
         b.sub(`สร้างแล้ว ${made}${out.remaining ? ` · เหลือ ${out.remaining}` : ''}`);
         if (!out.remaining || !out.created) break;
       }
       toast(`➕ สร้าง ${made} รายการ${auto ? ` · ยืนยันให้เอง ${auto} (ร้านเดิม)` : ''} — ไปยืนยันที่แท็บ "รอเคลียร์"`, 4200);
-    } catch (err) { toast('⚠️ ' + err.message); }
+    } catch (err) {
+      /* หยุดกลางทาง (เน็ตหลุด/ระบบหนาแน่น) — ที่สร้างไปแล้วเก็บไว้ครบ กดสร้างอีกครั้งจะทำต่อจากบรรทัดที่ค้าง */
+      toast(`⚠️ ${err.message}${made ? ` — สร้างไปแล้ว ${made} รายการ กด "สร้าง" อีกครั้งเพื่อทำต่อ` : ''}`, 6000);
+    }
     b.done();
     await openStatement(id);
   }
