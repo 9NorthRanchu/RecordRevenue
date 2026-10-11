@@ -40,6 +40,7 @@
 import { planSettlementKeep } from './settle-keep.js';
 import { handlePeriods, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
 import { handleCardsLoans } from './cards-loans.js';
+import { handleAssets, IS_ASSET_SQL, assetCategorySet } from './assets.js';
 import {
   round2, bankKey, last4, accountHintKey, partyKey, parseCashText, slipDirection,
   scoreCandidate, decideMatch, balanceGap, proposeLines, templateFromDetails,
@@ -183,6 +184,8 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
     if (per) return per;
     const cl = await handleCardsLoans(request, env, url, cors, user);  // บัตรเครดิต /api/inbox/cards · เงินกู้ /api/inbox/loans
     if (cl) return cl;
+    const as = await handleAssets(request, env, url, cors, user);      // ทะเบียนทรัพย์สิน /api/inbox/assets
+    if (as) return as;
     return json({ error: 'Not Found' }, cors, 404);
   } catch (err) {
     return json({ error: err.message }, cors, 500);
@@ -1763,7 +1766,8 @@ export async function deleteTransaction(env, user, txId) {
 //   ตาราง Debts เดิม (ทะเบียนสัญญา) ยังไม่แตะ — หน้าเดิม "ทะเบียนลูกหนี้/เจ้าหนี้ (แบบเดิม)" ยังใช้ได้
 // ═══════════════════════════════════════════════════════════════
 const PARTY_WHERE = `t.status = 'CONFIRMED' AND cp.behavior IN ('ASSET','LIABILITY') AND IFNULL(cp.sub_behavior,'') != 'INVESTMENT'
-  AND NOT (cp.behavior = 'ASSET' AND IFNULL(d.type,'') = 'TRANSFER')`;
+  AND NOT (cp.behavior = 'ASSET' AND IFNULL(d.type,'') = 'TRANSFER')
+  AND NOT ${IS_ASSET_SQL('d')}`;   /* หมวดทะเบียนทรัพย์สิน ไม่ใช่ลูกหนี้ (2026-10-12) */
 /* ลำดับตารางบังคับด้วย CROSS JOIN (2026-10-11): เริ่มจากหัวข้อสินทรัพย์/หนี้สิน → หมวด → บรรทัดย่อย (idx_td_category)
    อ่านเฉพาะบรรทัดลูกหนี้/เจ้าหนี้ แทนการไล่ทุกรายการที่ยืนยันแล้ว (~124k แถว/ครั้ง → หลักร้อย) */
 const PARTY_FROM = `FROM Captions cp CROSS JOIN Categories c ON c.caption_id = cp.type_id
@@ -1876,7 +1880,9 @@ export async function reportData(env, user, url) {
         d.entity_id, e.name AS entity_name, ROUND(SUM(d.amount),2) AS amount, ROUND(SUM(IFNULL(d.wht,0)),2) AS wht, ROUND(SUM(IFNULL(d.fee,0)),2) AS fee, COUNT(*) AS n
       ${FROM} WHERE ${where} GROUP BY d.type, d.category_id, d.entity_id`);
     const lines = [];
+    const assetCats = await assetCategorySet(env, user.family_id);   // ซื้อทรัพย์สิน ≠ รายจ่าย (ตัดออกจากทะเบียนแล้วค่อยเป็นรายจ่าย)
     for (const r of rows) {
+      if (assetCats.has(r.category_id)) continue;
       const typ = String(r.type || '').toUpperCase();
       let side = null;
       if (r.sub_behavior === 'INVESTMENT') side = 'INV';

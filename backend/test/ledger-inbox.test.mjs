@@ -13,7 +13,9 @@ import { createHmac } from 'node:crypto';
 
 const asDataUrl = code => 'data:text/javascript;base64,' + Buffer.from(code, 'utf8').toString('base64');
 const readSrc = file => readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
-const source = readSrc('ledger-inbox.js').replace(/from\s+'\.\/([\w.-]+)'/g, (_, f) => `from '${asDataUrl(readSrc(f))}'`);
+/* แทน import './x.js' ด้วย data URL แบบเรียกซ้ำ (โมดูลย่อยที่ import ต่ออีกชั้น เช่น assets.js → period-close.js) */
+const inline = f => readSrc(f).replace(/from\s+'\.\/([\w.-]+)'/g, (_, g) => `from '${asDataUrl(inline(g))}'`);
+const source = inline('ledger-inbox.js');
 const inbox = await import(asDataUrl(source));
 const match = await import(asDataUrl(readSrc('ledger-match.js')));
 

@@ -106,6 +106,7 @@
     <a href="index.html#debt">ลูกหนี้</a>
     <a href="reports.html">รายงาน</a>
     <a href="cards.html">บัตร & เงินกู้</a>
+    <a href="assets.html">ทรัพย์สิน</a>
     <a href="close.html">ปิดเดือน</a>
     <a href="settings.html">ตั้งค่า</a>
     <a href="../index.html?classic=1">แอปหลัก</a>
@@ -197,14 +198,15 @@
     $('#monthL').textContent = monthLabel(S.month);
     $('#nextM').disabled = S.month >= today.slice(0, 7);
     try {
-      const [sum, box, st, pt, cd] = await Promise.all([
+      const [sum, box, st, pt, cd, fx] = await Promise.all([
         get(`/api/dashboard/summary?month=${S.month}&period=month&member=${encodeURIComponent(S.member)}`),
         get('/api/inbox').catch(() => ({ docs: [] })),
         get('/api/inbox/statements').catch(() => ({ statements: [] })),
         get('/api/inbox/parties').catch(() => null),
         S.cards ? Promise.resolve(S.cards) : get('/api/inbox/cards').catch(() => null),   // บัตรเปลี่ยนไม่บ่อย โหลดครั้งเดียวต่อหน้า
+        S.fixed ? Promise.resolve(S.fixed) : get('/api/inbox/assets').catch(() => null),  // ทะเบียนทรัพย์สิน
       ]);
-      S.data = sum; S.inbox = box.docs || []; S.statements = st.statements || []; S.parties = pt?.totals ? pt : null; S.cards = cd;
+      S.data = sum; S.inbox = box.docs || []; S.statements = st.statements || []; S.parties = pt?.totals ? pt : null; S.cards = cd; S.fixed = fx;
       render();
     } catch (e) {
       if (e.login) return showLogin();
@@ -237,7 +239,9 @@
     const apSum = S.parties ? r2(S.parties.totals.ap) : r2((d.ap || []).reduce((t, x) => t + x.amount, 0));
     const arN = S.parties ? S.parties.totals.ar_n : (d.ar || []).length, apN = S.parties ? S.parties.totals.ap_n : (d.ap || []).length;
     const invNet = r2(-(d.investment || []).reduce((t, x) => t + Number(x.amount || 0), 0));
-    const assets = r2(cashSum + arSum + creditOver);
+    /* ทรัพย์สินจากทะเบียน (หมวดที่เลือก · ยังไม่ตัดออก) — เงินที่จ่ายซื้อไปแล้วยังเป็นทรัพย์สิน ไม่ได้หายไป */
+    const fixedVal = r2(S.fixed?.totals?.value || 0);
+    const assets = r2(cashSum + arSum + creditOver + fixedVal);
     const debts = r2(creditOwed + apSum);
     const net = r2(assets - debts);
     const inc = r2((d.income || []).reduce((t, x) => t + Number(x.amount || 0), 0));
@@ -329,6 +333,7 @@
           <div class="kv"><span>${icon('bank', '#087f5b')} เงินฝาก / เงินสด</span><b>${num(cashSum)}</b></div>
           <div class="kv"><span>${icon('user', '#5f3dc4')} ลูกหนี้ / เงินให้ยืม <small><a href="index.html#debt">${arN} ราย ›</a></small></span><b>${num(arSum)}</b></div>
           ${creditOver ? `<div class="kv"><span>${icon('card', '#087f5b')} บัตรเครดิตจ่ายเกิน</span><b>${num(creditOver)}</b></div>` : ''}
+          ${S.fixed?.totals?.count ? `<div class="kv"><span>${icon('build', '#e8590c')} ทรัพย์สิน <small><a href="assets.html">${S.fixed.totals.count} รายการ ›</a></small></span><b>${num(fixedVal)}</b></div>` : ''}
           <div class="kv total"><span>รวมสินทรัพย์</span><span class="pos">${fmt(assets)}</span></div>
         </section>
         <section class="card">

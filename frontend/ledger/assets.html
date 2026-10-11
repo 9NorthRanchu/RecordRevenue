@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ทรัพย์สิน · สมุดจด</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  ทะเบียนทรัพย์สิน (2026-10-12 รอบ 2) — ไม่มีค่าเสื่อม · ยอดยกมา · กลุ่มย่อย · ค้นหา · เรียงตามวันที่ · แก้ไข/ลบ/ตัดจำหน่าย
+    GET /api/inbox/assets · POST /api/inbox/assets/categories (ผู้ดูแล) · /opening · /move · /groups · /groups/{id} · /groups/{id}/delete
+    POST /api/inbox/assets/{asset_id} (แก้ไข) · /{asset_id}/delete · /restore · /writeoff · /undo
+  กติกาอยู่ใน backend/src/assets.js
+-->
+<style>
+  :root { --ink: #212529; --muted: #5c636a; --line: #ece8f8; --bg: #f8f7fd; --brand: #5f3dc4; --pos: #087f5b; --neg: #c92a2a; --bad: #e03131; --radius: 20px; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Anuphan', -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+  body { padding-bottom: 40px; }
+  button, select, input { font: inherit; color: inherit; }
+  a { color: var(--brand); }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+  .top { background: linear-gradient(135deg, #5f3dc4, #7950f2 60%, #9775fa); color: #fff; padding: 18px 0 60px; }
+  .top .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .top h1 { margin: 0; font-size: 24px; } .top p { margin: 2px 0 0; font-size: 14px; color: #e5dbff; }
+  .nav { display: flex; gap: 6px; flex-wrap: wrap; }
+  .nav a { color: #fff; text-decoration: none; background: rgba(255,255,255,.18); padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 600; min-height: 44px; display: inline-flex; align-items: center; }
+  .nav a.on { background: #fff; color: var(--brand); }
+  .tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px; box-shadow: 0 8px 24px rgba(95,61,196,.12); position: sticky; top: 8px; z-index: 5; }
+  .tabs button { border: 0; background: transparent; border-radius: 12px; padding: 8px 2px; font-weight: 700; color: var(--muted); cursor: pointer; min-height: 52px; font-size: 13px; line-height: 1.25; }
+  .tabs button span { display: block; font-size: 20px; }
+  .tabs button.on { background: var(--brand); color: #fff; }
+  @media (max-width: 520px) { .tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .tools { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .inp, select.inp { width: 100%; height: 46px; border: 1.5px solid var(--line); border-radius: 12px; padding: 0 12px; background: #fff; font-size: 16px; }
+  .inp:focus { outline: none; border-color: var(--brand); }
+  .tools .inp { flex: 1; min-width: 180px; width: auto; }
+  .b { border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 700; cursor: pointer; min-height: 46px; background: #f3f0ff; color: var(--brand); white-space: nowrap; }
+  .b.main { background: var(--brand); color: #fff; }
+  .b.danger { background: #fff5f5; color: var(--bad); }
+  .b:disabled { opacity: .5; }
+  .group { margin-top: 18px; }
+  .group h3 { margin: 0 4px 8px; font-size: 14px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .list { background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(95,61,196,.05); }
+  .item { all: unset; box-sizing: border-box; display: flex; gap: 12px; align-items: center; width: 100%; padding: 13px 16px; border-bottom: 1px solid #f3f0ff; cursor: pointer; min-height: 60px; }
+  .item:last-child { border-bottom: 0; }
+  .item:hover, .item:focus-visible { background: #faf8ff; }
+  .ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none; font-size: 20px; }
+  .item .t { flex: 1; min-width: 0; }
+  .item .t b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .t small { display: block; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .r { text-align: right; white-space: nowrap; font-weight: 700; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 9px; background: #f3f0ff; color: var(--brand); margin-left: 4px; }
+  .neg { color: var(--neg); } .pos { color: var(--pos); } .mut { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 30px; }
+  .note { background: #fff9db; color: #7a4a00; border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-top: 12px; }
+  .sheet-bg { position: fixed; inset: 0; background: rgba(33,37,41,.45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { background: #fff; width: 100%; max-width: 560px; max-height: 92vh; border-radius: 24px 24px 0 0; display: flex; flex-direction: column; }
+  @media (min-width: 700px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+  .sheet header { padding: 16px 18px 10px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .sheet header h2 { margin: 0; font-size: 18px; }
+  .sheet .x { border: 0; background: var(--bg); width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+  .sheet .body { padding: 8px 18px 16px; overflow-y: auto; }
+  .sheet footer { padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); display: flex; gap: 10px; }
+  .sheet footer .b.main { flex: 1; }
+  label.f { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 5px; }
+  .g2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { flex: 1; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 8px; cursor: pointer; font-weight: 600; min-height: 46px; }
+  .seg button.on { border-color: var(--brand); background: #f3f0ff; color: var(--brand); }
+  .checks { display: grid; gap: 6px; }
+  .checks label { display: flex; gap: 10px; align-items: center; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 46px; cursor: pointer; }
+  .checks input { width: 20px; height: 20px; }
+  .err { color: var(--bad); font-size: 14px; margin-top: 10px; min-height: 1em; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 14px; font-size: 14px; z-index: 40; max-width: 90vw; }
+  .loading { text-align: center; padding: 50px; color: var(--muted); }
+  /* ── จอใหญ่ Mac/PC: ขยายทั้งหน้า + ตัวอักษรเข้มคมขึ้น (มือถือ/iPad ไม่เปลี่ยน) ── */
+  @media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+    :root { --muted: #464c53; }
+    html, body { -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto; }
+    html { zoom: 1.1; }
+  }
+  @media (min-width: 1280px) and (hover: hover) and (pointer: fine) { html { zoom: 1.2; } }
+  @media (min-width: 1600px) and (hover: hover) and (pointer: fine) { html { zoom: 1.3; } }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; } .chip2 { background: #fff; border: 1.5px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+  .row2 { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #f3f0ff; } .row2:last-child { border-bottom: 0; }
+  .row2 .t { flex: 1; min-width: 0; } .row2 .t b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .row2 .t small { color: var(--muted); font-size: 13px; display: block; }
+  .row2 .v { text-align: right; font-weight: 700; white-space: nowrap; }
+  @media (max-width: 560px) { .row2 { flex-wrap: wrap; } .row2 .ic { display: none; } .row2 .t { flex-basis: 100%; } .row2 .t b { white-space: normal; } .row2 .v { flex: 1; text-align: left; font-size: 17px; } } .row2 .b { min-height: 38px; padding: 6px 12px; font-size: 14px; }
+</style>
+<style>
+  .tabs2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px; box-shadow: 0 8px 24px rgba(95,61,196,.12); }
+  .tabs2 button { border: 0; background: transparent; border-radius: 12px; padding: 10px; font-weight: 700; color: var(--muted); cursor: pointer; min-height: 52px; font-size: 15px; }
+  .tabs2 button.on { background: var(--brand); color: #fff; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+  .kpi { background: #fff; border-radius: 16px; padding: 14px; box-shadow: 0 1px 0 var(--line); } .kpi small { color: var(--muted); display: block; font-size: 13px; } .kpi b { font-size: clamp(18px, 5vw, 22px); white-space: nowrap; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 14px; }
+  .card { background: #fff; border-radius: 20px; padding: 16px; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(95,61,196,.05); border: 2px solid transparent; }
+  .card.over { border-color: #ffc9c9; } .card.soon { border-color: #ffe066; }
+  .card h3 { margin: 0; font-size: 17px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .card .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .big { font-size: 26px; font-weight: 700; margin: 10px 0 2px; }
+  .rows { display: grid; gap: 4px; font-size: 14px; margin-top: 8px; } .rows div { display: flex; justify-content: space-between; gap: 8px; } .rows span:first-child { color: var(--muted); }
+  .bar { height: 8px; border-radius: 99px; background: #f1f3f5; overflow: hidden; margin-top: 10px; } .bar i { display: block; height: 100%; background: var(--brand); border-radius: 99px; }
+  .tag { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+  .tag.over { background: #fff5f5; color: var(--neg); } .tag.soon { background: #fff9db; color: #8a5a00; } .tag.ok { background: #e6fcf5; color: var(--pos); } .tag.mut { background: #f1f3f5; color: var(--muted); }
+  .card .btns { display: flex; gap: 8px; margin-top: 12px; } .card .btns .b { flex: 1; min-height: 42px; padding: 8px; font-size: 14px; }
+  table.lines { width: 100%; border-collapse: collapse; font-size: 14px; } table.lines td, table.lines th { padding: 8px 6px; border-bottom: 1px solid #f3f0ff; text-align: left; } table.lines td.n, table.lines th.n { text-align: right; white-space: nowrap; }
+  .sec { display: flex; justify-content: space-between; align-items: center; margin: 18px 4px 0; } .sec h2 { margin: 0; font-size: 17px; }
+</style>
+<style>
+  .tabs3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px; box-shadow: 0 8px 24px rgba(95,61,196,.12); }
+  .tabs3 button { border: 0; background: transparent; border-radius: 12px; padding: 8px 4px; font-weight: 700; color: var(--muted); cursor: pointer; min-height: 52px; font-size: 14px; }
+  .tabs3 button.on { background: var(--brand); color: #fff; }
+  .gchips { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; margin-top: 12px; -webkit-overflow-scrolling: touch; }
+  .gchips button { flex: none; border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; font-weight: 600; font-size: 14px; cursor: pointer; min-height: 40px; white-space: nowrap; }
+  .gchips button.on { border-color: var(--brand); background: var(--brand); color: #fff; }
+  .gchips button small { opacity: .75; margin-left: 4px; font-weight: 500; }
+  .arow { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #f3f0ff; }
+  .arow:last-child { border-bottom: 0; }
+  .arow input[type=checkbox] { width: 22px; height: 22px; flex: none; accent-color: var(--brand); }
+  .arow .t { flex: 1; min-width: 0; }
+  .arow .t b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+  .arow .t small { display: block; color: var(--muted); font-size: 13px; }
+  .arow .v { text-align: right; font-weight: 700; white-space: nowrap; font-size: 16px; }
+  .arow .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .arow .acts .b { min-height: 38px; padding: 6px 12px; font-size: 14px; }
+  .tg { display: inline-block; font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 1px 8px; margin-right: 4px; background: #f3f0ff; color: var(--brand); }
+  .tg.op { background: #fff4e6; color: #a35200; } .tg.gr { background: #e7f5ff; color: #1864ab; }
+  @media (max-width: 640px) { .arow { flex-wrap: wrap; align-items: flex-start; } .arow input[type=checkbox] { margin-top: 2px; } .arow .t { flex: 1 1 0; } .arow .v { flex: 1 1 100%; text-align: left; padding-left: 34px; font-size: 17px; } .arow .acts { flex: 1 1 100%; justify-content: flex-start; padding-left: 34px; } }
+  .movebar { position: sticky; bottom: 10px; margin-top: 12px; background: var(--ink); color: #fff; border-radius: 16px; padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; z-index: 6; }
+  .movebar select { flex: 1; min-width: 160px; height: 44px; border-radius: 10px; border: 0; padding: 0 10px; color: var(--ink); }
+  .movebar .b { min-height: 44px; }
+  .glist { display: grid; gap: 8px; margin-top: 10px; }
+  .glist div { display: flex; gap: 8px; align-items: center; }
+  .glist .inp { flex: 1; }
+  .glist .b { min-height: 46px; }
+  .catcard { background: #fff; border-radius: 16px; padding: 12px 14px; margin-top: 12px; box-shadow: 0 1px 0 var(--line); font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .catcard .lbl { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap row">
+  <div><h1>ทรัพย์สิน</h1><p>ทะเบียนทรัพย์สิน · ยอดยกมา · กลุ่มย่อย · ตัดจำหน่ายเป็นค่าใช้จ่าย</p></div>
+  <nav class="nav" aria-label="เมนู"><a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a href="cards.html">บัตร & เงินกู้</a><a class="on" href="assets.html">ทรัพย์สิน</a><a href="reports.html">รายงาน</a><a href="close.html">ปิดเดือน</a><a href="settings.html">ตั้งค่า</a><a href="../index.html?classic=1">แอปหลัก</a></nav>
+</div></div>
+<main class="wrap">
+  <div class="tabs3" id="tabs"><button data-t="ACTIVE" class="on">🏷️ มีอยู่</button><button data-t="WRITTEN_OFF">📦 ตัดจำหน่ายแล้ว</button><button data-t="REMOVED">🙈 ซ่อนไว้</button></div>
+  <div id="view"><div class="loading">กำลังโหลด…</div></div>
+</main>
+<script>
+/* ⏱️ ทุกคำขอมีเวลารอสูงสุด (2026-10-11) — เดิมถ้าเซิร์ฟเวอร์ค้าง หน้าจอหมุนไม่รู้จบ
+   อ่านเอกสาร/statement ด้วย AI ใช้เวลานาน ให้รอได้ 3 นาที · อย่างอื่น 40 วินาที
+   และแปลง error ให้อ่านรู้เรื่อง แทน "Failed to fetch" */
+(function () {
+  const orig = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    if (init.signal || typeof AbortController === 'undefined') return orig(input, init);
+    const url = typeof input === 'string' ? input : (input?.url || '');
+    const ms = /\/(upload|statement|import|retry|backup|restore|ocr)/i.test(url) ? 180000 : 40000;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), ms);
+    return orig(input, { ...init, signal: ac.signal })
+      .catch(err => {
+        if (err?.name === 'AbortError') throw new Error('เซิร์ฟเวอร์ตอบช้าเกินไป — ลองใหม่อีกครั้ง');
+        if (err instanceof TypeError) throw new Error('เชื่อมต่อไม่ได้ — ตรวจอินเทอร์เน็ตแล้วลองใหม่');
+        throw err;
+      })
+      .finally(() => clearTimeout(timer));
+  };
+})();
+</script>
+<script>
+(function () {
+  'use strict';
+  const API = (() => {
+    const PROD = 'https://record-revenue.9nimz.workers.dev';
+    try {
+      const q = new URLSearchParams(location.search).get('api');
+      if (q) sessionStorage.setItem('api_base_override', q);
+      const o = sessionStorage.getItem('api_base_override');
+      if (o) return o.replace(/\/$/, '');
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787';
+    } catch (e) { /* ใช้ของจริง */ }
+    return PROD;
+  })();
+  const token = () => { try { return localStorage.getItem('session_token') || sessionStorage.getItem('session_token') || ''; } catch { return ''; } };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const $ = s => document.querySelector(s);
+  const view = $('#view');
+  const plain = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '').trim() || String(n || '');
+  const S = { tab: 'ACTIVE', data: null, meta: null, q: '', g: '*', asc: true, sel: new Set(), admin: false };
+  function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 3000); }
+  async function api(path, body) {
+    const res = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) throw Object.assign(new Error('กรุณาเข้าสู่ระบบ'), { login: true });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) throw new Error(d.error || `ผิดพลาด (${res.status})`);
+    return d;
+  }
+  const A = (path, body) => api('/api/inbox/assets' + path, body || {});
+  const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const thd = s => { if (!s) return '-'; const [y, m, d] = s.slice(0, 10).split('-').map(Number); return `${d} ${TH_M[m - 1]} ${String(y + 543).slice(2)}`; };
+  const todayTH = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+  function sheet(title, html, footer) {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet" role="dialog" aria-label="${esc(title)}"><header><h2>${esc(title)}</h2><button class="x" data-close aria-label="ปิด">✕</button></header><div class="body">${html}<div class="err" data-err></div></div>${footer ? `<footer>${footer}</footer>` : ''}</div>`;
+    const close = () => bg.remove();
+    bg.addEventListener('click', e => { if (e.target === bg || e.target.closest('[data-close]')) close(); });
+    document.addEventListener('keydown', function k(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', k); } });
+    document.body.appendChild(bg);
+    const el = bg.querySelector('.sheet');
+    return { el, close, err: t => { el.querySelector('[data-err]').textContent = t; }, v: id => el.querySelector('#' + id)?.value?.trim() ?? '' };
+  }
+  /* ปุ่มบันทึกใน sheet: กันกดซ้ำ + แสดง error ใน sheet */
+  const onSave = (sh, fn) => { const b = sh.el.querySelector('[data-save]'); b.onclick = async () => { b.disabled = true; sh.err(''); try { await fn(); } catch (e) { sh.err(e.message); b.disabled = false; } }; };
+  $('#tabs').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; S.tab = b.dataset.t; S.sel.clear(); document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b)); render(); };
+
+  async function load() {
+    if (!token()) { view.innerHTML = `<div class="empty"><h3>ยังไม่ได้เข้าสู่ระบบ</h3><a href="../index.html">ไปหน้าเข้าสู่ระบบ</a></div>`; return; }
+    try {
+      [S.data, S.meta] = await Promise.all([api('/api/inbox/assets'), S.meta ? Promise.resolve(S.meta) : api('/api/inbox/meta')]);
+      S.admin = S.meta?.user?.role === 'admin';
+      if (S.g !== '*' && S.g !== '' && !S.data.groups.some(g => g.group_id === S.g)) S.g = '*';
+      for (const id of [...S.sel]) if (!S.data.items.some(i => i.asset_id === id)) S.sel.delete(id);
+      render();
+    } catch (e) { view.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
+  }
+  const groupOpts = (sel, none = '— ไม่ระบุกลุ่ม —') => `<option value="">${none}</option>` + S.data.groups.map(g => `<option value="${esc(g.group_id)}" ${g.group_id === sel ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
+  function visible() {
+    const q = S.q.toLowerCase();
+    return S.data.items.filter(i => i.status === S.tab
+      && (S.g === '*' || (S.g === '' ? !i.group_id : i.group_id === S.g))
+      && (!q || `${i.name} ${i.note} ${i.group_name || ''} ${i.category_name} ${i.account_name} ${i.entity_name} ${i.date} ${thd(i.date)} ${i.value}`.toLowerCase().includes(q)))
+      .sort((a, b) => (S.asc ? 1 : -1) * (a.date.localeCompare(b.date) || a.name.localeCompare(b.name, 'th')));
+  }
+  function render() {
+    const D = S.data, cats = D.categories || [];
+    const inTab = D.items.filter(i => i.status === S.tab);
+    const cnt = g => inTab.filter(i => g === '' ? !i.group_id : i.group_id === g).length;
+    const list = visible();
+    const sum = list.reduce((s, i) => s + i.value, 0);
+    view.innerHTML = `<div class="kpis">
+        <div class="kpi"><small>🏷️ มูลค่าทรัพย์สินที่มีอยู่</small><b class="pos">${money(D.totals.value)}</b></div>
+        <div class="kpi"><small>📋 จำนวนรายการ</small><b>${D.totals.count}</b></div>
+        <div class="kpi"><small>📥 ในนั้นเป็นยอดยกมา</small><b>${money(D.totals.opening)}</b></div></div>
+      <div class="catcard"><span class="lbl">🗂️ หมวดบัญชีที่นับเป็นทรัพย์สิน:</span>
+        ${cats.length ? cats.map(c => `<span class="chip2">${esc(c.name)}</span>`).join('') : '<span class="neg">ยังไม่ได้เลือก</span>'}
+        ${S.admin ? '<button class="b" id="cats" style="min-height:38px;padding:6px 12px;font-size:14px;margin-left:auto">⚙️ เลือกหมวด</button>' : ''}</div>
+      <div class="tools">
+        <input class="inp" id="q" type="search" placeholder="🔎 ค้นหาชื่อ กลุ่ม บัญชี วันที่ จำนวนเงิน" value="${esc(S.q)}">
+        <button class="b" id="sort" title="สลับการเรียง">${S.asc ? '📅 เก่า → ใหม่' : '📅 ใหม่ → เก่า'}</button>
+        <button class="b" id="groups">🗂️ จัดการกลุ่ม</button>
+        <button class="b main" id="add">＋ ยอดยกมา</button>
+      </div>
+      <div class="gchips" id="gchips">
+        <button data-g="*" class="${S.g === '*' ? 'on' : ''}">ทั้งหมด<small>${inTab.length}</small></button>
+        ${D.groups.map(g => `<button data-g="${esc(g.group_id)}" class="${S.g === g.group_id ? 'on' : ''}">${esc(g.name)}<small>${cnt(g.group_id)}</small></button>`).join('')}
+        <button data-g="" class="${S.g === '' ? 'on' : ''}">ไม่ระบุกลุ่ม<small>${cnt('')}</small></button>
+      </div>
+      <div class="sec" style="margin-top:6px"><span class="mut" style="font-size:14px">${list.length} รายการ · รวม ${money(sum)}</span>
+        ${list.length && S.tab !== 'REMOVED' ? `<label style="font-size:14px;display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="all" ${list.every(i => S.sel.has(i.asset_id)) ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--brand)"> เลือกทั้งหมด</label>` : ''}</div>
+      <div class="list" style="margin-top:8px">${list.length ? list.map(row).join('') : `<div class="empty">${!cats.length ? 'ผู้ดูแลต้องเลือกหมวดบัญชีที่นับเป็นทรัพย์สินก่อน' : S.q ? 'ไม่พบรายการที่ค้นหา' : S.tab === 'ACTIVE' ? 'ยังไม่มีทรัพย์สินในกลุ่มนี้ — บันทึกรายจ่ายเข้าหมวดทรัพย์สิน หรือกด "＋ ยอดยกมา"' : S.tab === 'WRITTEN_OFF' ? 'ยังไม่มีรายการที่ตัดจำหน่าย' : 'ไม่มีรายการที่ซ่อนไว้'}</div>`}</div>
+      ${S.sel.size ? `<div class="movebar"><b>เลือก ${S.sel.size} รายการ</b><select id="mvG" aria-label="ย้ายไปกลุ่ม">${groupOpts('', '→ ไม่ระบุกลุ่ม')}</select><button class="b main" id="mv">ย้ายกลุ่ม</button><button class="b" id="mvX">ยกเลิก</button></div>` : ''}
+      <div class="note">• รายจ่ายที่บันทึกเข้าหมวดทรัพย์สิน (ยืนยันแล้ว) ขึ้นในทะเบียนเอง และไม่นับเป็นรายจ่ายในรายงาน จนกว่าจะตัดจำหน่าย<br>
+        • ตัดจำหน่าย = ย้ายมูลค่าไปเป็นค่าใช้จ่ายหมวดที่เลือก ณ วันที่ตัด (ยอดเงินในบัญชีไม่เปลี่ยน) · ยอดยกมา = ทรัพย์สินที่มีก่อนเริ่มใช้ระบบ</div>`;
+    const q = $('#q'); q.oninput = () => { S.q = q.value; const p = q.selectionStart; render(); const n = $('#q'); n.focus(); try { n.setSelectionRange(p, p); } catch {} };
+    $('#sort').onclick = () => { S.asc = !S.asc; render(); };
+    $('#groups').onclick = groupMgr;
+    $('#add').onclick = () => itemForm(null);
+    $('#cats')?.addEventListener('click', catForm);
+    $('#gchips').onclick = e => { const b = e.target.closest('button[data-g]'); if (!b) return; S.g = b.dataset.g; S.sel.clear(); render(); };
+    $('#all')?.addEventListener('change', e => { list.forEach(i => e.target.checked ? S.sel.add(i.asset_id) : S.sel.delete(i.asset_id)); render(); });
+    view.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); render(); });
+    $('#mvX')?.addEventListener('click', () => { S.sel.clear(); render(); });
+    $('#mv')?.addEventListener('click', async e => {
+      e.target.disabled = true;
+      try { await A('/move', { asset_ids: [...S.sel], group_id: $('#mvG').value || null }); S.sel.clear(); toast('📂 ย้ายกลุ่มแล้ว'); await load(); }
+      catch (err) { toast('⚠️ ' + err.message); e.target.disabled = false; }
+    });
+    const find = id => D.items.find(i => i.asset_id === id);
+    view.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
+      const i = find(b.dataset.id), a = b.dataset.act;
+      if (a === 'edit') itemForm(i); else if (a === 'wo') woForm(i); else if (a === 'del') del(i); else if (a === 'undo') undo(i); else if (a === 'restore') restore(i);
+    });
+  }
+  function row(i) {
+    const id = esc(i.asset_id);
+    const meta = [`${i.source === 'OPENING' ? 'ได้มา' : 'ซื้อ'} ${thd(i.date)}`, i.category_name, i.account_name, i.entity_name].filter(Boolean).map(esc).join(' · ');
+    const acts = i.status === 'ACTIVE'
+      ? `<button class="b" data-act="edit" data-id="${id}">✏️ แก้ไข</button><button class="b" data-act="wo" data-id="${id}">📦 ตัดจำหน่าย</button><button class="b danger" data-act="del" data-id="${id}" aria-label="ลบ">🗑️ ลบ</button>`
+      : i.status === 'WRITTEN_OFF'
+        ? `<button class="b" data-act="edit" data-id="${id}">✏️ แก้ไข</button><button class="b" data-act="undo" data-id="${id}">↩️ ยกเลิกตัดจำหน่าย</button>`
+        : `<button class="b" data-act="restore" data-id="${id}">↩️ กู้คืน</button>`;
+    return `<div class="arow">
+      ${i.status !== 'REMOVED' ? `<input type="checkbox" data-sel="${id}" ${S.sel.has(i.asset_id) ? 'checked' : ''} aria-label="เลือก ${esc(i.name)}">` : ''}
+      <span class="t"><b>${esc(i.name)}</b>
+        <small>${i.source === 'OPENING' ? '<span class="tg op">ยอดยกมา</span>' : ''}${i.group_name ? `<span class="tg gr">${esc(i.group_name)}</span>` : ''}${meta}</small>
+        ${i.note ? `<small>📝 ${esc(i.note)}</small>` : ''}
+        ${i.status === 'WRITTEN_OFF' ? `<small>📦 ตัดจำหน่าย ${thd(i.writeoff_date)} → ${esc(i.expense_category || '-')}${i.writeoff_note ? ' · ' + esc(i.writeoff_note) : ''}</small>` : ''}</span>
+      <span class="v">${money(i.value)}</span>
+      <span class="acts">${acts}</span></div>`;
+  }
+  const allCats = () => (S.meta?.categories || []).slice().sort((a, b) => String(a.group || '').localeCompare(String(b.group || ''), 'th') || String(a.name).localeCompare(String(b.name), 'th'));
+
+  /* ── เพิ่มยอดยกมา / แก้ไข ── */
+  function itemForm(i) {
+    const isNew = !i, locked = i && (i.source === 'TX' || i.status === 'WRITTEN_OFF');
+    const cats = S.data.categories || [];
+    if (isNew && !cats.length) return toast(S.admin ? 'กด "เลือกหมวด" เพื่อกำหนดหมวดทรัพย์สินก่อน' : 'ให้ผู้ดูแลเลือกหมวดทรัพย์สินก่อน');
+    const sh = sheet(isNew ? 'เพิ่มทรัพย์สิน (ยอดยกมา)' : 'แก้ไขทรัพย์สิน', `
+      ${isNew ? '<div class="note" style="margin-top:4px">ใช้กับทรัพย์สินที่มีอยู่ก่อนเริ่มใช้ระบบ — ไม่สร้างรายการเงินในบัญชี</div>' : ''}
+      <label class="f" for="fN">ชื่อทรัพย์สิน</label><input class="inp" id="fN" maxlength="120" value="${esc(i?.name || '')}" placeholder="เช่น สว่านไร้สาย · ตู้เย็น · โน้ตบุ๊ก">
+      <div class="g2">
+        <div><label class="f" for="fD">วันที่ได้มา</label><input class="inp" id="fD" type="date" value="${esc(i?.date || todayTH())}" ${locked ? 'disabled' : ''}></div>
+        <div><label class="f" for="fA">จำนวนเงิน</label><input class="inp" id="fA" inputmode="decimal" value="${i ? esc(i.value) : ''}" placeholder="0.00" ${locked ? 'disabled' : ''}></div>
+      </div>
+      ${i?.source === 'TX' ? '<div class="mut" style="font-size:13px;margin-top:6px">วันที่/จำนวนเงิน มาจากรายการจริง — แก้ได้ที่หน้าประวัติรายการ</div>' : i?.status === 'WRITTEN_OFF' ? '<div class="mut" style="font-size:13px;margin-top:6px">ตัดจำหน่ายแล้ว — ยกเลิกตัดจำหน่ายก่อนจึงแก้วันที่/จำนวนเงินได้</div>' : ''}
+      <label class="f" for="fG">กลุ่ม</label><select class="inp" id="fG">${groupOpts(i?.group_id || (S.g !== '*' ? S.g : ''))}<option value="__new">＋ สร้างกลุ่มใหม่…</option></select>
+      ${(!i || i.source === 'OPENING') && cats.length > 1 ? `<label class="f" for="fC">หมวดบัญชี</label><select class="inp" id="fC" ${locked ? 'disabled' : ''}>${cats.map(c => `<option value="${esc(c.category_id)}" ${c.category_id === i?.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}
+      <label class="f" for="fM">หมายเหตุ (ไม่บังคับ)</label><input class="inp" id="fM" maxlength="300" value="${esc(i?.note || '')}" placeholder="เช่น ยี่ห้อ รุ่น เลขเครื่อง ที่ตั้ง">`,
+      `<button class="b main" data-save>${isNew ? 'เพิ่มเข้าทะเบียน' : 'บันทึก'}</button>`);
+    const gs = sh.el.querySelector('#fG');
+    gs.onchange = async () => {
+      if (gs.value !== '__new') return;
+      const name = (prompt('ชื่อกลุ่มใหม่ (เช่น อุปกรณ์ช่าง · เครื่องใช้ในบ้าน)') || '').trim();
+      if (!name) { gs.value = ''; return; }
+      try { const r = await A('/groups', { name }); S.data.groups.push({ group_id: r.group_id, name, count: 0, value: 0 }); gs.innerHTML = groupOpts(r.group_id) + '<option value="__new">＋ สร้างกลุ่มใหม่…</option>'; }
+      catch (e) { sh.err(e.message); gs.value = ''; }
+    };
+    onSave(sh, async () => {
+      const name = sh.v('fN'); if (!name) throw new Error('ใส่ชื่อทรัพย์สิน');
+      const body = { name, group_id: gs.value === '__new' ? null : (gs.value || null), note: sh.v('fM') };
+      if (!locked) {
+        const amount = Number(sh.v('fA').replace(/,/g, ''));
+        if (!(amount > 0)) throw new Error('ใส่จำนวนเงินมากกว่า 0');
+        if (!sh.v('fD')) throw new Error('เลือกวันที่ได้มา');
+        Object.assign(body, { date: sh.v('fD'), amount });
+        if (sh.el.querySelector('#fC')) body.category_id = sh.v('fC');
+      }
+      if (isNew) await A('/opening', body); else await A('/' + encodeURIComponent(i.asset_id), body);
+      sh.close(); toast(isNew ? '✅ เพิ่มเข้าทะเบียนแล้ว' : '✅ บันทึกแล้ว'); await load();
+    });
+    setTimeout(() => sh.el.querySelector('#fN').focus(), 50);
+  }
+
+  /* ── จัดการกลุ่มย่อย ── */
+  function groupMgr() {
+    const sh = sheet('จัดการกลุ่มทรัพย์สิน', `
+      <div class="glist" id="gl">${S.data.groups.map(g => `<div><input class="inp" value="${esc(g.name)}" data-gid="${esc(g.group_id)}" maxlength="60" aria-label="ชื่อกลุ่ม"><span class="mut" style="font-size:13px;white-space:nowrap">${g.count} รายการ</span><button class="b danger" data-gdel="${esc(g.group_id)}" aria-label="ลบกลุ่ม ${esc(g.name)}">🗑️</button></div>`).join('') || '<div class="mut">ยังไม่มีกลุ่ม</div>'}</div>
+      <label class="f" for="gN">เพิ่มกลุ่มใหม่</label>
+      <div style="display:flex;gap:8px"><input class="inp" id="gN" maxlength="60" placeholder="เช่น อุปกรณ์ช่าง · เครื่องใช้คอนโด"><button class="b main" id="gAdd">＋ เพิ่ม</button></div>
+      <div class="note">แก้ชื่อในช่องแล้วกด "บันทึกชื่อ" · ลบกลุ่มแล้วรายการในกลุ่มจะไปอยู่ "ไม่ระบุกลุ่ม" (ไม่หาย) · ย้ายรายการ: ติ๊กเลือกในรายการแล้วกด "ย้ายกลุ่ม"</div>`,
+      `<button class="b main" data-save>บันทึกชื่อ</button>`);
+    const add = async () => {
+      const name = sh.v('gN'); if (!name) return sh.err('ใส่ชื่อกลุ่ม');
+      try { await A('/groups', { name }); sh.close(); toast('✅ เพิ่มกลุ่มแล้ว'); await load(); groupMgr(); } catch (e) { sh.err(e.message); }
+    };
+    sh.el.querySelector('#gAdd').onclick = add;
+    sh.el.querySelector('#gN').onkeydown = e => { if (e.key === 'Enter') add(); };
+    sh.el.querySelectorAll('[data-gdel]').forEach(b => b.onclick = async () => {
+      const g = S.data.groups.find(x => x.group_id === b.dataset.gdel);
+      if (!confirm(`ลบกลุ่ม "${g.name}"?\n${g.count ? `${g.count} รายการในกลุ่มจะไปอยู่ "ไม่ระบุกลุ่ม"` : ''}`)) return;
+      try { await A(`/groups/${encodeURIComponent(g.group_id)}/delete`); sh.close(); toast('🗑️ ลบกลุ่มแล้ว'); await load(); groupMgr(); } catch (e) { sh.err(e.message); }
+    });
+    onSave(sh, async () => {
+      for (const inp of sh.el.querySelectorAll('[data-gid]')) {
+        const g = S.data.groups.find(x => x.group_id === inp.dataset.gid);
+        if (inp.value.trim() && inp.value.trim() !== g.name) await A('/groups/' + encodeURIComponent(g.group_id), { name: inp.value.trim() });
+      }
+      sh.close(); toast('✅ บันทึกแล้ว'); await load();
+    });
+  }
+
+  /* ── เลือกหมวดบัญชีที่นับเป็นทรัพย์สิน (ผู้ดูแล) ── */
+  function catForm() {
+    const on = new Set((S.data.categories || []).map(c => c.category_id));
+    const cats = allCats();
+    const sh = sheet('หมวดบัญชีที่นับเป็นทรัพย์สิน', `
+      <input class="inp" id="cq" placeholder="🔎 ค้นหาหมวด" style="margin-top:8px">
+      <div class="checks" id="cl" style="margin-top:10px;max-height:50vh;overflow:auto">${cats.map(c => `<label data-n="${esc((plain(c.name) + ' ' + (c.group || '')).toLowerCase())}"><input type="checkbox" value="${esc(c.category_id)}" ${on.has(c.category_id) ? 'checked' : ''}> ${esc(plain(c.name))}${c.group ? ` <small class="mut">· ${esc(plain(c.group))}</small>` : ''}</label>`).join('')}</div>
+      <div class="note">แนะนำ: สร้างหมวด "ทรัพย์สิน" ไว้ใต้กลุ่มสินทรัพย์ (ที่หน้าตั้งค่า → หมวดหมู่) แล้วติ๊กหมวดนั้นที่นี่</div>`, `<button class="b main" data-save>บันทึก</button>`);
+    sh.el.querySelector('#cq').oninput = e => { const t = e.target.value.toLowerCase(); sh.el.querySelectorAll('#cl label').forEach(l => { l.style.display = !t || l.dataset.n.includes(t) ? '' : 'none'; }); };
+    onSave(sh, async () => { await A('/categories', { category_ids: [...sh.el.querySelectorAll('#cl input:checked')].map(i => i.value) }); sh.close(); toast('✅ บันทึกหมวดแล้ว'); await load(); });
+  }
+
+  /* ── ตัดจำหน่าย ── */
+  function woForm(i) {
+    const assetIds = new Set((S.data.categories || []).map(c => c.category_id));
+    const cats = allCats().filter(c => !assetIds.has(c.category_id));
+    const exp = cats.filter(c => c.behavior === 'EXPENSE' || c.default_type === 'EXPENSE'), oth = cats.filter(c => !exp.includes(c));
+    const opt = c => `<option value="${esc(c.category_id)}">${esc(plain(c.name))}${c.group ? ` · ${esc(plain(c.group))}` : ''}</option>`;
+    const accs = (S.meta?.accounts || []);
+    const sh = sheet('ตัดจำหน่ายทรัพย์สิน', `
+      <p><b>${esc(i.name)}</b><br><span class="mut">${i.source === 'OPENING' ? 'ยอดยกมา · ได้มา' : 'ซื้อ'} ${thd(i.date)} · มูลค่า ${money(i.value)}</span></p>
+      <label class="f" for="wD">วันที่ตัดจำหน่าย</label><input class="inp" id="wD" type="date" value="${todayTH()}" min="${esc(i.date)}">
+      <label class="f" for="wC">บันทึกมูลค่าไปที่หมวดค่าใช้จ่าย</label><select class="inp" id="wC"><option value="">— เลือกหมวด —</option>
+        ${exp.length ? `<optgroup label="หมวดค่าใช้จ่าย">${exp.map(opt).join('')}</optgroup>` : ''}${oth.length ? `<optgroup label="หมวดอื่น">${oth.map(opt).join('')}</optgroup>` : ''}</select>
+      ${i.source === 'OPENING' ? `<label class="f" for="wA">บันทึกไว้ในบัญชี (ยอดเงินไม่เปลี่ยน)</label><select class="inp" id="wA"><option value="">— เลือกบัญชี —</option>${accs.map(a => `<option value="${esc(a.account_id)}">${esc(plain(a.name))}</option>`).join('')}</select>` : ''}
+      <label class="f" for="wN">เหตุผล (ไม่บังคับ)</label><input class="inp" id="wN" maxlength="200" placeholder="เช่น ชำรุด · ขายทิ้ง · สูญหาย · ใช้หมดแล้ว">
+      <div class="note">มูลค่า ${money(i.value)} จะไปเป็นค่าใช้จ่ายหมวดที่เลือก ณ วันที่ตัดจำหน่าย · ยอดเงินในบัญชีไม่เปลี่ยน · ยกเลิกภายหลังได้ถ้าเดือนนั้นยังไม่ปิด</div>`, `<button class="b main" data-save>ตัดจำหน่าย</button>`);
+    onSave(sh, async () => {
+      if (!sh.v('wC')) throw new Error('เลือกหมวดค่าใช้จ่าย');
+      if (i.source === 'OPENING' && !sh.v('wA')) throw new Error('เลือกบัญชี');
+      await A(`/${encodeURIComponent(i.asset_id)}/writeoff`, { date: sh.v('wD'), expense_category_id: sh.v('wC'), account_id: sh.v('wA') || undefined, note: sh.v('wN') });
+      sh.close(); toast('📦 ตัดจำหน่ายแล้ว'); await load();
+    });
+  }
+  async function del(i) {
+    const msg = i.source === 'OPENING'
+      ? `ลบ "${i.name}" ออกจากทะเบียน?\n(ยอดยกมา ${money(i.value)} — ลบแล้วกู้คืนไม่ได้)`
+      : `ซ่อน "${i.name}" จากทะเบียน?\nรายการจ่ายเงิน ${money(i.value)} ยังอยู่ในประวัติเหมือนเดิม · กู้คืนได้ที่แท็บ "ซ่อนไว้"\nถ้าบันทึกผิดหมวด ให้แก้หมวดที่หน้าประวัติรายการแทน`;
+    if (!confirm(msg)) return;
+    try { await A(`/${encodeURIComponent(i.asset_id)}/delete`); toast(i.source === 'OPENING' ? '🗑️ ลบแล้ว' : '🙈 ซ่อนแล้ว'); await load(); } catch (e) { toast('⚠️ ' + e.message); }
+  }
+  async function undo(i) {
+    if (!confirm(`ยกเลิกการตัดจำหน่าย "${i.name}"?\nค่าใช้จ่าย ${money(i.value)} วันที่ ${thd(i.writeoff_date)} จะถูกลบ และกลับเข้าทะเบียน`)) return;
+    try { await A(`/${encodeURIComponent(i.asset_id)}/undo`); toast('↩️ ยกเลิกแล้ว'); await load(); } catch (e) { toast('⚠️ ' + e.message); }
+  }
+  async function restore(i) {
+    try { await A(`/${encodeURIComponent(i.asset_id)}/restore`); toast('↩️ กู้คืนแล้ว'); await load(); } catch (e) { toast('⚠️ ' + e.message); }
+  }
+  load();
+})();
+</script>
+</body>
+</html>

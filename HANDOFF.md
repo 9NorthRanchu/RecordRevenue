@@ -3497,3 +3497,20 @@ frontend
 - /api/users/delete: รับ preview:true (ไม่ลบ คืน report) · มีเดือนปิด + มีบริษัทที่ถือคนเดียว → 409
 - ยังอยู่หน้าเดิม: ธีม · ล้างข้อมูล (/api/reset) · ทะเบียนหนี้แบบเดิม (เมนู "แบบเดิม" ยังอยู่)
 - เทส backend/test/cards-loans.test.mjs (15 เคส)
+
+## 2026-10-12 — ทะเบียนทรัพย์สิน (แบบที่ North กำหนด รอบ 2: ไม่มีค่าเสื่อม · ยอดยกมา · กลุ่มย่อย)
+- (แบบแรกมีค่าเสื่อม → ยกเลิก · แบบที่สองใช้ AssetWriteoffs → แทนด้วย AssetItems ก่อน deploy · ไม่มีในประวัติ git)
+- หมวดที่นับเป็นทรัพย์สิน = LedgerRules kind='ASSET_REG' rkey=category_id (ผู้ดูแลเลือก) — North สร้างหมวด "ทรัพย์สิน" ใต้กลุ่มสินทรัพย์แล้วติ๊ก
+- ตาราง (สร้างเองตอนเรียกครั้งแรก + อยู่ใน setup-db.sh):
+  · AssetItems: source 'TX' (จากรายการจ่ายจริง, detail_id UNIQUE, id = AS-{detail_id}) | 'OPENING' (ยอดยกมา กรอกเอง)
+    status ACTIVE | WRITTEN_OFF | REMOVED (ซ่อน, เฉพาะ TX) · group_id · writeoff_* · TX: วันที่/จำนวนเงิน/หมวด อ่านสดจากรายการจริง
+  · AssetGroups: กลุ่มย่อย (อุปกรณ์ช่าง ฯลฯ) — ลบกลุ่มแล้วรายการ group_id = NULL
+- sync: ทุกครั้งที่ GET ทะเบียน → INSERT OR IGNORE บรรทัด CONFIRMED ยอดติดลบในหมวดทรัพย์สินที่ยังไม่มี (ข้าม DT-WO-*) · ซ่อนแล้วไม่กลับมาเอง
+- route (backend/src/assets.js): GET /api/inbox/assets · POST /assets/categories (admin) · /opening · /move {asset_ids, group_id} · /groups · /groups/{id} · /groups/{id}/delete
+  · /assets/{asset_id} แก้ไข (ชื่อ/กลุ่ม/หมายเหตุ ทุกแบบ · วันที่/จำนวนเงิน/หมวด เฉพาะยอดยกมาที่ยังไม่ตัด) · /{id}/delete (ยอดยกมา = ลบจริง, TX = ซ่อน) · /{id}/restore
+  · /{id}/writeoff {date, expense_category_id, note, account_id (ยอดยกมาต้องมี)} → TX-WO-{asset_id} ยอดรวม 0 · DT-WO-{id}-A +มูลค่า หมวดทรัพย์สิน TRANSFER · DT-WO-{id}-E −มูลค่า หมวดค่าใช้จ่าย EXPENSE · ห้ามก่อนวันได้มา · ปลายทางต้องไม่ใช่หมวดทรัพย์สิน · ติดล็อกปิดเดือน → 409
+  · /{id}/undo ลบรายการปรับปรุง กลับเป็น ACTIVE
+- หมวดทรัพย์สินถูกตัดออกจาก: รายงาน pnl (reportData), dashboard รายรับ/รายจ่าย + งบหมวด (spentRows) + arap, ลูกหนี้ (PARTY_WHERE) — IS_ASSET_SQL / assetCategorySet
+- frontend/ledger/assets.html: แท็บ มีอยู่/ตัดจำหน่ายแล้ว/ซ่อนไว้ · ค้นหา · เรียงวันที่ (สลับได้) · ชิปกลุ่ม · ติ๊กเลือกหลายรายการแล้วย้ายกลุ่ม · ปุ่ม แก้ไข/ตัดจำหน่าย/ลบ · ＋ ยอดยกมา · จัดการกลุ่ม
+- home.html สินทรัพย์รวมนับ totals.value (ยังไม่ตัดจำหน่าย รวมยอดยกมา) · เมนู "ทรัพย์สิน" ทุกหน้า + แอปหลัก
+- เทส backend/test/assets.test.mjs (45 เคส) · ledger-inbox.test.mjs แทน import แบบเรียกซ้ำแล้ว (assets.js → period-close.js)

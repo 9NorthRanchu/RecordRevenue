@@ -3,6 +3,7 @@ import { handleLegacyTrip } from './legacy-trip.js';
 import { handleLedgerInbox } from './ledger-inbox.js';
 import { planSettlementKeep } from './settle-keep.js';
 import { isMonthClosed, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
+import { IS_ASSET_SQL, assetCategorySet } from './assets.js';
 import { verifyPassword, upgradeStoredPassword, hashPassword, isHashed } from './auth.js';
 import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSessions } from './session.js';
 // backend/src/index.js
@@ -2120,7 +2121,9 @@ export default {
            ข้อมูลจริงมีรายการโอน 2,462 แถว — ถ้าไม่แยก ตัวเลขรายรับจะบวมหลายล้าน
            แถวเก่าที่ไม่มี type ยังใช้กติกาเดิม (behavior) เหมือนเดิม */
         const income = [], expense = [], investment = [];
+        const assetCats = await assetCategorySet(env, fid);   // หมวดทะเบียนทรัพย์สิน: ซื้อ ≠ รายจ่าย (2026-10-12)
         for (const r of detailRows.results) {
+          if (assetCats.has(r.category_id)) continue;
           const isInv = r.sub_behavior === 'INVESTMENT';
           const typ = String(r.dtype || '').toUpperCase();
           const row = {
@@ -2151,6 +2154,7 @@ export default {
               AND cp.behavior IN ('EXPENSE','LIABILITY')
               AND IFNULL(cp.sub_behavior,'') != 'INVESTMENT'
               AND IFNULL(d.type,'') NOT IN ('TRANSFER','INCOME','CREDIT_AR')
+              AND NOT ${IS_ASSET_SQL('d')}
               AND c.family_id = ?
             GROUP BY d.category_id`
         ).bind(...dateArgs, fid).all();
@@ -2198,6 +2202,7 @@ export default {
               AND cp.behavior IN ('ASSET','LIABILITY')
               AND IFNULL(cp.sub_behavior,'') != 'INVESTMENT'
               AND NOT (cp.behavior = 'ASSET' AND IFNULL(d.type,'') = 'TRANSFER')
+              AND NOT ${IS_ASSET_SQL('d')}
             GROUP BY cp.behavior, party, d.entity_id
            HAVING ABS(remaining) > 0.01`
         ).bind(...scope).all();

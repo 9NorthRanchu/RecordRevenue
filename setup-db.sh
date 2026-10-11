@@ -119,6 +119,12 @@ out=$(npx wrangler d1 execute "$DB" --remote --file backend/db/migrations/2026-1
 if echo "$out" | grep -qi 'error'; then echo "ล้มเหลว ↓"; echo "$out" | grep -i -A2 'error' | head -6 | sed 's/^/      /'; else echo "เรียบร้อย"; fi
 
 echo
+echo "▶ ทะเบียนทรัพย์สิน (2026-10-12) — ปกติระบบสร้างให้เองตอนเปิดหน้าแรก"
+step "CREATE TABLE IF NOT EXISTS AssetGroups (group_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, name TEXT NOT NULL, sort INTEGER DEFAULT 0, created_at TEXT);" "ตาราง AssetGroups (กลุ่มย่อยทรัพย์สิน)"
+step "CREATE TABLE IF NOT EXISTS AssetItems (asset_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, source TEXT NOT NULL, detail_id TEXT UNIQUE, name TEXT NOT NULL, purchase_date TEXT, amount REAL, category_id TEXT, group_id TEXT, entity_id TEXT, account_id TEXT, note TEXT, status TEXT NOT NULL DEFAULT 'ACTIVE', writeoff_date TEXT, expense_category_id TEXT, writeoff_tx TEXT, writeoff_amount REAL, writeoff_note TEXT, created_by TEXT, created_at TEXT, updated_at TEXT);" "ตาราง AssetItems (ทะเบียนทรัพย์สิน)"
+step "CREATE INDEX IF NOT EXISTS idx_asset_items_family ON AssetItems (family_id, status);" "ดัชนี AssetItems"
+
+echo
 echo "▶ ตรวจผลรวม"
 echo "  ตารางที่ต้องมี (ควรได้ 10 ชื่อ):"
 npx wrangler d1 execute "$DB" --remote --command \
