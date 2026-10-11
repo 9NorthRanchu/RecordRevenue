@@ -1,6 +1,7 @@
 import { handleUnifiedTrip } from './unified-trip.js';
 import { handleLegacyTrip } from './legacy-trip.js';
 import { handleLedgerInbox } from './ledger-inbox.js';
+import { planSettlementKeep } from './settle-keep.js';
 import { verifyPassword, upgradeStoredPassword, hashPassword, isHashed } from './auth.js';
 import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSessions } from './session.js';
 // backend/src/index.js
@@ -420,6 +421,9 @@ export default {
             env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id = ?`).bind(txId)
           ];
 
+          /* กันการตัดชำระลูกหนี้/เจ้าหนี้หายตอนแก้รายการ (ดู settle-keep.js) */
+          const keep = await planSettlementKeep(env, txId, details);
+          if (keep.error) return new Response(JSON.stringify({ error: keep.error }), { status: keep.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
           for (const d of details) {
             const detailId = d.detail_id || 'DT-' + Math.random().toString(36).substring(2, 11);
             statements.push(
@@ -430,6 +434,7 @@ export default {
             );
           }
 
+          statements.push(...keep.ops);
           await env.DB.batch(statements);
           return new Response(JSON.stringify({ success: true, transaction_id: txId }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -1193,7 +1198,20 @@ export default {
 
         // โหมด replace = ล้างข้อมูลครอบครัวก่อน (เก็บ Users/Families) แล้วค่อยนำเข้า
         // → กู้กลับไปสภาพเดิมเป๊ะ (ลบแถวที่ไม่มีในไฟล์ backup ด้วย)
+        /* 🛡️ กันล้างข้อมูลด้วยไฟล์ที่ไม่ครบ (2026-10-11): โหมด replace ลบของเดิมก่อนแล้วค่อยใส่ใหม่
+           ถ้าไฟล์ว่าง/เสีย/ไม่มีรายการ จะเหลือฐานข้อมูลว่างเปล่า → ตรวจไฟล์ก่อนลบ
+           และ "กู้ซ้ำด้วยไฟล์เดิม" ปลอดภัยเสมอ (ใส่แบบแทนที่ทับของเดิม) ถ้าล้มกลางทางให้กดกู้อีกครั้ง */
         if (body.mode === 'replace') {
+          const nTx = Array.isArray(body.transactions) ? body.transactions.length : 0;
+          const nAcc = Array.isArray(body.accounts) ? body.accounts.length : 0;
+          const nEnt = Array.isArray(body.entities) ? body.entities.length : 0;
+          const current = await env.DB.prepare(`SELECT COUNT(*) AS n FROM Transactions t JOIN Accounts a ON t.account_id=a.account_id JOIN Entities e ON a.entity_id=e.entity_id WHERE e.family_id=?`).bind(fid).first();
+          if (!nEnt || !nAcc || (!nTx && (current?.n || 0) > 0)) {
+            return new Response(JSON.stringify({ error: `ไฟล์สำรองไม่ครบ (บริษัท ${nEnt} · บัญชี ${nAcc} · รายการ ${nTx}) — ไม่ล้างข้อมูลเดิม ตรวจไฟล์แล้วลองใหม่` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
+          if (nTx < (current?.n || 0) * 0.5 && !body.confirm_shrink) {
+            return new Response(JSON.stringify({ error: `ไฟล์มีรายการ ${nTx} แต่ในระบบมี ${current.n} — น้อยกว่าครึ่ง ถ้าตั้งใจจริงให้ยืนยันอีกครั้ง`, needs_confirm: true }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
           const wipe = async (sql) => { try { await env.DB.prepare(sql).bind(fid).run(); } catch (e) { /* ข้ามตารางที่ไม่มี */ } };
           await wipe(`DELETE FROM Settlements WHERE parent_detail_id IN (SELECT d.detail_id FROM TransactionDetails d JOIN Transactions t ON d.transaction_id=t.transaction_id JOIN Accounts a ON t.account_id=a.account_id JOIN Entities e ON a.entity_id=e.entity_id WHERE e.family_id=?)`);
           await wipe(`DELETE FROM TransactionDetails WHERE transaction_id IN (SELECT t.transaction_id FROM Transactions t JOIN Accounts a ON t.account_id=a.account_id JOIN Entities e ON a.entity_id=e.entity_id WHERE e.family_id=?)`);

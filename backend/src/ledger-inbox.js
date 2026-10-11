@@ -37,6 +37,7 @@
 //   ⚠️ Transactions.source/status ในฐานจริงมี CHECK — ใช้ได้แค่ค่าเดิม:
 //      source: LINE_SLIP · LINE_TEXT · PDF_IMPORT · WEB_GRID · status: PENDING_REVIEW · CONFIRMED
 // ═══════════════════════════════════════════════════════════════
+import { planSettlementKeep } from './settle-keep.js';
 import {
   round2, bankKey, last4, accountHintKey, partyKey, parseCashText, slipDirection,
   scoreCandidate, decideMatch, balanceGap, proposeLines, templateFromDetails,
@@ -529,7 +530,7 @@ function detailInsert(env, txId, d) {
   return env.DB.prepare(`
     INSERT INTO TransactionDetails (detail_id, transaction_id, amount, fee, wht, category_id, entity_id, contact_id, project_id, note, type, head_owner)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(newId('DT'), txId, round2(d.amount), round2(d.fee || 0), round2(d.wht || 0), d.category_id || UNCATEGORIZED,
+    .bind(d.detail_id || newId('DT'), txId, round2(d.amount), round2(d.fee || 0), round2(d.wht || 0), d.category_id || UNCATEGORIZED,
       d.entity_id || null, d.contact_id || null, d.project_id || null, d.note || null,
       d.type || (d.amount < 0 ? 'EXPENSE' : 'INCOME'), d.head_owner || null);
 }
@@ -636,9 +637,12 @@ export async function runAction(env, user, docId, action, body = {}) {
       const total = body.total_amount != null ? round2(body.total_amount) : round2(head.total_amount);
       const gap = balanceGap(total, body.details);
       if (Math.abs(gap) >= 0.005) return { error: `ยอดยังไม่ลงตัว ขาด/เกิน ${money(gap)} บาท`, gap, status: 400 };
+      const keep = await planSettlementKeep(env, txId, body.details);
+      if (keep.error) return keep;
       const ops = [env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id=?`).bind(txId),
         env.DB.prepare(`UPDATE Transactions SET total_amount=? WHERE transaction_id=?`).bind(total, txId)];
       for (const d of body.details) ops.push(detailInsert(env, txId, d));
+      ops.push(...keep.ops);
       await env.DB.batch(ops);
     }
     for (const l of createdPending) {
@@ -689,9 +693,10 @@ async function listInbox(env, user, url) {
     ORDER BY created_at DESC LIMIT ?`).bind(user.family_id, ...(all ? [] : OPEN_STATUSES), limit).all()).results || [];
   if (!docs.length) return { docs: [] };
   const ids = docs.map(d => d.doc_id);
-  const links = (await env.DB.prepare(`SELECT l.doc_id, l.role, t.transaction_id, t.account_id, t.date, t.time, t.total_amount,
+  /* แบ่งชุดละ ≤90 รหัส — D1 รับพารามิเตอร์ได้ไม่เกิน 100 ต่อคำสั่ง (กล่องมีได้ถึง 300 เอกสาร) */
+  const links = await inChunks(env, ids, m => `SELECT l.doc_id, l.role, t.transaction_id, t.account_id, t.date, t.time, t.total_amount,
       t.status, t.statement_desc FROM LedgerDocLinks l JOIN Transactions t ON t.transaction_id=l.transaction_id
-      WHERE l.doc_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
+      WHERE l.doc_id IN (${m})`);
   /* รายการถูกยืนยัน/ลบจากเมนูเก่า ("รอตรวจสอบ" ในแอปหลัก) → ปิดเอกสารในกล่องให้ตรงกัน ไม่ค้างซ้ำสองที่ */
   if (!all) {
     const sync = [];
@@ -706,8 +711,7 @@ async function listInbox(env, user, url) {
     if (!docs.length) return { docs: [] };
   }
   const txIds = [...new Set(links.map(l => l.transaction_id))];
-  const details = txIds.length ? (await env.DB.prepare(`SELECT * FROM TransactionDetails WHERE transaction_id IN (${txIds.map(() => '?').join(',')})`)
-    .bind(...txIds).all()).results || [] : [];
+  const details = txIds.length ? await inChunks(env, txIds, m => `SELECT * FROM TransactionDetails WHERE transaction_id IN (${m})`) : [];
   return { docs: docs.map(d => ({ ...publicDoc(d),
     transactions: links.filter(l => l.doc_id === d.doc_id)
       .map(l => ({ ...l, details: details.filter(x => x.transaction_id === l.transaction_id) })) })) };
@@ -1168,8 +1172,11 @@ export async function editDoc(env, user, docId, e = {}) {
     }
     const gap = balanceGap(head.total_amount, clean);
     if (Math.abs(gap) >= 0.005) return { error: `ยอดยังไม่ลงตัว ขาด/เกิน ${money(gap)} บาท`, gap, status: 400 };
+    const keep = await planSettlementKeep(env, txId, clean);   // กันการตัดชำระลูกหนี้หาย
+    if (keep.error) return keep;
     ops.push(env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id=?`).bind(txId));
     for (const d of clean) ops.push(detailInsert(env, txId, d));
+    ops.push(...keep.ops);
   }
   if (ops.length) await env.DB.batch(ops);
   if (e.account_id) {                                              // ให้การเรียนรู้บัญชีใช้บัญชีที่คนเลือก
@@ -1343,8 +1350,8 @@ export async function statementView(env, user, stmtId) {
   const mine = new Set(lines.filter(l => l.transaction_id).map(l => l.transaction_id));
   const free = txs.filter(t => !mine.has(t.transaction_id) && !usedTx.has(t.transaction_id));
   const catIds = [...new Set(txs.map(t => t.category_id).filter(Boolean))];
-  const catNames = new Map(catIds.length ? ((await env.DB.prepare(`SELECT category_id, name FROM Categories WHERE category_id IN (${catIds.map(() => '?').join(',')})`)
-    .bind(...catIds).all()).results || []).map(c => [c.category_id, displayName(c.name)]) : []);
+  const catNames = new Map(catIds.length ? (await inChunks(env, catIds, m => `SELECT category_id, name FROM Categories WHERE category_id IN (${m})`))
+    .map(c => [c.category_id, displayName(c.name)]) : []);
   const txOut = t => t && { transaction_id: t.transaction_id, date: t.date, time: t.time, total_amount: t.total_amount, status: t.status,
     desc: t.note || t.statement_desc || '', category: t.category_id === UNCATEGORIZED ? 'ยังไม่ระบุ' : (catNames.get(t.category_id) || t.category_id || ''), source: t.source };
   const dayGap = (a, b) => Math.abs(Date.parse(a) - Date.parse(b)) / 864e5;
@@ -1715,8 +1722,11 @@ export async function editTransaction(env, user, txId, e = {}) {
     }
     const gap = balanceGap(total, clean);
     if (Math.abs(gap) >= 0.005) return { error: `ยอดยังไม่ลงตัว ขาด/เกิน ${money(gap)} บาท`, gap, status: 400 };
+    const keep = await planSettlementKeep(env, txId, clean);   // กันการตัดชำระลูกหนี้หาย
+    if (keep.error) return keep;
     ops.push(env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id=?`).bind(txId));
     for (const d of clean) ops.push(detailInsert(env, txId, d));
+    ops.push(...keep.ops);
   }
   if (e.confirm && head.status === 'PENDING_REVIEW') ops.push(env.DB.prepare(`UPDATE Transactions SET status='CONFIRMED' WHERE transaction_id=?`).bind(txId));
   if (ops.length) await env.DB.batch(ops);

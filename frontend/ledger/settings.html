@@ -97,6 +97,28 @@
   <div id="view"><div class="loading">กำลังโหลด…</div></div>
 </main>
 <script>
+/* ⏱️ ทุกคำขอมีเวลารอสูงสุด (2026-10-11) — เดิมถ้าเซิร์ฟเวอร์ค้าง หน้าจอหมุนไม่รู้จบ
+   อ่านเอกสาร/statement ด้วย AI ใช้เวลานาน ให้รอได้ 3 นาที · อย่างอื่น 40 วินาที
+   และแปลง error ให้อ่านรู้เรื่อง แทน "Failed to fetch" */
+(function () {
+  const orig = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    if (init.signal || typeof AbortController === 'undefined') return orig(input, init);
+    const url = typeof input === 'string' ? input : (input?.url || '');
+    const ms = /\/(upload|statement|import|retry|backup|restore|ocr)/i.test(url) ? 180000 : 40000;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), ms);
+    return orig(input, { ...init, signal: ac.signal })
+      .catch(err => {
+        if (err?.name === 'AbortError') throw new Error('เซิร์ฟเวอร์ตอบช้าเกินไป — ลองใหม่อีกครั้ง');
+        if (err instanceof TypeError) throw new Error('เชื่อมต่อไม่ได้ — ตรวจอินเทอร์เน็ตแล้วลองใหม่');
+        throw err;
+      })
+      .finally(() => clearTimeout(timer));
+  };
+})();
+</script>
+<script>
 (function () {
   'use strict';
   const API = (() => {

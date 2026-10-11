@@ -3460,3 +3460,13 @@ frontend
 - ledger/index.html: shrinkImage() ย่อรูป >350KB เป็น JPEG 1600px q0.82 (statement 2200px q0.85) ก่อนอัปโหลด · สร้างรายการจาก statement ได้สูงสุด ~2,000 บรรทัด/คลิก + ข้อความทำต่อเมื่อหยุดกลางทาง
 - R2: `setup-r2-lifecycle.sh` ลบ ledger-docs/ อัตโนมัติ 30 วัน (North ต้องรัน)
 - เทสใหม่: backend/test/endpoints.test.mjs (ผลถูก + แผนคำสั่งใช้ดัชนี)
+
+## 2026-10-11 — ระยะ 2 ความเสถียร
+- settle-keep.js: planSettlementKeep(env, txId, newDetails) — ก่อนลบบรรทัดย่อยเพื่อใส่ใหม่ จำ Settlements ที่ผูกไว้ · บรรทัดใหม่ที่ หมวด+คู่ค้า+ยอด ตรงกับบรรทัดเดิม → ใช้ detail_id เดิม · ใส่ Settlements กลับใน batch เดียวกัน · ถ้าบรรทัดที่ตัดชำระแล้วถูกแก้ยอด/หมวด/คู่ค้า → 409 ให้ยกเลิกการตัดชำระก่อน
+  ใช้ใน: POST /api/transactions (index.js), editTransaction + editDoc + ยืนยันพร้อมแก้บรรทัด (ledger-inbox.js) · detailInsert รับ d.detail_id ได้แล้ว
+  (bulk-import ยังไม่ใส่ — ใช้กับรายการใหม่เป็นหลัก)
+- listInbox / statementView: IN (...) ใช้ inChunks (≤90 พารามิเตอร์)
+- restore/full โหมด replace: ตรวจไฟล์ก่อนล้าง (ต้องมีบริษัท+บัญชี, มีรายการถ้าระบบมีอยู่) · ไฟล์มีรายการ < ครึ่งของระบบ → 409 needs_confirm (app.js ถามยืนยันแล้วส่ง confirm_shrink)
+- หน้าเว็บ: ทุกหน้า ledger มี fetch timeout (40 วิ / งาน AI-นำเข้า 180 วิ) + ข้อความ error ภาษาคน · app.js v184: timeout 45/180 วิ + แจ้ง 503 "ฐานข้อมูลไม่พร้อมชั่วคราว"
+- เทส endpoints.test.mjs เพิ่ม: การตัดชำระไม่หายตอนแก้ (FK cascade จริง), กู้ข้อมูลไฟล์ไม่ครบไม่ล้าง
+- ยังไม่ทำ: users/delete และ /api/reset ยังทีละคำสั่ง (ใช้น้อย, admin เท่านั้น) · .catch(()=>[]) ใน dashboard (เฉพาะตารางงบ/แผนที่อาจไม่มี)

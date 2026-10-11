@@ -120,5 +120,31 @@ const PF = `FROM Captions cp CROSS JOIN Categories c ON c.caption_id = cp.type_i
 check('ลูกหนี้: เริ่มจากหมวด (idx_td_category) ไม่ไล่ทุกรายการ', /SEARCH d USING INDEX idx_td_category/.test(plan(`SELECT SUM(d.amount - IFNULL((SELECT SUM(s.settled_amount) FROM Settlements s WHERE s.parent_detail_id = d.detail_id),0)) ${PF} WHERE up.user_id='9North' AND t.status='CONFIRMED' AND cp.behavior IN ('ASSET','LIABILITY')`)));
 check('ยอดบัญชีใช้ดัชนี covering', /COVERING INDEX idx_tx_acc_status_amt/.test(plan(`SELECT a.account_id, (SELECT SUM(t.total_amount) FROM Transactions t WHERE t.account_id = a.account_id AND t.status = 'CONFIRMED') FROM Accounts a`)));
 check('เดาหมวดค้นด้วย ref_code', /idx_transactions_ref/.test(plan(`SELECT 1 FROM Transactions t2 JOIN Accounts a2 ON a2.account_id=t2.account_id JOIN UserPermissions up2 ON up2.entity_id=a2.entity_id AND up2.user_id='x' WHERE t2.ref_code='R' AND +t2.status='CONFIRMED' ORDER BY t2.date DESC LIMIT 1`)));
+
+/* ── ระยะ 2: แก้รายการแล้วการตัดชำระลูกหนี้ต้องไม่หาย (FK ON DELETE CASCADE แบบเดียวกับ D1) ── */
+db.exec(`PRAGMA foreign_keys = OFF; DROP TABLE Settlements;
+CREATE TABLE Settlements (settlement_id TEXT PRIMARY KEY, parent_detail_id TEXT NOT NULL, child_detail_id TEXT NOT NULL, settled_amount REAL NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (parent_detail_id) REFERENCES TransactionDetails(detail_id) ON DELETE CASCADE,
+  FOREIGN KEY (child_detail_id) REFERENCES TransactionDetails(detail_id) ON DELETE CASCADE);
+INSERT INTO Settlements (settlement_id, parent_detail_id, child_detail_id, settled_amount) VALUES ('S1','D-AR','D-OLD',-400);
+PRAGMA foreign_keys = ON;`);
+const nS = () => db.prepare(`SELECT COUNT(*) c FROM Settlements WHERE settlement_id='S1'`).get().c;
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: { transaction_id: 'TX-AR', account_id: 'A01', date: '2026-09-10', total_amount: -1000, source: 'WEB_GRID', status: 'CONFIRMED',
+  details: [{ detail_id: 'D-AR', amount: -1000, category_id: 'AR1', contact_id: 'CT1', type: 'DEBIT_AR', note: 'แก้หมายเหตุ' }] } });
+check('แอปเดิม: แก้หมายเหตุ → การตัดชำระยังอยู่', r.s === 200 && nS() === 1, { r, n: nS() });
+r = await call('/api/inbox/tx/TX-AR/edit', { user: '9North', method: 'POST', body: { details: [{ amount: -1000, category_id: 'AR1', contact_id: 'CT1', note: 'แก้จากหน้าประวัติ' }] } });
+check('หน้าประวัติใหม่: แก้โดยไม่ส่งรหัสบรรทัด → จับคู่บรรทัดเดิม การตัดชำระยังอยู่', r.s === 200 && nS() === 1, { r, n: nS() });
+check('ยอดลูกหนี้ยังเท่าเดิม', (await call('/api/inbox/parties', { user: '9North' })).j.totals.ar === 600);
+r = await call('/api/inbox/tx/TX-AR/edit', { user: '9North', method: 'POST', body: { total_amount: -1000, details: [{ amount: -600, category_id: 'AR1', contact_id: 'CT1' }, { amount: -400, category_id: 'T01' }] } });
+check('แก้ยอดบรรทัดที่มีการตัดชำระ → ปฏิเสธ 409 และไม่เสียหาย', r.s === 409 && nS() === 1, { r, n: nS() });
+
+/* ── กู้ข้อมูลแบบแทนที่: ไฟล์ไม่ครบต้องไม่ล้างของเดิม ── */
+const nTx = () => db.prepare(`SELECT COUNT(*) c FROM Transactions`).get().c;
+const before = nTx();
+r = await call('/api/restore/full', { user: '9North', method: 'POST', body: { mode: 'replace' } });
+check('กู้ด้วยไฟล์ว่าง → 400 ไม่ล้าง', r.s === 400 && nTx() === before, { r, n: nTx() });
+r = await call('/api/restore/full', { user: '9North', method: 'POST', body: { mode: 'replace', entities: [{ entity_id: 'Ent_North', name: 'N' }], accounts: [{ account_id: 'A01', entity_id: 'Ent_North', name: 'x' }], transactions: [{ transaction_id: 'T1' }] } });
+check('ไฟล์มีรายการน้อยกว่าครึ่ง → ต้องยืนยันก่อน (409) ไม่ล้าง', r.s === 409 && r.j.needs_confirm && nTx() === before, { r, n: nTx() });
 console.log(`${bad ? '❌' : '✅'} ผ่าน ${ok} · ไม่ผ่าน ${bad}`);
 if (bad) process.exit(1);

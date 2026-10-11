@@ -122,7 +122,21 @@ window.getSessionToken = () => {
         if ((init.method || 'GET').toUpperCase() !== 'GET' && /\/api\/(settings|users|contacts|projects|categories|entities|restore|reset)/.test(url)) {
             try { Object.keys(sessionStorage).filter(k => k.startsWith('mdcache:')).forEach(k => sessionStorage.removeItem(k)); } catch { /* ไม่เป็นไร */ }
         }
-        return original(input, { ...init, headers }).then(res => {
+        /* ⏱️ เวลารอสูงสุด (2026-10-11): เดิมเซิร์ฟเวอร์ค้าง = หมุนไม่รู้จบ · งาน AI/สำรองข้อมูลรอได้นานกว่า */
+        let timer = null, signal = init.signal;
+        if (!signal && typeof AbortController !== 'undefined') {
+            const ac = new AbortController(); signal = ac.signal;
+            timer = setTimeout(() => ac.abort(), /\/(ocr|backup|restore|bulk-import|upload|statement)/i.test(url) ? 180000 : 45000);
+        }
+        return original(input, { ...init, headers, signal }).finally(() => timer && clearTimeout(timer)).catch(err => {
+            if (err?.name === 'AbortError') { try { window.showToast?.('เซิร์ฟเวอร์ตอบช้าเกินไป — ลองใหม่อีกครั้ง', 'error'); } catch { /* */ } }
+            throw err;
+        }).then(res => {
+            /* ฐานข้อมูลไม่พร้อม (503) → บอกผู้ใช้ แทนที่หน้าจอจะว่างเปล่าเงียบ ๆ */
+            if (res.status === 503 && !window.__dbDownShown) {
+                window.__dbDownShown = true; setTimeout(() => { window.__dbDownShown = false; }, 15000);
+                try { window.showToast?.('ฐานข้อมูลไม่พร้อมชั่วคราว — รอสักครู่แล้วลองใหม่', 'error'); } catch { /* */ }
+            }
             /* token หมดอายุ (30 วัน) → เซิร์ฟเวอร์ตอบ 401 ทุกคำขอ แต่หน้าจอเดิมไม่รู้ตัว
                แสดงหน้าว่างเปล่าเหมือนข้อมูลหาย (เจอจริง 2026-10-08: หน้าตั้งค่าว่าง)
                → พากลับหน้าล็อกอินพร้อมบอกเหตุผล ครั้งเดียวต่อการโหลดหน้า */
@@ -801,13 +815,20 @@ function bindBackupRestore() {
                     btnRestore.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${replaceMode ? 'กำลังแทนที่...' : 'กำลัง Upsert...'}`;
                     if (replaceMode) payload.mode = 'replace';
 
-                    const res = await fetch(`${API_BASE}/api/restore/full`, {
+                    const send = () => fetch(`${API_BASE}/api/restore/full`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
                         body: JSON.stringify(payload)
                     });
-
-                    if (!res.ok) throw new Error(await res.text());
+                    let res = await send();
+                    /* เซิร์ฟเวอร์เตือนว่าไฟล์มีรายการน้อยกว่าในระบบมาก (2026-10-11) → ถามยืนยันก่อนล้าง */
+                    if (res.status === 409) {
+                        const warn = await res.json().catch(() => ({}));
+                        if (!warn.needs_confirm || !confirm(`⚠️ ${warn.error}\n\nยืนยันแทนที่ข้อมูลทั้งหมดด้วยไฟล์นี้?`)) throw new Error(warn.error || 'ยกเลิก');
+                        payload.confirm_shrink = true;
+                        res = await send();
+                    }
+                    if (!res.ok) { const e = await res.json().catch(() => null); throw new Error(e?.error || `ผิดพลาด (${res.status})`); }
                     const result = await res.json();
 
                     const statsText = Object.entries(result.stats || {}).map(([k,v]) => `${k}: ${v}`).join('\n');
