@@ -3475,3 +3475,14 @@ frontend
 - ย้ายไฟล์ใช้ครั้งเดียว 182 ไฟล์จากโฟลเดอร์หลัก → archive/scripts (139) · archive/sql (40) · archive/misc (3) — ตรวจแล้วไม่มีโค้ดอ้างถึง (เว้น link_trip_members.sql ที่ข้อความในทริปอ้างชื่อ → คงไว้ที่เดิม)
   · archive/sql/backup-before-trip-finance.sql (ข้อมูลจริง) เพิ่มใน .gitignore แล้ว · ไม่มีไฟล์ใหม่หลุดเข้า git (ทุกไฟล์ที่ย้ายเคย track อยู่แล้ว)
 - หน้าแรก = ledger/home.html: app.js goNewHomeIfDefault() เรียกตอนเปิดแอป (ล็อกอินค้าง) และหลังล็อกอิน · ข้ามเมื่อ ?classic=1 (จำใน sessionStorage rr_classic ทั้งแท็บ), ?txId, หรือมี #hash · ปุ่ม "แอปหลัก" ในหน้า ledger → ../index.html?classic=1 · app.js v185
+
+## 2026-10-11 — ปิดเดือน (North เลือก 1ก ล็อกแน่น + 2ก ต้องผ่านครบ)
+- backend/src/period-close.js: checkPeriod / listPeriods / close (admin) / reopen (admin + เหตุผล ≥3 ตัวอักษร) · route /api/inbox/periods… (เรียกจาก handleLedgerInbox)
+  · เงื่อนไขปิด: ไม่มี PENDING ในเดือน · ไม่มีเอกสารค้างในกล่องที่ลงวันที่เดือนนั้น/อ่านวันที่ไม่ออก · ไม่มีบรรทัด Cat_Uncategorized · ทุกบัญชี BANK/CREDIT ที่มีรายการในเดือน: มี statement ทับเดือน + บรรทัดในเดือนไม่เหลือ NEW + ยอดระบบ ณ period_to = closing_balance (CREDIT ยอมรับเครื่องหมายกลับ) · เงินสดไม่ตรวจ statement
+  · ปิดได้เฉพาะเดือนที่จบแล้ว · เก็บ snapshot ยอดทุกบัญชี ณ สิ้นเดือน · LedgerPeriodLog เก็บประวัติปิด/เปิด
+- ล็อกที่ฐานข้อมูล: backend/db/migrations/2026-10-11-period-close.sql (ตาราง + 8 trigger บน Transactions / TransactionDetails / Settlements[ฝั่ง child]) → RAISE 'PERIOD_CLOSED: …'
+  · ทดสอบกับ wrangler d1 --local แล้ว (สร้างได้ + บล็อกจริง) · ติดตั้ง: `bash setup-period-close.sh` (หรือ setup-db.sh ซึ่งรันไฟล์นี้ด้วย --file)
+  · index.js: dbErrorResponse แปลง PERIOD_CLOSED → 409 · POST /api/transactions เช็กวันที่เดิม+ใหม่เอง (INSERT OR REPLACE ไม่ยิง DELETE trigger) · bulk-import เช็กต่อบัญชี+เดือน (memo) · restore/full ปฏิเสธถ้ามีเดือนปิด
+  · ledger-inbox json() แปลง error PERIOD_CLOSED ทุกจุด → 409 ข้อความคน
+  · quota regex ของ dbErrorResponse แคบลง (ไม่จับ D1_ERROR ทั่วไปเป็น 503)
+- หน้า frontend/ledger/close.html (เมนู "ปิดเดือน" ทุกหน้า ledger + แอปหลัก) · เทส backend/test/period.test.mjs (25 เคส)

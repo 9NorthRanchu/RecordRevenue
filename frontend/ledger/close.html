@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ปิดเดือน · สมุดจด</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  ปิดเดือน (2026-10-11 · North เลือก 1ก + 2ก)
+    GET /api/inbox/periods · GET /api/inbox/periods/{YYYY-MM}/check · POST …/close (ผู้ดูแล) · POST …/reopen {reason} (ผู้ดูแล)
+  ปิดแล้ว = ฐานข้อมูลล็อกเดือนนั้น (trigger) แก้/เพิ่ม/ลบไม่ได้จนกว่าผู้ดูแลจะเปิดเดือน
+-->
+<style>
+  :root { --ink: #212529; --muted: #5c636a; --line: #ece8f8; --bg: #f8f7fd; --brand: #5f3dc4; --pos: #087f5b; --neg: #c92a2a; --bad: #e03131; --radius: 20px; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Anuphan', -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+  body { padding-bottom: 40px; }
+  button, select, input { font: inherit; color: inherit; }
+  a { color: var(--brand); }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+  .top { background: linear-gradient(135deg, #5f3dc4, #7950f2 60%, #9775fa); color: #fff; padding: 18px 0 60px; }
+  .top .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .top h1 { margin: 0; font-size: 24px; } .top p { margin: 2px 0 0; font-size: 14px; color: #e5dbff; }
+  .nav { display: flex; gap: 6px; flex-wrap: wrap; }
+  .nav a { color: #fff; text-decoration: none; background: rgba(255,255,255,.18); padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 600; min-height: 44px; display: inline-flex; align-items: center; }
+  .nav a.on { background: #fff; color: var(--brand); }
+  .tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; background: #fff; border-radius: 16px; padding: 6px; margin-top: -40px; box-shadow: 0 8px 24px rgba(95,61,196,.12); position: sticky; top: 8px; z-index: 5; }
+  .tabs button { border: 0; background: transparent; border-radius: 12px; padding: 8px 2px; font-weight: 700; color: var(--muted); cursor: pointer; min-height: 52px; font-size: 13px; line-height: 1.25; }
+  .tabs button span { display: block; font-size: 20px; }
+  .tabs button.on { background: var(--brand); color: #fff; }
+  @media (max-width: 520px) { .tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .tools { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .inp, select.inp { width: 100%; height: 46px; border: 1.5px solid var(--line); border-radius: 12px; padding: 0 12px; background: #fff; font-size: 16px; }
+  .inp:focus { outline: none; border-color: var(--brand); }
+  .tools .inp { flex: 1; min-width: 180px; width: auto; }
+  .b { border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 700; cursor: pointer; min-height: 46px; background: #f3f0ff; color: var(--brand); white-space: nowrap; }
+  .b.main { background: var(--brand); color: #fff; }
+  .b.danger { background: #fff5f5; color: var(--bad); }
+  .b:disabled { opacity: .5; }
+  .group { margin-top: 18px; }
+  .group h3 { margin: 0 4px 8px; font-size: 14px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .list { background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(95,61,196,.05); }
+  .item { all: unset; box-sizing: border-box; display: flex; gap: 12px; align-items: center; width: 100%; padding: 13px 16px; border-bottom: 1px solid #f3f0ff; cursor: pointer; min-height: 60px; }
+  .item:last-child { border-bottom: 0; }
+  .item:hover, .item:focus-visible { background: #faf8ff; }
+  .ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none; font-size: 20px; }
+  .item .t { flex: 1; min-width: 0; }
+  .item .t b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .t small { display: block; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .r { text-align: right; white-space: nowrap; font-weight: 700; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 9px; background: #f3f0ff; color: var(--brand); margin-left: 4px; }
+  .neg { color: var(--neg); } .pos { color: var(--pos); } .mut { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 30px; }
+  .note { background: #fff9db; color: #7a4a00; border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-top: 12px; }
+  .sheet-bg { position: fixed; inset: 0; background: rgba(33,37,41,.45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { background: #fff; width: 100%; max-width: 560px; max-height: 92vh; border-radius: 24px 24px 0 0; display: flex; flex-direction: column; }
+  @media (min-width: 700px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+  .sheet header { padding: 16px 18px 10px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .sheet header h2 { margin: 0; font-size: 18px; }
+  .sheet .x { border: 0; background: var(--bg); width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+  .sheet .body { padding: 8px 18px 16px; overflow-y: auto; }
+  .sheet footer { padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); display: flex; gap: 10px; }
+  .sheet footer .b.main { flex: 1; }
+  label.f { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 5px; }
+  .g2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { flex: 1; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 8px; cursor: pointer; font-weight: 600; min-height: 46px; }
+  .seg button.on { border-color: var(--brand); background: #f3f0ff; color: var(--brand); }
+  .checks { display: grid; gap: 6px; }
+  .checks label { display: flex; gap: 10px; align-items: center; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 46px; cursor: pointer; }
+  .checks input { width: 20px; height: 20px; }
+  .err { color: var(--bad); font-size: 14px; margin-top: 10px; min-height: 1em; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 14px; font-size: 14px; z-index: 40; max-width: 90vw; }
+  .loading { text-align: center; padding: 50px; color: var(--muted); }
+  /* ── จอใหญ่ Mac/PC: ขยายทั้งหน้า + ตัวอักษรเข้มคมขึ้น (มือถือ/iPad ไม่เปลี่ยน) ── */
+  @media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+    :root { --muted: #464c53; }
+    html, body { -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto; }
+    html { zoom: 1.1; }
+  }
+  @media (min-width: 1280px) and (hover: hover) and (pointer: fine) { html { zoom: 1.2; } }
+  @media (min-width: 1600px) and (hover: hover) and (pointer: fine) { html { zoom: 1.3; } }
+</style>
+<style>
+  .months { display: grid; gap: 8px; margin-top: -40px; }
+  .mrow { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 12px; background: #fff; border-radius: 16px; padding: 12px 14px; min-height: 64px; cursor: pointer; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(95,61,196,.05); }
+  .mrow:hover, .mrow:focus-visible { background: #faf8ff; }
+  .mrow.sel { outline: 2px solid var(--brand); }
+  .mrow .ic { font-size: 22px; }
+  .mrow .t { flex: 1; min-width: 0; } .mrow .t b { display: block; font-size: 17px; } .mrow .t small { color: var(--muted); font-size: 13px; }
+  .st { font-size: 13px; font-weight: 700; border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
+  .st.closed { background: #e6fcf5; color: var(--pos); } .st.open { background: #f1f3f5; color: var(--muted); }
+  .layout { display: grid; gap: 14px; }
+  @media (min-width: 900px) { .layout { grid-template-columns: 340px minmax(0,1fr); align-items: start; } .detail { position: sticky; top: 12px; } }
+  .detail { background: #fff; border-radius: 20px; padding: 16px; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(95,61,196,.05); }
+  .detail h2 { margin: 0 0 4px; font-size: 20px; }
+  .chk { display: flex; gap: 10px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid #f3f0ff; }
+  .chk:last-child { border-bottom: 0; }
+  .chk .i { font-size: 20px; line-height: 1.2; } .chk .t { flex: 1; } .chk .t b { display: block; } .chk .t small { color: var(--muted); }
+  .chk a { font-size: 13px; font-weight: 700; white-space: nowrap; }
+  .acc { font-size: 13px; padding: 8px 10px; border-radius: 10px; background: var(--bg); margin-top: 6px; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+  .acc b { margin-right: 2px; }
+  .acc.bad { background: #fff5f5; color: var(--neg); }
+  .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; } .actions .b { flex: 1; }
+  .log { margin-top: 18px; font-size: 13px; color: var(--muted); } .log div { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap row">
+  <div><h1>ปิดเดือน</h1><p>ตรวจครบ → ปิด → ตัวเลขเดือนนั้นล็อก แก้ย้อนหลังไม่ได้</p></div>
+  <nav class="nav" aria-label="เมนู"><a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a href="reports.html">รายงาน</a><a class="on" href="close.html">ปิดเดือน</a><a href="settings.html">ตั้งค่า</a><a href="../index.html?classic=1">แอปหลัก</a></nav>
+</div></div>
+<main class="wrap">
+  <div class="layout">
+    <div class="months" id="months"><div class="loading">กำลังโหลด…</div></div>
+    <section class="detail" id="detail" aria-live="polite"><div class="empty">เลือกเดือนทางซ้ายเพื่อตรวจ</div></section>
+  </div>
+  <div class="log" id="log"></div>
+</main>
+<script>
+/* ⏱️ ทุกคำขอมีเวลารอสูงสุด (2026-10-11) — เดิมถ้าเซิร์ฟเวอร์ค้าง หน้าจอหมุนไม่รู้จบ
+   อ่านเอกสาร/statement ด้วย AI ใช้เวลานาน ให้รอได้ 3 นาที · อย่างอื่น 40 วินาที
+   และแปลง error ให้อ่านรู้เรื่อง แทน "Failed to fetch" */
+(function () {
+  const orig = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    if (init.signal || typeof AbortController === 'undefined') return orig(input, init);
+    const url = typeof input === 'string' ? input : (input?.url || '');
+    const ms = /\/(upload|statement|import|retry|backup|restore|ocr)/i.test(url) ? 180000 : 40000;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), ms);
+    return orig(input, { ...init, signal: ac.signal })
+      .catch(err => {
+        if (err?.name === 'AbortError') throw new Error('เซิร์ฟเวอร์ตอบช้าเกินไป — ลองใหม่อีกครั้ง');
+        if (err instanceof TypeError) throw new Error('เชื่อมต่อไม่ได้ — ตรวจอินเทอร์เน็ตแล้วลองใหม่');
+        throw err;
+      })
+      .finally(() => clearTimeout(timer));
+  };
+})();
+</script>
+<script>
+(function () {
+  'use strict';
+  const API = (() => {
+    const PROD = 'https://record-revenue.9nimz.workers.dev';
+    try {
+      const q = new URLSearchParams(location.search).get('api');
+      if (q) sessionStorage.setItem('api_base_override', q);
+      const o = sessionStorage.getItem('api_base_override');
+      if (o) return o.replace(/\/$/, '');
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787';
+    } catch (e) { /* ใช้ของจริง */ }
+    return PROD;
+  })();
+  const token = () => { try { return localStorage.getItem('session_token') || sessionStorage.getItem('session_token') || ''; } catch { return ''; } };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = n => Number(n) < 0 ? `(${money(-n)})` : money(n);
+  const $ = s => document.querySelector(s);
+  const S = { list: null, sel: null, check: null };
+  function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 3000); }
+  async function api(path, body) {
+    const res = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) throw Object.assign(new Error('กรุณาเข้าสู่ระบบ'), { login: true });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(d.error || `ผิดพลาด (${res.status})`), { data: d });
+    return d;
+  }
+  const when = iso => iso ? new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  const thisMonth = new Date().toISOString().slice(0, 7);
+
+  async function load() {
+    if (!token()) { $('#months').innerHTML = `<div class="empty"><h3>ยังไม่ได้เข้าสู่ระบบ</h3><a href="../index.html">ไปหน้าเข้าสู่ระบบ</a></div>`; return; }
+    try { S.list = await api('/api/inbox/periods?months=13'); }
+    catch (e) { $('#months').innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
+    renderList();
+    if (S.sel) openMonth(S.sel);
+  }
+  function renderList() {
+    const L = S.list;
+    if (!L.ready) { $('#months').innerHTML = `<div class="note">${esc(L.error_note || 'ยังไม่พร้อม')}</div>`; return; }
+    $('#months').innerHTML = L.months.map(m => {
+      const closed = m.status === 'CLOSED', cur = m.month === thisMonth;
+      const sub = closed ? `ปิดโดย ${esc(m.closed_by || '-')} · ${when(m.closed_at)}` : cur ? 'เดือนปัจจุบัน — ปิดได้เมื่อจบเดือน' : (m.reopened_at ? `เปิดใหม่โดย ${esc(m.reopened_by || '-')} · ${when(m.reopened_at)}` : 'ยังไม่ปิด');
+      return `<button class="mrow ${S.sel === m.month ? 'sel' : ''}" data-m="${m.month}"><span class="ic">${closed ? '🔒' : cur ? '🗓️' : '📂'}</span>
+        <span class="t"><b>${esc(m.label)}</b><small>${sub}</small></span><span class="st ${closed ? 'closed' : 'open'}">${closed ? 'ปิดแล้ว' : 'เปิดอยู่'}</span></button>`;
+    }).join('');
+    $('#months').querySelectorAll('[data-m]').forEach(b => b.onclick = () => openMonth(b.dataset.m));
+    const log = L.log || [];
+    $('#log').innerHTML = log.length ? '<b>ประวัติการปิด/เปิดเดือน</b>' + log.map(l => `<div>${l.action === 'CLOSE' ? '🔒 ปิด' : '🔓 เปิด'} ${esc(l.label)} · ${esc(l.user_name || '')} · ${when(l.created_at)}${l.note ? ` · “${esc(l.note)}”` : ''}</div>`).join('') : '';
+  }
+  async function openMonth(month) {
+    S.sel = month; renderList();
+    const m = S.list.months.find(x => x.month === month);
+    const box = $('#detail');
+    if (m.status === 'CLOSED') {
+      box.innerHTML = `<h2>🔒 ${esc(m.label)}</h2><p class="mut">ปิดโดย ${esc(m.closed_by || '-')} เมื่อ ${when(m.closed_at)}<br>รายการในเดือนนี้แก้ เพิ่ม หรือลบไม่ได้</p>
+        ${S.list.is_admin ? `<label class="f" for="why">เหตุผลที่ต้องเปิดเดือน (บันทึกไว้เป็นประวัติ)</label><input class="inp" id="why" maxlength="300" placeholder="เช่น ลูกค้าแจ้งยอดผิด">
+        <div class="actions"><button class="b danger" id="reopen">🔓 เปิดเดือนเพื่อแก้ไข</button></div>` : '<div class="note">เฉพาะผู้ดูแลเท่านั้นที่เปิดเดือนได้</div>'}`;
+      $('#reopen')?.addEventListener('click', async e => {
+        const reason = $('#why').value.trim();
+        if (reason.length < 3) { toast('กรุณาใส่เหตุผล'); $('#why').focus(); return; }
+        if (!confirm(`เปิด ${m.label} เพื่อแก้ไข?\nอย่าลืมปิดอีกครั้งเมื่อแก้เสร็จ`)) return;
+        e.target.disabled = true;
+        try { await api(`/api/inbox/periods/${month}/reopen`, { reason }); toast(`🔓 เปิด ${m.label} แล้ว`); await load(); }
+        catch (err) { toast('⚠️ ' + err.message); e.target.disabled = false; }
+      });
+      return;
+    }
+    box.innerHTML = `<h2>${esc(m.label)}</h2><div class="loading">กำลังตรวจ…</div>`;
+    let c;
+    try { c = await api(`/api/inbox/periods/${month}/check`); } catch (e) { box.innerHTML = `<h2>${esc(m.label)}</h2><div class="empty">ตรวจไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
+    if (S.sel !== month) return;
+    const accHtml = (c.accounts || []).map(a => `<div class="acc ${a.ok ? '' : 'bad'}">${a.ok ? '✅' : '❌'} <b>${esc(String(a.name).replace(/^\s*\[[^\]]+\]\s*/, ''))}</b>
+      ${a.ok ? `· ตรง ${esc(a.statement_to || '')} ยอด ${a.system_balance < 0 ? `(${Math.abs(a.system_balance).toLocaleString('en-US', { minimumFractionDigits: 2 })})` : Number(a.system_balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '· ' + esc(a.problem)}</div>`).join('');
+    const cur = month >= thisMonth;
+    box.innerHTML = `<h2>${esc(c.label)} ${c.ok ? '✅' : ''}</h2>
+      <p class="mut">${c.ok ? 'ผ่านครบทุกข้อ พร้อมปิดเดือน' : 'ต้องผ่านครบทุกข้อจึงจะปิดเดือนได้'}</p>
+      ${c.items.map(i => `<div class="chk"><span class="i">${i.ok ? '✅' : '❌'}</span><span class="t"><b>${esc(i.title)}</b>${i.detail ? `<small>${esc(i.detail)}</small>` : ''}
+        ${i.key === 'statements' ? accHtml : ''}</span>${!i.ok && i.link ? `<a href="${i.link}">ไปแก้ ›</a>` : ''}</div>`).join('')}
+      <div class="actions">
+        <button class="b" id="recheck">🔄 ตรวจอีกครั้ง</button>
+        ${S.list.is_admin ? `<button class="b main" id="close" ${c.ok && !cur ? '' : 'disabled'}>🔒 ปิด ${esc(c.label)}</button>` : ''}
+      </div>
+      ${cur ? '<div class="note">เดือนปัจจุบันยังไม่จบ — ปิดได้ตั้งแต่วันที่ 1 ของเดือนถัดไป</div>' : ''}
+      ${!S.list.is_admin ? '<div class="note">เฉพาะผู้ดูแลเท่านั้นที่ปิดเดือนได้</div>' : ''}`;
+    $('#recheck').onclick = () => openMonth(month);
+    if (!matchMedia('(min-width: 900px)').matches) box.scrollIntoView({ behavior: 'smooth', block: 'start' });   // มือถือ: ผลตรวจอยู่ใต้รายการเดือน
+    $('#close')?.addEventListener('click', async e => {
+      if (!confirm(`ปิด ${c.label}?\n\nหลังปิด รายการในเดือนนี้จะแก้ เพิ่ม หรือลบไม่ได้\nจนกว่าผู้ดูแลจะเปิดเดือน (ต้องใส่เหตุผล)`)) return;
+      e.target.disabled = true;
+      try { await api(`/api/inbox/periods/${month}/close`, {}); toast(`🔒 ปิด ${c.label} เรียบร้อย`); await load(); }
+      catch (err) { toast('⚠️ ' + err.message); e.target.disabled = false; if (err.data?.check) openMonth(month); }
+    });
+  }
+  load();
+})();
+</script>
+</body>
+</html>

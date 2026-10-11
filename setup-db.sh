@@ -112,10 +112,17 @@ step "CREATE INDEX IF NOT EXISTS idx_tx_desc ON Transactions(statement_desc);" "
 step "PRAGMA optimize;" "ปรับสถิติให้ฐานข้อมูลเลือกดัชนีถูก"
 
 echo
+echo "▶ ปิดเดือน: ตาราง LedgerPeriods + trigger ล็อกเดือนที่ปิด (2026-10-11)"
+# trigger มี ; อยู่ข้างใน ต้องรันทั้งไฟล์ (--file) ไม่ใช่ทีละคำสั่ง · ทุกคำสั่งเป็น IF NOT EXISTS รันซ้ำได้
+printf '  · %-46s' "ไฟล์ 2026-10-11-period-close.sql"
+out=$(npx wrangler d1 execute "$DB" --remote --file backend/db/migrations/2026-10-11-period-close.sql 2>&1)
+if echo "$out" | grep -qi 'error'; then echo "ล้มเหลว ↓"; echo "$out" | grep -i -A2 'error' | head -6 | sed 's/^/      /'; else echo "เรียบร้อย"; fi
+
+echo
 echo "▶ ตรวจผลรวม"
-echo "  ตารางที่ต้องมี (ควรได้ 8 ชื่อ):"
+echo "  ตารางที่ต้องมี (ควรได้ 10 ชื่อ):"
 npx wrangler d1 execute "$DB" --remote --command \
-  "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('TripLegs','TripMemberSessions','TripDayPlans','TripBookings','LedgerDocs','LedgerDocLinks','LedgerRules','LedgerStatements');" 2>&1 \
+  "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('TripLegs','TripMemberSessions','TripDayPlans','TripBookings','LedgerDocs','LedgerDocLinks','LedgerRules','LedgerStatements','LedgerPeriods','LedgerPeriodLog');" 2>&1 \
   | grep -o '"name": "[A-Za-z]*"' | sed 's/"name": /    ✓ /;s/"//g'
 
 echo "  คอลัมน์ใน TripStops (ควรได้ 9 ชื่อ):"

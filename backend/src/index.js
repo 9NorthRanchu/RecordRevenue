@@ -2,6 +2,7 @@ import { handleUnifiedTrip } from './unified-trip.js';
 import { handleLegacyTrip } from './legacy-trip.js';
 import { handleLedgerInbox } from './ledger-inbox.js';
 import { planSettlementKeep } from './settle-keep.js';
+import { isMonthClosed, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
 import { verifyPassword, upgradeStoredPassword, hashPassword, isHashed } from './auth.js';
 import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSessions } from './session.js';
 // backend/src/index.js
@@ -332,6 +333,12 @@ export default {
           /* บัญชีต้องเป็นของผู้ใช้ และถ้าแก้รายการเดิม รายการนั้นต้องเป็นของผู้ใช้ด้วย (2026-10-11) */
           if (!(await canUseAccount(account_id))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
           if (!(await canWriteTx(transaction_id))) return deny('ไม่มีสิทธิ์แก้รายการนี้');
+          /* INSERT OR REPLACE ย้ายวันที่ออกจากเดือนที่ปิดได้โดย trigger ไม่เห็น → เช็กวันที่เดิมเองตรงนี้ */
+          if (transaction_id) {
+            const old = await env.DB.prepare(`SELECT account_id, date FROM Transactions WHERE transaction_id = ?`).bind(transaction_id).first();
+            if (old && await isMonthClosed(env, old.account_id, old.date)) return deny(PERIOD_CLOSED_MSG, 409);
+          }
+          if (await isMonthClosed(env, account_id, date)) return deny(PERIOD_CLOSED_MSG, 409);
 
           // Validate Sub-transactions Sum (signed model: net = amount - sign(amount)*(|fee|+|wht|))
           let totalCalculated = 0;
@@ -1201,6 +1208,11 @@ export default {
         /* 🛡️ กันล้างข้อมูลด้วยไฟล์ที่ไม่ครบ (2026-10-11): โหมด replace ลบของเดิมก่อนแล้วค่อยใส่ใหม่
            ถ้าไฟล์ว่าง/เสีย/ไม่มีรายการ จะเหลือฐานข้อมูลว่างเปล่า → ตรวจไฟล์ก่อนลบ
            และ "กู้ซ้ำด้วยไฟล์เดิม" ปลอดภัยเสมอ (ใส่แบบแทนที่ทับของเดิม) ถ้าล้มกลางทางให้กดกู้อีกครั้ง */
+        /* มีเดือนที่ปิดแล้ว → กู้ข้อมูลทับไม่ได้ (จะไปแก้ตัวเลขในเดือนที่ปิด) ให้เปิดเดือนก่อน */
+        const closedAny = await env.DB.prepare(`SELECT period FROM LedgerPeriods WHERE family_id = ? AND status = 'CLOSED' LIMIT 1`).bind(fid).first().catch(() => null);
+        if (closedAny) {
+          return new Response(JSON.stringify({ error: `มีเดือนที่ปิดบัญชีแล้ว (${closedAny.period}) — เปิดเดือนก่อนจึงจะกู้ข้อมูลได้` }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
         if (body.mode === 'replace') {
           const nTx = Array.isArray(body.transactions) ? body.transactions.length : 0;
           const nAcc = Array.isArray(body.accounts) ? body.accounts.length : 0;
@@ -1660,11 +1672,17 @@ export default {
         /* สิทธิ์ (2026-10-11): ใช้ได้เฉพาะบัญชีของผู้ใช้ และห้ามเขียนทับรายการของบัญชีอื่น */
         const myAccounts = new Set(((await env.DB.prepare(`SELECT a.account_id FROM Accounts a JOIN UserPermissions up ON up.entity_id = a.entity_id WHERE up.user_id = ?`).bind(userId).all()).results || []).map(r => r.account_id));
         const givenIds = [...new Set(transactions.map(t => t && t.transaction_id).filter(Boolean))];
-        const foreignIds = new Set();
+        const foreignIds = new Set(), closedIds = new Set();
+        /* จำผลต่อ บัญชี+เดือน — นำเข้าหลายพันแถวจะไม่ยิงคำถามซ้ำ (เพดาน 1,000 คำสั่งต่อครั้ง) */
+        const closedMemo = new Map();
+        const monthClosed = async (acc, d) => { const k = acc + '|' + String(d || '').slice(0, 7); if (!closedMemo.has(k)) closedMemo.set(k, await isMonthClosed(env, acc, d)); return closedMemo.get(k); };
         for (let i = 0; i < givenIds.length; i += 90) {
           const part = givenIds.slice(i, i + 90);
-          const rows = (await env.DB.prepare(`SELECT transaction_id, account_id FROM Transactions WHERE transaction_id IN (${part.map(() => '?').join(',')})`).bind(...part).all()).results || [];
-          for (const r of rows) if (!myAccounts.has(r.account_id)) foreignIds.add(r.transaction_id);
+          const rows = (await env.DB.prepare(`SELECT transaction_id, account_id, date FROM Transactions WHERE transaction_id IN (${part.map(() => '?').join(',')})`).bind(...part).all()).results || [];
+          for (const r of rows) {
+            if (!myAccounts.has(r.account_id)) foreignIds.add(r.transaction_id);
+            else if (await monthClosed(r.account_id, r.date)) closedIds.add(r.transaction_id);
+          }
         }
         const savedIds = [];
         const errorList = [];
@@ -1680,6 +1698,10 @@ export default {
 
           if (!myAccounts.has(account_id) || (transaction_id && foreignIds.has(transaction_id))) {
             errorList.push({ transaction_id: transaction_id || '?', error: 'ไม่มีสิทธิ์ใช้บัญชีหรือรายการนี้' });
+            continue;
+          }
+          if (await monthClosed(account_id, date) || (transaction_id && closedIds.has(transaction_id))) {
+            errorList.push({ transaction_id: transaction_id || '?', error: PERIOD_CLOSED_MSG });
             continue;
           }
           const txId = transaction_id || ('BLK-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7));
@@ -2255,8 +2277,12 @@ export default {
    D1 เกินโควตา/ล่ม → 503 พร้อมบอกให้ลองใหม่ แทน 500 ที่ดูเหมือนโปรแกรมพัง */
 function dbErrorResponse(err, corsHeaders) {
   const msg = String(err?.message || err || '');
+  if (isPeriodClosedError(msg)) {
+    return new Response(JSON.stringify({ error: PERIOD_CLOSED_MSG, code: 'PERIOD_CLOSED' }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
   console.error('API error:', msg, err?.stack);
-  const quota = /limit|quota|exceeded|too many|overloaded|D1_ERROR|network connection lost|timed? ?out/i.test(msg);
+  /* เฉพาะอาการ "ฐานข้อมูลไม่พร้อม" จริง ๆ — error อื่นของ D1 (เช่น constraint) ไม่นับเป็น 503 */
+  const quota = /quota|exceeded|rows? (read|written)|overloaded|network connection lost|timed? ?out|storage operation|reset because its code was updated/i.test(msg);
   return new Response(JSON.stringify({
     error: quota ? 'ฐานข้อมูลไม่พร้อมชั่วคราว (โควตาเต็มหรือระบบหนาแน่น) กรุณาลองใหม่อีกครั้ง' : (msg || 'เกิดข้อผิดพลาด'),
     code: quota ? 'DB_UNAVAILABLE' : 'SERVER_ERROR'

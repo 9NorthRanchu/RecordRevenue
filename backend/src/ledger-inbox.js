@@ -38,6 +38,7 @@
 //      source: LINE_SLIP · LINE_TEXT · PDF_IMPORT · WEB_GRID · status: PENDING_REVIEW · CONFIRMED
 // ═══════════════════════════════════════════════════════════════
 import { planSettlementKeep } from './settle-keep.js';
+import { handlePeriods, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
 import {
   round2, bankKey, last4, accountHintKey, partyKey, parseCashText, slipDirection,
   scoreCandidate, decideMatch, balanceGap, proposeLines, templateFromDetails,
@@ -54,8 +55,11 @@ const UNCATEGORIZED = 'Cat_Uncategorized';
 const TRANSFER_CATEGORY = 'Bank_Transfer';
 const SUMMARY_WORDS = /^(สรุป|ยอด|วันนี้|เมื่อวาน|รายวัน|เดือน|today|yesterday|daily|month|help|เมนู)/i;
 
-const json = (data, cors, status = 200) =>
-  new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+const json = (data, cors, status = 200) => {
+  /* error จากเดือนที่ปิดแล้ว (trigger ฐานข้อมูล) → ข้อความคนอ่าน + 409 ไม่ว่าจะหลุดมาจากฟังก์ชันไหน */
+  if (data && typeof data.error === 'string' && isPeriodClosedError(data.error)) { data = { ...data, error: PERIOD_CLOSED_MSG, code: 'PERIOD_CLOSED' }; status = 409; }
+  return new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+};
 const newId = prefix => `${prefix}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const parse = (s, fallback = null) => { try { return s ? JSON.parse(s) : fallback; } catch { return fallback; } };
@@ -174,6 +178,8 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
       const out = await runAction(env, user, act[1], act[2], body);
       return json(out, cors, out.error ? (out.status || 400) : 200);
     }
+    const per = await handlePeriods(request, env, url, cors, user);   // ปิดเดือน /api/inbox/periods…
+    if (per) return per;
     return json({ error: 'Not Found' }, cors, 404);
   } catch (err) {
     return json({ error: err.message }, cors, 500);
