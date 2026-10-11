@@ -102,6 +102,16 @@ step "CREATE TABLE IF NOT EXISTS LedgerStatements (stmt_id TEXT PRIMARY KEY, fam
 step "CREATE INDEX IF NOT EXISTS idx_ledgerstatements_account ON LedgerStatements(account_id, period_to);" "ดัชนี idx_ledgerstatements_account"
 
 echo
+echo "▶ ดัชนีลดการอ่าน D1 (2026-10-11 — rows_read เกินโควตา: ยอดบัญชีอ่านทั้งตารางทุกบัญชี)"
+step "CREATE INDEX IF NOT EXISTS idx_tx_acc_status_amt ON Transactions(account_id, status, total_amount);" "ดัชนี idx_tx_acc_status_amt"
+step "CREATE INDEX IF NOT EXISTS idx_tx_status_date ON Transactions(status, date);" "ดัชนี idx_tx_status_date"
+step "CREATE INDEX IF NOT EXISTS idx_td_tx ON TransactionDetails(transaction_id);" "ดัชนี idx_td_tx"
+step "CREATE INDEX IF NOT EXISTS idx_td_category ON TransactionDetails(category_id);" "ดัชนี idx_td_category"
+step "CREATE INDEX IF NOT EXISTS idx_settle_parent ON Settlements(parent_detail_id, settled_amount);" "ดัชนี idx_settle_parent"
+step "CREATE INDEX IF NOT EXISTS idx_userperm_entity ON UserPermissions(entity_id, user_id);" "ดัชนี idx_userperm_entity"
+step "PRAGMA optimize;" "ปรับสถิติให้ฐานข้อมูลเลือกดัชนีถูก"
+
+echo
 echo "▶ ตรวจผลรวม"
 echo "  ตารางที่ต้องมี (ควรได้ 8 ชื่อ):"
 npx wrangler d1 execute "$DB" --remote --command \

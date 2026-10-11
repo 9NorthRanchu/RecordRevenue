@@ -3430,3 +3430,18 @@ npx wrangler pages deploy frontend  # frontend
 - ยังไม่มีในหน้าใหม่: ลบสมาชิก, โปรเจกต์/ทริป, สำรองข้อมูล → ใช้ "ตั้งค่าระบบ (แบบเดิม)"
 - backend: /api/settings/save และ /delete กันแก้/ลบ/สร้างข้ามครอบครัว (OWN_SQL) — ทดสอบมือแล้ว: แก้ของครอบครัวอื่น 404, สร้างบัญชีใส่บริษัทคนอื่น 400
 - เมนูแอปหลัก: "ตั้งค่า (ใหม่)" + "ตั้งค่าระบบ (แบบเดิม)"; ทุกหน้า ledger มีลิงก์ ตั้งค่า
+- อ่านง่ายบน Mac/PC: ทุกหน้า ledger (ยกเว้น quick.html) มี @media ≥1024px + pointer:fine → `html{zoom:1.1/1.2/1.3}` ตามความกว้าง (1024/1280/1600), --muted เข้มขึ้น, ปิด antialiased · กล่องรอเคลียร์กว้าง 880px บนจอใหญ่ · มือถือ/iPad ไม่เปลี่ยน
+
+## 2026-10-11 — D1 rows_read เกินโควตา (6.15M/5M ต่อวัน)
+- `diag-d1.sh [1d|7d|31d]` = wrangler d1 insights เรียงตาม rows_read (ใช้ได้แม้โควตาเต็ม)
+- ต้นเหตุ: ยอดคงเหลือ `(SELECT SUM(total_amount) FROM Transactions WHERE account_id=a.account_id AND status='CONFIRMED')` ใน /api/settings และ /api/accounts อ่าน ~481,000 แถว/ครั้ง (สแกนทั้งตารางทุกบัญชี) = 70% ของทั้งหมด · listParties/dashboard arap (Settlements subquery) ~100–124k/ครั้ง
+- แก้: `add-indexes.sh` (และเพิ่มใน setup-db.sh) — idx_tx_acc_status_amt, idx_tx_status_date, idx_td_tx, idx_td_category, idx_settle_parent, idx_userperm_entity + PRAGMA optimize · EXPLAIN QUERY PLAN ยืนยันเปลี่ยน SCAN → SEARCH USING COVERING INDEX
+
+## 2026-10-11 — ระยะ 0 ปิดช่องโหว่ (index.js)
+- ประตูเดียวหลัง /api/login: ทุก route ใน index.js ต้องมี authUserId ไม่งั้น 401 (trip/inbox/LINE webhook อยู่ก่อนประตู จัดการสิทธิ์เอง)
+- helper: canUseAccount, canWriteTx, familyOf, deny
+- /api/export → 410 (ไม่มีหน้าไหนใช้) · outstanding_ar จำกัดด้วย UserPermissions · settlements POST ตรวจทั้งสองบรรทัด · categories/account-types กรองครอบครัว
+- POST /api/transactions + /bulk-import: ตรวจบัญชีเป็นของผู้ใช้ + ห้ามเขียนทับ transaction_id ของบัญชีอื่น
+- resolveUserId อยู่ใน try แล้ว · error ทั้งหมดผ่าน dbErrorResponse(): ไม่ส่ง stack, D1 เกินโควตา/ล่ม → 503 code DB_UNAVAILABLE
+- เทส: backend/test/security.test.mjs (20 เคส)
+- ยังเปิดอยู่: ALLOW_HEADER_FALLBACK=true (session.js) — ผู้ใช้เดียวที่ยังพึ่ง x-user-id คือ GoogleSheetsSync.js (Apps Script) รอ North ยืนยันว่ายังใช้ไหม

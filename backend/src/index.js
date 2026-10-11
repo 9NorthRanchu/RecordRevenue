@@ -23,7 +23,11 @@ export default {
     /* ระบุตัวตน "ที่เดียว" แล้วส่งต่อให้ทุก route ใช้
        เดิมแต่ละ route อ่าน x-user-id เองแล้วเชื่อทันที รวม 45 จุด ซึ่งแปลว่า
        ถ้าจะเพิ่มการตรวจสอบต้องแก้ทั้ง 45 จุดและพลาดจุดเดียวก็รั่วทั้งระบบ */
-    const authUserId = await resolveUserId(request, env);
+    /* D1 ล่ม/เกินโควตา ตรงนี้เคยโยน error นอก try → Cloudflare ตอบหน้า 1101 ไม่มี CORS
+       หน้าเว็บเลยเห็นแค่ "เชื่อมต่อไม่ได้" · ตอนนี้ตอบเป็น JSON ที่อ่านรู้เรื่อง (2026-10-11) */
+    let authUserId = '';
+    try { authUserId = await resolveUserId(request, env); }
+    catch (err) { return dbErrorResponse(err, corsHeaders); }
 
     try {
       // Unified Trip (โมดูลแยก) — คืน null ถ้าไม่ใช่ path ของตัวเอง จึงไม่กระทบ route เดิม
@@ -104,6 +108,25 @@ export default {
           }
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
+
+      /* 🔒 ประตูเดียว (2026-10-11): ทุก route ด้านล่างนี้ต้องล็อกอิน
+         เดิมบาง route ไม่ตรวจเลย (export, outstanding_ar, settlements, categories, slip-ocr ...)
+         ใครรู้ URL ก็ดึงข้อมูลหรือใช้โควตา AI ได้ */
+      if (!authUserId) {
+        return new Response(JSON.stringify({ error: 'กรุณาเข้าสู่ระบบ' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      /* บัญชีนี้ผู้ใช้มีสิทธิ์ไหม (ผ่านบริษัทที่เห็น) · ใช้ดัชนี ไม่สแกนตาราง */
+      const canUseAccount = async (accId) => !!(accId && await env.DB.prepare(
+        `SELECT 1 FROM Accounts a JOIN UserPermissions up ON up.entity_id = a.entity_id WHERE a.account_id = ? AND up.user_id = ?`
+      ).bind(accId, authUserId).first());
+      /* รหัสรายการนี้ ถ้ามีอยู่แล้ว ต้องเป็นของบัญชีที่ผู้ใช้มีสิทธิ์ (กันเขียนทับรายการคนอื่น) */
+      const canWriteTx = async (txId) => {
+        if (!txId) return true;
+        const ex = await env.DB.prepare(`SELECT account_id FROM Transactions WHERE transaction_id = ?`).bind(txId).first();
+        return !ex || await canUseAccount(ex.account_id);
+      };
+      const familyOf = async () => (await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(authUserId).first())?.family_id || null;
+      const deny = (msg, status = 403) => new Response(JSON.stringify({ error: msg }), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
       // 2. OCR Test Endpoint (Direct Web Upload)
       if (url.pathname === '/api/slip-ocr' && request.method === 'POST') {
@@ -292,6 +315,9 @@ export default {
           if (!account_id || !date || total_amount === undefined || !details || !details.length) {
             return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
           }
+          /* บัญชีต้องเป็นของผู้ใช้ และถ้าแก้รายการเดิม รายการนั้นต้องเป็นของผู้ใช้ด้วย (2026-10-11) */
+          if (!(await canUseAccount(account_id))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
+          if (!(await canWriteTx(transaction_id))) return deny('ไม่มีสิทธิ์แก้รายการนี้');
 
           // Validate Sub-transactions Sum (signed model: net = amount - sign(amount)*(|fee|+|wht|))
           let totalCalculated = 0;
@@ -430,6 +456,8 @@ export default {
             (d.amount - IFNULL(SUM(s.settled_amount), 0)) as remaining_amount
           FROM TransactionDetails d
           JOIN Transactions t ON d.transaction_id = t.transaction_id
+          JOIN Accounts acc ON acc.account_id = t.account_id
+          JOIN UserPermissions upx ON upx.entity_id = acc.entity_id AND upx.user_id = ?
           JOIN Categories c ON d.category_id = c.category_id
           JOIN Captions cp ON c.caption_id = cp.type_id
           LEFT JOIN Contacts co ON d.contact_id = co.contact_id
@@ -442,7 +470,7 @@ export default {
           HAVING remaining_amount > 0 OR remaining_amount < 0
           ORDER BY t.date ASC
         `;
-        const result = await env.DB.prepare(query).all();
+        const result = await env.DB.prepare(query).bind(authUserId).all();
         return new Response(JSON.stringify(result.results), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
@@ -455,6 +483,13 @@ export default {
           return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
+        /* ทั้งรายการตั้งหนี้และรายการชำระ ต้องอยู่ในบัญชีที่ผู้ใช้มีสิทธิ์ */
+        const ownDetail = async (id) => !!(await env.DB.prepare(`SELECT 1 FROM TransactionDetails d
+            JOIN Transactions t ON t.transaction_id = d.transaction_id
+            JOIN Accounts a ON a.account_id = t.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id
+            WHERE d.detail_id = ? AND up.user_id = ?`).bind(id, authUserId).first());
+        if (!(await ownDetail(parent_detail_id)) || !(await ownDetail(child_detail_id))) return deny('ไม่พบรายการ หรือไม่มีสิทธิ์', 404);
+
         const settlement_id = 'STL-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
         await env.DB.prepare(`
           INSERT INTO Settlements (settlement_id, parent_detail_id, child_detail_id, settled_amount)
@@ -466,7 +501,7 @@ export default {
 
       // 6. Master Data Endpoints
       if (url.pathname === '/api/account-types') {
-        const types = await env.DB.prepare(`SELECT * FROM Captions ORDER BY behavior, name`).all();
+        const types = await env.DB.prepare(`SELECT * FROM Captions WHERE family_id = ? OR family_id IS NULL ORDER BY behavior, name`).bind(await familyOf()).all();
         return new Response(JSON.stringify(types.results), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       if (url.pathname === '/api/categories') {
@@ -474,8 +509,9 @@ export default {
           SELECT c.*, at.name as caption_name, at.behavior as caption_behavior 
           FROM Categories c
           JOIN Captions at ON c.caption_id = at.type_id
+          WHERE c.family_id = ? OR c.family_id IS NULL
           ORDER BY at.name, c.name
-        `).all();
+        `).bind(await familyOf()).all();
         return new Response(JSON.stringify(categories.results), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       if (url.pathname === '/api/contacts') {
@@ -698,7 +734,12 @@ export default {
       }
 
       // 11. Database Export Endpoint (For Google Sheets sync)
+      /* ปิดแล้ว (2026-10-11): ดึงทั้งตารางของทุกครอบครัว ไม่ตรวจสิทธิ์ และไม่มีหน้าไหนใช้
+         ส่งออกข้อมูลให้ใช้ /api/export/flat หรือหน้า "รายงาน → ส่งออก" แทน */
       if (url.pathname === '/api/export') {
+        return deny('ปิดใช้งานแล้ว — ใช้หน้า รายงาน → ส่งออก', 410);
+      }
+      if (url.pathname === '/api/export-disabled-legacy') {
         const table = url.searchParams.get('table') || 'Transactions';
         const validTables = ['Transactions', 'TransactionDetails', 'Accounts', 'Entities', 'Categories', 'Contacts', 'Projects', 'Settlements'];
         if (!validTables.includes(table)) {
@@ -1581,6 +1622,15 @@ export default {
         }
 
         const txStatus = (importStatus === 'CONFIRMED') ? 'CONFIRMED' : 'PENDING_REVIEW';
+        /* สิทธิ์ (2026-10-11): ใช้ได้เฉพาะบัญชีของผู้ใช้ และห้ามเขียนทับรายการของบัญชีอื่น */
+        const myAccounts = new Set(((await env.DB.prepare(`SELECT a.account_id FROM Accounts a JOIN UserPermissions up ON up.entity_id = a.entity_id WHERE up.user_id = ?`).bind(userId).all()).results || []).map(r => r.account_id));
+        const givenIds = [...new Set(transactions.map(t => t && t.transaction_id).filter(Boolean))];
+        const foreignIds = new Set();
+        for (let i = 0; i < givenIds.length; i += 90) {
+          const part = givenIds.slice(i, i + 90);
+          const rows = (await env.DB.prepare(`SELECT transaction_id, account_id FROM Transactions WHERE transaction_id IN (${part.map(() => '?').join(',')})`).bind(...part).all()).results || [];
+          for (const r of rows) if (!myAccounts.has(r.account_id)) foreignIds.add(r.transaction_id);
+        }
         const savedIds = [];
         const errorList = [];
         const stmts = [];
@@ -1593,6 +1643,10 @@ export default {
             continue;
           }
 
+          if (!myAccounts.has(account_id) || (transaction_id && foreignIds.has(transaction_id))) {
+            errorList.push({ transaction_id: transaction_id || '?', error: 'ไม่มีสิทธิ์ใช้บัญชีหรือรายการนี้' });
+            continue;
+          }
           const txId = transaction_id || ('BLK-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7));
 
           stmts.push(
@@ -2157,10 +2211,22 @@ export default {
 
 
     } catch (err) {
-      return new Response(JSON.stringify({ error: err.message, stack: err.stack }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return dbErrorResponse(err, corsHeaders);
     }
   }
 };
+
+/* แปลง error เป็นข้อความที่หน้าเว็บแสดงได้ · ไม่ส่ง stack (เผยโครงสร้างโค้ด)
+   D1 เกินโควตา/ล่ม → 503 พร้อมบอกให้ลองใหม่ แทน 500 ที่ดูเหมือนโปรแกรมพัง */
+function dbErrorResponse(err, corsHeaders) {
+  const msg = String(err?.message || err || '');
+  console.error('API error:', msg, err?.stack);
+  const quota = /limit|quota|exceeded|too many|overloaded|D1_ERROR|network connection lost|timed? ?out/i.test(msg);
+  return new Response(JSON.stringify({
+    error: quota ? 'ฐานข้อมูลไม่พร้อมชั่วคราว (โควตาเต็มหรือระบบหนาแน่น) กรุณาลองใหม่อีกครั้ง' : (msg || 'เกิดข้อผิดพลาด'),
+    code: quota ? 'DB_UNAVAILABLE' : 'SERVER_ERROR'
+  }), { status: quota ? 503 : 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
 
 async function runGeminiStatement(pdfBase64, imagesBase64, apiKey) {
   if (!apiKey) {
