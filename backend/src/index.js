@@ -1390,54 +1390,83 @@ export default {
         return new Response(JSON.stringify({ success: true, reassigned_to: userId, report }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // 15.2 Reset data (Admin only) — ล้างธุรกรรม หรือ ล้างทั้งหมด
-      //   scope = 'transactions' → ลบเฉพาะ Transactions/Details/Settlements (เก็บ master data)
-      //   scope = 'all'          → ลบทุกอย่างของครอบครัว ยกเว้น Users + Families
+      // 15.2 Reset data (Admin only) — ล้างธุรกรรม หรือ ล้างทั้งหมด (ปรับ 2026-10-12)
+      //   scope = 'transactions' → ลบรายการ/บรรทัดย่อย/การตัดชำระ + เอกสารในกล่องรอเคลียร์ + statement + ทะเบียนทรัพย์สินที่มาจากรายการ (เก็บ master data)
+      //   scope = 'all'          → ลบทุกอย่างของครอบครัว ยกเว้น Users + Families (+ ประวัติปิด/เปิดเดือน เก็บไว้ตรวจย้อนหลัง)
+      //   preview: true → ไม่ลบ แค่บอกจำนวน · มีเดือนที่ปิดแล้ว ต้องส่ง reopen_closed: true (ระบบเปิดเดือนให้ก่อนลบ + บันทึกประวัติ)
       if (url.pathname === '/api/reset' && request.method === 'POST') {
-        const userId = authUserId;
-        const me = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
-        if (!me || me.role !== 'admin') {
-          return new Response(JSON.stringify({ error: 'เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่ล้างข้อมูลได้' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-        const { scope, confirm } = await request.json();
-        if (confirm !== 'RESET') {
-          return new Response(JSON.stringify({ error: 'ต้องยืนยันด้วยรหัส RESET' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
+        const J = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const me = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(authUserId).first();
+        if (!me || me.role !== 'admin') return J({ error: 'เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่ล้างข้อมูลได้' }, 403);
+        const body = await request.json().catch(() => ({}));
+        const scope = body.scope === 'all' ? 'all' : body.scope === 'transactions' ? 'transactions' : null;
+        if (!scope) return J({ error: 'เลือกขอบเขตการล้าง (transactions หรือ all)' }, 400);
         const fid = me.family_id;
-        const txFam = `account_id IN (SELECT a.account_id FROM Accounts a JOIN Entities e ON a.entity_id=e.entity_id WHERE e.family_id=?)`;
-
-        // ลำดับ child-first เพื่อไม่ให้ FK พัง — ทุกคำสั่ง scope ด้วย family_id
+        const famAcc = `SELECT a.account_id FROM Accounts a JOIN Entities e ON a.entity_id = e.entity_id WHERE e.family_id = ?`;
+        const cnt = async (sql) => { try { return (await env.DB.prepare(sql).bind(fid).first())?.n || 0; } catch { return 0; } };
+        const closed = await (async () => { try { return ((await env.DB.prepare(`SELECT period FROM LedgerPeriods WHERE family_id = ? AND status = 'CLOSED' ORDER BY period`).bind(fid).all()).results || []).map(r => r.period); } catch { return []; } })();
+        const summary = {
+          scope, closed_periods: closed,
+          transactions: await cnt(`SELECT COUNT(*) AS n FROM Transactions WHERE account_id IN (${famAcc})`),
+          docs: await cnt(`SELECT COUNT(*) AS n FROM LedgerDocs WHERE family_id = ?`),
+          statements: await cnt(`SELECT COUNT(*) AS n FROM LedgerStatements WHERE family_id = ?`),
+          accounts: await cnt(`SELECT COUNT(*) AS n FROM Accounts WHERE entity_id IN (SELECT entity_id FROM Entities WHERE family_id = ?)`),
+          categories: await cnt(`SELECT COUNT(*) AS n FROM Categories WHERE family_id = ?`),
+        };
+        if (body.preview) return J({ preview: true, ...summary });
+        if (body.confirm !== 'RESET') return J({ error: 'ต้องยืนยันด้วยรหัส RESET' }, 400);
+        if (closed.length && body.reopen_closed !== true) return J({ error: `มี ${closed.length} เดือนที่ปิดบัญชีแล้ว — ต้องยืนยันให้ระบบเปิดเดือนก่อนล้าง`, code: 'HAS_CLOSED', closed_periods: closed }, 409);
+        const now = new Date().toISOString();
+        const pre = [];
+        if (closed.length) {
+          pre.push(...closed.map(p => [`INSERT INTO LedgerPeriodLog (log_id, family_id, period, action, user_id, note, created_at) VALUES ('PL-RESET-' || ? || '-' || ?, ?, ?, 'REOPEN', ?, ?, ?)`,
+            [p, Date.now().toString(36), fid, p, authUserId, `เปิดอัตโนมัติก่อนล้างข้อมูล (${scope})`, now]]));
+        }
+        pre.push([`DELETE FROM LedgerPeriods WHERE family_id = ?`, [fid]]);
+        // ลำดับ child-first · ทุกคำสั่ง scope ด้วย family_id
         const txSteps = [
-          [`DELETE FROM Settlements WHERE parent_detail_id IN (SELECT d.detail_id FROM TransactionDetails d JOIN Transactions t ON d.transaction_id=t.transaction_id JOIN Accounts a ON t.account_id=a.account_id JOIN Entities e ON a.entity_id=e.entity_id WHERE e.family_id=?)`, fid],
-          [`DELETE FROM TransactionDetails WHERE transaction_id IN (SELECT t.transaction_id FROM Transactions t JOIN Accounts a ON t.account_id=a.account_id JOIN Entities e ON a.entity_id=e.entity_id WHERE e.family_id=?)`, fid],
-          [`DELETE FROM Transactions WHERE ${txFam}`, fid],
+          [`DELETE FROM Settlements WHERE parent_detail_id IN (SELECT d.detail_id FROM TransactionDetails d JOIN Transactions t ON d.transaction_id = t.transaction_id WHERE t.account_id IN (${famAcc})) OR child_detail_id IN (SELECT d.detail_id FROM TransactionDetails d JOIN Transactions t ON d.transaction_id = t.transaction_id WHERE t.account_id IN (${famAcc}))`, [fid, fid]],
+          [`DELETE FROM TransactionDetails WHERE transaction_id IN (SELECT transaction_id FROM Transactions WHERE account_id IN (${famAcc}))`, [fid]],
+          [`DELETE FROM Transactions WHERE account_id IN (${famAcc})`, [fid]],
+          [`DELETE FROM LedgerDocLinks WHERE doc_id IN (SELECT doc_id FROM LedgerDocs WHERE family_id = ?)`, [fid]],
+          [`DELETE FROM LedgerDocs WHERE family_id = ?`, [fid]],
+          [`DELETE FROM LedgerStatements WHERE family_id = ?`, [fid]],
+          [`DELETE FROM AssetItems WHERE family_id = ? AND source = 'TX'`, [fid]],
+          [`UPDATE AssetItems SET status = 'ACTIVE', writeoff_date = NULL, expense_category_id = NULL, writeoff_tx = NULL, writeoff_amount = NULL, writeoff_note = NULL, account_id = NULL WHERE family_id = ?`, [fid]],
         ];
         const masterSteps = [
-          [`DELETE FROM TripDocuments WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, fid],
-          [`DELETE FROM TripBudgets   WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, fid],
-          [`DELETE FROM TripStops     WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, fid],
-          [`DELETE FROM TripExpenses  WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, fid],
-          [`DELETE FROM TripWallets   WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, fid],
-          [`DELETE FROM PlannedExpenses WHERE family_id=?`, fid],
-          [`DELETE FROM CategoryBudgets WHERE family_id=?`, fid],
-          [`DELETE FROM Debts     WHERE family_id=?`, fid],
-          [`DELETE FROM Accounts  WHERE entity_id IN (SELECT entity_id FROM Entities WHERE family_id=?)`, fid],
-          [`DELETE FROM Categories WHERE family_id=?`, fid],
-          [`DELETE FROM Captions   WHERE family_id=?`, fid],
-          [`DELETE FROM Contacts   WHERE family_id=?`, fid],
-          [`DELETE FROM Projects   WHERE family_id=?`, fid],
-          [`DELETE FROM UserPermissions WHERE entity_id IN (SELECT entity_id FROM Entities WHERE family_id=?)`, fid],
-          [`DELETE FROM Entities   WHERE family_id=?`, fid],
+          [`DELETE FROM TripDocuments WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, [fid]],
+          [`DELETE FROM TripBudgets   WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, [fid]],
+          [`DELETE FROM TripStops     WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, [fid]],
+          [`DELETE FROM TripExpenses  WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, [fid]],
+          [`DELETE FROM TripWallets   WHERE project_id IN (SELECT project_id FROM Projects WHERE family_id=?)`, [fid]],
+          [`DELETE FROM PlannedExpenses WHERE family_id=?`, [fid]],
+          [`DELETE FROM CategoryBudgets WHERE family_id=?`, [fid]],
+          [`DELETE FROM Debts     WHERE family_id=?`, [fid]],
+          [`DELETE FROM AssetItems WHERE family_id=?`, [fid]],
+          [`DELETE FROM AssetGroups WHERE family_id=?`, [fid]],
+          [`DELETE FROM LedgerRules WHERE family_id=?`, [fid]],
+          [`DELETE FROM Accounts  WHERE entity_id IN (SELECT entity_id FROM Entities WHERE family_id=?)`, [fid]],
+          [`DELETE FROM Categories WHERE family_id=?`, [fid]],
+          [`DELETE FROM Captions   WHERE family_id=?`, [fid]],
+          [`DELETE FROM Contacts   WHERE family_id=?`, [fid]],
+          [`DELETE FROM Projects   WHERE family_id=?`, [fid]],
+          [`DELETE FROM UserPermissions WHERE entity_id IN (SELECT entity_id FROM Entities WHERE family_id=?)`, [fid]],
+          [`DELETE FROM Entities   WHERE family_id=?`, [fid]],
         ];
-        const steps = scope === 'all' ? [...txSteps, ...masterSteps] : txSteps;
-
-        // รันทีละคำสั่ง + ข้าม error กรณีตารางไม่มี (เช่น TripWallets)
+        const steps = [...pre, ...txSteps, ...(scope === 'all' ? masterSteps : [])];
+        // รันทีละคำสั่ง · ข้ามเฉพาะกรณีตารางไม่มี (ฐานเก่า) — error อื่นหยุดทันทีและแจ้ง
         let done = 0; const skipped = [];
-        for (const [sql, arg] of steps) {
-          try { await env.DB.prepare(sql).bind(arg).run(); done++; }
-          catch (e) { skipped.push(sql.split(' ')[2] + ': ' + e.message); }
+        for (const [sql, args] of steps) {
+          try { await env.DB.prepare(sql).bind(...args).run(); done++; }
+          catch (e) {
+            const msg = String(e?.message || e);
+            if (/no such table/i.test(msg)) { skipped.push(sql.trim().split(/\s+/)[2]); continue; }
+            console.error('reset failed at', sql.slice(0, 80), msg);
+            return J({ error: `ล้างข้อมูลไม่ครบ (หยุดที่ ${sql.trim().split(/\s+/)[2]}): ${msg}`, steps_done: done }, 500);
+          }
         }
-        return new Response(JSON.stringify({ success: true, scope, steps_done: done, skipped }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return J({ success: true, ...summary, steps_done: done, skipped });
       }
 
       // 13.5. Settings Delete Endpoint

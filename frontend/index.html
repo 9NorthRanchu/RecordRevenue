@@ -691,6 +691,7 @@
                             
                             <!-- Debts Tab -->
                             <div id="settings-debts" class="settings-section-content hidden">
+                                <div style="background:#fff9db;color:#7a4a00;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.9rem">ℹ️ หน้านี้ถูกแทนด้วย <a href="ledger/cards.html" style="font-weight:700">บัตร &amp; เงินกู้ (หน้าใหม่)</a> — ข้อมูลชุดเดียวกัน แต่หน้าใหม่คำนวณยอดคงเหลือถูกต้องกว่า แนะนำให้ใช้หน้าใหม่</div>
                                 <div class="settings-section-header" style="display: flex; justify-content: space-between; align-items: center;">
                                     <h4>📝 ตั้งค่าโปรไฟล์หนี้สิน (Debt Profiles)</h4>
                                     <button class="btn btn-primary" onclick="showDebtModal()"><i class="fa-solid fa-plus"></i> เพิ่มสัญญาหนี้</button>
@@ -715,6 +716,7 @@
                             </div>
 <!-- Opening Balances Tab -->
                             <div id="settings-opening-balances" class="settings-section-content hidden">
+                                <div style="background:#fff5f5;color:#a51111;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.9rem">⚠️ หน้านี้ยังไม่บันทึกข้อมูลจริง (กดบันทึกแล้วไม่มีอะไรเกิดขึ้น) — ทรัพย์สินยกมาให้ใช้ <a href="ledger/assets.html" style="font-weight:700">ทรัพย์สิน → ＋ ยอดยกมา</a></div>
                                 <div class="settings-section-header">
                                     <h4>⚖️ ตั้งค่ายอดยกมา (Opening Balance Setup)</h4>
                                 </div>
@@ -947,6 +949,7 @@
                                 <div class="card" id="danger-zone-card" style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.35);margin-top:16px;">
                                     <div class="card-body">
                                         <h5 style="color:#f87171;margin-bottom:6px;"><i class="fa-solid fa-triangle-exclamation"></i> Danger Zone — ล้างข้อมูล (เฉพาะ Admin)</h5>
+                                        <p style="font-size:0.85rem;margin-bottom:8px;">แนะนำใช้ <a href="ledger/settings.html" style="color:#fbbf24;font-weight:700">ตั้งค่าหน้าใหม่ → อื่น ๆ → ล้างข้อมูล</a> (เห็นจำนวนที่จะลบก่อน + จัดการเดือนที่ปิดแล้ว)</p>
                                         <p style="font-size:0.8rem;color:#fca5a5;margin-bottom:12px;">การล้างข้อมูลลบถาวร กู้คืนไม่ได้ — แนะนำให้ดาวน์โหลด Full Backup เก็บไว้ก่อนทุกครั้ง</p>
                                         <div style="display:flex;gap:10px;flex-wrap:wrap;">
                                             <button class="btn" onclick="resetData('transactions')" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.5);white-space:nowrap;">

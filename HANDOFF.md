@@ -3514,3 +3514,16 @@ frontend
 - frontend/ledger/assets.html: แท็บ มีอยู่/ตัดจำหน่ายแล้ว/ซ่อนไว้ · ค้นหา · เรียงวันที่ (สลับได้) · ชิปกลุ่ม · ติ๊กเลือกหลายรายการแล้วย้ายกลุ่ม · ปุ่ม แก้ไข/ตัดจำหน่าย/ลบ · ＋ ยอดยกมา · จัดการกลุ่ม
 - home.html สินทรัพย์รวมนับ totals.value (ยังไม่ตัดจำหน่าย รวมยอดยกมา) · เมนู "ทรัพย์สิน" ทุกหน้า + แอปหลัก
 - เทส backend/test/assets.test.mjs (45 เคส) · ledger-inbox.test.mjs แทน import แบบเรียกซ้ำแล้ว (assets.js → period-close.js)
+
+## 2026-10-12 — ย้ายของที่เหลือจากแอปหลัก (ข) + รายงานทรัพย์สิน (ค)
+- ธีมสีหน้าใหม่: `frontend/ledger/theme.js` (โหลดท้าย <head> ทุกหน้า ledger/*) · เลือกที่ ตั้งค่า → อื่น ๆ → ธีมสี · เก็บ localStorage 'ledger-theme' (ต่อเครื่อง)
+  · หลักการ: หน้าเขียนสีม่วงไว้ → theme.js แทนรหัสสีม่วงใน <style> และ style="" (MutationObserver) ด้วยสีธีม · สีเขียว/แดงของตัวเลขไม่เปลี่ยน
+  · เพิ่มสีม่วงใหม่ในหน้าใด ๆ ให้ใช้ var(--brand) หรือรหัสใน KEYS ของ theme.js
+- ล้างข้อมูล: ตั้งค่า → อื่น ๆ → ล้างข้อมูล (ผู้ดูแล) · ดูจำนวนก่อน (preview) → สำรอง Excel อัตโนมัติ → พิมพ์ RESET → มีเดือนปิดต้องติ๊กยืนยัน
+  · /api/reset (index.js 15.2) เขียนใหม่: preview · HAS_CLOSED 409 ถ้ามีเดือนปิดแต่ไม่ส่ง reopen_closed · เปิดเดือนให้ + บันทึก LedgerPeriodLog · ลบ LedgerPeriods ของครอบครัว
+    scope transactions: + LedgerDocs/Links, LedgerStatements, AssetItems(TX), รีเซ็ตการตัดจำหน่ายของยอดยกมา · scope all: + AssetItems/Groups, LedgerRules
+    error อื่นที่ไม่ใช่ "no such table" หยุดทันที (เดิมข้ามเงียบ ๆ ทำให้ลบครึ่ง ๆ กลาง ๆ)
+- หน้าเดิม: แท็บทะเบียนหนี้สินมีป้ายชี้ไป cards.html · แท็บยอดยกมาเดิม (ไม่เคยบันทึกจริง — console.log) มีป้ายเตือน · Danger Zone ชี้ไปหน้าใหม่
+- รายงาน → แท็บ 🏷️ ทรัพย์สิน: ยกมา + ได้มา − ตัดจำหน่าย = คงเหลือ ตามกลุ่ม · ตัดจำหน่ายรายเดือน (แยกหมวดค่าใช้จ่าย) · ได้มาในช่วง · Excel 5 แท็บ (toXlsxSheets)
+  · คำนวณในหน้าจาก /api/inbox/assets · ไม่นับ REMOVED · กรองบริษัทด้วย entity_id
+- เทส: period.test.mjs +7 เคส (ล้างข้อมูล)

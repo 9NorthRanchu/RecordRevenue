@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!--
   รายงานใหม่ (2026-10-11) แทน "รายงานทางการเงิน" เดิม
-  API: GET /api/inbox/report?kind=pnl|wht|tb|export&from=&to=&entity=  ·  GET /api/inbox/meta (บริษัท)
+  API: GET /api/inbox/report?kind=pnl|wht|tb|export&from=&to=&entity=  ·  GET /api/inbox/meta (บริษัท)  ·  แท็บทรัพย์สิน: GET /api/inbox/assets (2026-10-12)
   ตัวเลข: ทศนิยม 2 ตำแหน่ง · , หลักพัน · ติดลบในวงเล็บสีแดง · นับเฉพาะรายการที่ยืนยันแล้ว
 -->
 <style>
@@ -32,10 +32,10 @@
   .chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
   .inp { height: 44px; border: 1.5px solid var(--line); border-radius: 12px; padding: 0 10px; background: #fff; font-size: 15px; }
   input[type=date].inp { -webkit-appearance: none; appearance: none; }
-  .tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 14px; background: #fff; border-radius: 16px; padding: 6px; }
+  .tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 14px; background: #fff; border-radius: 16px; padding: 6px; }
   .tabs button { border: 0; background: transparent; border-radius: 12px; padding: 10px 4px; font-weight: 700; color: var(--muted); cursor: pointer; min-height: 48px; font-size: 14px; }
   .tabs button.on { background: var(--brand); color: #fff; }
-  @media (max-width: 480px) { .tabs button { font-size: 12.5px; } }
+  @media (max-width: 560px) { .tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); } .tabs button { font-size: 13px; } }
   .card { background: #fff; border-radius: var(--radius); padding: 18px; margin-top: 14px; box-shadow: 0 1px 0 var(--line), 0 6px 20px rgba(95,61,196,.05); min-width: 0; }
   .card h2 { margin: 0 0 10px; font-size: 16px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-top: 14px; }
@@ -68,6 +68,7 @@
   @media (min-width: 1280px) and (hover: hover) and (pointer: fine) { html { zoom: 1.2; } }
   @media (min-width: 1600px) and (hover: hover) and (pointer: fine) { html { zoom: 1.3; } }
 </style>
+<script src="theme.js?v=1"></script>
 </head>
 <body>
 <div class="top"><div class="wrap row">
@@ -85,7 +86,7 @@
     </div>
   </div>
   <div class="tabs" role="tablist" id="tabs">
-    <button data-k="pnl" class="on">📊 รับ-จ่าย</button><button data-k="wht">🧾 หัก ณ ที่จ่าย</button><button data-k="tb">⚖️ งบทดลอง</button><button data-k="export">⬇️ ส่งออก</button>
+    <button data-k="pnl" class="on">📊 รับ-จ่าย</button><button data-k="wht">🧾 หัก ณ ที่จ่าย</button><button data-k="tb">⚖️ งบทดลอง</button><button data-k="assets">🏷️ ทรัพย์สิน</button><button data-k="export">⬇️ ส่งออก</button>
   </div>
   <div id="view"><div class="loading">กำลังโหลด…</div></div>
 </main>
@@ -176,6 +177,7 @@
         $('#entity').innerHTML = '<option value="">ทุกบริษัท</option>' + S.meta.entities.map(e => `<option value="${esc(e.entity_id)}">${esc(e.name)}</option>`).join('');
       }
       if (S.kind === 'export') return renderExport();
+      if (S.kind === 'assets') { $('#view').innerHTML = '<div class="loading">กำลังโหลด…</div>'; S.assets = await api('/api/inbox/assets'); return renderAssets(); }
       $('#view').innerHTML = '<div class="loading">กำลังคำนวณ…</div>';
       S.data = await api(`/api/inbox/report?kind=${S.kind}&${qs()}`);
       ({ pnl: renderPnl, wht: renderWht, tb: renderTb })[S.kind]();
@@ -264,6 +266,66 @@
       ...rows.map(r => [r.group, r.category, TH[r.behavior] || r.behavior, r.n, r.debit, r.credit, r.net])]));
   }
 
+  // ── ทรัพย์สิน (2026-10-12) — ยกมา + ได้มา − ตัดจำหน่าย = คงเหลือ ตามกลุ่ม · ตัดจำหน่ายรายเดือน · ส่งออก Excel ──
+  //    ข้อมูลจาก /api/inbox/assets (คำนวณในหน้านี้) · ไม่นับรายการที่ซ่อนไว้ · รายการจากธุรกรรมใช้วันที่/ยอดจริงล่าสุด
+  function renderAssets() {
+    const A = S.assets || { items: [], groups: [] }, F = S.from, T = S.to;
+    const items = (A.items || []).filter(i => i.status !== 'REMOVED' && (!S.entity || i.entity_id === S.entity));
+    const WO = i => i.status === 'WRITTEN_OFF' && i.writeoff_date;
+    const isOpen = i => i.date < F && !(WO(i) && i.writeoff_date < F);
+    const isAdd = i => i.date >= F && i.date <= T;
+    const isWo = i => WO(i) && i.writeoff_date >= F && i.writeoff_date <= T;
+    const isEnd = i => i.date <= T && !(WO(i) && i.writeoff_date <= T);
+    const sum = (xs, f) => r2(xs.filter(f).reduce((t, i) => t + i.value, 0));
+    const gName = new Map((A.groups || []).map(g => [g.group_id, g.name]));
+    const keys = [...(A.groups || []).map(g => g.group_id), ''];
+    const rows = keys.map(k => { const xs = items.filter(i => (i.group_id || '') === k);
+      return { name: k ? gName.get(k) : 'ไม่ระบุกลุ่ม', open: sum(xs, isOpen), add: sum(xs, isAdd), wo: sum(xs, isWo), end: sum(xs, isEnd), n: xs.filter(isEnd).length }; })
+      .filter(r => r.open || r.add || r.wo || r.end);
+    const tot = k => r2(rows.reduce((t, r) => t + r[k], 0));
+    const added = items.filter(isAdd).sort((a, b) => a.date.localeCompare(b.date));
+    const wos = items.filter(isWo).sort((a, b) => a.writeoff_date.localeCompare(b.writeoff_date));
+    const ending = items.filter(isEnd).sort((a, b) => a.date.localeCompare(b.date));
+    const months = [...wos.reduce((m, i) => { const k = i.writeoff_date.slice(0, 7); const o = m.get(k) || { n: 0, amt: 0, cats: new Map() };
+      o.n++; o.amt = r2(o.amt + i.value); const c = i.expense_category || '-'; o.cats.set(c, r2((o.cats.get(c) || 0) + i.value)); return m.set(k, o); }, new Map()).entries()];
+    const mName = k => `${MONTHS[+k.slice(5) - 1]} ${String(+k.slice(0, 4) + 543).slice(2)}`;
+    const grp = i => i.group_id ? (gName.get(i.group_id) || '-') : 'ไม่ระบุกลุ่ม';
+    if (!(A.categories || []).length && !items.length) { $('#view').innerHTML = `<div class="card empty">ยังไม่ได้ตั้งหมวดทรัพย์สิน — ไปที่ <a href="assets.html">หน้าทรัพย์สิน</a> แล้วกด "เลือกหมวด"</div>`; return; }
+    $('#view').innerHTML = `
+      <div class="tiles">
+        <div class="tile"><b>${fmt(tot('open'))}</b><span>ยกมา ณ ${thDate(F)}</span></div>
+        <div class="tile" style="background:#e6fcf5"><b class="pos">${fmt(tot('add'))}</b><span>ได้มาในช่วง · ${added.length} รายการ</span></div>
+        <div class="tile" style="background:#fff5f5"><b class="neg">${fmt(-tot('wo'))}</b><span>ตัดจำหน่ายในช่วง · ${wos.length} รายการ</span></div>
+        <div class="tile" style="background:#f3f0ff"><b>${fmt(tot('end'))}</b><span>คงเหลือ ณ ${thDate(T)} · ${ending.length} รายการ</span></div>
+      </div>
+      <div class="card"><h2>ตามกลุ่ม</h2>${rows.length ? `<div class="scroll"><table>
+        <thead><tr><th class="l">กลุ่ม</th><th>ยกมา</th><th>ได้มา</th><th>ตัดจำหน่าย</th><th>คงเหลือ</th><th>จำนวน</th></tr></thead><tbody>
+        ${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${fmt(r.open)}</td><td>${r.add ? num(r.add, true) : '-'}</td><td>${r.wo ? num(-r.wo) : '-'}</td><td><b>${fmt(r.end)}</b></td><td>${r.n}</td></tr>`).join('')}
+        </tbody><tfoot><tr><td>รวม</td><td>${fmt(tot('open'))}</td><td>${fmt(tot('add'))}</td><td>${num(-tot('wo'))}</td><td>${fmt(tot('end'))}</td><td>${ending.length}</td></tr></tfoot></table></div>`
+        : '<div class="empty" style="padding:16px">ไม่มีทรัพย์สินในช่วงนี้</div>'}</div>
+      <div class="card"><h2>ตัดจำหน่ายรายเดือน <span>${num(-tot('wo'))}</span></h2>${months.length ? `<div class="scroll"><table>
+        <thead><tr><th class="l">เดือน</th><th>รายการ</th><th>มูลค่า</th><th class="l">ไปที่หมวดค่าใช้จ่าย</th></tr></thead><tbody>
+        ${months.map(([k, o]) => `<tr><td>${mName(k)}</td><td>${o.n}</td><td>${num(-o.amt)}</td><td class="l">${[...o.cats.entries()].map(([c, v]) => `${esc(c)} ${fmt(v)}`).join(' · ')}</td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="scroll" style="margin-top:8px"><table><thead><tr><th class="l">วันที่ตัด</th><th class="l">ทรัพย์สิน</th><th class="l">กลุ่ม</th><th>มูลค่า</th><th class="l">หมวดค่าใช้จ่าย · เหตุผล</th></tr></thead><tbody>
+        ${wos.map(i => `<tr><td>${thDate(i.writeoff_date)}</td><td class="l">${esc(i.name)}<div class="mut" style="font-size:12px">ได้มา ${thDate(i.date)}</div></td><td class="l">${esc(grp(i))}</td><td>${fmt(i.value)}</td><td class="l">${esc(i.expense_category || '-')}${i.writeoff_note ? ` · ${esc(i.writeoff_note)}` : ''}</td></tr>`).join('')}
+        </tbody></table></div>` : '<div class="empty" style="padding:16px">ไม่มีการตัดจำหน่ายในช่วงนี้</div>'}</div>
+      <div class="card"><h2>ได้มาในช่วง <span>${num(tot('add'), true)}</span></h2>${added.length ? `<div class="scroll"><table>
+        <thead><tr><th class="l">วันที่</th><th class="l">ทรัพย์สิน</th><th class="l">กลุ่ม</th><th class="l">ที่มา</th><th>มูลค่า</th></tr></thead><tbody>
+        ${added.map(i => `<tr><td>${thDate(i.date)}</td><td class="l">${esc(i.name)}</td><td class="l">${esc(grp(i))}</td><td class="l">${i.source === 'OPENING' ? 'ยอดยกมา' : esc(i.account_name || '-')}</td><td>${fmt(i.value)}</td></tr>`).join('')}
+        </tbody></table></div>` : '<div class="empty" style="padding:16px">ไม่มีรายการ</div>'}</div>
+      <div class="row2" style="margin-top:12px"><button class="b main" id="asX">⬇️ ส่งออก Excel</button><a class="b" href="assets.html" style="text-decoration:none;display:inline-flex;align-items:center">🏷️ ไปหน้าทรัพย์สิน</a></div>
+      <div class="note">ยกมา + ได้มา − ตัดจำหน่าย = คงเหลือ · ไม่นับรายการที่ซ่อนไว้ · ตัดจำหน่ายแล้วมูลค่าไปขึ้นในรายจ่ายแท็บรับ-จ่ายของเดือนนั้น ${S.entity ? '· กรองตามบริษัท (ยอดยกมาที่ไม่ได้ระบุบริษัทจะไม่แสดง)' : ''}</div>`;
+    $('#asX').onclick = () => toXlsxSheets(`ทรัพย์สิน-${F}-ถึง-${T}`, [
+      ['สรุปตามกลุ่ม', [['กลุ่ม', 'ยกมา', 'ได้มา', 'ตัดจำหน่าย', 'คงเหลือ', 'จำนวน'], ...rows.map(r => [r.name, r.open, r.add, -r.wo, r.end, r.n]), ['รวม', tot('open'), tot('add'), -tot('wo'), tot('end'), ending.length]]],
+      ['คงเหลือ', [['วันที่ได้มา', 'ทรัพย์สิน', 'กลุ่ม', 'หมวดบัญชี', 'ที่มา', 'บัญชี', 'บริษัท', 'หมายเหตุ', 'มูลค่า'],
+        ...ending.map(i => [i.date, i.name, grp(i), i.category_name, i.source === 'OPENING' ? 'ยอดยกมา' : 'รายการจ่าย', i.account_name, i.entity_name, i.note, i.value])]],
+      ['ได้มาในช่วง', [['วันที่', 'ทรัพย์สิน', 'กลุ่ม', 'ที่มา', 'บัญชี', 'มูลค่า'], ...added.map(i => [i.date, i.name, grp(i), i.source === 'OPENING' ? 'ยอดยกมา' : 'รายการจ่าย', i.account_name, i.value])]],
+      ['ตัดจำหน่าย', [['วันที่ตัด', 'ทรัพย์สิน', 'กลุ่ม', 'วันที่ได้มา', 'หมวดค่าใช้จ่าย', 'เหตุผล', 'มูลค่า'], ...wos.map(i => [i.writeoff_date, i.name, grp(i), i.date, i.expense_category, i.writeoff_note, i.value])]],
+      ['ตัดจำหน่ายรายเดือน', [['เดือน', 'รายการ', 'มูลค่า', 'หมวดค่าใช้จ่าย'], ...months.map(([k, o]) => [k, o.n, o.amt, [...o.cats.entries()].map(([c, v]) => `${c} ${money(v)}`).join(' · ')])]],
+    ]);
+  }
+
   // ── ส่งออก ──
   function renderExport() {
     $('#view').innerHTML = `<div class="card"><h2>ส่งออกรายการเป็น Excel</h2>
@@ -299,19 +361,25 @@
     try { await add('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'); }
     catch { try { await add('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'); } catch { throw new Error('โหลดตัวสร้าง Excel ไม่สำเร็จ'); } }
   }
-  async function toXlsx(name, rows) {
+  async function toXlsx(name, rows) { return toXlsxSheets(name, [['ข้อมูล', rows]]); }
+  /* หลายแท็บในไฟล์เดียว: sheets = [[ชื่อแท็บ, แถว (แถวแรก = หัวตาราง)], ...] */
+  async function toXlsxSheets(name, sheets) {
     await loadXlsx();
-    const X = window.XLSX, wb = X.utils.book_new(), ws = X.utils.aoa_to_sheet(rows);
+    const X = window.XLSX, wb = X.utils.book_new();
+    for (const [sheetName, rows] of sheets) X.utils.book_append_sheet(wb, fmtSheet(X, rows), String(sheetName).slice(0, 31));
+    X.writeFile(wb, `${name}.xlsx`);
+  }
+  function fmtSheet(X, rows) {
+    const ws = X.utils.aoa_to_sheet(rows);
     ws['!cols'] = rows[0].map(() => ({ wch: 16 }));
     // ตัวเลขแสดง #,##0.00 และติดลบในวงเล็บ (กติกาเดียวกับหน้าเว็บ)
-    const money = rows[0].map(h => /ยอด|ภาษี|ฐาน|เดบิต|เครดิต|สุทธิ|ค่าธรรมเนียม|หัก/.test(String(h)));
+    const money = rows[0].map(h => /ยอด|ภาษี|ฐาน|เดบิต|เครดิต|สุทธิ|ค่าธรรมเนียม|หัก|มูลค่า|ยกมา|ได้มา|ตัดจำหน่าย|คงเหลือ/.test(String(h)));
     for (const k of Object.keys(ws)) {
       if (k[0] === '!' || typeof ws[k].v !== 'number') continue;
       const c = X.utils.decode_cell(k);
       if (c.r > 0 && money[c.c]) ws[k].z = '#,##0.00;(#,##0.00)';
     }
-    X.utils.book_append_sheet(wb, ws, 'ข้อมูล');
-    X.writeFile(wb, `${name}.xlsx`);
+    return ws;
   }
 
   drawControls();

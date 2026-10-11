@@ -153,5 +153,23 @@ check('เปิดแล้วแก้ได้', r.s === 200, r);
 r = await call('/api/inbox/periods', { user: '9North' });
 const aug = r.j.months.find(m => m.month === M);
 check('รายการเดือนแสดงสถานะ + ประวัติปิด/เปิดพร้อมเหตุผล', aug?.status === 'OPEN' && r.j.log.length === 2 && r.j.log.some(l => l.action === 'REOPEN' && l.note === 'ลูกค้าแจ้งยอดผิด') && r.j.is_admin === true, r.j);
+// ── ล้างข้อมูล (2026-10-12) ──
+db.exec(`INSERT OR REPLACE INTO LedgerPeriods (family_id, period, status) VALUES ('Fam_Default','2026-08','CLOSED')`);
+const famTx = () => db.prepare(`SELECT COUNT(*) n FROM Transactions t JOIN Accounts a ON a.account_id=t.account_id JOIN Entities e ON e.entity_id=a.entity_id WHERE e.family_id='Fam_Default'`).get().n;
+const otherTx = () => db.prepare(`SELECT COUNT(*) n FROM Transactions WHERE account_id='X99'`).get().n;
+const before = famTx();
+r = await call('/api/reset', { user: 'Puii', method: 'POST', body: { scope: 'transactions', confirm: 'RESET' } }); check('ล้างข้อมูล: สมาชิกทั่วไป → 403', r.s === 403, r);
+r = await call('/api/reset', { user: '9North', method: 'POST', body: { scope: 'transactions', preview: true } });
+check('ล้างข้อมูล: preview บอกจำนวน + เดือนที่ปิด ไม่ลบอะไร', r.s === 200 && r.j.transactions === before && r.j.closed_periods.includes('2026-08') && famTx() === before, r.j);
+r = await call('/api/reset', { user: '9North', method: 'POST', body: { scope: 'transactions' } }); check('ล้างข้อมูล: ไม่พิมพ์ RESET → 400', r.s === 400, r);
+r = await call('/api/reset', { user: '9North', method: 'POST', body: { scope: 'transactions', confirm: 'RESET' } });
+check('ล้างข้อมูล: มีเดือนปิด ไม่ยืนยันเปิด → 409 ไม่ลบอะไร', r.s === 409 && r.j.code === 'HAS_CLOSED' && famTx() === before, r);
+r = await call('/api/reset', { user: '9North', method: 'POST', body: { scope: 'transactions', confirm: 'RESET', reopen_closed: true } });
+check('ล้างธุรกรรม: ลบครบ (รวมเดือนที่ปิด) · ครอบครัวอื่นไม่โดน · หมวดยังอยู่', r.s === 200 && famTx() === 0 && otherTx() === 1
+  && db.prepare(`SELECT COUNT(*) n FROM Categories WHERE family_id='Fam_Default'`).get().n > 0 && !db.prepare(`SELECT 1 FROM LedgerPeriods WHERE family_id='Fam_Default'`).get(), r);
+check('ล้างธุรกรรม: บันทึกประวัติการเปิดเดือนอัตโนมัติ', !!db.prepare(`SELECT 1 FROM LedgerPeriodLog WHERE family_id='Fam_Default' AND period='2026-08' AND note LIKE 'เปิดอัตโนมัติก่อนล้างข้อมูล%'`).get(), 0);
+r = await call('/api/reset', { user: '9North', method: 'POST', body: { scope: 'all', confirm: 'RESET' } });
+check('ล้างทั้งหมด: ข้อมูลหลักหาย · ผู้ใช้ยังอยู่ · ครอบครัวอื่นไม่โดน', r.s === 200 && db.prepare(`SELECT COUNT(*) n FROM Categories WHERE family_id='Fam_Default'`).get().n === 0
+  && db.prepare(`SELECT COUNT(*) n FROM Users WHERE family_id='Fam_Default'`).get().n === 2 && otherTx() === 1 && db.prepare(`SELECT COUNT(*) n FROM Categories WHERE family_id='Fam_Other'`).get().n === 1, r);
 console.log(`${bad ? '❌' : '✅'} ผ่าน ${ok} · ไม่ผ่าน ${bad}`);
 if (bad) process.exit(1);
