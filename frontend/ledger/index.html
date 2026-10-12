@@ -1172,7 +1172,17 @@
           /* 2026-10-12: PDF ที่ไม่มีรหัสผ่าน → ส่งทั้งไฟล์ให้ AI อ่านตรง ๆ แบบหน้าเก่า (อ่านตัวหนังสือในไฟล์ได้แม่น + เร็ว)
              มีรหัสผ่าน → ถอดรหัสในเครื่องแล้วแปลงเป็นรูปทีละหน้า (รหัสไม่ถูกส่งออกไป) */
           if (!(await pdfEncrypted(f))) { pages.push({ blob: new Blob([f], { type: 'application/pdf' }), name: f.name }); continue; }
-          const imgs = await pdfToImages(f, $('#stPw').value.trim(), (p, n) => b.sub(`ถอดรหัส ${f.name} หน้า ${p}/${n}`));
+          /* รหัสผ่าน: ช่องที่กรอก/รหัสของบัญชีที่เลือกก่อน แล้วลองรหัสของบัญชีอื่น ๆ ที่ตั้งไว้ในตั้งค่า (ธนาคารเดียวกันก่อน) แบบหน้าเก่า */
+          const sel = S.meta.accounts.find(a => a.account_id === accountId);
+          const pws = [...new Set([$('#stPw').value.trim(), sel?.pdf_password,
+            ...S.meta.accounts.filter(a => a.pdf_password && a.bank_name && a.bank_name === sel?.bank_name).map(a => a.pdf_password),
+            ...S.meta.accounts.map(a => a.pdf_password)].filter(Boolean).map(String))];
+          let imgs = null, lastErr = null;
+          for (const pw of pws.length ? pws : ['']) {
+            try { imgs = await pdfToImages(f, pw, (p, n) => b.sub(`ถอดรหัส ${f.name} หน้า ${p}/${n}`)); break; }
+            catch (e) { lastErr = e; if (!e.needPassword) throw e; }
+          }
+          if (!imgs) { const e = new Error(pws.length ? `รหัสผ่าน PDF ของ ${f.name} ไม่ตรงกับรหัสที่ตั้งไว้ในบัญชีใดเลย — ใส่รหัสแล้วเลือกไฟล์อีกครั้ง (หรือตั้งรหัสที่ ตั้งค่า → บัญชี)` : lastErr.message); e.needPassword = true; throw e; }
           imgs.forEach((x, n) => pages.push({ blob: x, name: `${f.name}-p${n + 1}.jpg` }));
         } else { const sm = await shrinkImage(f, 2200, 0.85); pages.push({ blob: sm, name: sm.name }); }   // statement ตัวเล็ก → ย่อน้อยกว่าสลิป
       }
