@@ -3527,3 +3527,18 @@ frontend
 - รายงาน → แท็บ 🏷️ ทรัพย์สิน: ยกมา + ได้มา − ตัดจำหน่าย = คงเหลือ ตามกลุ่ม · ตัดจำหน่ายรายเดือน (แยกหมวดค่าใช้จ่าย) · ได้มาในช่วง · Excel 5 แท็บ (toXlsxSheets)
   · คำนวณในหน้าจาก /api/inbox/assets · ไม่นับ REMOVED · กรองบริษัทด้วย entity_id
 - เทส: period.test.mjs +7 เคส (ล้างข้อมูล)
+
+## 2026-10-12 — ยอดยกมา (North: 1ก 2ก 3ข + บัญชีพักแบบ Dr/Cr)
+- หน้า `frontend/ledger/opening.html` (ตั้งค่า → อื่น ๆ → ยอดยกมา) · backend `backend/src/opening.js` · ตาราง OpeningSets (สร้างเอง + setup-db.sh)
+- "ชุดยอดยกมา" = ชื่อ + เจ้าของ (entity) + วันที่เริ่ม — แต่ละคนเริ่มคนละวันได้ · บัญชี/สัญญาเงินกู้ อยู่ได้ชุดเดียว
+- บรรทัด: ACC (บัญชี) · CAT (หมวด + คู่ค้า) · LOAN (Debts) — ทุกบรรทัดมีฝั่ง DR/CR · ส่วนต่างลง "บัญชีพักยอดยกมา" (CAT-OB-{fid} ใต้ caption CAP-OB-{fid} behavior TRANSFER สร้างอัตโนมัติ) → ต้องเป็น 0
+- สร้างรายการจริง: TX-OB-{set}-A{n} (ยอดบัญชี) · TX-OB-{set}-J (ยอดรวม 0 ในบัญชีที่ใช้บันทึก) · detail DT-OB-… · ref_code 'OPENING'
+  · ฝั่งบรรทัดย่อย: เดบิต = ยอดลบ · เครดิต = ยอดบวก · type: EXPENSE/INCOME ตาม behavior (1ก นับในรับ-จ่าย) · ASSET/LIABILITY → DEBIT_AR/CREDIT_AR · TRANSFER
+  · LOAN → หมวดเงินต้น + คู่ค้าของสัญญา · ตั้ง Debts.start_balance/start_date = ยอดยกมา · debtLines ข้าม DT-OB-% (ไม่นับเป็นการจ่าย)
+  · ทะเบียนทรัพย์สิน sync ข้าม DT-OB-%
+- แก้ชุด = ลบ TX-OB-{set}-% แล้วสร้างใหม่ใน batch เดียว · เดือนปิดแล้ว → 409
+- 2ก: เตือนรายการก่อนวันเริ่ม (pre_start) + ปิดเดือนข้อ 5 'opening' (openingIssues ใน opening.js)
+- 3ข: สิทธิ์ตาม UserPermissions ของบัญชี · แก้/ลบชุดได้เมื่อมีสิทธิ์ทุกบัญชีในชุด
+- หน้า: บัญชีกรองตามเจ้าของ (ติ๊กแสดงทุกบัญชีได้) · บรรทัดหมวดเลือกฝั่งตาม behavior · วางจาก Excel (ชื่อบัญชี/หมวด · คู่ค้า · เดบิต · เครดิต · หมายเหตุ) · แถบสรุปเดบิต/เครดิต/บัญชีพักสด
+- ล้างข้อมูล: ลบ OpeningSets ด้วย · ledger-inbox.test.mjs: แทน import เรียกซ้ำรองรับ period-close → opening
+- เทส backend/test/opening.test.mjs (26 เคส) · period.test.mjs ปรับเป็น 5 ข้อ

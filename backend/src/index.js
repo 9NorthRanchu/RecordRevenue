@@ -1431,6 +1431,7 @@ export default {
           [`DELETE FROM LedgerDocLinks WHERE doc_id IN (SELECT doc_id FROM LedgerDocs WHERE family_id = ?)`, [fid]],
           [`DELETE FROM LedgerDocs WHERE family_id = ?`, [fid]],
           [`DELETE FROM LedgerStatements WHERE family_id = ?`, [fid]],
+          [`DELETE FROM OpeningSets WHERE family_id = ?`, [fid]],
           [`DELETE FROM AssetItems WHERE family_id = ? AND source = 'TX'`, [fid]],
           [`UPDATE AssetItems SET status = 'ACTIVE', writeoff_date = NULL, expense_category_id = NULL, writeoff_tx = NULL, writeoff_amount = NULL, writeoff_note = NULL, account_id = NULL WHERE family_id = ?`, [fid]],
         ];

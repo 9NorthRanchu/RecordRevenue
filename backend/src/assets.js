@@ -54,7 +54,7 @@ async function syncFromTransactions(env, familyId, cats) {
         FROM TransactionDetails d JOIN Transactions t ON t.transaction_id = d.transaction_id
         JOIN Accounts a ON a.account_id = t.account_id JOIN Entities en ON en.entity_id = a.entity_id AND en.family_id = ?
        WHERE d.category_id IN (${qs(cats)}) AND d.amount < 0 AND t.status = 'CONFIRMED'
-         AND d.detail_id NOT LIKE 'DT-WO-%'
+         AND d.detail_id NOT LIKE 'DT-WO-%' AND d.detail_id NOT LIKE 'DT-OB-%'
          AND NOT EXISTS (SELECT 1 FROM AssetItems x WHERE x.detail_id = d.detail_id)`).bind(familyId, now, now, familyId, ...cats).run();
 }
 

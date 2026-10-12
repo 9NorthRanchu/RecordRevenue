@@ -41,6 +41,7 @@ import { planSettlementKeep } from './settle-keep.js';
 import { handlePeriods, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
 import { handleCardsLoans } from './cards-loans.js';
 import { handleAssets, IS_ASSET_SQL, assetCategorySet } from './assets.js';
+import { handleOpening } from './opening.js';
 import {
   round2, bankKey, last4, accountHintKey, partyKey, parseCashText, slipDirection,
   scoreCandidate, decideMatch, balanceGap, proposeLines, templateFromDetails,
@@ -186,6 +187,8 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
     if (cl) return cl;
     const as = await handleAssets(request, env, url, cors, user);      // ทะเบียนทรัพย์สิน /api/inbox/assets
     if (as) return as;
+    const ob = await handleOpening(request, env, url, cors, user);     // ยอดยกมา /api/inbox/opening
+    if (ob) return ob;
     return json({ error: 'Not Found' }, cors, 404);
   } catch (err) {
     return json({ error: err.message }, cors, 500);

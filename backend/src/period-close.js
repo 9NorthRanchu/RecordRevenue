@@ -10,10 +10,12 @@
 //      · ไม่มีบรรทัดที่ยังไม่ระบุหมวด
 //      · ทุกบัญชีธนาคาร/บัตรที่มีรายการในเดือนนั้น: มี statement · ทุกบรรทัดในเดือนจับคู่/สร้าง/ข้ามแล้ว
 //        · ยอดในระบบ ณ วันสิ้นสุด statement = ยอดคงเหลือใน statement
-//      (เงินสดไม่มี statement → ไม่ตรวจข้อสุดท้าย)
+//      (เงินสดไม่มี statement → ไม่ตรวจข้อนี้)
+//      · ยอดยกมา (2026-10-12): ชุดที่เริ่มไม่เกินสิ้นเดือน ต้องสมดุล (บัญชีพัก = 0) และไม่มีรายการก่อนวันเริ่ม
 //
 // ตอนปิด เก็บยอดคงเหลือทุกบัญชี ณ สิ้นเดือนไว้ (snapshot) เป็นหลักฐาน
 // ═══════════════════════════════════════════════════════════════════════════
+import { openingIssues } from './opening.js';
 const UNCAT = 'Cat_Uncategorized';
 const OPEN_DOC = ['READING', 'NEEDS_ACCOUNT', 'NEEDS_CHOICE', 'SUGGESTED', 'STORED', 'ERROR'];
 const TH_MONTH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -111,6 +113,10 @@ export async function checkPeriod(env, user, month) {
   const badAcc = accRows.filter(r => !r.ok);
   add(!badAcc.length, 'statements', 'ทุกบัญชีธนาคาร/บัตรยอดตรงกับ statement',
     badAcc.length ? `ไม่ผ่าน ${badAcc.length} บัญชี` : (accRows.length ? `ตรง ${accRows.length} บัญชี` : 'เดือนนี้ไม่มีบัญชีธนาคาร/บัตรที่มีรายการ'), 'index.html#stmt');
+
+  // 5) ยอดยกมา (2026-10-12 · 2ก): ชุดที่เริ่มไม่เกินสิ้นเดือนนี้ต้องสมดุล (บัญชีพัก = 0) และไม่มีรายการก่อนวันเริ่ม
+  const ob = await openingIssues(env, fid, end);
+  add(!ob.length, 'opening', 'ยอดยกมาสมดุล และไม่มีรายการก่อนวันเริ่ม', ob.join(' · '), 'opening.html');
 
   return { month, label: monthLabel(month), ok: items.every(i => i.ok), items, accounts: accRows };
 }

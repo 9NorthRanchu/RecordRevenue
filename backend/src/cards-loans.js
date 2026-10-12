@@ -86,7 +86,7 @@ async function debtLines(env, d) {
   if (!cats.length || !d.contact_id) return [];
   return (await env.DB.prepare(`SELECT t.transaction_id, t.date, t.account_id, a.name AS account_name, d.detail_id, d.amount, d.category_id, d.note, t.statement_desc
       FROM TransactionDetails d JOIN Transactions t ON t.transaction_id = d.transaction_id JOIN Accounts a ON a.account_id = t.account_id
-     WHERE d.contact_id = ? AND d.category_id IN (${cats.map(() => '?').join(',')}) AND t.status = 'CONFIRMED'${d.start_date ? ' AND t.date >= ?' : ''}
+     WHERE d.contact_id = ? AND d.category_id IN (${cats.map(() => '?').join(',')}) AND t.status = 'CONFIRMED' AND d.detail_id NOT LIKE 'DT-OB-%'${d.start_date ? ' AND t.date >= ?' : ''}
      ORDER BY t.date, t.transaction_id`).bind(d.contact_id, ...cats, ...(d.start_date ? [d.start_date] : [])).all()).results || [];
 }
 function summarize(d, lines) {

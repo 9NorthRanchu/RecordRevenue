@@ -105,7 +105,7 @@ r = await call(`/api/inbox/periods/${M}/check`, { user: '9North' });
 check('ยังไม่มี statement → ปิดไม่ได้', r.s === 200 && r.j.ok === false && r.j.items.find(i => i.key === 'statements')?.ok === false, r.j);
 check('บัญชีเงินสดไม่ต้องมี statement', !r.j.accounts.some(a => a.account_id === 'A01'), r.j.accounts);
 r = await call(`/api/inbox/periods/${M}/close`, { user: '9North', method: 'POST' });
-check('กดปิดตอนยังไม่ผ่าน → 400 พร้อมรายการที่ต้องแก้', r.s === 400 && r.j.check?.items?.length === 4, r);
+check('กดปิดตอนยังไม่ผ่าน → 400 พร้อมรายการที่ต้องแก้ (5 ข้อ · ไม่มีชุดยอดยกมา = ผ่าน)', r.s === 400 && r.j.check?.items?.length === 5 && r.j.check.items.find(i => i.key === 'opening')?.ok === true, r);
 db.prepare(`INSERT INTO LedgerStatements (stmt_id,family_id,account_id,period_from,period_to,closing_balance,lines) VALUES (?,?,?,?,?,?,?)`)
   .run('ST-1', 'Fam_Default', 'A02', '2026-08-01', '2026-08-31', 1400, JSON.stringify([{ line_id: 'L1', date: '2026-08-15', amount: 970, status: 'NEW' }]));
 r = await call(`/api/inbox/periods/${M}/check`, { user: '9North' });
