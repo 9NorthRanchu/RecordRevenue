@@ -3558,3 +3558,42 @@ frontend
 - ต่างจากหน้าเก่าโดยตั้งใจ: อ่านแล้วแสดงหน้า statement ให้จับคู่ก่อน → กด "➕ สร้างรายการจาก … บรรทัดที่ยังไม่มี" จึงเข้าไปเป็นรอยืนยัน (หน้าเก่าสร้างทันที ไม่จับคู่ ทำให้ซ้ำกับสลิป)
 - รหัสผ่าน PDF (เพิ่ม 2026-10-12 ตามที่ North แจ้ง): ลองรหัสตามลำดับ ช่องที่กรอก → รหัสของบัญชีที่เลือก → บัญชีธนาคารเดียวกัน → บัญชีอื่นทั้งหมดที่ตั้งรหัสไว้ (ตั้งค่า → บัญชี → รหัสผ่าน PDF) · ไม่ตรงเลย → ขึ้นช่องให้กรอกเอง
   ทดสอบ Playwright: PDF เข้ารหัส AES-256 + บัญชีที่เลือกรหัสผิด → ใช้รหัสบัญชีอื่นได้ ส่งเป็นรูป · PDF ไม่มีรหัส → ส่งทั้งไฟล์ application/pdf
+- AI ไม่ว่าง (503 high demand ของ gemini-3.1-flash-lite — North เจอจริง 12 ต.ค.): เพิ่ม geminiGenerate ใน ledger-inbox.js ใช้ทั้งอ่านสลิป/เอกสาร และ statement
+  รุ่นหลักลอง 3 ครั้ง → สลับรุ่นสำรอง gemini-flash-latest → gemini-2.5-flash → gemini-flash-lite-latest (ครั้งละ 2) · 400/404 ข้ามรุ่น · 401/403 แจ้งทันที
+  ตั้งรุ่นสำรองเองได้: secret GEMINI_FALLBACK_MODELS (คั่น ,) · ลองครบแล้วยังไม่ว่าง → ข้อความไทย "รอ 2–3 นาทีแล้วส่งใหม่"
+
+## 2026-10-12 — statement: ด่านเดินยอดคงเหลือ + เทียบเลขบัญชี + นำเข้า Excel (ประยุกต์จากระบบ BKP · North เลือก ก ข)
+- อ้างอิง: "Claude outputs/STATEMENT-FORMATS.md" · "โครงนำเข้า-statement-อ้างอิง-2569-10-12.md" (ระบบ bookkeeper-hub)
+- ledger-match.js: walkStatement(lines, opening) — ยอด[i] = ยอด[i-1] + เข้า − ออก · ชี้แถวผิด {line_id, expected, diff}
+  (แถวก่อนอ่านยอดคงเหลือผิดตัวเดียว → แถวถัดไปที่เดินจากค่าที่ควรเป็นไม่ถูกชี้ซ้ำ) · accountNumberCheck(read, mine) → MATCH/MISMATCH/null
+- ledger-inbox.js:
+  · importStatement → saveStatement(env,user,account,ex,file_name,source) ใช้ร่วม PDF/EXCEL · LedgerStatements.extra (JSON: source, account_number_read, account_check) — ALTER อัตโนมัติ + setup-db.sh
+  · POST /api/inbox/statement/lines {account_id, file_name, lines:[{date ISO, time, description, credit, debit, balance, detail, channel}], opening_balance} — ไม่ใช้ AI · ห้ามเข้า+ออกแถวเดียว/ติดลบ · ≤3000 แถว
+  · statementView: lines[].walk_err · summary.walk_bad/walk_checked/walk_possible · statement.source/account_check/account_number_read
+  · createFromStatement: เดินไม่ลง → 409 code WALK (ห้ามสร้างจนแก้) · line action 'fix' {amount?, balance?} · line 'OPENING' fix {balance} แก้ยอดยกมา
+- ledger/index.html แท็บ Statement: ปุ่ม 📊 นำเข้าจาก Excel + ⬇️ แม่แบบ (8 คอลัมน์ตามตำแหน่ง A–H · วันที่ พ.ศ./ค.ศ./YY · วันที่อ่านไม่ได้ = ไม่รับทั้งไฟล์)
+  · หน้า statement: แบนเนอร์เลขบัญชีไม่ตรง · เดินยอด (แดง/เขียว) · แก้ยอดยกมา · แถวแดง + ✏️ แก้ยอด/คงเหลือ · ปุ่มสร้างล็อกจนเดินลง · ตัวกรอง "⚠️ เดินไม่ลง"
+- เทส backend/test/statement-walk.test.mjs (19 เคส) · Playwright: Excel ดี/เสีย · แถวแดง → แก้ → ปุ่มสร้างกลับมา
+- ค. (ตัวอ่าน PDF ไม่ใช้ AI) ยังไม่ทำ — รอไฟล์ bookkeeper-hub-20260924.bundle หรือ e-Statement ตัวอย่าง
+- ⭐ อ่าน PDF statement จากตัวหนังสือในไฟล์ โดยไม่ใช้ AI (ข้อ ค. บางส่วน · ทดสอบกับ KBANK e-Statement ของ North 14 หน้า 462 รายการ)
+  · ledger/index.html parseTextStatement(pdf): pdf.js getTextContent → จัดบรรทัดตาม y · แถวขึ้นต้นด้วยวันที่ · ตัวเลขเงินขวาสุด = คงเหลือ · ทิศจากผลต่างคงเหลือ (ต้องตรง ≥95% ไม่งั้นไปใช้ AI)
+    "ยอดยกมา" แถวแรก = opening (หน้าถัดไปซ้ำ ข้าม) · บรรทัดต่อ (x ตรงคอลัมน์รายละเอียด) ต่อท้ายข้อความ · หาเลขบัญชีรูปแบบ 000-0-00000-0
+  · ผล: ฝาก 88 = 816,232.60 · ถอน 374 = 811,845.91 ตรงกับยอดที่ธนาคารพิมพ์ถึงสตางค์ · ใช้เวลา ~1 วินาทีในเบราว์เซอร์
+  · ส่งผ่าน POST /api/inbox/statement/lines (source PDF_TEXT + opening/closing/account_number) → ด่านเดินยอดเดิม · ไม่ผ่าน/ไม่มีตัวหนังสือ → ถอยไป AI ตามเดิม
+  · ไฟล์ติดรหัส: openPdfDoc ลองไม่ใส่รหัส → รหัสในช่อง/บัญชี (pdfPasswords) แล้วอ่านตัวหนังสือในเครื่องได้เลย
+- .gitignore: "Claude outputs/" (มี statement จริง)
+
+## 2026-10-12 · กลับไปใช้แอปเดิมเป็นหลัก (North สั่ง: "ปรับของเดิมให้ดีขึ้น ไม่ใช่ทำใหม่")
+- frontend/index.html: เมนูข้าง + เมนูล่างมือถือ กลับเป็นชุดเดิม (แดชบอร์ด/รอตรวจสอบ/ประวัติ/ลูกหนี้/ทริป/รายงาน/ตั้งค่า) · goNewHomeIfDefault() ปิดแล้ว (return false)
+- ย้ายของดีจาก ledger/ เข้า app.js (bindPDFUpload หน้า "รอตรวจสอบ"):
+  · parseTextStatement — อ่าน e-Statement จากตัวหนังสือใน PDF ไม่ใช้ AI (ทดสอบ KBANK 462 รายการ ตรงยอดธนาคาร) · ไม่ผ่าน → ใช้ AI เดิม
+  · statementPdfPasswords/openStatementPdf — ลองรหัสบัญชีที่เลือก → ธนาคารเดียวกัน → ทุกบัญชี
+  · เช็คเลขบัญชีในไฟล์ vs บัญชีที่เลือก · importStatementRows ส่งพร้อมกัน 6 ทาง (กันซ้ำด้วย generateTxId เดิม)
+- backend index.js: runGeminiStatement / runGeminiOCR ใช้ geminiGenerate (ลองซ้ำ + สลับรุ่นสำรอง) แก้ 503
+- หน้า ledger/ ที่ยังเหลือ (cards, assets, opening, close) ลิงก์กลับแอปหลักแล้ว · จะย้ายเข้าแอปเดิมทีละอย่าง แล้วค่อยลบ
+
+## 2026-10-12 · ย้าย ก. ขั้น 1–2 เข้าแอปเดิม (North เลือกลำดับ: ยอดยกมา → ปิดเดือน → บัตร & เงินกู้ → ทรัพย์สิน)
+- ยอดยกมา → แท็บ "⚖️ ยอดยกมา" ในตั้งค่าแอปเดิม (เดิมแท็บนี้บันทึกไม่ได้ — \${} ถูก escape) · app.js ส่วน `// opening_balance.js` (OB) · กล่อง #ob-root
+- ปิดเดือน → เมนูใหม่ "ปิดเดือน" (view-close) · app.js ส่วน `// period_close.js` (PC) · ปุ่ม "ไปแก้" → หน้าในแอปเดิม (FIX map) · openSettingsTab(tab)
+- ledger/opening.html, ledger/close.html เลิกใช้ (ลิงก์ในหน้า ledger อื่นชี้ ../index.html แล้ว) — ให้ North `git rm`
+- ⚠️ ค้างตัดสินใจ: (1) สลิป LINE ไหลเข้า LedgerDocs → UI อยู่ ledger/index.html เท่านั้น (2) ปิดเดือนข้อ statements ใช้ LedgerStatements แต่แอปเดิมนำเข้า statement เป็นรายการรอตรวจสอบตรง ๆ → ข้อนี้ไม่ผ่านถ้านำเข้าทางแอปเดิม

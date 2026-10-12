@@ -1097,6 +1097,7 @@ function downloadTemplateFlat() {
    · เปิดแอปเดิม: ?classic=1 (ปุ่ม "แอปหลัก" ในหน้าใหม่ส่งมาแบบนี้) แล้วจำไว้ทั้งแท็บ
    · ลิงก์เฉพาะเรื่อง (txId จาก LINE ฯลฯ) ไม่ถูกพาไป */
 function goNewHomeIfDefault() {
+    return false;   // 2026-10-12 (North): กลับไปใช้แอปเดิมเป็นหลัก — ไม่พาไปหน้า ledger/home.html อีก
     const p = new URLSearchParams(location.search);
     if (p.has('classic')) { try { sessionStorage.setItem('rr_classic', '1'); } catch { /* */ } return false; }
     if (p.has('txId') || location.hash) return false;
@@ -1339,6 +1340,7 @@ function switchView(viewName) {
         'debtor': 'ทะเบียนลูกหนี้/เจ้าหนี้คงค้าง',
         'reports': 'รายงานสรุปทางการเงิน',
         'settings': 'ตั้งค่าระบบข้อมูลหลัก',
+        'close': '🔒 ปิดเดือน',
         'travel': '✈️ TRIPS',
         'puppup': '🗺️ Prototype Trip'
     };
@@ -1377,6 +1379,7 @@ function switchView(viewName) {
 
     // Trigger specific view loaders
     if (viewName === 'dashboard') loadDashboard();
+    if (viewName === 'close') PC.open();
     else if (viewName === 'pending') loadPending();
     else if (viewName === 'history') loadHistory();
     // grid-input redirected to pending (no loadGridInput needed)
@@ -5994,6 +5997,7 @@ function setupSettingsEvents() {
             const activeSec = document.getElementById(`settings-${targetTab}`);
             if (activeSec) {
                 if (targetTab === 'debts') renderDebtsSettings();
+                if (targetTab === 'opening-balances') OB.open();
                 activeSec.classList.remove("hidden");
                 activeSec.classList.add("active");
             }
@@ -6726,6 +6730,138 @@ function bindPendingPageActions() {
     });
 }
 
+// ==========================================
+// 🏦 นำเข้า statement — ยกเครื่อง 2026-10-12 (ปรับจากของเดิม ไม่ได้สร้างใหม่)
+//   1) อ่านตัวหนังสือใน PDF เองก่อน (ไม่ใช้ AI) — e-Statement ตรงถึงสตางค์ · ไม่ติดคิว AI (503)
+//      ทดสอบ: KBANK 14 หน้า 462 รายการ ยอดฝาก/ถอนตรงกับที่ธนาคารพิมพ์
+//   2) รหัสผ่าน PDF: ลองไม่ใส่ → บัญชีที่เลือก → ธนาคารเดียวกัน → ทุกบัญชีที่ตั้งรหัสไว้
+//   3) อ่านเองไม่ได้ (สแกน/Print to PDF) → ใช้ AI แบบเดิม (เซิร์ฟเวอร์สลับรุ่นสำรองเมื่อ AI ไม่ว่าง)
+//   4) สร้างรายการรอตรวจสอบทีละ 6 รายการพร้อมกัน (เดิมยิงทั้งหมดพร้อมกัน ไฟล์ใหญ่ล้ม)
+// ==========================================
+/* อ่าน statement จากตัวหนังสือใน PDF โดยไม่ใช้ AI (2026-10-12 · หลักการจากระบบ BKP)
+   · จัดคำเป็นบรรทัดตามแกน y · บรรทัดที่ขึ้นต้นด้วยวันที่ = รายการ · บรรทัดไม่มีวันที่ใต้รายการ = ข้อความต่อ
+   · ตัวเลขเงินขวาสุด = ยอดคงเหลือ · ทิศเงินเข้า/ออก ตัดสินจากผลต่างยอดคงเหลือ แล้วเทียบกับยอดที่อ่านได้
+   · บรรทัด "ยอดยกมา" ไม่ใช่รายการ (ใช้เป็นยอดยกมาครั้งแรก) · ไม่ผ่านเกณฑ์ → คืน ok:false ให้ไปใช้ AI แทน */
+async function parseTextStatement(pdf) {
+  const MONEY = /^-?\(?[\d,]+\.\d{2}\)?$/;
+  const DATE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/;
+  const TIME = /^\d{1,2}:\d{2}(:\d{2})?$/;
+  const OPEN_RE = /ยอดยกมา|ยกมา|BROUGHT\s*FORWARD|Balance\s*Forward/i, CLOSE_RE = /ยอดยกไป|CARRIED\s*FORWARD/i;
+  const num = s => { const neg = /^\(.*\)$|^-/.test(s); const v = Number(String(s).replace(/[(),-]/g, '')); return neg ? -v : v; };
+  const r2 = n => Math.round(n * 100) / 100;
+  const isoDate = (d, m, y) => { let yy = +y; if (yy < 100) yy = yy >= 40 ? yy + 2500 - 543 : yy + 2000; if (yy > 2400) yy -= 543;
+    if (+m < 1 || +m > 12 || +d < 1 || +d > 31) return null; return `${yy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
+  const rows = []; let opening = null, closing = null, accountNumber = null, textChars = 0;
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+    const items = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim(), w: it.width || 0 }));
+    textChars += items.reduce((n, it) => n + it.s.length, 0);
+    if (!accountNumber) { const a = items.find(it => /^[\dXx*]{3}-[\dXx*]-[\dXx*]{5}-[\dXx*]$|^[\dXx*]{3}-[\dXx*]{6}-[\dXx*]$/.test(it.s)); if (a) accountNumber = a.s; }
+    // จัดเป็นบรรทัด (y ใกล้กัน ≤ 2.5)
+    items.sort((a, b) => b.y - a.y || a.x - b.x);
+    const lines = [];
+    for (const it of items) { const L = lines.find(l => Math.abs(l.y - it.y) <= 2.5); if (L) L.items.push(it); else lines.push({ y: it.y, items: [it] }); }
+    lines.sort((a, b) => b.y - a.y);
+    let prevRow = null;
+    for (const L of lines) {
+      L.items.sort((a, b) => a.x - b.x);
+      const first = L.items[0], dm = first.s.match(DATE);
+      if (dm) {
+        const date = isoDate(dm[1], dm[2], dm[3]);
+        const rest = L.items.slice(1);
+        const money = rest.filter(it => MONEY.test(it.s));
+        const text = rest.filter(it => !MONEY.test(it.s) && !TIME.test(it.s) && !DATE.test(it.s));
+        const time = rest.find(it => TIME.test(it.s))?.s || null;
+        const all = text.map(t => t.s).join(' ');
+        if (!date || !money.length) { prevRow = null; continue; }
+        const balIt = money[money.length - 1];
+        if (OPEN_RE.test(all)) { if (opening == null) opening = num(balIt.s); prevRow = null; continue; }
+        if (CLOSE_RE.test(all)) { closing = num(balIt.s); prevRow = null; continue; }
+        if (money.length < 2) { prevRow = null; continue; }
+        const amtIt = money.filter(m => m !== balIt && num(m.s) !== 0).pop() || money[money.length - 2];
+        const left = text.filter(t => t.x < amtIt.x), right = text.filter(t => t.x > balIt.x);
+        const row = { date, time, amountAbs: Math.abs(num(amtIt.s)), balance: num(balIt.s), desc: left.map(t => t.s).join(' '), tail: right.map(t => t.s), tailX: right.length ? right[right.length - 1].x : null, y: L.y };
+        rows.push(row); prevRow = row;
+      } else if (prevRow && prevRow.tailX != null && L.items.every(it => !MONEY.test(it.s)) && Math.abs(L.items[0].x - prevRow.tailX) < 6 && prevRow.y - L.y < 30) {
+        prevRow.tail[prevRow.tail.length - 1] += ' ' + L.items.map(it => it.s).join(' ');   // ข้อความต่อบรรทัด
+        prevRow.y = L.y;
+      } else if (!dm) { /* หัว/ท้ายกระดาษ */ }
+    }
+  }
+  if (textChars < 200) return { ok: false, reason: 'ไฟล์นี้ไม่มีตัวหนังสือ (สแกน/Print to PDF)' };
+  if (rows.length < 1) return { ok: false, reason: 'ไม่พบตารางรายการที่อ่านได้' };
+  // ทิศทางเงินจากผลต่างยอดคงเหลือ
+  let prev = opening ?? r2(rows[0].balance - 0);   // ไม่มียอดยกมา → แถวแรกตัดสินไม่ได้
+  let agree = 0, firstUnknown = opening == null;
+  const out = rows.map((r, i) => {
+    let amount;
+    if (i === 0 && firstUnknown) amount = -r.amountAbs;   // เดาไว้ก่อน · ด่านเดินยอดตรวจไม่ได้แถวแรก
+    else {
+      const diff = r2(r.balance - prev);
+      if (Math.abs(Math.abs(diff) - r.amountAbs) < 0.005) { amount = diff; agree++; } else amount = -r.amountAbs;
+    }
+    prev = r.balance;
+    return { date: r.date, time: r.time, description: [r.desc, ...r.tail].filter(Boolean).join(' · '), amount, balance: r.balance };
+  });
+  const checkable = out.length - (firstUnknown ? 1 : 0);
+  const rate = checkable ? agree / checkable : 0;
+  if (checkable && rate < 0.95) return { ok: false, reason: `อ่านตัวเลขได้ไม่ตรงยอดคงเหลือ ${Math.round((1 - rate) * 100)}%` };
+  return { ok: true, lines: out, opening, closing: closing ?? out[out.length - 1].balance, account_number: accountNumber, agree, checkable };
+}
+
+function statementPdfPasswords(accId) {
+    const accs = AppState.accounts || [];
+    const sel = accs.find(a => a.account_id === accId);
+    return [...new Set([sel?.pdf_password,
+        ...accs.filter(a => a.pdf_password && a.bank_name && a.bank_name === sel?.bank_name).map(a => a.pdf_password),
+        ...accs.map(a => a.pdf_password)].filter(Boolean).map(String))];
+}
+/* เปิด PDF ด้วย pdf.js โดยลองรหัสตามลำดับ · คืน { pdf, password } หรือ { needPassword: true } */
+async function openStatementPdf(fileBytes, accId) {
+    if (typeof pdfjsLib === 'undefined') return {};
+    for (const pw of ['', ...statementPdfPasswords(accId)]) {
+        try { const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(fileBytes.slice(0)), password: pw || undefined }).promise; return { pdf, password: pw || null }; }
+        catch (e) { if (e?.name !== 'PasswordException') return {}; }
+    }
+    return { needPassword: true };
+}
+/* เลขบัญชีในไฟล์ตรงกับบัญชีที่เลือกไหม (ไฟล์มักปิดบางหลัก) */
+function statementAccountMatches(read, mine) {
+    const norm = x => String(x || '').toLowerCase().replace(/\*/g, 'x').replace(/[^0-9x]/g, '');
+    const groups = norm(read).split('x').filter(g => g.length >= 3), b = norm(mine).replace(/x/g, '');
+    if (!groups.length || b.length < 4) return null;
+    return groups.every(g => b.includes(g));
+}
+/* สร้างรายการรอตรวจสอบจากบรรทัด statement (ใช้ทั้งทางอ่านเองและทาง AI) */
+async function importStatementRows(accId, transactions, onProgress) {
+    const entityId = AppState.allowedEntities[0] || null;
+    let importedCount = 0, skippedCount = 0, errorCount = 0, done = 0;
+    const skippedDetails = [];
+    const queue = transactions.slice();
+    const worker = async () => {
+        while (queue.length) {
+            const tx = queue.shift();
+            const payload = {
+                transaction_id: generateTxId(tx.date, accId, tx.amount, 'PDF', { refCode: tx.ref_code, statementDesc: tx.statement_desc, time: tx.time }),
+                account_id: accId, date: tx.date, time: tx.time, statement_desc: tx.statement_desc, total_amount: tx.amount, ref_code: tx.ref_code,
+                status: 'PENDING_REVIEW', source: 'PDF_IMPORT',
+                details: [{ amount: tx.amount, fee: 0, wht: 0, category_id: null, entity_id: entityId, note: tx.note, type: tx.type }]
+            };
+            try {
+                const r = await fetch(`${API_BASE}/api/transactions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) }, body: JSON.stringify(payload) });
+                const json = await r.json().catch(() => ({}));
+                if (!r.ok) errorCount++;
+                else if (json.skipped) { skippedCount++; skippedDetails.push(json.message || `${tx.date} | ${tx.amount}`); }
+                else importedCount++;
+            } catch { errorCount++; }
+            onProgress?.(++done, transactions.length);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(6, transactions.length) }, worker));
+    return { importedCount, skippedCount, errorCount, skippedDetails };
+}
+
 function bindPDFUpload() {
     const triggerUploadBtn = document.getElementById("btn-trigger-statement-upload");
     const pdfInput = document.getElementById("statement-pdf-input");
@@ -6758,9 +6894,46 @@ function bindPDFUpload() {
             triggerUploadBtn.disabled = true;
             triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังประมวลผล...`;
 
+            const resetUploadBtn = () => {
+                triggerUploadBtn.disabled = false;
+                triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เลือกไฟล์ PDF เพื่อนำเข้า`;
+                pdfInput.value = '';
+            };
+            let foundPassword = null;
+            // ── ยกเครื่อง 2026-10-12: อ่านตัวหนังสือใน PDF เองก่อน (ไม่ใช้ AI) ──
+            try {
+                const opened = await openStatementPdf(await file.arrayBuffer(), selectedAccId);
+                if (opened.needPassword) {
+                    alert("ไฟล์ PDF นี้มีรหัสผ่าน แต่ไม่ตรงกับรหัสที่ตั้งไว้ในบัญชีใดเลย\nตั้งรหัสที่ ตั้งค่าระบบ → Statement → รหัสผ่าน PDF แล้วลองใหม่");
+                    resetUploadBtn(); return;
+                }
+                foundPassword = opened.password;
+                if (opened.pdf) {
+                    const parsed = await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
+                    if (parsed.ok) {
+                        const accObj0 = AppState.accounts.find(a => a.account_id === selectedAccId);
+                        const match = statementAccountMatches(parsed.account_number, accObj0?.account_number);
+                        if (match === false && !confirm(`⚠️ เลขบัญชีในไฟล์ (${parsed.account_number}) ไม่ตรงกับบัญชีที่เลือก (${accObj0?.account_number})\nยังต้องการนำเข้าเข้าบัญชีนี้หรือไม่?`)) { resetUploadBtn(); return; }
+                        const txs = parsed.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00',
+                            type: l.amount > 0 ? 'INCOME' : 'EXPENSE', amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null }));
+                        const res = await importStatementRows(selectedAccId, txs, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; });
+                        const sumIn = parsed.lines.filter(l => l.amount > 0).reduce((t, l) => t + l.amount, 0), sumOut = -parsed.lines.filter(l => l.amount < 0).reduce((t, l) => t + l.amount, 0);
+                        let msg = `อ่านจากตัวหนังสือในไฟล์ (ไม่ใช้ AI) ${parsed.lines.length} รายการ\n` +
+                            `ยอดยกมา ${Number(parsed.opening ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} · ยอดยกไป ${Number(parsed.closing ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +
+                            `ฝาก ${sumIn.toLocaleString('en-US', { minimumFractionDigits: 2 })} · ถอน ${sumOut.toLocaleString('en-US', { minimumFractionDigits: 2 })} · ยอดคงเหลือเดินลงทุกแถว ✅\n\n` +
+                            `นำเข้า ${res.importedCount} รายการ`;
+                        if (res.skippedCount) msg += `\nข้ามรายการซ้ำ ${res.skippedCount} รายการ:\n` + res.skippedDetails.slice(0, 10).join('\n') + (res.skippedDetails.length > 10 ? `\n...และอีก ${res.skippedDetails.length - 10} รายการ` : '');
+                        if (res.errorCount) msg += `\n⚠️ บันทึกไม่สำเร็จ ${res.errorCount} รายการ — นำเข้าไฟล์เดิมอีกครั้งได้ (รายการที่มีแล้วจะถูกข้าม)`;
+                        alert(msg);
+                        loadPending();
+                        resetUploadBtn(); return;
+                    }
+                }
+            } catch (err) { console.warn('อ่านตัวหนังสือใน PDF ไม่ได้ → ใช้ AI', err); }
+
             try {
                 const accObj = AppState.accounts.find(a => a.account_id === selectedAccId);
-                const pdfPassword = accObj ? accObj.pdf_password : null;
+                const pdfPassword = foundPassword || (accObj ? accObj.pdf_password : null);
 
                 const reader = new FileReader();
                 reader.readAsArrayBuffer(file);
@@ -6854,63 +7027,13 @@ function bindPDFUpload() {
                     if (res.ok) {
                         const data = await res.json();
                         if (data && data.transactions && data.transactions.length > 0) {
-                            let importedCount = 0;
-                            let skippedCount = 0;
-                            
-                            // Force-use the pre-selected account ID
-                            const accId = selectedAccId;
-                            
-                            const entityId = AppState.allowedEntities[0] || null;
-
-                            const skippedDetails = [];
-                            const promises = data.transactions.map(tx => {
-                                const payload = {
-                                    transaction_id: generateTxId(tx.date, accId, tx.amount, 'PDF', { refCode: tx.ref_code, statementDesc: tx.statement_desc, time: tx.time }),
-                                    account_id: accId,
-                                    date: tx.date,
-                                    time: tx.time,
-                                    statement_desc: tx.statement_desc,
-                                    total_amount: tx.amount,
-                                    ref_code: tx.ref_code,
-                                    status: 'PENDING_REVIEW',
-                                    source: 'PDF_IMPORT',
-                                    details: [{
-                                        amount: tx.amount,
-                                        fee: 0,
-                                        wht: 0,
-                                        category_id: null,
-                                        entity_id: entityId,
-                                        note: tx.note,
-                                        type: tx.type
-                                    }]
-                                };
-
-                                return fetch(`${API_BASE}/api/transactions`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
-                                    body: JSON.stringify(payload)
-                                }).then(async r => {
-                                    const json = await r.json().catch(() => ({}));
-                                    if (!r.ok) return 'error';
-                                    if (json.skipped) {
-                                        skippedDetails.push(json.message || `${tx.date} | ${tx.amount}`);
-                                        return 'skipped';
-                                    }
-                                    return 'success';
-                                }).catch(() => 'error');
-                            });
-
-                            const results = await Promise.all(promises);
-                            results.forEach(resType => {
-                                if (resType === 'success') importedCount++;
-                                else if (resType === 'skipped') skippedCount++;
-                            });
-
-                            let msg = `อัปโหลดสำเร็จ: นำเข้า ${importedCount} รายการ`;
-                            if (skippedCount > 0) {
-                                msg += `\n\nข้ามรายการซ้ำ ${skippedCount} รายการ:\n` + skippedDetails.slice(0, 10).join('\n');
-                                if (skippedDetails.length > 10) msg += `\n...และอีก ${skippedDetails.length - 10} รายการ`;
+                            const res = await importStatementRows(selectedAccId, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; });
+                            let msg = `อ่านด้วย AI · นำเข้า ${res.importedCount} รายการ`;
+                            if (res.skippedCount > 0) {
+                                msg += `\n\nข้ามรายการซ้ำ ${res.skippedCount} รายการ:\n` + res.skippedDetails.slice(0, 10).join('\n');
+                                if (res.skippedDetails.length > 10) msg += `\n...และอีก ${res.skippedDetails.length - 10} รายการ`;
                             }
+                            if (res.errorCount) msg += `\n⚠️ บันทึกไม่สำเร็จ ${res.errorCount} รายการ — นำเข้าไฟล์เดิมอีกครั้งได้`;
                             alert(msg);
                             loadPending();
                         } else {
@@ -8161,312 +8284,352 @@ function bulkImportExcelFile(file, importStatus) {
 }
 
 // opening_balance.js
-function initOpeningBalance() {
-    const btnLoad = document.getElementById('btn-load-ob-categories');
-    const userSelect = document.getElementById('ob-user-select');
-    const dateSelect = document.getElementById('ob-date-select');
-    const container = document.getElementById('ob-accordion-container');
-    const btnSave = document.getElementById('btn-save-opening-balance');
+/* ⚖️ ยอดยกมา (ย้ายเข้าแอปเดิม 2026-10-12 · เดิมแท็บนี้กดบันทึกแล้วไม่เกิดอะไร)
+   ใช้ระบบเดียวกับหน้า ledger/opening.html: ชุดตามเจ้าของ + วันที่เริ่ม (แต่ละคนเริ่มคนละวันได้)
+   ทุกบรรทัดระบุ เดบิต/เครดิต · ส่วนต่างไป "บัญชีพักยอดยกมา" → ต้องเป็น 0 (Dr = Cr)
+   API: GET/POST /api/inbox/opening · POST /api/inbox/opening/{set_id}/delete · GET /api/inbox/meta · GET /api/inbox/loans
+   กติกาฝั่งเซิร์ฟเวอร์อยู่ใน backend/src/opening.js */
+const OB = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+    const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = n => r2(n) < 0 ? `<span style="color:var(--danger-color)">(${money(-r2(n))})</span>` : money(n);
+    const plain = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '').trim() || String(n || '');
+    /* "1,234.50" · "(1,234.50)" → ตัวเลข · ว่าง = 0 · อ่านไม่ออก = NaN */
+    const num = s => { let t = String(s ?? '').trim().replace(/[,\s฿]/g, ''); if (!t) return 0; let neg = false; if (/^\(.*\)$/.test(t)) { neg = true; t = t.slice(1, -1); } const v = Number(t); return isNaN(v) ? NaN : (neg ? -v : v); };
+    const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const thd = s => { if (!s) return '-'; const [y, m, d] = s.slice(0, 10).split('-').map(Number); return `${d} ${TH_M[m - 1]} ${String(y + 543).slice(2)}`; };
+    const TYPE_TH = { BANK: 'ธนาคาร', CASH: 'เงินสด', CREDIT: 'บัตรเครดิต', EWALLET: 'e-wallet', TRIP_HOLDING: 'ทริป' };
+    const S = { data: null, meta: null, loans: [], edit: null };
+    const root = () => document.getElementById('ob-root');
+    const q = s => root()?.querySelector(s);
+    const toast = (t, type) => { try { window.showToast(t, type || 'success'); } catch { alert(t); } };
+    async function api(path, body) {
+        const res = await fetch(API_BASE + path, { method: body ? 'POST' : 'GET', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+        const d = await res.json().catch(() => ({}));
+        if (res.status === 401) throw new Error('กรุณาเข้าสู่ระบบใหม่');
+        if (!res.ok || d.error) throw new Error(d.error || `ผิดพลาด (${res.status})`);
+        return d;
+    }
+    async function load() {
+        const el = root(); if (!el) return;
+        if (!S.data) el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-secondary)"><i class="fa-solid fa-spinner fa-spin"></i> กำลังโหลด…</div>';
+        try {
+            const [d, m, l] = await Promise.all([api('/api/inbox/opening'), S.meta ? Promise.resolve(S.meta) : api('/api/inbox/meta'), api('/api/inbox/loans').catch(() => ({ loans: [] }))]);
+            S.data = d; S.meta = m; S.loans = (l.loans || []).filter(x => x.status !== 'deleted');
+            render();
+        } catch (e) { el.innerHTML = `<div class="ob2-card" style="text-align:center">โหลดไม่สำเร็จ: ${esc(e.message)} <button class="btn btn-sm btn-primary" onclick="OB.open()">ลองใหม่</button></div>`; }
+    }
+    const render = () => S.edit ? renderEditor() : renderList();
+    const entName = id => plain((S.meta.entities || []).find(e => e.entity_id === id)?.name || '');
+    const accOf = id => (S.meta.accounts || []).find(a => a.account_id === id);
+    const catOf = id => (S.meta.categories || []).find(c => c.category_id === id);
+    const tag = (ok, t) => `<span class="ob2-tag ${ok ? 'ok' : 'bad'}">${t}</span>`;
 
-    if (!btnLoad || !userSelect || !dateSelect) return;
-
-    // Set default date to today
-    const tzoffset = (new Date()).getTimezoneOffset() * 60000; //offset in milliseconds
-    const localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, 10);
-    dateSelect.value = localISOTime;
-
-    // Load users (Members)
-    userSelect.addEventListener('focus', () => {
-        if (userSelect.options.length <= 1) {
-            userSelect.innerHTML = '<option value="">-- เลือก Member --</option>';
-            if (AppState.settings && AppState.settings.users && AppState.settings.users.length > 0) {
-                // For Admins who can see all users
-                AppState.settings.users.forEach(u => {
-                    const opt = document.createElement('option');
-                    opt.value = u.user_id;
-                    opt.textContent = u.name || u.user_id;
-                    userSelect.appendChild(opt);
-                });
-            } else {
-                // For normal users, only themselves
-                const opt = document.createElement('option');
-                opt.value = AppState.userId;
-                opt.textContent = AppState.userName || AppState.userId;
-                userSelect.appendChild(opt);
-            }
-        }
-    });
-
-    // Auto-select current user by default
-    setTimeout(() => {
-        if (userSelect.options.length <= 1) {
-            userSelect.innerHTML = `<option value="${AppState.userId}">${AppState.userName || AppState.userId}</option>`;
-            userSelect.value = AppState.userId;
-        }
-    }, 500);
-
-    // Handle load categories
-    btnLoad.addEventListener('click', () => {
-        if (!userSelect.value) {
-            alert('กรุณาเลือกผู้ใช้งาน (Owner)');
-            return;
-        }
-        if (!dateSelect.value) {
-            alert('กรุณาเลือกวันที่');
-            return;
-        }
-        
-        container.style.display = 'flex';
-        renderOpeningBalanceInputs();
-    });
-
-    // Calculate totals
-    const calcTotals = () => {
-        let totalAssets = 0;
-        let totalLiabilities = 0;
-
-        document.querySelectorAll('.ob-asset-input').forEach(input => {
-            totalAssets += parseFloat(input.value) || 0;
-        });
-
-        document.querySelectorAll('.ob-liability-input').forEach(input => {
-            totalLiabilities += parseFloat(input.value) || 0;
-        });
-
-        const diff = totalAssets - totalLiabilities;
-
-        document.getElementById('ob-assets-total').textContent = formatCurrency(totalAssets);
-        document.getElementById('ob-footer-assets').textContent = formatCurrency(totalAssets);
-        
-        document.getElementById('ob-liabilities-total').textContent = formatCurrency(totalLiabilities);
-        document.getElementById('ob-footer-liabilities').textContent = formatCurrency(totalLiabilities);
-        
-        const diffEl = document.getElementById('ob-footer-diff');
-        diffEl.textContent = formatCurrency(diff);
-        
-        if (diff > 0) {
-            diffEl.style.color = 'var(--success-color)';
-            diffEl.textContent += ' (กำไรสะสม / ทุน)';
-        } else if (diff < 0) {
-            diffEl.style.color = 'var(--danger-color)';
-            diffEl.textContent += ' (ขาดทุนสะสม)';
-        } else {
-            diffEl.style.color = '#fff';
-        }
-
-        // Always allow save, even if 0, because it will just save what was inputted + the difference
-        btnSave.disabled = false;
-    };
-
-    const createDynamicRow = (type, optionsHTML) => {
-        const div = document.createElement('div');
-        div.className = 'ob-row';
-        div.style.display = 'flex';
-        div.style.gap = '10px';
-        div.style.alignItems = 'center';
-        div.style.marginBottom = '5px';
-        div.innerHTML = `
-            <select class="form-control ob-item-select" style="flex: 2; height: 38px;">
-                <option value="">-- เลือกรายการ --</option>
-                ${optionsHTML}
-            </select>
-            <input type="number" class="form-control ${type === 'asset' ? 'ob-asset-input' : 'ob-liability-input'}" 
-                step="0.01" placeholder="0.00" style="flex: 1; height: 38px;" oninput="window.calcOBTotals()">
-            <button class="btn btn-sm btn-outline-danger" style="height: 38px; width: 38px; padding: 0; display: flex; align-items: center; justify-content: center; flex-shrink: 0;" onclick="this.parentElement.remove(); window.calcOBTotals();"><i class="fa-solid fa-trash"></i></button>
-        `;
-        return div;
-    };
-
-    window.calcOBTotals = calcTotals;
-
-    let assetOptionsHTML = '';
-    let liabilityOptionsHTML = '';
-
-    function renderOpeningBalanceInputs() {
-        const assetsRows = document.getElementById('ob-assets-rows');
-        const liabilitiesRows = document.getElementById('ob-liabilities-rows');
-        
-        assetsRows.innerHTML = '';
-        liabilitiesRows.innerHTML = '';
-        
-        let accountsHTML = '';
-        if (AppState.settings.accounts) {
-            AppState.settings.accounts.forEach(acc => {
-                accountsHTML += `<option value="account_\${acc.account_id}" data-source="account" data-id="\${acc.account_id}" data-name="\${acc.name}">💳 \${acc.name}</option>`;
-            });
-        }
-        
-        let assetCatsHTML = '';
-        let liabCatsHTML = '';
-        if (AppState.settings.categories && AppState.settings.captions) {
-            const captionsMap = {}, subBehaviorMap = {};
-            AppState.settings.captions.forEach(c => {
-                captionsMap[c.type_id] = c.behavior;
-                subBehaviorMap[c.type_id] = c.sub_behavior || null;
-            });
-
-            AppState.settings.categories.forEach(cat => {
-                const behavior = captionsMap[cat.category_type];
-                // เงินลงทุนไม่ใช่หมวดหนี้สิน — ไม่แสดงในตัวเลือกทะเบียนลูกหนี้/เจ้าหนี้
-                if (subBehaviorMap[cat.category_type] === 'INVESTMENT') return;
-                if (behavior === 'ASSET' || behavior === 'REVENUE') {
-                    assetCatsHTML += `<option value="category_\${cat.category_id}" data-source="category" data-id="\${cat.category_id}" data-name="\${cat.name}">📈 \${cat.name}</option>`;
-                } else if (behavior === 'LIABILITY' || behavior === 'EXPENSE') {
-                    liabCatsHTML += `<option value="category_\${cat.category_id}" data-source="category" data-id="\${cat.category_id}" data-name="\${cat.name}">📉 \${cat.name}</option>`;
-                }
-            });
-        }
-
-        assetOptionsHTML = '';
-        if (accountsHTML) assetOptionsHTML += `<optgroup label="Statements / Accounts">\${accountsHTML}</optgroup>`;
-        if (assetCatsHTML) assetOptionsHTML += `<optgroup label="Asset Categories">\${assetCatsHTML}</optgroup>`;
-
-        liabilityOptionsHTML = '';
-        if (liabCatsHTML) liabilityOptionsHTML += `<optgroup label="Liability Categories">\${liabCatsHTML}</optgroup>`;
-        
-        document.getElementById('btn-add-asset-row').onclick = () => {
-            assetsRows.appendChild(createDynamicRow('asset', assetOptionsHTML));
-        };
-        
-        document.getElementById('btn-add-liability-row').onclick = () => {
-            liabilitiesRows.appendChild(createDynamicRow('liability', liabilityOptionsHTML));
-        };
-
-        if (assetsRows.children.length === 0) {
-            assetsRows.appendChild(createDynamicRow('asset', assetOptionsHTML));
-        }
-        if (liabilitiesRows.children.length === 0) {
-            liabilitiesRows.appendChild(createDynamicRow('liability', liabilityOptionsHTML));
-        }
-        
-        calcTotals();
+    // ───────── รายการชุด ─────────
+    function renderList() {
+        const D = S.data, sb = D.suspense?.balance || 0, z = Math.abs(sb) < 0.005;
+        root().innerHTML = `
+          <div class="ob2-card ${z ? '' : 'bad'}"><div class="ob2-h"><b>⚖️ ${esc(D.suspense?.name || 'บัญชีพักยอดยกมา')} (ทุกชุด)</b>${tag(z, z ? '✅ 0.00' : '⚠️ ' + fmt(sb))}</div>
+            <div class="ob2-sub">ต้องเป็น 0.00 = ทุกชุดลงเดบิต/เครดิตครบและถูกฝั่ง · ระบบใช้หมวดนี้ปิดยอดให้อัตโนมัติ</div></div>
+          <div style="margin:12px 0"><button class="btn btn-primary" data-ob="add"><i class="fa-solid fa-plus"></i> ชุดยอดยกมาใหม่</button></div>
+          ${D.sets.length ? D.sets.map(s => {
+            const n = k => s.lines.filter(l => l.kind === k).length;
+            return `<div class="ob2-card ${s.balanced && !s.pre_start.length ? '' : 'bad'}">
+              <div class="ob2-h"><b>${esc(s.name)}</b>${tag(s.balanced, s.balanced ? '✅ สมดุล' : '⚠️ ยังไม่สมดุล')}</div>
+              <div class="ob2-sub">เริ่ม ${thd(s.date)}${s.entity_id ? ' · ' + esc(entName(s.entity_id)) : ''} · บัญชี ${n('ACC')} · หมวด ${n('CAT')} · เงินกู้ ${n('LOAN')}</div>
+              <div class="ob2-drcr"><div><small>เดบิต</small><b>${money(s.debit)}</b></div><div><small>เครดิต</small><b>${money(s.credit)}</b></div>
+                <div><small>บัญชีพัก (ต่าง)</small><b>${fmt(s.suspense)}</b></div></div>
+              ${s.pre_start.length ? `<div class="ob2-warn">⚠️ มีรายการก่อนวันเริ่ม: ${s.pre_start.map(p => `${esc(p.account_name)} ${p.n} รายการ (ตั้งแต่ ${thd(p.first_date)})`).join(' · ')} — ยอดจะนับซ้ำ ให้ลบรายการเก่า หรือเลื่อนวันเริ่มให้ก่อนรายการแรก</div>` : ''}
+              <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">${s.can_edit
+                ? `<button class="btn btn-sm btn-outline-primary" data-ed="${esc(s.set_id)}"><i class="fa-solid fa-pen"></i> แก้ไข</button><button class="btn btn-sm btn-outline-danger" data-del="${esc(s.set_id)}"><i class="fa-solid fa-trash"></i> ลบ</button>`
+                : `<button class="btn btn-sm btn-outline-primary" data-ed="${esc(s.set_id)}"><i class="fa-solid fa-eye"></i> ดู</button><span class="ob2-sub" style="align-self:center">แก้ได้เฉพาะคนที่มีสิทธิ์ทุกบัญชีในชุด</span>`}</div>
+            </div>`;
+          }).join('') : `<div class="ob2-card" style="text-align:center;padding:24px">ยังไม่มีชุดยอดยกมา<br><small class="ob2-sub">แต่ละคนสร้างชุดของตัวเองได้ และเริ่มคนละวันได้</small></div>`}
+          <div class="ob2-warn" style="margin-top:12px">• 1 บัญชี / 1 สัญญาเงินกู้ อยู่ได้ชุดเดียว · ยอดยกมาสร้างเป็นรายการจริง ณ วันเริ่ม — ยอดบัญชี ลูกหนี้ รายงาน เห็นทันที<br>
+            • ค่าใช้จ่าย/รายได้สะสมต้นปี นับในรายงานรับ-จ่าย ณ วันเริ่ม · บัญชีพักไม่นับเป็นรายรับ/รายจ่าย<br>
+            • ปิดเดือนได้เมื่อชุดสมดุล และไม่มีรายการก่อนวันเริ่ม</div>`;
+        q('[data-ob="add"]').onclick = () => openEditor(null);
+        root().querySelectorAll('[data-ed]').forEach(b => b.onclick = () => openEditor(D.sets.find(s => s.set_id === b.dataset.ed)));
+        root().querySelectorAll('[data-del]').forEach(b => b.onclick = () => delSet(D.sets.find(s => s.set_id === b.dataset.del)));
+    }
+    async function delSet(s) {
+        if (!confirm(`ลบชุด "${s.name}"?\nรายการยอดยกมาของชุดนี้จะถูกลบ ยอดบัญชีจะกลับไปเหมือนก่อนใส่ยอดยกมา\n(ยอดเริ่มต้นของสัญญาเงินกู้ไม่เปลี่ยน)`)) return;
+        try { await api(`/api/inbox/opening/${encodeURIComponent(s.set_id)}/delete`, {}); toast('🗑️ ลบชุดแล้ว'); await load(); } catch (e) { toast('⚠️ ' + e.message, 'error'); }
     }
 
-    btnSave.addEventListener('click', async () => {
-        const selectedUserId = userSelect.value;
-        const dateVal = dateSelect.value;
-        
-        if (!selectedUserId || !dateVal) return;
-
-        const defaultEntityId = (AppState.settings && AppState.settings.entities && AppState.settings.entities.length > 0) 
-                                ? AppState.settings.entities[0].entity_id : null;
-
-        btnSave.disabled = true;
-        btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก...';
-
-        const promises = [];
-        let totalAssets = 0;
-        let totalLiabilities = 0;
-        
-        // Collect all inputs that have a value
-        document.querySelectorAll('.ob-asset-input, .ob-liability-input').forEach(input => {
-            const val = parseFloat(input.value);
-            if (val && val !== 0) {
-                const row = input.closest('.ob-row');
-                const select = row.querySelector('.ob-item-select');
-                if (!select.value) return; // Skip if no option selected
-
-                const option = select.options[select.selectedIndex];
-                const isAsset = input.classList.contains('ob-asset-input');
-                const source = option.dataset.source;
-                const id = option.dataset.id;
-                const name = option.dataset.name;
-                
-                if (isAsset) totalAssets += val;
-                else totalLiabilities += val;
-
-                const payload = {
-                    account_id: source === 'account' ? id : null,
-                    date: dateVal,
-                    time: '00:00:00',
-                    statement_desc: 'Opening Balance',
-                    total_amount: Math.abs(val),
-                    ref_code: 'OB_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-                    status: 'CONFIRMED',
-                    source: 'WEB_GRID',
-                    details: [{
-                        amount: Math.abs(val),
-                        fee: 0,
-                        wht: 0,
-                        category_id: source === 'category' ? id : null,
-                        contact_id: null,
-                        entity_id: defaultEntityId,
-                        user_id: selectedUserId,
-                        note: 'Opening Balance - ' + name,
-                        type: isAsset ? 'INCOME' : 'EXPENSE'
-                    }]
-                };
-
-                promises.push(
-                    fetch(`${API_BASE}/api/transactions`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(selectedUserId) },
-                        body: JSON.stringify(payload)
-                    })
-                );
-            }
-        });
-
-        // Add balancing entry (Open Balance) if diff != 0
-        const diff = totalAssets - totalLiabilities;
-        if (diff !== 0) {
-            // If diff > 0 (Assets > Liab), we need a Liability/Equity entry to balance (type: EXPENSE side in a way, or INCOME on Equity)
-            // In double entry, Assets = Liab + Equity. So Equity = Assets - Liab.
-            // A positive equity is a credit balance. We'll record it as INCOME to an "Open Balance" category or without category.
-            const payload = {
-                account_id: null,
-                date: dateVal,
-                time: '00:00:00',
-                statement_desc: 'Opening Balance (Balancing)',
-                total_amount: Math.abs(diff),
-                ref_code: 'OB_BAL_' + Date.now(),
-                status: 'CONFIRMED',
-                source: 'WEB_GRID',
-                details: [{
-                    amount: Math.abs(diff),
-                    fee: 0,
-                    wht: 0,
-                    category_id: null, // No category, just use note
-                    contact_id: null,
-                    entity_id: defaultEntityId,
-                    user_id: selectedUserId,
-                    note: 'Open Balance (ทุนยกมา)',
-                    type: diff > 0 ? 'INCOME' : 'EXPENSE'
-                }]
-            };
-
-            promises.push(
-                fetch(`${API_BASE}/api/transactions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(selectedUserId) },
-                    body: JSON.stringify(payload)
-                })
-            );
+    // ───────── แก้ไขชุด ─────────
+    const blankCat = () => ({ category_id: '', contact_id: '', side: 'DR', amount: '', note: '' });
+    function openEditor(s) {
+        const ents = S.meta.entities || [];
+        const y = new Date(Date.now() + 7 * 3600e3).getUTCFullYear();
+        const E = { set_id: s?.set_id || null, name: s?.name || '', date: s?.date || `${y}-01-01`, entity_id: s ? (s.entity_id || '') : (ents[0]?.entity_id || ''),
+            anchor_account_id: s?.anchor_account_id || '', acc: {}, loans: {}, cats: [], showAll: false, readOnly: !!s && !s.can_edit, dirty: false };
+        for (const l of s?.lines || []) {
+            if (l.kind === 'ACC') E.acc[l.account_id] = { amount: money(l.amount), side: l.side };
+            else if (l.kind === 'LOAN') E.loans[l.debt_id] = money(l.amount);
+            else E.cats.push({ category_id: l.category_id, contact_id: l.contact_id || '', side: l.side, amount: money(l.amount), note: l.note || '' });
         }
-
+        if (!E.cats.length) E.cats.push(blankCat());
+        if (Object.keys(E.acc).some(id => accOf(id)?.entity_id !== E.entity_id)) E.showAll = true;   // บัญชีของเจ้าของอื่นในชุดนี้ → แสดงทุกบัญชี
+        S.edit = E; render(); root().scrollIntoView({ block: 'start' });
+    }
+    const usedElsewhere = (kind, id) => (S.data.used[kind] || []).some(u => (u.account_id || u.debt_id) === id && u.set_id !== S.edit.set_id);
+    const defaultSide = c => !c ? 'DR' : (c.behavior === 'ASSET' || c.behavior === 'EXPENSE') ? 'DR' : 'CR';
+    const sideSel = (v, attrs, dis) => `<select class="form-control ob2-side" ${attrs} ${dis} aria-label="ฝั่ง"><option value="DR" ${v !== 'CR' ? 'selected' : ''}>เดบิต</option><option value="CR" ${v === 'CR' ? 'selected' : ''}>เครดิต</option></select>`;
+    function catOptions(sel) {
+        const cats = (S.meta.categories || []).filter(c => !String(c.category_id).startsWith('CAT-OB-'));
+        const groups = new Map();
+        for (const c of cats) { const g = plain(c.group) || 'อื่น ๆ'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(c); }
+        return `<option value="">— เลือกหมวด —</option>` + [...groups.entries()].map(([g, cs]) => `<optgroup label="${esc(g)}">${cs.map(c => `<option value="${esc(c.category_id)}" ${c.category_id === sel ? 'selected' : ''}>${esc(plain(c.name))}</option>`).join('')}</optgroup>`).join('');
+    }
+    const conOptions = sel => `<option value="">— ไม่ระบุคู่ค้า —</option>` + (S.meta.contacts || []).map(c => `<option value="${esc(c.contact_id)}" ${c.contact_id === sel ? 'selected' : ''}>${esc(plain(c.name))}</option>`).join('');
+    function buildLines() {
+        const E = S.edit, out = [];
+        for (const [id, v] of Object.entries(E.acc)) { const a = num(v.amount); if (a) out.push({ kind: 'ACC', account_id: id, side: v.side, amount: a }); }
+        for (const c of E.cats) { const a = num(c.amount); if (a || c.category_id) out.push({ kind: 'CAT', category_id: c.category_id, contact_id: c.contact_id || null, side: c.side, amount: a, note: c.note }); }
+        for (const [id, v] of Object.entries(E.loans)) { const a = num(v); if (a) { const d = S.loans.find(x => x.debt_id === id); out.push({ kind: 'LOAN', debt_id: id, side: d?.type === 'RECEIVABLE' ? 'DR' : 'CR', amount: a }); } }
+        return out;
+    }
+    function sums() {
+        const ls = buildLines().filter(l => !isNaN(l.amount));
+        const dr = r2(ls.filter(l => l.side !== 'CR').reduce((t, l) => t + l.amount, 0)), cr = r2(ls.filter(l => l.side === 'CR').reduce((t, l) => t + l.amount, 0));
+        return { dr, cr, diff: r2(dr - cr) };
+    }
+    function updBar() {
+        const t = sums(), ok = Math.abs(t.diff) < 0.005, el = q('#ob2-sum');
+        if (el) el.innerHTML = `<div><small>เดบิต</small><b>${money(t.dr)}</b></div><div><small>เครดิต</small><b>${money(t.cr)}</b></div><div><small>บัญชีพัก (ต่าง)</small><b>${fmt(t.diff)} ${ok ? '✅' : '⚠️'}</b></div>`;
+    }
+    function renderEditor() {
+        const E = S.edit, dis = E.readOnly ? 'disabled' : '';
+        const ents = S.meta.entities || [], allAcc = (S.meta.accounts || []).filter(a => a.account_type !== 'TRIP_HOLDING');
+        const accs = allAcc.filter(a => !usedElsewhere('accounts', a.account_id) && (E.showAll || !E.entity_id || a.entity_id === E.entity_id || E.acc[a.account_id]));
+        const loans = S.loans.filter(l => !usedElsewhere('debts', l.debt_id));
+        const hiddenUsed = allAcc.filter(a => usedElsewhere('accounts', a.account_id)).length;
+        root().innerHTML = `
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><button class="btn btn-sm btn-outline-primary" data-ob="back"><i class="fa-solid fa-arrow-left"></i> กลับ</button>${E.readOnly ? '<span class="ob2-tag">ดูอย่างเดียว</span>' : ''}</div>
+          <div class="ob2-card"><div class="ob2-h"><b>ข้อมูลชุด</b></div>
+            <div class="ob2-g4">
+              <div class="input-group"><label for="ob2-N">ชื่อชุด</label><input class="form-control" id="ob2-N" maxlength="80" value="${esc(E.name)}" placeholder="เช่น ยอดยกมา North" ${dis}></div>
+              <div class="input-group"><label for="ob2-D">📅 วันที่เริ่ม (ยอด ณ ต้นวันนี้)</label><input class="form-control" id="ob2-D" type="date" value="${esc(E.date)}" ${dis}></div>
+              <div class="input-group"><label for="ob2-E">👑 เจ้าของ (Company)</label><select class="form-control" id="ob2-E" ${dis}><option value="">— ไม่ระบุ —</option>${ents.map(e => `<option value="${esc(e.entity_id)}" ${e.entity_id === E.entity_id ? 'selected' : ''}>${esc(plain(e.name))}</option>`).join('')}</select></div>
+              <div class="input-group"><label for="ob2-A">บัญชีที่ใช้บันทึก (หมวด/เงินกู้)</label><select class="form-control" id="ob2-A" ${dis}><option value="">— อัตโนมัติ —</option>${allAcc.map(a => `<option value="${esc(a.account_id)}" ${a.account_id === E.anchor_account_id ? 'selected' : ''}>${esc(plain(a.name))}</option>`).join('')}</select></div>
+            </div>
+            <div class="ob2-sub" style="margin-top:6px">ยอดของหมวด/เงินกู้ บันทึกเป็นรายการยอดรวม 0 ในบัญชีที่เลือก — ยอดเงินในบัญชีนั้นไม่เปลี่ยน</div>
+          </div>
+          <details class="ob-accordion" open><summary class="ob-summary assets-summary"><h5 style="margin:0"><i class="fa-solid fa-building-columns"></i> 1. บัญชีธนาคาร · เงินสด · บัตรเครดิต</h5>
+            <label style="font-size:.8rem;display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()"><input type="checkbox" id="ob2-all" ${E.showAll ? 'checked' : ''} ${dis}> แสดงทุกบัญชี</label></summary>
+            <div class="ob-content" style="padding:10px 15px">
+            <div class="ob2-sub">ใส่ยอดคงเหลือ ณ วันเริ่ม · มีเงิน = เดบิต · บัตรเครดิตค้างจ่าย = เครดิต · เว้นว่าง = ไม่ใส่${hiddenUsed ? ` · ซ่อน ${hiddenUsed} บัญชีที่อยู่ในชุดอื่นแล้ว` : ''}</div>
+            ${accs.length ? accs.map(a => { const v = E.acc[a.account_id] || { amount: '', side: a.account_type === 'CREDIT' ? 'CR' : 'DR' };
+              return `<div class="ob2-ln"><span class="ob2-nm"><b>${esc(plain(a.name))}</b><small>${esc(TYPE_TH[a.account_type] || a.account_type || '')}${a.entity_id ? ' · ' + esc(entName(a.entity_id)) : ''}</small></span>
+                ${sideSel(v.side, `data-as="${esc(a.account_id)}"`, dis)}<input class="form-control ob2-amt" inputmode="decimal" placeholder="0.00" data-aa="${esc(a.account_id)}" value="${esc(v.amount)}" aria-label="ยอด ${esc(plain(a.name))}" ${dis}></div>`; }).join('')
+              : '<div class="ob2-sub" style="padding:12px;text-align:center">ไม่มีบัญชีของเจ้าของนี้ — ติ๊ก "แสดงทุกบัญชี"</div>'}
+          </div></details>
+          <details class="ob-accordion" open><summary class="ob-summary liabilities-summary"><h5 style="margin:0"><i class="fa-solid fa-layer-group"></i> 2. ลูกหนี้ · เจ้าหนี้ · สินทรัพย์ · ทุน · รายได้/ค่าใช้จ่ายสะสม</h5>
+            ${E.readOnly ? '' : '<button class="btn btn-sm btn-outline-primary" data-ob="paste" onclick="event.preventDefault()"><i class="fa-solid fa-paste"></i> วางจาก Excel</button>'}</summary>
+            <div class="ob-content" style="padding:10px 15px">
+            <div class="ob2-sub">เลือกหมวด (ใส่คู่ค้าถ้าเป็นลูกหนี้/เจ้าหนี้รายคน) · ระบบเลือกฝั่งตามประเภทหมวดให้ เปลี่ยนได้${S.data.assets_opening_total ? ` · ทะเบียนทรัพย์สินยอดยกมารวม ${money(S.data.assets_opening_total)} — ใส่เป็นบรรทัดหมวดทรัพย์สินฝั่งเดบิต` : ''}</div>
+            ${E.cats.map((c, i) => `<div class="ob2-lc">
+              <select class="form-control" data-cc="${i}" aria-label="หมวด" ${dis}>${catOptions(c.category_id)}</select>
+              <select class="form-control" data-ct="${i}" aria-label="คู่ค้า" ${dis}>${conOptions(c.contact_id)}</select>
+              ${sideSel(c.side, `data-cs="${i}"`, dis)}
+              <input class="form-control ob2-amt" inputmode="decimal" placeholder="0.00" data-ca="${i}" value="${esc(c.amount)}" aria-label="จำนวนเงิน" ${dis}>
+              ${E.readOnly ? '<span></span>' : `<button class="btn btn-sm btn-outline-danger" data-cx="${i}" aria-label="ลบบรรทัด"><i class="fa-solid fa-trash"></i></button>`}
+              <input class="form-control ob2-nt" data-cn="${i}" maxlength="200" placeholder="หมายเหตุ (ไม่บังคับ)" value="${esc(c.note)}" aria-label="หมายเหตุ" ${dis}></div>`).join('')}
+            ${E.readOnly ? '' : '<button class="btn btn-sm btn-outline-primary" data-ob="addc" style="margin-top:8px"><i class="fa-solid fa-plus"></i> เพิ่มบรรทัด</button>'}
+          </div></details>
+          <details class="ob-accordion" open><summary class="ob-summary"><h5 style="margin:0"><i class="fa-solid fa-house"></i> 3. เงินกู้ / ผ่อน</h5></summary>
+            <div class="ob-content" style="padding:10px 15px">
+            <div class="ob2-sub">ยอดคงเหลือ ณ วันเริ่ม — บันทึกแล้วตั้ง "ยอดเริ่มต้น" และ "วันเริ่ม" ของสัญญาให้ตรงกัน</div>
+            ${loans.length ? loans.map(l => `<div class="ob2-ln"><span class="ob2-nm"><b>${esc(l.name)}</b><small>${l.type === 'RECEIVABLE' ? 'ให้กู้ (ลูกหนี้)' : 'กู้มา (หนี้สิน)'} · ${esc(plain(l.contact_name))} · ยอดเริ่มต้นตอนนี้ ${money(l.start_balance)}</small></span>
+              <span style="text-align:center;font-weight:700">${l.type === 'RECEIVABLE' ? 'เดบิต' : 'เครดิต'}</span>
+              <input class="form-control ob2-amt" inputmode="decimal" placeholder="0.00" data-la="${esc(l.debt_id)}" value="${esc(E.loans[l.debt_id] || '')}" aria-label="ยอด ${esc(l.name)}" ${dis}></div>`).join('') : '<div class="ob2-sub" style="padding:12px;text-align:center">ไม่มีสัญญาเงินกู้</div>'}
+          </div></details>
+          <div id="ob2-err" style="color:var(--danger-color);min-height:1em;margin-top:8px"></div>
+          <div class="ob-footer-bar ob2-bar"><div class="ob2-drcr" id="ob2-sum" style="flex:1;margin:0"></div>${E.readOnly ? '' : '<button class="btn btn-success" data-ob="save" style="padding:8px 24px;border-radius:20px;font-weight:600"><i class="fa-solid fa-save"></i> บันทึกยอดยกมา</button>'}</div>`;
+        updBar();
+        q('[data-ob="back"]').onclick = () => { if (!E.readOnly && E.dirty && !confirm('ยังไม่ได้บันทึก — ออกโดยไม่บันทึก?')) return; S.edit = null; render(); };
+        if (E.readOnly) return;
+        const all = s => root().querySelectorAll(s);
+        const dirty = () => { E.dirty = true; updBar(); };
+        q('#ob2-N').oninput = e => { E.name = e.target.value; E.dirty = true; };
+        q('#ob2-D').onchange = e => { E.date = e.target.value; E.dirty = true; };
+        q('#ob2-E').onchange = e => { E.entity_id = e.target.value; E.dirty = true; renderEditor(); };
+        q('#ob2-A').onchange = e => { E.anchor_account_id = e.target.value; E.dirty = true; };
+        q('#ob2-all').onchange = e => { E.showAll = e.target.checked; renderEditor(); };
+        all('[data-aa]').forEach(i => i.oninput = () => { const id = i.dataset.aa; E.acc[id] = { side: E.acc[id]?.side || q(`[data-as="${CSS.escape(id)}"]`).value, amount: i.value }; dirty(); });
+        all('[data-as]').forEach(s => s.onchange = () => { const id = s.dataset.as; E.acc[id] = { amount: E.acc[id]?.amount || '', side: s.value }; dirty(); });
+        all('[data-la]').forEach(i => i.oninput = () => { E.loans[i.dataset.la] = i.value; dirty(); });
+        all('[data-cc]').forEach(s => s.onchange = () => { const k = s.dataset.cc, c = E.cats[+k]; c.category_id = s.value; c.side = defaultSide(catOf(s.value)); q(`[data-cs="${k}"]`).value = c.side; dirty(); });
+        all('[data-ct]').forEach(s => s.onchange = () => { E.cats[+s.dataset.ct].contact_id = s.value; dirty(); });
+        all('[data-cs]').forEach(s => s.onchange = () => { E.cats[+s.dataset.cs].side = s.value; dirty(); });
+        all('[data-ca]').forEach(i => i.oninput = () => { E.cats[+i.dataset.ca].amount = i.value; dirty(); });
+        all('[data-cn]').forEach(i => i.oninput = () => { E.cats[+i.dataset.cn].note = i.value; E.dirty = true; });
+        all('[data-cx]').forEach(b => b.onclick = () => { E.cats.splice(+b.dataset.cx, 1); if (!E.cats.length) E.cats.push(blankCat()); E.dirty = true; renderEditor(); });
+        q('[data-ob="addc"]').onclick = () => { E.cats.push(blankCat()); renderEditor(); const cc = all('[data-cc]'); cc[cc.length - 1]?.focus(); };
+        q('[data-ob="paste"]').onclick = e => { e.preventDefault(); e.stopPropagation(); pasteForm(); };
+        q('[data-ob="save"]').onclick = save;
+    }
+    async function save() {
+        const E = S.edit, err = t => { q('#ob2-err').textContent = t; if (t) toast('⚠️ ' + t, 'error'); };
+        if (!E.name.trim()) return err('ตั้งชื่อชุดก่อน');
+        if (!E.date) return err('เลือกวันที่เริ่ม');
+        const lines = buildLines();
+        if (lines.some(l => isNaN(l.amount) || l.amount < 0)) return err('จำนวนเงินต้องเป็นตัวเลขบวก แล้วเลือกฝั่ง เดบิต/เครดิต');
+        if (lines.some(l => l.kind === 'CAT' && l.amount && !l.category_id)) return err('มีบรรทัดที่ใส่จำนวนเงินแต่ยังไม่เลือกหมวด');
+        const send = lines.filter(l => l.amount);
+        if (!send.length) return err('ยังไม่มีบรรทัดที่มีจำนวนเงิน');
+        const t = sums();
+        if (Math.abs(t.diff) >= 0.005 && !confirm(`เดบิต ${money(t.dr)} ≠ เครดิต ${money(t.cr)}\nบัญชีพักค้าง ${money(t.diff)} — ปิดเดือนจะไม่ผ่านจนกว่าจะสมดุล\n\nบันทึกไว้ก่อนไหม?`)) return;
+        const b = q('[data-ob="save"]'); b.disabled = true; err('');
         try {
-            await Promise.all(promises);
-            alert("✅ บันทึกยอดยกมาเรียบร้อยแล้ว");
-            document.getElementById('ob-accordion-container').style.display = 'none';
-        } catch (err) {
-            console.error(err);
-            alert("❌ เกิดข้อผิดพลาดในการบันทึก");
-        } finally {
-            btnSave.innerHTML = '<i class="fa-solid fa-save"></i> บันทึกยอดยกมา';
-            btnSave.disabled = false;
+            const r = await api('/api/inbox/opening', { set_id: E.set_id, name: E.name.trim(), date: E.date, entity_id: E.entity_id || null, anchor_account_id: E.anchor_account_id || null, lines: send });
+            toast(r.balanced ? '✅ บันทึกแล้ว · สมดุล' : `💾 บันทึกแล้ว · บัญชีพักค้าง ${money(r.suspense)}`);
+            S.edit = null; await load();
+        } catch (e) { err(e.message); b.disabled = false; }
+    }
+    /* วางจาก Excel: ชื่อบัญชีหรือหมวด | คู่ค้า | เดบิต | เครดิต | หมายเหตุ (คั่นด้วย Tab) */
+    async function pasteForm() {
+        const html = `<p style="font-size:.9rem;text-align:left">คัดลอกจาก Excel 5 คอลัมน์ตามลำดับ: <b>ชื่อบัญชี/หมวด · คู่ค้า · เดบิต · เครดิต · หมายเหตุ</b><br>ชื่อตรงกับบัญชี → ใส่ในส่วนบัญชี · ตรงกับหมวด → เพิ่มเป็นบรรทัดหมวด · แถวหัวตาราง/ไม่มีตัวเลขจะข้าม</p>
+          <textarea id="ob2-pT" class="form-control" style="height:180px;font-family:ui-monospace,Menlo,monospace;font-size:13px;width:100%" placeholder="KBank ออมทรัพย์&#9;&#9;125,000.00&#9;&#9;&#10;ลูกหนี้เงินยืม&#9;นายเอ&#9;5,000.00&#9;&#9;&#10;ทุน&#9;&#9;&#9;130,000.00&#9;"></textarea>`;
+        let text = '';
+        if (window.Swal) {
+            const r = await Swal.fire({ title: 'วางยอดยกมาจาก Excel', html, width: 640, showCancelButton: true, confirmButtonText: 'เพิ่มเข้าชุด', cancelButtonText: 'ยกเลิก',
+                didOpen: () => document.getElementById('ob2-pT')?.focus(), preConfirm: () => document.getElementById('ob2-pT').value });
+            if (!r.isConfirmed) return; text = r.value || '';
+        } else { text = prompt('วางข้อมูลจาก Excel (คั่นด้วย Tab)') || ''; }
+        const norm = s => plain(s).toLowerCase().replace(/\s+/g, ' ').trim();
+        const E = S.edit, rows = text.split(/\r?\n/).filter(r => r.trim());
+        const accs = S.meta.accounts || [], cats = (S.meta.categories || []).filter(c => !String(c.category_id).startsWith('CAT-OB-')), cons = S.meta.contacts || [];
+        let nAcc = 0, nCat = 0; const miss = [];
+        if (E.cats.length === 1 && !E.cats[0].category_id && !E.cats[0].amount) E.cats = [];
+        for (const row of rows) {
+            const c = row.split('\t');
+            const key = norm(c[0]), dr = num(c[2]), cr = num(c[3]);
+            if (!key || isNaN(dr) || isNaN(cr) || (!dr && !cr)) continue;
+            const net = r2((dr || 0) - (cr || 0)), side = net >= 0 ? 'DR' : 'CR', amount = money(Math.abs(net));
+            const a = accs.find(x => String(x.account_id).toLowerCase() === key || norm(x.name) === key);
+            if (a) {
+                if (usedElsewhere('accounts', a.account_id)) { miss.push(`${c[0].trim()} (อยู่ในชุดอื่นแล้ว)`); continue; }
+                E.acc[a.account_id] = { amount, side }; nAcc++; if (a.entity_id !== E.entity_id) E.showAll = true; continue;
+            }
+            const k = cats.find(x => String(x.category_id).toLowerCase() === key || norm(x.name) === key);
+            if (!k) { miss.push(c[0].trim()); continue; }
+            const cn = norm(c[1] || ''), con = cn && cons.find(x => String(x.contact_id).toLowerCase() === cn || norm(x.name) === cn);
+            if (cn && !con) miss.push(`${c[0].trim()} → ไม่พบคู่ค้า "${(c[1] || '').trim()}" (เพิ่มโดยไม่ระบุคู่ค้า)`);
+            E.cats.push({ category_id: k.category_id, contact_id: con?.contact_id || '', side, amount, note: (c[4] || '').trim() }); nCat++;
         }
-    });
+        if (!E.cats.length) E.cats.push(blankCat());
+        E.dirty = true;
+        renderEditor();
+        if (miss.length) alert(`เพิ่มแล้ว บัญชี ${nAcc} · หมวด ${nCat}\n\nไม่พบ ${miss.length} แถว (เพิ่มเองได้):\n• ${miss.join('\n• ')}`);
+        else toast(`📋 เพิ่มแล้ว · บัญชี ${nAcc} · หมวด ${nCat}`);
+    }
+    /* เปิดแท็บ: ถ้ากำลังแก้ชุดอยู่ ไม่โหลดทับ */
+    function open() { if (S.edit && root()?.childElementCount) return; S.edit = null; load(); }
+    return { open, reload: () => { S.edit = null; S.meta = null; return load(); } };
+})();
+window.OB = OB;
+
+// period_close.js
+/* 🔒 ปิดเดือน (ย้ายเข้าแอปเดิม 2026-10-12 · เดิมอยู่ ledger/close.html)
+   ตรวจครบ → ปิด → ตัวเลขเดือนนั้นล็อก แก้ย้อนหลังไม่ได้ (ผู้ดูแลเปิดใหม่ได้ ต้องใส่เหตุผล)
+   API: GET /api/inbox/periods?months=13 · GET /api/inbox/periods/{YYYY-MM}/check
+        POST /api/inbox/periods/{YYYY-MM}/close · POST /api/inbox/periods/{YYYY-MM}/reopen {reason}
+   กติกาการตรวจอยู่ใน backend/src/period-close.js */
+function openSettingsTab(tab) {
+    switchView('settings');
+    setTimeout(() => document.querySelector(`.settings-tab[data-settings-tab="${tab}"]`)?.click(), 50);
 }
-
-// Hook it up after settings load
-
-
-
-
-document.addEventListener('DOMContentLoaded', () => {
-    // Add a small delay to ensure DOM is ready
-    setTimeout(initOpeningBalance, 1000);
-});
+const PC = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = n => Number(n) < 0 ? `(${money(-n)})` : money(n);
+    const $ = s => document.getElementById('view-close')?.querySelector(s);
+    const S = { list: null, sel: null };
+    const toast = (t, type) => { try { window.showToast(t, type || 'success'); } catch { alert(t); } };
+    async function api(path, body) {
+        const res = await fetch(API_BASE + path, { method: body ? 'POST' : 'GET', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+        const d = await res.json().catch(() => ({}));
+        if (res.status === 401) throw new Error('กรุณาเข้าสู่ระบบใหม่');
+        if (!res.ok) throw Object.assign(new Error(d.error || `ผิดพลาด (${res.status})`), { data: d });
+        return d;
+    }
+    const when = iso => iso ? new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    const thisMonth = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
+    /* ลิงก์ "ไปแก้" จากผลตรวจ → หน้าในแอปเดิม */
+    const FIX = { pending: () => switchView('pending'), uncat: () => switchView('history'), statements: () => switchView('pending'),
+        opening: () => openSettingsTab('opening-balances'), inbox: () => { location.href = 'ledger/index.html'; } };
+    async function load() {
+        const box = $('#pc-months'); if (!box) return;
+        if (!S.list) box.innerHTML = '<div class="pc-empty"><i class="fa-solid fa-spinner fa-spin"></i> กำลังโหลด…</div>';
+        try { S.list = await api('/api/inbox/periods?months=13'); }
+        catch (e) { box.innerHTML = `<div class="pc-empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
+        renderList();
+        if (S.sel) openMonth(S.sel);
+    }
+    function renderList() {
+        const L = S.list, box = $('#pc-months');
+        if (!L.ready) { box.innerHTML = `<div class="ob2-sub">${esc(L.error_note || 'ยังไม่พร้อม')}</div>`; return; }
+        box.innerHTML = L.months.map(m => {
+            const closed = m.status === 'CLOSED', cur = m.month === thisMonth();
+            const sub = closed ? `ปิดโดย ${esc(m.closed_by || '-')} · ${when(m.closed_at)}` : cur ? 'เดือนปัจจุบัน — ปิดได้เมื่อจบเดือน' : (m.reopened_at ? `เปิดใหม่โดย ${esc(m.reopened_by || '-')} · ${when(m.reopened_at)}` : 'ยังไม่ปิด');
+            return `<button class="pc-mrow ${S.sel === m.month ? 'sel' : ''}" data-m="${m.month}"><span class="pc-ic">${closed ? '🔒' : cur ? '🗓️' : '📂'}</span>
+              <span class="pc-t"><b>${esc(m.label)}</b><small>${sub}</small></span><span class="pc-st ${closed ? 'closed' : ''}">${closed ? 'ปิดแล้ว' : 'เปิดอยู่'}</span></button>`;
+        }).join('');
+        box.querySelectorAll('[data-m]').forEach(b => b.onclick = () => openMonth(b.dataset.m));
+        const log = L.log || [];
+        $('#pc-log').innerHTML = log.length ? '<b>ประวัติการปิด/เปิดเดือน</b>' + log.map(l => `<div>${l.action === 'CLOSE' ? '🔒 ปิด' : '🔓 เปิด'} ${esc(l.label)} · ${esc(l.user_name || '')} · ${when(l.created_at)}${l.note ? ` · “${esc(l.note)}”` : ''}</div>`).join('') : '';
+    }
+    async function openMonth(month) {
+        S.sel = month; renderList();
+        const m = S.list.months.find(x => x.month === month), box = $('#pc-detail');
+        if (m.status === 'CLOSED') {
+            box.innerHTML = `<h4>🔒 ${esc(m.label)}</h4><p class="ob2-sub">ปิดโดย ${esc(m.closed_by || '-')} เมื่อ ${when(m.closed_at)}<br>รายการในเดือนนี้แก้ เพิ่ม หรือลบไม่ได้</p>
+              ${S.list.is_admin ? `<div class="input-group"><label for="pc-why">เหตุผลที่ต้องเปิดเดือน (บันทึกไว้เป็นประวัติ)</label><input class="form-control" id="pc-why" maxlength="300" placeholder="เช่น ลูกค้าแจ้งยอดผิด"></div>
+              <button class="btn btn-outline-danger" id="pc-reopen" style="margin-top:10px"><i class="fa-solid fa-lock-open"></i> เปิดเดือนเพื่อแก้ไข</button>` : '<div class="ob2-sub">เฉพาะผู้ดูแลเท่านั้นที่เปิดเดือนได้</div>'}`;
+            $('#pc-reopen')?.addEventListener('click', async e => {
+                const reason = $('#pc-why').value.trim();
+                if (reason.length < 3) { toast('กรุณาใส่เหตุผล', 'error'); $('#pc-why').focus(); return; }
+                if (!confirm(`เปิด ${m.label} เพื่อแก้ไข?\nอย่าลืมปิดอีกครั้งเมื่อแก้เสร็จ`)) return;
+                e.currentTarget.disabled = true;
+                try { await api(`/api/inbox/periods/${month}/reopen`, { reason }); toast(`🔓 เปิด ${m.label} แล้ว`); await load(); }
+                catch (err) { toast('⚠️ ' + err.message, 'error'); }
+            });
+            return;
+        }
+        box.innerHTML = `<h4>${esc(m.label)}</h4><div class="pc-empty"><i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจ…</div>`;
+        let c;
+        try { c = await api(`/api/inbox/periods/${month}/check`); } catch (e) { box.innerHTML = `<h4>${esc(m.label)}</h4><div class="pc-empty">ตรวจไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
+        if (S.sel !== month) return;
+        const name = s => String(s).replace(/^\s*\[[^\]]+\]\s*/, '');
+        const accHtml = (c.accounts || []).map(a => `<div class="pc-acc ${a.ok ? '' : 'bad'}">${a.ok ? '✅' : '❌'} <b>${esc(name(a.name))}</b>
+          ${a.ok ? `· ตรง ${esc(a.statement_to || '')} ยอด ${fmt(a.system_balance)}` : '· ' + esc(a.problem)}</div>`).join('');
+        const cur = month >= thisMonth();
+        box.innerHTML = `<h4>${esc(c.label)} ${c.ok ? '✅' : ''}</h4>
+          <p class="ob2-sub">${c.ok ? 'ผ่านครบทุกข้อ พร้อมปิดเดือน' : 'ต้องผ่านครบทุกข้อจึงจะปิดเดือนได้'}</p>
+          ${c.items.map(i => `<div class="pc-chk"><span class="pc-i">${i.ok ? '✅' : '❌'}</span><span class="pc-t"><b>${esc(i.title)}</b>${i.detail ? `<small>${esc(i.detail)}</small>` : ''}
+            ${i.key === 'statements' ? accHtml : ''}</span>${!i.ok && FIX[i.key] ? `<button class="btn btn-sm btn-outline-primary" data-fix="${esc(i.key)}">ไปแก้ ›</button>` : ''}</div>`).join('')}
+          <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+            <button class="btn btn-outline-primary" id="pc-recheck"><i class="fa-solid fa-rotate"></i> ตรวจอีกครั้ง</button>
+            ${S.list.is_admin ? `<button class="btn btn-primary" id="pc-close" ${c.ok && !cur ? '' : 'disabled'}><i class="fa-solid fa-lock"></i> ปิด ${esc(c.label)}</button>` : ''}
+          </div>
+          ${cur ? '<div class="ob2-sub" style="margin-top:8px">เดือนปัจจุบันยังไม่จบ — ปิดได้ตั้งแต่วันที่ 1 ของเดือนถัดไป</div>' : ''}
+          ${!S.list.is_admin ? '<div class="ob2-sub" style="margin-top:8px">เฉพาะผู้ดูแลเท่านั้นที่ปิดเดือนได้</div>' : ''}`;
+        box.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => FIX[b.dataset.fix]());
+        $('#pc-recheck').onclick = () => openMonth(month);
+        if (!matchMedia('(min-width: 900px)').matches) box.scrollIntoView({ behavior: 'smooth', block: 'start' });   // มือถือ: ผลตรวจอยู่ใต้รายการเดือน
+        $('#pc-close')?.addEventListener('click', async e => {
+            if (!confirm(`ปิด ${c.label}?\n\nหลังปิด รายการในเดือนนี้จะแก้ เพิ่ม หรือลบไม่ได้\nจนกว่าผู้ดูแลจะเปิดเดือน (ต้องใส่เหตุผล)`)) return;
+            const b = e.currentTarget; b.disabled = true;
+            try { await api(`/api/inbox/periods/${month}/close`, {}); toast(`🔒 ปิด ${c.label} เรียบร้อย`); await load(); }
+            catch (err) { toast('⚠️ ' + err.message, 'error'); b.disabled = false; if (err.data?.check) openMonth(month); }
+        });
+    }
+    return { open: load };
+})();
+window.PC = PC;
 
 
 

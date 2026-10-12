@@ -45,7 +45,7 @@ import { handleOpening } from './opening.js';
 import {
   round2, bankKey, last4, accountHintKey, partyKey, parseCashText, slipDirection,
   scoreCandidate, decideMatch, balanceGap, proposeLines, templateFromDetails,
-  fixStatementSigns, statementPartyKey, matchStatementLines,
+  fixStatementSigns, statementPartyKey, matchStatementLines, walkStatement, accountNumberCheck,
 } from './ledger-match.js';
 import {
   displayName, moneyText, thaiDate, txCard, flexMessage, confirmButtons, accountButtons, categoryQuickItems, postback,
@@ -154,6 +154,10 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
         account_id: String(form.get('account_id') || ''), file_name: String(form.get('file_name') || files[0]?.name || ''),
         files: await Promise.all(files.map(async f => ({ bytes: new Uint8Array(await f.arrayBuffer()), mime: f.type || 'image/jpeg' }))),
       });
+      return json(out, cors, out.error ? (out.status || 400) : 201);
+    }
+    if (path === '/api/inbox/statement/lines' && request.method === 'POST') {          // นำเข้าจาก Excel (ไม่ใช้ AI)
+      const out = await importStatementLines(env, user, await request.json().catch(() => ({})));
       return json(out, cors, out.error ? (out.status || 400) : 201);
     }
     if (path === '/api/inbox/statements' && request.method === 'GET') return json(await listStatements(env, user), cors);
@@ -315,6 +319,27 @@ Return ONLY JSON:
  "statement_period":"","due_date":""}
 For SLIP keep masked account numbers exactly as printed (e.g. "xxx-x-x1234-x"). amount is positive.`;
 
+/* เรียก Gemini แบบทนทาน (2026-10-12): รุ่นหลักไม่ว่าง (429/500/503/504) → ลองซ้ำ แล้วสลับไปรุ่นสำรองอัตโนมัติ
+   รุ่นที่ไม่มีให้ใช้ (400/404) → ข้ามไปรุ่นถัดไป · ตั้งรุ่นสำรองเองได้ที่ secret GEMINI_FALLBACK_MODELS (คั่นด้วย ,) */
+const BUSY = [429, 500, 503, 504];
+export async function geminiGenerate(env, primary, payload) {
+  const base = 'https://generativelanguage.googleapis.com';
+  const fallbacks = String(env.GEMINI_FALLBACK_MODELS || 'gemini-flash-latest,gemini-2.5-flash,gemini-flash-lite-latest').split(',').map(x => x.trim()).filter(Boolean);
+  const models = [...new Set([primary, ...fallbacks])];
+  let res = null;
+  for (const [mi, model] of models.entries()) {
+    for (let attempt = 1; attempt <= (mi === 0 ? 3 : 2); attempt++) {
+      res = await fetch(`${base}/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (res.ok) return res;
+      if (!BUSY.includes(res.status)) break;                                   // ไม่ใช่เพราะไม่ว่าง → ไม่ต้องลองซ้ำรุ่นนี้
+      if (attempt < (mi === 0 ? 3 : 2)) await new Promise(r => setTimeout(r, attempt * 2000));
+    }
+    if (!BUSY.includes(res.status) && ![400, 404].includes(res.status)) return res;   // เช่น 401/403 คีย์ผิด → แจ้งเลย
+  }
+  return res;
+}
+
 /* ⚠️ Workers แผนฟรีให้เวลา CPU ต่อคำขอแค่ ~10 ms
    แปลงรูปสลิปเป็น base64 แล้วยัดใส่ JSON ก้อนใหญ่ = เกินเพดาน → ระบบถูกตัดกลางทาง
    เอกสารค้างสถานะ READING และ LINE ไม่ได้รับคำตอบเลย (เจอจริง 2026-10-08)
@@ -340,12 +365,9 @@ async function extractDocument(env, bytes, mime) {
   } catch { /* ถอยไปใช้ base64 */ }
   if (!filePart) filePart = { inlineData: { mimeType: mime, data: toBase64(bytes) } };
 
-  const res = await fetch(`${base}/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: EXTRACT_PROMPT }, filePart] }],
-      generationConfig: { responseMimeType: 'application/json' },
-    }),
+  const res = await geminiGenerate(env, model, {
+    contents: [{ parts: [{ text: EXTRACT_PROMPT }, filePart] }],
+    generationConfig: { responseMimeType: 'application/json' },
   });
   if (!res.ok) {
     // แนบเหตุผลจาก Google มาด้วย (เช่น key ถูกปิด/หมดอายุ) — ตัวเลขอย่างเดียวไล่ปัญหาไม่ได้ (เจอ 403 จริง 2026-10-10)
@@ -1212,7 +1234,7 @@ export async function editDoc(env, user, docId, e = {}) {
 //                IGNORED (ข้าม) · DUPLICATE (อยู่ใน statement ฉบับก่อนแล้ว)
 // ═══════════════════════════════════════════════════════════════
 const CREATE_CHUNK = 8;
-const STATEMENT_PROMPT = `You read a Thai bank account or credit-card statement (one or more page images, in page order).
+const STATEMENT_PROMPT = `You read a Thai bank account or credit-card statement (a PDF file or page images, in page order).
 Return ONLY JSON:
 {"bank":"","account_number":"","period_from":"YYYY-MM-DD","period_to":"YYYY-MM-DD","opening_balance":null,"closing_balance":null,
  "lines":[{"date":"YYYY-MM-DD","time":"HH:MM:SS","description":"","ref_code":"","withdrawal":0,"deposit":0,"balance":null}]}
@@ -1231,7 +1253,7 @@ async function extractStatement(env, files) {
   const base = 'https://generativelanguage.googleapis.com';
   const model = env.GEMINI_STATEMENT_MODEL || env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
   /* 2026-10-12: รองรับไฟล์ PDF ทั้งไฟล์ (หน้าเว็บส่ง PDF ที่ไม่มีรหัสผ่านมาตรง ๆ แบบหน้าเก่า — AI อ่านตัวหนังสือในไฟล์ได้แม่นกว่ารูป)
-     อัปโหลดทุกไฟล์พร้อมกัน (เดิมทีละไฟล์ ช้า) · ลองใหม่อัตโนมัติเมื่อ AI ไม่ว่าง (429/500/503/504) แบบหน้าเก่า */
+     อัปโหลดทุกไฟล์พร้อมกัน (เดิมทีละไฟล์ ช้า) · AI ไม่ว่าง → ลองซ้ำ + สลับรุ่นสำรอง (geminiGenerate) */
   const parts = [{ text: STATEMENT_PROMPT }];
   const uploaded = await Promise.all(files.map(async f => {                    // ส่งไบต์ดิบ (ไม่แปลง base64 → ไม่กิน CPU)
     try {
@@ -1243,17 +1265,9 @@ async function extractStatement(env, files) {
     return { inlineData: { mimeType: f.mime, data: toBase64(f.bytes) } };
   }));
   parts.push(...uploaded);
-  const call = () => fetch(`${base}/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 60000 } }),
-  });
-  let res;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    res = await call();
-    if (res.ok || ![429, 500, 503, 504].includes(res.status) || attempt === 3) break;
-    await new Promise(r => setTimeout(r, attempt * 2500));
-  }
+  const res = await geminiGenerate(env, model, { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 60000 } });
   if (!res.ok) {
+    if (BUSY.includes(res.status)) throw new Error('AI ของ Google มีคนใช้เยอะมากตอนนี้ (ลองครบทุกรุ่นแล้ว) — รอ 2–3 นาทีแล้วกดส่งใหม่');
     let reason = '';
     try { const e = await res.json(); reason = e?.error?.message || e?.error?.status || ''; } catch { /* ไม่มีรายละเอียด */ }
     throw new Error(`AI อ่าน statement ไม่สำเร็จ (${res.status})${reason ? ': ' + String(reason).slice(0, 160) : ''}`);
@@ -1301,6 +1315,45 @@ export async function importStatement(env, user, { account_id, files, file_name 
 
   let ex;
   try { ex = await extractStatement(env, files); } catch (err) { return { error: err.message, status: 502 }; }
+  return saveStatement(env, user, account, ex, file_name, 'PDF');
+}
+
+/* นำเข้าจาก Excel แม่แบบ 8 คอลัมน์ (2026-10-12 · แบบเดียวกับระบบ BKP) — หน้าเว็บอ่านไฟล์แล้วส่งบรรทัดมา ไม่ใช้ AI
+   lines: [{ date, time, description, credit (เงินเข้า), debit (เงินออก), balance, detail, channel }] */
+export async function importStatementLines(env, user, body = {}) {
+  const account = (await permittedAccounts(env, user)).find(a => a.account_id === body.account_id);
+  if (!account) return { error: 'เลือกบัญชีที่มีสิทธิ์ใช้ก่อน', status: 403 };
+  const rows = Array.isArray(body.lines) ? body.lines : [];
+  if (!rows.length) return { error: 'ไม่พบรายการในไฟล์', status: 400 };
+  if (rows.length > 3000) return { error: 'ไฟล์เดียวได้ไม่เกิน 3,000 บรรทัด — แยกไฟล์ทีละช่วง', status: 400 };
+  const num = v => v == null || v === '' ? 0 : Number(v);
+  const lines = [];
+  for (const [i, r] of rows.entries()) {
+    const n = i + 2, cr = num(r.credit), dr = num(r.debit);
+    if (!validDate(r.date)) return { error: `แถว ${n}: วันที่ไม่ถูกต้อง`, status: 400 };
+    if (!Number.isFinite(cr) || !Number.isFinite(dr) || cr < 0 || dr < 0) return { error: `แถว ${n}: เงินเข้า/เงินออกต้องเป็นตัวเลขไม่ติดลบ`, status: 400 };
+    if (cr > 0 && dr > 0) return { error: `แถว ${n}: มีทั้งเงินเข้าและเงินออกในแถวเดียว — แยกเป็น 2 แถว`, status: 400 };
+    const bal = r.balance == null || r.balance === '' ? null : Number(r.balance);
+    if (bal != null && !Number.isFinite(bal)) return { error: `แถว ${n}: ยอดคงเหลือไม่ใช่ตัวเลข`, status: 400 };
+    lines.push({ date: r.date, time: r.time || null, description: [r.description, r.detail, r.channel].map(x => String(x || '').trim()).filter(Boolean).join(' · '),
+      ref_code: null, withdrawal: dr, deposit: cr, balance: bal });
+  }
+  const ob = body.opening_balance == null || body.opening_balance === '' ? null : Number(body.opening_balance);
+  const cb = body.closing_balance == null || body.closing_balance === '' ? null : Number(body.closing_balance);
+  const source = body.source === 'PDF_TEXT' ? 'PDF_TEXT' : 'EXCEL';     // PDF_TEXT = หน้าเว็บอ่านตัวหนังสือใน PDF เอง (ไม่ใช้ AI)
+  return saveStatement(env, user, account, { lines, opening_balance: Number.isFinite(ob) ? ob : null, closing_balance: Number.isFinite(cb) ? cb : null,
+    account_number: body.account_number ? String(body.account_number).slice(0, 40) : null }, body.file_name, source);
+}
+
+let stmtExtraReady = false;
+async function ensureStatementExtra(env) {
+  if (stmtExtraReady) return;
+  try { await env.DB.prepare(`ALTER TABLE LedgerStatements ADD COLUMN extra TEXT`).run(); } catch { /* มีอยู่แล้ว */ }
+  stmtExtraReady = true;
+}
+
+async function saveStatement(env, user, account, ex, file_name, source) {
+  const account_id = account.account_id;
   const raw = (ex?.lines || []).map(l => ({
     date: validDate(l.date), time: /^\d{1,2}:\d{2}/.test(String(l.time || '')) ? String(l.time).slice(0, 8) : null,
     description: String(l.description || '').trim().slice(0, 200), ref_code: l.ref_code ? String(l.ref_code).trim().slice(0, 60) : null,
@@ -1331,10 +1384,13 @@ export async function importStatement(env, user, { account_id, files, file_name 
     if (m) Object.assign(l, { status: 'MATCHED', transaction_id: m.transaction_id, score: m.score });
   }
   const stmtId = newId('STM');
+  await ensureStatementExtra(env);
+  const extra = { source, account_number_read: ex.account_number ? String(ex.account_number).slice(0, 40) : null,
+    account_check: accountNumberCheck(ex.account_number, account.account_number) };
   await env.DB.prepare(`INSERT INTO LedgerStatements (stmt_id, family_id, account_id, period_from, period_to, opening_balance, closing_balance,
-    line_count, lines, file_name, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    line_count, lines, file_name, created_by, created_at, updated_at, extra) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .bind(stmtId, user.family_id, account_id, from, to, fixed.opening, fixed.closing, lines.length, JSON.stringify(lines),
-      String(file_name || '').slice(0, 120) || null, user.user_id, nowIso(), nowIso()).run();
+      String(file_name || '').slice(0, 120) || null, user.user_id, nowIso(), nowIso(), JSON.stringify(extra)).run();
   const view = await statementView(env, user, stmtId);
   return { ...view, import: { flipped: fixed.flipped, read: raw.length } };
 }
@@ -1382,7 +1438,10 @@ export async function statementView(env, user, stmtId) {
   const txOut = t => t && { transaction_id: t.transaction_id, date: t.date, time: t.time, total_amount: t.total_amount, status: t.status,
     desc: t.note || t.statement_desc || '', category: t.category_id === UNCATEGORIZED ? 'ยังไม่ระบุ' : (catNames.get(t.category_id) || t.category_id || ''), source: t.source };
   const dayGap = (a, b) => Math.abs(Date.parse(a) - Date.parse(b)) / 864e5;
-  const outLines = lines.map(l => ({ ...l, tx: txOut(byId.get(l.transaction_id)),
+  const walk = walkStatement(lines, st.opening_balance);
+  const walkBad = new Map(walk.bad.map(b => [b.line_id, b]));
+  const extra = parse(st.extra, {}) || {};
+  const outLines = lines.map(l => ({ ...l, walk_err: walkBad.get(l.line_id) || null, tx: txOut(byId.get(l.transaction_id)),
     candidates: l.status === 'NEW' ? free.filter(t => Math.abs(round2(t.total_amount) - l.amount) < 0.005 && dayGap(t.date, l.date) <= 7)
       .sort((a, b) => dayGap(a.date, l.date) - dayGap(b.date, l.date)).slice(0, 3).map(txOut) : [] }));
   const systemOnly = free.filter(t => t.date >= st.period_from && t.date <= st.period_to).sort((a, b) => a.date.localeCompare(b.date)).map(txOut);
@@ -1395,10 +1454,12 @@ export async function statementView(env, user, stmtId) {
   const count = k => lines.filter(l => l.status === k).length;
   return {
     statement: { stmt_id: st.stmt_id, account_id: st.account_id, period_from: st.period_from, period_to: st.period_to,
-      opening_balance: st.opening_balance, closing_balance: st.closing_balance, file_name: st.file_name, created_at: st.created_at },
+      opening_balance: st.opening_balance, closing_balance: st.closing_balance, file_name: st.file_name, created_at: st.created_at,
+      source: extra.source || 'PDF', account_number_read: extra.account_number_read || null, account_check: extra.account_check || null },
     account: { account_id: account.account_id, name: displayName(account.name), bank_name: account.bank_name },
     lines: outLines, system_only: systemOnly,
     summary: {
+      walk_bad: walk.bad.length, walk_checked: walk.checked, walk_possible: walk.has_balance,
       total: lines.length, matched: count('MATCHED'), created: count('CREATED'), new: count('NEW'), ignored: count('IGNORED'), duplicate: count('DUPLICATE'),
       sum_in: round2(counted.filter(l => l.amount > 0).reduce((x, l) => x + l.amount, 0)),
       sum_out: round2(counted.filter(l => l.amount < 0).reduce((x, l) => x + l.amount, 0)),
@@ -1417,6 +1478,8 @@ export async function createFromStatement(env, user, stmtId, body = {}) {
   const s = await loadStatement(env, user, stmtId);
   if (!s) return { error: 'ไม่พบ statement นี้', status: 404 };
   const { account, lines } = s;
+  const walk = walkStatement(lines, s.st.opening_balance);
+  if (walk.bad.length) return { error: `ยอดคงเหลือเดินไม่ลง ${walk.bad.length} แถว — แก้ตัวเลขในแถวสีแดงก่อน แล้วค่อยสร้างรายการ`, status: 409, code: 'WALK' };
   const want = Array.isArray(body.line_ids) && body.line_ids.length ? new Set(body.line_ids) : null;
   const todo = lines.filter(l => l.status === 'NEW' && (!want || want.has(l.line_id)));
   const batch = todo.slice(0, CREATE_CHUNK);
@@ -1459,9 +1522,31 @@ export async function createFromStatement(env, user, stmtId, body = {}) {
 export async function statementLineAction(env, user, stmtId, lineId, body = {}) {
   const s = await loadStatement(env, user, stmtId);
   if (!s) return { error: 'ไม่พบ statement นี้', status: 404 };
+  if (lineId === 'OPENING' && body.action === 'fix') {             // แก้ยอดยกมาที่อ่านผิด
+    const v = body.balance == null || body.balance === '' ? null : round2(body.balance);
+    if (v != null && !Number.isFinite(v)) return { error: 'ยอดยกมาไม่ใช่ตัวเลข', status: 400 };
+    await env.DB.prepare(`UPDATE LedgerStatements SET opening_balance=?, updated_at=? WHERE stmt_id=?`).bind(v, nowIso(), stmtId).run();
+    return { ok: true };
+  }
   const l = s.lines.find(x => x.line_id === lineId);
   if (!l) return { error: 'ไม่พบบรรทัดนี้', status: 404 };
-  if (body.action === 'match') {
+  if (body.action === 'fix') {                                      // แก้ตัวเลขที่อ่านผิด (ยอด/ยอดคงเหลือ)
+    if (body.amount !== undefined) {
+      const a = round2(body.amount);
+      if (!Number.isFinite(a) || !a) return { error: 'ยอดต้องเป็นตัวเลข ไม่เป็น 0 (เงินออกใส่ติดลบ)', status: 400 };
+      if (a !== l.amount) {
+        if (l.status === 'CREATED') return { error: 'สร้างรายการจากบรรทัดนี้แล้ว — แก้ยอดที่รายการในกล่องแทน', status: 409 };
+        if (l.status === 'MATCHED') Object.assign(l, { status: 'NEW', transaction_id: null, score: null });   // ยอดเปลี่ยน → จับคู่ใหม่
+        l.amount = a;
+      }
+    }
+    if (body.balance !== undefined) {
+      const b = body.balance == null || body.balance === '' ? null : round2(body.balance);
+      if (b != null && !Number.isFinite(b)) return { error: 'ยอดคงเหลือไม่ใช่ตัวเลข', status: 400 };
+      l.balance = b;
+    }
+    l.fixed = true;
+  } else if (body.action === 'match') {
     const tx = await env.DB.prepare(`SELECT transaction_id, total_amount FROM Transactions WHERE transaction_id=? AND account_id=?`)
       .bind(body.transaction_id, s.st.account_id).first();
     if (!tx) return { error: 'ไม่พบรายการในบัญชีนี้', status: 404 };

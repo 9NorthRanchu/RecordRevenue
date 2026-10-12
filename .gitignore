@@ -24,3 +24,6 @@ import-expense2/*.sql
 import-expense2/*.xlsx
 import-expense2/*.json
 trip-import/*.xlsx
+
+# เอกสาร/ไฟล์ตัวอย่างจากงานอื่น (มี statement จริง) — ห้ามขึ้น GitHub
+Claude outputs/

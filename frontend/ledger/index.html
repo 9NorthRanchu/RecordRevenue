@@ -158,6 +158,11 @@
   .sl .x2 { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
   .sl .x2 .b { padding: 6px 10px; font-size: 13px; }
   .pos { color: #087f5b; } .neg { color: #c92a2a; }
+  .sl.walkbad { background: #fff5f5; border-radius: 10px; padding-left: 8px; padding-right: 8px; box-shadow: inset 3px 0 0 #e03131; }
+  .sl .bal { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
+  .fixrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; width: 100%; }
+  .fixrow input { width: 130px; height: 38px; border: 1.5px solid var(--line); border-radius: 10px; padding: 0 8px; font: inherit; }
+  .chk.bad { background: #fff5f5; color: #c92a2a; }
   .st-MATCHED { --k: var(--ok); } .st-CREATED { --k: var(--tr); } .st-NEW { --k: var(--ask); } .st-IGNORED, .st-DUPLICATE { --k: #adb5bd; }
 
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 14px;
@@ -183,7 +188,7 @@
 <body>
 <div class="top"><div class="wrap">
   <div><h1>📒 สมุดจด</h1><p id="hello">กล่องรอเคลียร์ · ยืนยันทีเดียวจบ</p></div>
-  <nav style="display:flex;gap:6px;flex-wrap:wrap"><a href="home.html">ภาพรวม</a><a href="cards.html">บัตร & เงินกู้</a><a href="assets.html">ทรัพย์สิน</a><a href="reports.html">รายงาน</a><a href="close.html">ปิดเดือน</a><a href="settings.html">ตั้งค่า</a><a href="../trip-unified-prototype/trips.html">ทริป</a></nav>
+  <nav style="display:flex;gap:6px;flex-wrap:wrap"><a href="home.html">ภาพรวม</a><a href="cards.html">บัตร & เงินกู้</a><a href="assets.html">ทรัพย์สิน</a><a href="reports.html">รายงาน</a><a href="../index.html">ปิดเดือน</a><a href="settings.html">ตั้งค่า</a><a href="../trip-unified-prototype/trips.html">ทริป</a></nav>
 </div></div>
 <div class="wrap">
   <div class="tabs" id="tabs">
@@ -1108,8 +1113,11 @@
         <label class="f">บัญชี</label>
         <select class="inp" id="stAcc"><option value="">— เลือกบัญชี —</option>${accs.map(a => `<option value="${esc(a.account_id)}">${esc(a.name)}${a.bank_name ? ' · ' + esc(a.bank_name) : ''}</option>`).join('')}</select>
         <div id="stPwBox" class="hidden"><label class="f">รหัสผ่าน PDF</label><input class="inp" id="stPw" type="password" autocomplete="off" placeholder="เช่น วันเกิด DDMMYYYY"></div>
-        <div class="acts"><button class="b ok" style="--k:var(--tr)" id="stPick">📄 เลือกไฟล์ PDF หรือรูป</button></div>
+        <div class="acts"><button class="b ok" style="--k:var(--tr)" id="stPick">📄 เลือกไฟล์ PDF หรือรูป</button>
+          <button class="b line" id="stXls">📊 นำเข้าจาก Excel</button><button class="b ghost" id="stXlsTpl">⬇️ แม่แบบ Excel</button></div>
         <input type="file" id="stFile" accept="application/pdf,image/*" multiple class="hidden">
+        <input type="file" id="stXFile" accept=".xlsx,.xls,.csv" class="hidden">
+        <div class="hint" style="margin-top:6px">Excel ไม่ใช้ AI — คอลัมน์ตามแม่แบบ: วันที่ · เวลา · รายการ · เงินเข้า · เงินออก · ยอดคงเหลือ · รายละเอียด · ช่องทาง</div>
         <div class="err" id="stErr"></div>
       </div>
       ${S.statements.length ? S.statements.map(st => {
@@ -1125,6 +1133,9 @@
     acc.onchange = () => { const a = accs.find(x => x.account_id === acc.value); $('#stPw').value = a?.pdf_password || ''; $('#stPwBox').classList.add('hidden'); };
     $('#stPick').onclick = () => { if (!acc.value) { $('#stErr').textContent = 'เลือกบัญชีก่อน'; return; } $('#stErr').textContent = ''; $('#stFile').click(); };
     $('#stFile').onchange = e => { const files = [...e.target.files]; e.target.value = ''; if (files.length) importStatement(acc.value, files); };
+    $('#stXls').onclick = () => { if (!acc.value) { $('#stErr').textContent = 'เลือกบัญชีก่อน'; return; } $('#stErr').textContent = ''; $('#stXFile').click(); };
+    $('#stXFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importStatementExcel(acc.value, f); };
+    $('#stXlsTpl').onclick = () => statementTemplate().catch(err => toast('⚠️ ' + err.message));
     view.querySelectorAll('[data-st]').forEach(c => c.onclick = () => openStatement(c.dataset.st));
   }
 
@@ -1163,9 +1174,125 @@
     }
     return out;
   }
+  /* อ่าน statement จากตัวหนังสือใน PDF โดยไม่ใช้ AI (2026-10-12 · หลักการจากระบบ BKP)
+     · จัดคำเป็นบรรทัดตามแกน y · บรรทัดที่ขึ้นต้นด้วยวันที่ = รายการ · บรรทัดไม่มีวันที่ใต้รายการ = ข้อความต่อ
+     · ตัวเลขเงินขวาสุด = ยอดคงเหลือ · ทิศเงินเข้า/ออก ตัดสินจากผลต่างยอดคงเหลือ แล้วเทียบกับยอดที่อ่านได้
+     · บรรทัด "ยอดยกมา" ไม่ใช่รายการ (ใช้เป็นยอดยกมาครั้งแรก) · ไม่ผ่านเกณฑ์ → คืน ok:false ให้ไปใช้ AI แทน */
+  async function parseTextStatement(pdf) {
+    const MONEY = /^-?\(?[\d,]+\.\d{2}\)?$/;
+    const DATE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/;
+    const TIME = /^\d{1,2}:\d{2}(:\d{2})?$/;
+    const OPEN_RE = /ยอดยกมา|ยกมา|BROUGHT\s*FORWARD|Balance\s*Forward/i, CLOSE_RE = /ยอดยกไป|CARRIED\s*FORWARD/i;
+    const num = s => { const neg = /^\(.*\)$|^-/.test(s); const v = Number(String(s).replace(/[(),-]/g, '')); return neg ? -v : v; };
+    const r2 = n => Math.round(n * 100) / 100;
+    const isoDate = (d, m, y) => { let yy = +y; if (yy < 100) yy = yy >= 40 ? yy + 2500 - 543 : yy + 2000; if (yy > 2400) yy -= 543;
+      if (+m < 1 || +m > 12 || +d < 1 || +d > 31) return null; return `${yy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
+    const rows = []; let opening = null, closing = null, accountNumber = null, textChars = 0;
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      const items = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim(), w: it.width || 0 }));
+      textChars += items.reduce((n, it) => n + it.s.length, 0);
+      if (!accountNumber) { const a = items.find(it => /^[\dXx*]{3}-[\dXx*]-[\dXx*]{5}-[\dXx*]$|^[\dXx*]{3}-[\dXx*]{6}-[\dXx*]$/.test(it.s)); if (a) accountNumber = a.s; }
+      // จัดเป็นบรรทัด (y ใกล้กัน ≤ 2.5)
+      items.sort((a, b) => b.y - a.y || a.x - b.x);
+      const lines = [];
+      for (const it of items) { const L = lines.find(l => Math.abs(l.y - it.y) <= 2.5); if (L) L.items.push(it); else lines.push({ y: it.y, items: [it] }); }
+      lines.sort((a, b) => b.y - a.y);
+      let prevRow = null;
+      for (const L of lines) {
+        L.items.sort((a, b) => a.x - b.x);
+        const first = L.items[0], dm = first.s.match(DATE);
+        if (dm) {
+          const date = isoDate(dm[1], dm[2], dm[3]);
+          const rest = L.items.slice(1);
+          const money = rest.filter(it => MONEY.test(it.s));
+          const text = rest.filter(it => !MONEY.test(it.s) && !TIME.test(it.s) && !DATE.test(it.s));
+          const time = rest.find(it => TIME.test(it.s))?.s || null;
+          const all = text.map(t => t.s).join(' ');
+          if (!date || !money.length) { prevRow = null; continue; }
+          const balIt = money[money.length - 1];
+          if (OPEN_RE.test(all)) { if (opening == null) opening = num(balIt.s); prevRow = null; continue; }
+          if (CLOSE_RE.test(all)) { closing = num(balIt.s); prevRow = null; continue; }
+          if (money.length < 2) { prevRow = null; continue; }
+          const amtIt = money.filter(m => m !== balIt && num(m.s) !== 0).pop() || money[money.length - 2];
+          const left = text.filter(t => t.x < amtIt.x), right = text.filter(t => t.x > balIt.x);
+          const row = { date, time, amountAbs: Math.abs(num(amtIt.s)), balance: num(balIt.s), desc: left.map(t => t.s).join(' '), tail: right.map(t => t.s), tailX: right.length ? right[right.length - 1].x : null, y: L.y };
+          rows.push(row); prevRow = row;
+        } else if (prevRow && prevRow.tailX != null && L.items.every(it => !MONEY.test(it.s)) && Math.abs(L.items[0].x - prevRow.tailX) < 6 && prevRow.y - L.y < 30) {
+          prevRow.tail[prevRow.tail.length - 1] += ' ' + L.items.map(it => it.s).join(' ');   // ข้อความต่อบรรทัด
+          prevRow.y = L.y;
+        } else if (!dm) { /* หัว/ท้ายกระดาษ */ }
+      }
+    }
+    if (textChars < 200) return { ok: false, reason: 'ไฟล์นี้ไม่มีตัวหนังสือ (สแกน/Print to PDF)' };
+    if (rows.length < 1) return { ok: false, reason: 'ไม่พบตารางรายการที่อ่านได้' };
+    // ทิศทางเงินจากผลต่างยอดคงเหลือ
+    let prev = opening ?? r2(rows[0].balance - 0);   // ไม่มียอดยกมา → แถวแรกตัดสินไม่ได้
+    let agree = 0, firstUnknown = opening == null;
+    const out = rows.map((r, i) => {
+      let amount;
+      if (i === 0 && firstUnknown) amount = -r.amountAbs;   // เดาไว้ก่อน · ด่านเดินยอดตรวจไม่ได้แถวแรก
+      else {
+        const diff = r2(r.balance - prev);
+        if (Math.abs(Math.abs(diff) - r.amountAbs) < 0.005) { amount = diff; agree++; } else amount = -r.amountAbs;
+      }
+      prev = r.balance;
+      return { date: r.date, time: r.time, description: [r.desc, ...r.tail].filter(Boolean).join(' · '), amount, balance: r.balance };
+    });
+    const checkable = out.length - (firstUnknown ? 1 : 0);
+    const rate = checkable ? agree / checkable : 0;
+    if (checkable && rate < 0.95) return { ok: false, reason: `อ่านตัวเลขได้ไม่ตรงยอดคงเหลือ ${Math.round((1 - rate) * 100)}%` };
+    return { ok: true, lines: out, opening, closing: closing ?? out[out.length - 1].balance, account_number: accountNumber, agree, checkable };
+  }
+
+  /* รหัสผ่าน PDF ที่จะลอง: ช่องที่กรอก → บัญชีที่เลือก → ธนาคารเดียวกัน → ทุกบัญชีที่ตั้งไว้ */
+  function pdfPasswords(accountId) {
+    const sel = S.meta.accounts.find(a => a.account_id === accountId);
+    return [...new Set([$('#stPw')?.value.trim(), sel?.pdf_password,
+      ...S.meta.accounts.filter(a => a.pdf_password && a.bank_name && a.bank_name === sel?.bank_name).map(a => a.pdf_password),
+      ...S.meta.accounts.map(a => a.pdf_password)].filter(Boolean).map(String))];
+  }
+  async function openPdfDoc(file, pws) {
+    await loadPdfJs();
+    const data = new Uint8Array(await file.arrayBuffer());
+    for (const pw of ['', ...pws]) {
+      try { return await window.pdfjsLib.getDocument({ data: data.slice(), password: pw || undefined }).promise; }
+      catch (e) { if (e?.name !== 'PasswordException') return null; }
+    }
+    return null;
+  }
+  /* ทุกไฟล์เป็น PDF ที่มีตัวหนังสือ → อ่านเองในเครื่อง ไม่ใช้ AI (แม่นถึงสตางค์ · ไม่ติดคิว AI) · ไม่ผ่าน → คืน null ไปใช้ AI */
+  async function tryTextStatements(accountId, files, b) {
+    const pws = pdfPasswords(accountId), parts = [];
+    for (const f of files) {
+      b.sub(`อ่านตัวหนังสือใน ${f.name}…`);
+      const pdf = await openPdfDoc(f, pws);
+      if (!pdf) return null;
+      const r = await parseTextStatement(pdf).catch(() => ({ ok: false }));
+      if (!r.ok) { console.info('อ่านเองไม่ได้ → ใช้ AI:', f.name, r.reason); return null; }
+      parts.push(r);
+    }
+    parts.sort((a, c) => a.lines[0].date.localeCompare(c.lines[0].date));
+    return { lines: parts.flatMap(p => p.lines), opening: parts[0].opening, closing: parts.at(-1).closing, account_number: parts.find(p => p.account_number)?.account_number || null };
+  }
   async function importStatement(accountId, files) {
     const b = busy('กำลังเตรียมไฟล์…');
     try {
+      if (files.every(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name))) {
+        const txt = await tryTextStatements(accountId, files, b);
+        if (txt) {
+          b.sub(`อ่านได้ ${txt.lines.length} บรรทัด · กำลังบันทึก…`);
+          const out = await api('/api/inbox/statement/lines', { json: { account_id: accountId, file_name: files[0].name, source: 'PDF_TEXT',
+            opening_balance: txt.opening, closing_balance: txt.closing, account_number: txt.account_number,
+            lines: txt.lines.map(l => ({ date: l.date, time: l.time, description: l.description, credit: l.amount > 0 ? l.amount : 0, debit: l.amount < 0 ? -l.amount : 0, balance: l.balance })) } });
+          b.done();
+          S.stmt = out; S.stmtFilter = out.summary.walk_bad ? 'walk' : 'todo';
+          toast(`📄 อ่านจากตัวหนังสือในไฟล์ (ไม่ใช้ AI) ${out.lines.length} บรรทัด · มีในระบบแล้ว ${out.summary.matched}`, 4500);
+          renderStatement();
+          return;
+        }
+      }
       const pages = [];
       for (const f of files) {
         if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
@@ -1173,10 +1300,7 @@
              มีรหัสผ่าน → ถอดรหัสในเครื่องแล้วแปลงเป็นรูปทีละหน้า (รหัสไม่ถูกส่งออกไป) */
           if (!(await pdfEncrypted(f))) { pages.push({ blob: new Blob([f], { type: 'application/pdf' }), name: f.name }); continue; }
           /* รหัสผ่าน: ช่องที่กรอก/รหัสของบัญชีที่เลือกก่อน แล้วลองรหัสของบัญชีอื่น ๆ ที่ตั้งไว้ในตั้งค่า (ธนาคารเดียวกันก่อน) แบบหน้าเก่า */
-          const sel = S.meta.accounts.find(a => a.account_id === accountId);
-          const pws = [...new Set([$('#stPw').value.trim(), sel?.pdf_password,
-            ...S.meta.accounts.filter(a => a.pdf_password && a.bank_name && a.bank_name === sel?.bank_name).map(a => a.pdf_password),
-            ...S.meta.accounts.map(a => a.pdf_password)].filter(Boolean).map(String))];
+          const pws = pdfPasswords(accountId);
           let imgs = null, lastErr = null;
           for (const pw of pws.length ? pws : ['']) {
             try { imgs = await pdfToImages(f, pw, (p, n) => b.sub(`ถอดรหัส ${f.name} หน้า ${p}/${n}`)); break; }
@@ -1195,7 +1319,7 @@
       b2.sub('ใช้เวลาประมาณ 20–90 วินาที อย่าปิดหน้านี้');
       try {
         const out = await api('/api/inbox/statement', { body: fd });
-        S.stmt = out;
+        S.stmt = out; if (out.summary.walk_bad) S.stmtFilter = 'walk';
         toast(`🏦 อ่านได้ ${out.lines.length} บรรทัด · มีในระบบแล้ว ${out.summary.matched}${out.import?.flipped ? ` · แก้เครื่องหมายเข้า/ออก ${out.import.flipped}` : ''}`, 4200);
         renderStatement();
       } finally { b2.done(); }
@@ -1206,6 +1330,70 @@
     }
   }
 
+  /* ── นำเข้า statement จาก Excel (2026-10-12 · แม่แบบเดียวกับระบบ BKP) ──
+     อ่านแผ่นแรก · ข้ามแถว 1 · อ่านตามตำแหน่งคอลัมน์ 1–8 (ไม่อ่านจากชื่อหัว)
+     วันที่อ่านไม่ได้แม้แถวเดียว = ไม่รับทั้งไฟล์ (บอกเลขแถว) · เดินยอดคงเหลือในหน้าเว็บก่อนส่ง */
+  const ST_COLS = ['วันที่', 'เวลา', 'รายการ', 'เงินเข้า', 'เงินออก', 'ยอดคงเหลือ', 'รายละเอียด', 'ช่องทาง'];
+  const sDate = v => {
+    if (v === undefined || v === null || v === '') return '';
+    if (typeof v === 'number') { const d = new Date(Math.round((Math.floor(v) - 25569) * 864e5)); return isNaN(d) ? '' : d.toISOString().slice(0, 10); }
+    const t = String(v).trim();
+    let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) { let y = +m[1]; if (y > 2400) y -= 543; return `${y}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`; }
+    m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})(?!\d)/);
+    if (m) { let y = +m[3]; if (y < 100) y = y >= 40 ? y + 2500 - 543 : y + 2000; if (y > 2400) y -= 543; const mo = +m[2], d = +m[1];
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) return ''; return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`; }
+    return '';
+  };
+  const sTime = v => {
+    if (v === undefined || v === null || v === '') return null;
+    if (typeof v === 'number') { const f = v % 1, mins = Math.round(f * 1440); return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`; }
+    const m = String(v).match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/); return m ? `${m[1].padStart(2, '0')}:${m[2]}${m[3] ? ':' + m[3] : ''}` : null;
+  };
+  const sNum = v => { if (v === undefined || v === null || v === '') return null; if (typeof v === 'number') return v; const t = String(v).trim().replace(/[,\s฿]/g, ''); if (!t) return null; const n = Number(t); return isNaN(n) ? NaN : n; };
+  async function statementTemplate() {
+    await loadXlsx();
+    const X = window.XLSX, wb = X.utils.book_new();
+    const ws = X.utils.aoa_to_sheet([ST_COLS, ['01/10/2026', '09:15', 'รับโอนเงิน', 5000, '', 15000, 'จาก นาย ก', 'K PLUS'], ['02/10/2026', '13:40', 'ชำระค่าไฟ', '', 1250.5, 13749.5, 'การไฟฟ้า', 'Mobile']]);
+    ws['!cols'] = [12, 8, 26, 14, 14, 14, 30, 14].map(w => ({ wch: w }));
+    X.utils.book_append_sheet(wb, ws, 'รายการเดินบัญชี');
+    X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['วิธีกรอก'], ['1 แถว = 1 รายการ เรียงจากเก่าไปใหม่ · แถวที่ 1 เป็นหัวตาราง ห้ามลบ'], ['ห้ามสลับหรือแทรกคอลัมน์ — ระบบอ่านตามตำแหน่ง A–H'],
+      ['วันที่: วว/ดด/ปปปป (พ.ศ. หรือ ค.ศ. ก็ได้) หรือวันที่ของ Excel'], ['เงินเข้า / เงินออก: ตัวเลขบวก ใส่ช่องใดช่องหนึ่ง ห้ามใส่ทั้งสองช่องในแถวเดียว ห้ามติดลบ'],
+      ['ยอดคงเหลือ: ตามที่พิมพ์ใน statement — ระบบใช้ตรวจว่าทุกแถวเดินลง'], ['ยอดยกมา: ระบบถามตอนนำเข้า (ใส่หรือเว้นว่างก็ได้)']]), 'วิธีกรอก');
+    X.writeFile(wb, 'statement-import-template.xlsx');
+  }
+  async function importStatementExcel(accountId, f) {
+    const errEl = $('#stErr');
+    try {
+      await loadXlsx();
+      const wb = window.XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: 'array' });
+      const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+      const lines = [], bad = [];
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i] || [];
+        if (r.slice(0, 8).every(c => c === '' || c == null)) continue;                     // แถวว่างสนิท ข้ามเงียบ
+        const date = sDate(r[0]), cr = sNum(r[3]), dr = sNum(r[4]), bal = sNum(r[5]);
+        if (!date) { bad.push(`แถว ${i + 1}: อ่านวันที่ไม่ได้ (${esc(String(r[0]))})`); continue; }
+        if ([cr, dr, bal].some(x => Number.isNaN(x))) { bad.push(`แถว ${i + 1}: ตัวเลขไม่ถูกต้อง`); continue; }
+        if ((cr || 0) < 0 || (dr || 0) < 0) { bad.push(`แถว ${i + 1}: เงินเข้า/ออก ห้ามติดลบ`); continue; }
+        if ((cr || 0) > 0 && (dr || 0) > 0) { bad.push(`แถว ${i + 1}: มีทั้งเงินเข้าและเงินออก`); continue; }
+        if (!cr && !dr) continue;                                                            // แถวยอดยกมา/ไม่มีเงิน
+        lines.push({ date, time: sTime(r[1]), description: String(r[2] ?? '').trim(), credit: cr || 0, debit: dr || 0, balance: bal, detail: String(r[6] ?? '').trim(), channel: String(r[7] ?? '').trim() });
+      }
+      if (bad.length) { errEl.innerHTML = `ไม่รับไฟล์นี้ — แก้ใน Excel ก่อน:<br>${bad.slice(0, 8).join('<br>')}${bad.length > 8 ? `<br>…และอีก ${bad.length - 8} แถว` : ''}`; return; }
+      if (!lines.length) { errEl.textContent = 'ไม่พบรายการในไฟล์ (ต้องมีวันที่และเงินเข้า/ออก)'; return; }
+      const ob = window.prompt(`พบ ${lines.length} รายการ\nใส่ยอดยกมา (ยอดคงเหลือก่อนรายการแรก) เพื่อใช้ตรวจยอด — เว้นว่างได้`, '');
+      if (ob === null) return;
+      const obN = sNum(ob);
+      const b = busy('กำลังนำเข้า statement จาก Excel…');
+      try {
+        const out = await api('/api/inbox/statement/lines', { json: { account_id: accountId, file_name: f.name, lines, opening_balance: Number.isFinite(obN) ? obN : null } });
+        S.stmt = out; S.stmtFilter = out.summary.walk_bad ? 'walk' : 'todo';
+        toast(`📊 นำเข้า ${out.lines.length} บรรทัด · มีในระบบแล้ว ${out.summary.matched}${out.summary.walk_bad ? ` · ⚠️ ยอดคงเหลือเดินไม่ลง ${out.summary.walk_bad} แถว` : ''}`, 4200);
+        renderStatement();
+      } finally { b.done(); }
+    } catch (e) { errEl.textContent = e.message; }
+  }
+
   async function openStatement(id) {
     try { S.stmt = await api(`/api/inbox/statements/${encodeURIComponent(id)}`); renderStatement(); }
     catch (err) { toast('⚠️ ' + err.message); S.stmt = null; load(); }
@@ -1213,9 +1401,10 @@
   const ST_LABEL = { MATCHED: '✓ มีในระบบ', CREATED: '➕ สร้างแล้ว', NEW: 'ยังไม่มีในระบบ', IGNORED: 'ข้าม', DUPLICATE: 'ซ้ำกับฉบับก่อน' };
   function renderStatement() {
     const v = S.stmt, sm = v.summary, st = v.statement;
-    const F = [['todo', 'ยังไม่มีในระบบ', l => l.status === 'NEW'], ['all', 'ทั้งหมด', () => true], ['MATCHED', 'มีในระบบ', l => l.status === 'MATCHED'],
+    const F = [...(sm.walk_bad ? [['walk', '⚠️ เดินไม่ลง', l => !!l.walk_err]] : []), ['todo', 'ยังไม่มีในระบบ', l => l.status === 'NEW'], ['all', 'ทั้งหมด', () => true], ['MATCHED', 'มีในระบบ', l => l.status === 'MATCHED'],
       ['CREATED', 'สร้างแล้ว', l => l.status === 'CREATED'], ['skip', 'ข้าม/ซ้ำ', l => ['IGNORED', 'DUPLICATE'].includes(l.status)]];
     if (!sm.new && S.stmtFilter === 'todo') S.stmtFilter = 'all';
+    if (!sm.walk_bad && S.stmtFilter === 'walk') S.stmtFilter = sm.new ? 'todo' : 'all';
     const f = F.find(x => x[0] === S.stmtFilter) || F[1];
     const lines = v.lines.filter(f[2]);
     view.innerHTML = `
@@ -1231,6 +1420,11 @@
           <div class="tile"><b class="pos">${money(sm.sum_in)}</b><span>เงินเข้า</span></div>
           <div class="tile"><b class="neg">${signed(sm.sum_out)}</b><span>เงินออก</span></div>
         </div>
+        ${st.account_check === 'MISMATCH' ? `<div class="chk bad">⚠️ <div>เลขบัญชีในไฟล์ <b>${esc(st.account_number_read || '')}</b> ไม่ตรงกับบัญชีที่เลือก — ตรวจว่าเลือกบัญชีถูกไหม ถ้าผิดให้ลบ statement นี้แล้วนำเข้าใหม่</div></div>` : ''}
+        ${!sm.walk_possible ? '' : sm.walk_bad
+          ? `<div class="chk bad">🔴 <div><b>ยอดคงเหลือเดินไม่ลง ${sm.walk_bad} แถว</b> (ยอดก่อนหน้า + เข้า − ออก ≠ ยอดคงเหลือ) — ตัวเลขบางตัวอ่านผิด กด ✏️ ที่แถวสีแดงเพื่อแก้ยอดหรือยอดคงเหลือ · ต้องเดินลงทุกแถวก่อนจึงสร้างรายการได้</div></div>`
+          : `<div class="chk good">✅ <div>ยอดคงเหลือเดินลงทุกแถว (ตรวจ ${sm.walk_checked} แถว)</div></div>`}
+        <div class="hint" style="margin-top:6px">ยอดยกมา <b>${st.opening_balance == null ? 'ไม่ทราบ' : signed(st.opening_balance)}</b> · <a href="#" id="stObFix">แก้ยอดยกมา</a>${st.source === 'EXCEL' ? ' · นำเข้าจาก Excel' : st.source === 'PDF_TEXT' ? ' · อ่านจากตัวหนังสือใน PDF (ไม่ใช้ AI)' : ''}</div>
         ${sm.read_gap == null ? '' : Math.abs(sm.read_gap) < 0.005
           ? `<div class="chk good">✅ <div>AI อ่านครบทุกบรรทัด — ผลรวมเท่ากับยอดปิด − ยอดยกมา พอดี</div></div>`
           : `<div class="chk warn">⚠️ <div>ผลรวมบรรทัดต่างจากยอดปิด ${signed(sm.read_gap)} — AI อาจอ่านตกหรืออ่านซ้ำบางบรรทัด ลองส่งหน้านั้นใหม่อีกครั้ง</div></div>`}
@@ -1238,16 +1432,17 @@
           ยอดปิดธนาคาร <b>${signed(st.closing_balance)}</b> · ในระบบ ณ ${thDate(st.period_to)} <b>${signed(sm.system_confirmed + sm.system_pending)}</b>
           ${sm.system_pending ? `<br><small>(ยืนยันแล้ว ${signed(sm.system_confirmed)} + รอยืนยัน ${signed(sm.system_pending)})</small>` : ''}
           ${Math.abs(sm.balance_gap) < 0.005 ? '<br>ตรงกันพอดี 🎉' : `<br>ต่างกัน <b>${amtHtml(sm.balance_gap)}</b> — สร้างบรรทัดที่ยังไม่มี และเช็ก "มีในระบบแต่ไม่มีใน statement" ด้านล่าง`}</div></div>`}
-        ${sm.new ? `<button class="bulk" id="stCreate" style="background:linear-gradient(135deg,#5c7cfa,#4c6ef5)">➕ สร้างรายการจาก ${sm.new} บรรทัดที่ยังไม่มี</button>` : ''}
+        ${sm.new ? (sm.walk_bad ? `<button class="bulk" disabled style="background:#adb5bd;cursor:not-allowed">🔒 แก้แถวที่ยอดคงเหลือเดินไม่ลงก่อน จึงสร้างรายการได้</button>`
+          : `<button class="bulk" id="stCreate" style="background:linear-gradient(135deg,#5c7cfa,#4c6ef5)">➕ สร้างรายการจาก ${sm.new} บรรทัดที่ยังไม่มี</button>`) : ''}
         ${sm.created ? `<div class="hint" style="margin-top:8px">รายการที่สร้างแล้วอยู่ในแท็บ 📥 รอเคลียร์ — ร้าน/คู่ค้าที่เคยยืนยันแล้วระบบเดาหมวดให้</div>` : ''}
       </div>
       <div class="filters">${F.map(([k, label, fn]) => `<button class="chip ${S.stmtFilter === k ? 'on' : ''}" data-sf="${k}">${label}<small> ${v.lines.filter(fn).length}</small></button>`).join('')}</div>
       <div class="card" style="padding-top:4px;padding-bottom:4px">${lines.length ? lines.map(l => `
-        <div class="sl st-${l.status}" data-line="${esc(l.line_id)}">
+        <div class="sl st-${l.status}${l.walk_err ? ' walkbad' : ''}" data-line="${esc(l.line_id)}">
           <div class="d">${thDate(l.date)}${l.time ? '<br>' + esc(l.time.slice(0, 5)) : ''}</div>
-          <div class="t">${esc(l.description || '-')}</div>
-          <div class="a ${l.amount < 0 ? 'neg' : 'pos'}">${signed(l.amount)}</div>
-          <div class="x2"><span class="badge">${ST_LABEL[l.status] || l.status}</span>
+          <div class="t">${esc(l.description || '-')}${l.walk_err ? `<br><small class="neg">ยอดคงเหลือในไฟล์ ${signed(l.balance)} · ควรเป็น ${signed(l.walk_err.expected)} (ต่าง ${signed(l.walk_err.diff)})</small>` : ''}</div>
+          <div class="a ${l.amount < 0 ? 'neg' : 'pos'}">${signed(l.amount)}${l.balance != null ? `<span class="bal">คงเหลือ ${money(l.balance)}</span>` : ''}</div>
+          <div class="x2"><span class="badge">${ST_LABEL[l.status] || l.status}</span>${l.status !== 'CREATED' ? `<button class="b ghost" data-fix title="แก้ตัวเลขที่อ่านผิด">✏️</button>` : ''}
             ${l.tx ? `<span class="hint" style="margin:0">↔ ${thDate(l.tx.date)} ${esc(l.tx.desc || '')} · ${esc(l.tx.category)}${l.tx.status === 'PENDING_REVIEW' ? ' · รอยืนยัน' : ''}</span>` : ''}
             ${l.status === 'NEW' ? `${(l.candidates || []).map(c => `<button class="b line" data-match="${esc(c.transaction_id)}">จับคู่: ${thDate(c.date)} ${esc((c.desc || '').slice(0, 24))}</button>`).join('')}
               <button class="b line" data-one>➕ สร้าง</button><button class="b ghost" data-ign>ข้าม</button>` : ''}
@@ -1263,11 +1458,34 @@
       try { await api(`/api/inbox/statements/${encodeURIComponent(st.stmt_id)}/delete`, { json: {} }); S.stmt = null; toast('ลบแล้ว'); load(); } catch (e) { toast('⚠️ ' + e.message); }
     };
     $('#stCreate')?.addEventListener('click', () => createLines());
+    $('#stObFix').onclick = async e => {
+      e.preventDefault();
+      const nv = window.prompt('ยอดยกมา (ยอดคงเหลือก่อนรายการแรก) — เว้นว่าง = ไม่ทราบ', st.opening_balance ?? '');
+      if (nv === null) return;
+      const t = String(nv).replace(/[,\s]/g, '');
+      if (t !== '' && isNaN(Number(t))) return toast('⚠️ ยอดยกมาต้องเป็นตัวเลข');
+      try { await api(`/api/inbox/statements/${encodeURIComponent(st.stmt_id)}/line/OPENING`, { json: { action: 'fix', balance: t === '' ? null : Number(t) } }); await openStatement(st.stmt_id); }
+      catch (err) { toast('⚠️ ' + err.message); }
+    };
     view.querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { S.stmtFilter = b.dataset.sf; renderStatement(); });
     view.querySelectorAll('.sl[data-line]').forEach(row => row.addEventListener('click', async e => {
       const b = e.target.closest('button'); if (!b) return;
       const lineId = row.dataset.line;
       if (b.hasAttribute('data-one')) return createLines([lineId]);
+      if (b.hasAttribute('data-fix')) {
+        const l = v.lines.find(x => x.line_id === lineId), x2 = row.querySelector('.x2');
+        x2.innerHTML = `<div class="fixrow"><label>ยอด <input data-fa inputmode="decimal" value="${l.amount}"></label><label>คงเหลือ <input data-fb inputmode="decimal" value="${l.balance ?? ''}"></label>
+          <button class="b ok" style="--k:var(--ok)" data-fsave>บันทึก</button><button class="b ghost" data-fcancel>ยกเลิก</button><small class="hint" style="margin:0">เงินออกใส่ติดลบ</small></div>`;
+        x2.querySelector('[data-fa]').focus();
+        return;
+      }
+      if (b.hasAttribute('data-fcancel')) return renderStatement();
+      if (b.hasAttribute('data-fsave')) {
+        const amount = Number(String(row.querySelector('[data-fa]').value).replace(/[,\s]/g, '')), braw = String(row.querySelector('[data-fb]').value).replace(/[,\s]/g, '');
+        try { await api(`/api/inbox/statements/${encodeURIComponent(st.stmt_id)}/line/${encodeURIComponent(lineId)}`, { json: { action: 'fix', amount, balance: braw === '' ? null : Number(braw) } }); await openStatement(st.stmt_id); }
+        catch (err) { toast('⚠️ ' + err.message); }
+        return;
+      }
       const body = b.dataset.match ? { action: 'match', transaction_id: b.dataset.match } : b.hasAttribute('data-ign') ? { action: 'ignore' } : { action: 'reset' };
       try { await api(`/api/inbox/statements/${encodeURIComponent(st.stmt_id)}/line/${encodeURIComponent(lineId)}`, { json: body }); await openStatement(st.stmt_id); }
       catch (err) { toast('⚠️ ' + err.message); }

@@ -92,7 +92,7 @@
 <body>
 <div class="top"><div class="wrap row">
   <div><h1>ตั้งค่า</h1><p id="sub">บัญชี · บริษัท · หมวด · คู่ค้า · สมาชิก</p></div>
-  <nav class="nav" aria-label="เมนู"><a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a href="cards.html">บัตร & เงินกู้</a><a href="assets.html">ทรัพย์สิน</a><a href="reports.html">รายงาน</a><a href="close.html">ปิดเดือน</a><a class="on" href="settings.html">ตั้งค่า</a><a href="../trip-unified-prototype/trips.html">ทริป</a></nav>
+  <nav class="nav" aria-label="เมนู"><a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a href="cards.html">บัตร & เงินกู้</a><a href="assets.html">ทรัพย์สิน</a><a href="reports.html">รายงาน</a><a href="../index.html">ปิดเดือน</a><a class="on" href="settings.html">ตั้งค่า</a><a href="../trip-unified-prototype/trips.html">ทริป</a></nav>
 </div></div>
 <main class="wrap">
   <div class="tabs" id="tabs" role="tablist">
@@ -562,10 +562,10 @@
         ${projects.length ? projects.map(p => `<button class="item" data-p="${esc(p.project_id)}"><span class="ic" style="background:#f3f0ff">${p.status === 'active' ? '🟢' : '⚪'}</span><span class="t"><b>${esc(plain(p.name))}</b><small>${esc(p.project_id)} · ${p.status === 'active' ? 'กำลังทำ' : 'ปิดแล้ว'}</small></span><span class="r mut">›</span></button>`).join('') : '<div class="empty">ยังไม่มีโปรเจกต์</div>'}
       </div></div>
       <div class="group"><h3>อื่น ๆ</h3><div class="list">
-        <a class="item" href="opening.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#e7f5ff">⚖️</span><span class="t"><b>ยอดยกมา</b><small>เริ่มใช้ระบบ: ยอดบัญชี ลูกหนี้/เจ้าหนี้ หนี้สิน สินทรัพย์ (เดบิต = เครดิต)</small></span><span class="r mut">›</span></a>
+        <a class="item" href="../index.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#e7f5ff">⚖️</span><span class="t"><b>ยอดยกมา</b><small>เริ่มใช้ระบบ: ยอดบัญชี ลูกหนี้/เจ้าหนี้ หนี้สิน สินทรัพย์ (เดบิต = เครดิต)</small></span><span class="r mut">›</span></a>
         <a class="item" href="reports.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#e6fcf5">⬇️</span><span class="t"><b>ส่งออกรายการเป็น Excel</b><small>หน้ารายงาน · แท็บส่งออก</small></span><span class="r mut">›</span></a>
         <a class="item" href="index.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#f3f0ff">📊</span><span class="t"><b>นำเข้า Excel / Bulk</b><small>กล่องรอเคลียร์ · ปุ่มนำเข้า Excel</small></span><span class="r mut">›</span></a>
-        <a class="item" href="close.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#fff9db">🔒</span><span class="t"><b>ปิดเดือน</b><small>ตรวจยอดกับ statement แล้วล็อกเดือน</small></span><span class="r mut">›</span></a>
+        <a class="item" href="../index.html" style="text-decoration:none;color:inherit"><span class="ic" style="background:#fff9db">🔒</span><span class="t"><b>ปิดเดือน</b><small>ตรวจยอดกับ statement แล้วล็อกเดือน</small></span><span class="r mut">›</span></a>
       </div></div>
       <div class="group"><h3>🎨 ธีมสี <span class="mut" style="font-weight:500;font-size:13px">จำไว้ในเครื่องนี้</span></h3><div class="list" style="padding:12px">
         <div class="swatches">${Object.entries(window.LEDGER_THEMES || {}).map(([id, t]) => `<button class="sw ${window.LEDGER_THEME === id ? 'on' : ''}" data-theme="${esc(id)}" aria-pressed="${window.LEDGER_THEME === id}">

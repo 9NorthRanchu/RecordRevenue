@@ -199,6 +199,40 @@ export function fixStatementSigns(lines, opening = null, closing = null) {
   return { lines: out, flipped, opening: startBalance, closing: end, sum, gap };
 }
 
+/* เดินยอดคงเหลือทีละแถว (2026-10-12 · ด่านจากระบบ BKP): ยอด[i] = ยอด[i-1] + เข้า − ออก
+   คืนแถวที่ไม่ลง [{ line_id, expected, diff }] · แถวแรกตรวจได้เมื่อรู้ยอดยกมา · ไม่มียอดคงเหลือเลย (บัตรเครดิต) = ตรวจไม่ได้ */
+export function walkStatement(lines, opening = null) {
+  let prev = opening == null || opening === '' ? null : round2(opening);
+  let alt = null;               // ยอดที่ "ควรเป็น" ของแถวก่อนที่ผิด — ถ้าแถวถัดไปเดินจากค่านี้ลง แปลว่าแถวก่อนอ่านยอดคงเหลือผิดตัวเดียว ไม่ต้องชี้ซ้ำ
+  const bad = [];
+  let checked = 0;
+  for (const l of lines || []) {
+    const amt = round2(l.amount);
+    if (l.balance != null && l.balance !== '') {
+      const bal = round2(l.balance);
+      if (prev != null) {
+        checked++;
+        const expected = round2(prev + amt);
+        const okAlt = alt != null && Math.abs(round2(alt + amt) - bal) < 0.005;
+        if (Math.abs(expected - bal) >= 0.005 && !okAlt) { bad.push({ line_id: l.line_id, expected, diff: round2(bal - expected) }); alt = expected; }
+        else alt = null;
+      }
+      prev = bal;
+    } else if (prev != null) { prev = round2(prev + amt); if (alt != null) alt = round2(alt + amt); }
+  }
+  return { bad, checked, has_balance: (lines || []).some(l => l.balance != null && l.balance !== '') };
+}
+
+/* เลขบัญชีที่อ่านจากไฟล์ ตรงกับบัญชีที่เลือกไหม · เลขในไฟล์มักปิดบางหลัก (XXX-X-X1234-X)
+   → ทุกกลุ่มตัวเลขที่เห็น (≥3 หลัก) ต้องอยู่ในเลขบัญชีของเรา · คืน 'MATCH' | 'MISMATCH' | null (เทียบไม่ได้) */
+export function accountNumberCheck(read, mine) {
+  const norm = s => String(s || '').toLowerCase().replace(/\*/g, 'x').replace(/[^0-9x]/g, '');
+  const a = norm(read), b = norm(mine).replace(/x/g, '');
+  const groups = a.split('x').filter(g => g.length >= 3);
+  if (!groups.length || b.length < 4) return null;
+  return groups.every(g => b.includes(g)) ? 'MATCH' : 'MISMATCH';
+}
+
 /* คีย์จำคู่ค้าจากคำอธิบายใน statement ("TR fr 123-4-56789 นาย ก" → "นายก" ไม่สนตัวเลข/รหัส) */
 export function statementPartyKey(desc) {
   const s = String(desc || '').toLowerCase()

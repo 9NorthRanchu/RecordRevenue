@@ -125,6 +125,7 @@ step "CREATE TABLE IF NOT EXISTS AssetItems (asset_id TEXT PRIMARY KEY, family_i
 step "CREATE INDEX IF NOT EXISTS idx_asset_items_family ON AssetItems (family_id, status);" "ดัชนี AssetItems"
 step "CREATE TABLE IF NOT EXISTS OpeningSets (set_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, name TEXT NOT NULL, entity_id TEXT, date TEXT NOT NULL, anchor_account_id TEXT, lines TEXT NOT NULL DEFAULT '[]', created_by TEXT, created_at TEXT, updated_by TEXT, updated_at TEXT);" "ตาราง OpeningSets (ยอดยกมา)"
 step "CREATE INDEX IF NOT EXISTS idx_opening_family ON OpeningSets (family_id, date);" "ดัชนี OpeningSets"
+step "ALTER TABLE LedgerStatements ADD COLUMN extra TEXT;" "LedgerStatements.extra (ที่มา/เลขบัญชีในไฟล์)"
 
 echo
 echo "▶ ตรวจผลรวม"

@@ -1,6 +1,6 @@
 import { handleUnifiedTrip } from './unified-trip.js';
 import { handleLegacyTrip } from './legacy-trip.js';
-import { handleLedgerInbox } from './ledger-inbox.js';
+import { handleLedgerInbox, geminiGenerate } from './ledger-inbox.js';
 import { planSettlementKeep } from './settle-keep.js';
 import { isMonthClosed, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
 import { IS_ASSET_SQL, assetCategorySet } from './assets.js';
@@ -138,7 +138,7 @@ export default {
         if (!imageBase64) {
           return new Response(JSON.stringify({ error: 'Missing imageBase64' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
-        const ocrData = await runGeminiOCR(imageBase64, env.GEMINI_API_KEY);
+        const ocrData = await runGeminiOCR(imageBase64, env);
         return new Response(JSON.stringify(ocrData), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
@@ -149,7 +149,7 @@ export default {
           return new Response(JSON.stringify({ error: 'Missing pdfBase64 or imagesBase64' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
         try {
-          const statementData = await runGeminiStatement(pdfBase64, imagesBase64, env.GEMINI_API_KEY);
+          const statementData = await runGeminiStatement(pdfBase64, imagesBase64, env);
           return new Response(JSON.stringify(statementData), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         } catch (err) {
           return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -2331,7 +2331,8 @@ function dbErrorResponse(err, corsHeaders) {
   }), { status: quota ? 503 : 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-async function runGeminiStatement(pdfBase64, imagesBase64, apiKey) {
+async function runGeminiStatement(pdfBase64, imagesBase64, env) {
+  const apiKey = env?.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured on Cloudflare Workers.');
   }
@@ -2391,42 +2392,18 @@ Do not wrap the JSON in markdown code blocks.`;
     }
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
-  const payload = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  // AI ไม่ว่าง (503/429) → ลองซ้ำ แล้วสลับรุ่นสำรองอัตโนมัติ (geminiGenerate · 2026-10-12)
+  const response = await geminiGenerate(env, env.GEMINI_MODEL || 'gemini-3.1-flash-lite', {
       contents: [{
         parts: parts
       }],
       generationConfig: {
         responseMimeType: 'application/json'
       }
-    })
-  };
-
-  let response;
-  let attempt = 0;
-  const maxRetries = 3;
-  let errText = '';
-
-  while (attempt < maxRetries) {
-    response = await fetch(url, payload);
-    if (response.ok) break;
-
-    errText = await response.text();
-    if (response.status === 503 || response.status === 429) {
-      attempt++;
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
-        continue;
-      }
-    }
-    break;
-  }
-
-  if (!response || !response.ok) {
-    throw new Error(`Gemini API error: ${response?.status} - ${errText}`);
+    });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${errText}`);
   }
 
   const resData = await response.json();
@@ -2434,7 +2411,8 @@ Do not wrap the JSON in markdown code blocks.`;
   return JSON.parse(textResult.trim());
 }
 
-async function runGeminiOCR(imageBase64, apiKey) {
+async function runGeminiOCR(imageBase64, env) {
+  const apiKey = env?.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured on Cloudflare Workers.');
   }
@@ -2470,11 +2448,8 @@ Output ONLY a valid JSON object matching this schema:
 }
 Do not wrap the JSON in markdown code blocks.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
-  const payload = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  // AI ไม่ว่าง (503/429) → ลองซ้ำ แล้วสลับรุ่นสำรองอัตโนมัติ (geminiGenerate · 2026-10-12)
+  const response = await geminiGenerate(env, env.GEMINI_MODEL || 'gemini-3.1-flash-lite', {
       contents: [{
         parts: [
           { text: prompt },
@@ -2489,31 +2464,10 @@ Do not wrap the JSON in markdown code blocks.`;
       generationConfig: {
         responseMimeType: 'application/json'
       }
-    })
-  };
-
-  let response;
-  let attempt = 0;
-  const maxRetries = 3;
-  let errText = '';
-
-  while (attempt < maxRetries) {
-    response = await fetch(url, payload);
-    if (response.ok) break;
-
-    errText = await response.text();
-    if (response.status === 503 || response.status === 429) {
-      attempt++;
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
-        continue;
-      }
-    }
-    break;
-  }
-
-  if (!response || !response.ok) {
-    throw new Error(`Gemini API error: ${response?.status} - ${errText}`);
+    });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${errText}`);
   }
 
   const resData = await response.json();

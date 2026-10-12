@@ -82,41 +82,20 @@
                 </div>
                 
                 <nav class="sidebar-nav">
-                    <!-- 2026-10-12 (North เลือก ก.): ซ่อนเมนูหน้าเก่าที่มีหน้าใหม่แทนแล้ว — โค้ดยังอยู่ครบ ไม่ได้ลบ
-                         เปิดกลับ: ย้ายบรรทัดใน comment ด้านล่างกลับเข้า <nav>
-                         <a href="#" class="nav-item active" data-target="dashboard"><i class="fa-solid fa-chart-line"></i> <span>ภาพรวม (แบบเดิม)</span></a>
-                         <a href="#" class="nav-item" data-target="history" style="opacity:.75"><i class="fa-solid fa-clock-rotate-left"></i> <span>ประวัติธุรกรรม (แบบเดิม)</span></a>
-                         <a href="#" class="nav-item" data-target="debtor" style="opacity:.75"><i class="fa-solid fa-file-contract"></i> <span>ทะเบียนลูกหนี้/เจ้าหนี้ (แบบเดิม)</span></a>
-                         <a href="#" class="nav-item" data-target="reports" style="opacity:.75"><i class="fa-solid fa-chart-column"></i> <span>รายงานทางการเงิน (แบบเดิม)</span></a>
-                         <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i> <span>ตั้งค่าระบบ (แบบเดิม)</span></a>
-                         หน้าเก่ายังเปิดได้ฉุกเฉินที่ index.html?classic=1 -->
-                    <a href="ledger/home.html" class="nav-item" data-href="ledger/home.html"><i class="fa-solid fa-table-cells-large"></i> <span>ภาพรวม</span></a>
-                    <!-- 2026-10-10: "รอตรวจสอบ" รวมเข้า กล่องรอเคลียร์ แล้ว (รายการรอยืนยันทุกแหล่งขึ้นที่นั่น) · ตัวเลขแจ้งเตือนย้ายมาที่เมนูใหม่
-                         หน้าเดิมเก็บไว้ชั่วคราวเพื่อ "นำเข้า Excel / Bulk" จนกว่าจะย้ายไปหน้าใหม่ -->
-                    <a href="ledger/index.html" class="nav-item" data-href="ledger/index.html"><i class="fa-solid fa-inbox"></i> <span>กล่องรอเคลียร์ · Statement</span> <span id="badge-pending" class="badge">0</span></a>
-                    <a href="ledger/index.html#hist" class="nav-item" data-href="ledger/index.html#hist"><i class="fa-solid fa-file-invoice-dollar"></i> <span>ประวัติ</span></a>
-                    <!-- grid-input merged into pending -->
-                    <a href="ledger/index.html#debt" class="nav-item" data-href="ledger/index.html#debt"><i class="fa-solid fa-hand-holding-dollar"></i> <span>ลูกหนี้/เจ้าหนี้</span></a>
-                    <!-- TRIPS (ระบบทริปเดิม) — พักใช้ 2026-08-02 เพราะ Unified Trip เข้ามาแทนที่
-                         ยังไม่ลบโค้ด/ข้อมูล/endpoint ใด ๆ เอาลิงก์กลับมาได้ทันทีถ้าต้องใช้อีก -->
-                    <!-- <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i> <span>TRIPS</span></a> -->
-                    <!-- Enjoy Life Trip · เชื่อมฐานข้อมูลจริงแล้ว
-                         พาไปหน้ารวมทริป (trips.html) ก่อนเสมอ ไม่ผูก projectId เดียวอีกต่อไป
-                         เพราะตอนนี้สร้าง/ลบ/มีหลายทริปได้แล้ว — เลือกจากหน้ารวมแทน
-                         ⚠️ ไม่ใส่ userId ใน URL โดยตั้งใจ — หน้านั้นอ่านจาก sessionStorage
-                            ของแท็บนี้เอง (ปลอดภัยกว่า และ session ไม่ข้ามแท็บอยู่แล้ว)
-                            จึงต้องเป็นลิงก์ธรรมดาที่เปิดในแท็บเดิม ห้ามใส่ target="_blank" -->
-                    <!-- ปิดเมนูไว้ 2026-10-10 (North): ระบบทริปแยกออกไปแล้ว รอเชื่อมภายหลัง · ข้อมูลทริปยังอยู่ครบ ไม่ได้ลบ
-                    <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link"><i class="fa-solid fa-wand-sparkles"></i> <span>Enjoy Life Trip</span><small>ข้อมูลจริง</small></a> -->
-                    <!-- "รอตรวจสอบ" / "นำเข้า Excel (หน้าเดิม)" ปิดแล้ว 2026-10-10 — ย้ายไป ledger/index.html (กล่องรอเคลียร์ · ปุ่ม 📊 นำเข้า Excel) ครบทุกอย่าง
-                         โค้ดหน้าเดิม (view-pending) ยังอยู่ใน app.js ไม่ได้ลบ -->
-                    <a href="ledger/reports.html" class="nav-item" data-href="ledger/reports.html"><i class="fa-solid fa-chart-pie"></i> <span>รายงาน</span></a>
-                    <a href="ledger/cards.html" class="nav-item" data-href="ledger/cards.html"><i class="fa-solid fa-credit-card"></i> <span>บัตร & เงินกู้</span></a>
-                    <a href="ledger/assets.html" class="nav-item" data-href="ledger/assets.html"><i class="fa-solid fa-box-archive"></i> <span>ทรัพย์สิน</span></a>
-                    <a href="ledger/close.html" class="nav-item" data-href="ledger/close.html"><i class="fa-solid fa-lock"></i> <span>ปิดเดือน</span></a>
-                    <a href="ledger/opening.html" class="nav-item" data-href="ledger/opening.html"><i class="fa-solid fa-scale-balanced"></i> <span>ยอดยกมา</span></a>
-                    <a href="trip-unified-prototype/trips.html" class="nav-item" data-href="trip-unified-prototype/trips.html"><i class="fa-solid fa-mountain-sun"></i> <span>ทริป (Enjoy Life Trip)</span></a>
-                    <a href="ledger/settings.html" class="nav-item" data-href="ledger/settings.html"><i class="fa-solid fa-gears"></i> <span>ตั้งค่า</span></a>
+                    <!-- 2026-10-12 (North): กลับไปใช้แอปเดิมเป็นหลักทั้งหมด — ยกเครื่องโดยปรับปรุงหน้าเดิม ไม่สร้างหน้าใหม่
+                         เมนูชุดนี้ = แบบก่อนมีหน้า ledger/* (commit 6e15ef6^) -->
+                    <a href="#" class="nav-item active" data-target="dashboard"><i class="fa-solid fa-chart-line"></i> <span>ภาพรวมแผงควบคุม</span></a>
+                    <a href="#" class="nav-item" data-target="pending"><i class="fa-solid fa-clock-rotate-left"></i> <span>รอตรวจสอบ</span> <span id="badge-pending" class="badge">0</span></a>
+                    <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-file-invoice-dollar"></i> <span>ประวัติธุรกรรม</span></a>
+                    <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i> <span>ทะเบียนลูกหนี้/เจ้าหนี้</span></a>
+                    <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link"><i class="fa-solid fa-wand-sparkles"></i> <span>Enjoy Life Trip</span><small>ข้อมูลจริง</small></a>
+                    <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-pie"></i> <span>รายงานทางการเงิน</span></a>
+                    <a href="#" class="nav-item" data-target="close"><i class="fa-solid fa-lock"></i> <span>ปิดเดือน</span></a>
+                    <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i> <span>ตั้งค่าระบบ</span></a>
+                    <!-- ชั่วคราว: ฟีเจอร์ที่ยังไม่มีในแอปเดิม — รอย้ายเข้าแอปเดิมทีละอย่าง แล้วลบหน้า ledger/* -->
+                    <div style="margin:10px 12px 4px;font-size:.72rem;opacity:.6;font-weight:700">รอย้ายเข้าแอปหลัก</div>
+                    <a href="ledger/cards.html" class="nav-item" data-href="ledger/cards.html" style="opacity:.8"><i class="fa-solid fa-credit-card"></i> <span>บัตร & เงินกู้</span></a>
+                    <a href="ledger/assets.html" class="nav-item" data-href="ledger/assets.html" style="opacity:.8"><i class="fa-solid fa-box-archive"></i> <span>ทรัพย์สิน</span></a>
                 </nav>
                 <!-- QR Code Box in Sidebar -->
                 <div class="sidebar-qr-box admin-only hidden" style="margin: 20px 15px; padding: 12px; background: rgba(255, 255, 255, 0.4); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.5); text-align: center; font-size: 0.85rem;">
@@ -666,6 +645,34 @@
                 </section>
 
                 <!-- 7. Settings View -->
+                <!-- 🔒 ปิดเดือน (2026-10-12 ย้ายจาก ledger/close.html) — โค้ดอยู่ app.js ส่วน "period_close.js" (PC) -->
+                <section id="view-close" class="content-view hidden">
+                    <style>
+                        #view-close .pc-layout { display: grid; gap: 14px; }
+                        @media (min-width: 900px) { #view-close .pc-layout { grid-template-columns: 340px minmax(0,1fr); align-items: start; } #pc-detail { position: sticky; top: 12px; } }
+                        #view-close .pc-months { display: grid; gap: 8px; }
+                        #view-close .pc-mrow { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 12px; background: var(--card-bg); border: 1.5px solid var(--border-color); border-radius: 14px; padding: 10px 14px; min-height: 60px; cursor: pointer; }
+                        #view-close .pc-mrow.sel { outline: 2px solid var(--primary-color); }
+                        #view-close .pc-ic { font-size: 22px; }
+                        #view-close .pc-t { flex: 1; min-width: 0; } #view-close .pc-t b { display: block; } #view-close .pc-t small { display: block; color: var(--text-secondary); font-size: .8rem; }
+                        #view-close .pc-st { font-size: .78rem; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; background: rgba(0,0,0,.06); color: var(--text-secondary); }
+                        #view-close .pc-st.closed { background: rgba(16,185,129,.14); color: var(--success-color); }
+                        #pc-detail { background: var(--card-bg); border: 1.5px solid var(--border-color); border-radius: 14px; padding: 14px 16px; }
+                        #view-close .pc-chk { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--border-color); }
+                        #view-close .pc-i { font-size: 18px; }
+                        #view-close .pc-acc { font-size: .82rem; padding: 6px 10px; border-radius: 10px; background: rgba(0,0,0,.04); margin-top: 6px; }
+                        #view-close .pc-acc.bad { background: rgba(239,68,68,.1); color: var(--danger-color); }
+                        #view-close .pc-empty { text-align: center; color: var(--text-secondary); padding: 24px; }
+                        #pc-log { margin-top: 18px; font-size: .82rem; color: var(--text-secondary); } #pc-log div { padding: 6px 0; border-bottom: 1px dashed var(--border-color); }
+                    </style>
+                    <div class="ob2-sub" style="margin-bottom:10px">ตรวจครบ → ปิด → ตัวเลขเดือนนั้นล็อก แก้ย้อนหลังไม่ได้ (ผู้ดูแลเปิดใหม่ได้ ต้องใส่เหตุผล)</div>
+                    <div class="pc-layout">
+                        <div class="pc-months" id="pc-months"></div>
+                        <div id="pc-detail" aria-live="polite"><div class="pc-empty">เลือกเดือนทางซ้ายเพื่อตรวจ</div></div>
+                    </div>
+                    <div id="pc-log"></div>
+                </section>
+
                 <section id="view-settings" class="content-view hidden">
                     <div class="settings-container card glass">
                         <div class="card-body">
@@ -719,78 +726,38 @@
                                     </table>
                                 </div>
                             </div>
-<!-- Opening Balances Tab -->
+<!-- Opening Balances Tab · ใช้งานจริงแล้ว (2026-10-12 ย้ายจาก ledger/opening.html) — โค้ดอยู่ app.js ส่วน "opening_balance.js" (OB) -->
                             <div id="settings-opening-balances" class="settings-section-content hidden">
-                                <div style="background:#fff5f5;color:#a51111;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:.9rem">⚠️ หน้านี้ยังไม่บันทึกข้อมูลจริง (กดบันทึกแล้วไม่มีอะไรเกิดขึ้น) — ใช้ <a href="ledger/opening.html" style="font-weight:700">ยอดยกมา (หน้าใหม่)</a> แทน: ยอดบัญชี ลูกหนี้/เจ้าหนี้ หนี้สิน สินทรัพย์ แบบเดบิต = เครดิต</div>
                                 <div class="settings-section-header">
-                                    <h4>⚖️ ตั้งค่ายอดยกมา (Opening Balance Setup)</h4>
+                                    <h4>⚖️ ยอดยกมา (Opening Balance)</h4>
                                 </div>
-                                <div class="card glass" style="margin-bottom: 20px;">
-                                    <div class="card-body" style="padding: 12px 15px;">
-                                        <div class="row" style="display: flex; gap: 15px; margin-bottom: 15px; align-items: flex-end; flex-wrap: wrap;">
-                                            <div class="input-group" style="flex: 1; min-width: 200px;">
-                                                <label for="ob-user-select">👤 Member</label>
-                                                <select id="ob-user-select" class="form-control" style="height: 38px;">
-                                                    <option value="">-- เลือก Member --</option>
-                                                </select>
-                                            </div>
-                                            <div class="input-group" style="flex: 1; min-width: 200px;">
-                                                <label for="ob-date-select">📅 วันที่อ้างอิง</label>
-                                                <input type="date" id="ob-date-select" class="form-control" style="height: 38px;">
-                                            </div>
-                                            <div style="flex: 0 0 auto; display: flex; justify-content: flex-end; margin-bottom: 2px;">
-                                                <button class="btn btn-primary" id="btn-load-ob-categories" style="white-space: nowrap; height: 38px; display: flex; align-items: center; gap: 8px;"><i class="fa-solid fa-rotate"></i> โหลดบัญชี</button>
-                                            </div>
-                                        </div>
-
-                                        <div id="ob-accordion-container" style="display: none; flex-direction: column; gap: 12px;">
-                                            <!-- Assets Accordion -->
-                                            <details class="ob-accordion" open>
-                                                <summary class="ob-summary assets-summary">
-                                                    <h5 style="margin: 0;"><i class="fa-solid fa-circle-plus"></i> สินทรัพย์ (Assets)</h5>
-                                                    <span id="ob-assets-total" class="ob-total-badge text-success">0.00</span>
-                                                </summary>
-                                                <div class="ob-content" id="ob-assets-content" style="padding: 10px 15px; display: flex; flex-direction: column; gap: 8px;">
-                                                    <div id="ob-assets-rows" style="display: flex; flex-direction: column; gap: 8px;"></div>
-                                                    <button class="btn btn-sm btn-outline-primary" id="btn-add-asset-row" style="align-self: flex-start; margin-top: 5px;"><i class="fa-solid fa-plus"></i> เพิ่มรายการสินทรัพย์</button>
-                                                </div>
-                                            </details>
-
-                                            <!-- Liabilities Accordion -->
-                                            <details class="ob-accordion" open>
-                                                <summary class="ob-summary liabilities-summary">
-                                                    <h5 style="margin: 0;"><i class="fa-solid fa-circle-minus"></i> หนี้สิน (Liabilities)</h5>
-                                                    <span id="ob-liabilities-total" class="ob-total-badge text-danger">0.00</span>
-                                                </summary>
-                                                <div class="ob-content" id="ob-liabilities-content" style="padding: 10px 15px; display: flex; flex-direction: column; gap: 8px;">
-                                                    <div id="ob-liabilities-rows" style="display: flex; flex-direction: column; gap: 8px;"></div>
-                                                    <button class="btn btn-sm btn-outline-danger" id="btn-add-liability-row" style="align-self: flex-start; margin-top: 5px;"><i class="fa-solid fa-plus"></i> เพิ่มรายการหนี้สิน</button>
-                                                </div>
-                                            </details>
-
-                                            <!-- Live Validation Bar -->
-                                            <div class="ob-footer-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: rgba(0,0,0,0.4); border-radius: 12px; margin-top: 15px; flex-wrap: wrap; gap: 15px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
-                                                <div class="ob-footer-stats" style="display: flex; gap: 25px; flex-wrap: wrap; align-items: center; font-size: 0.95rem;">
-                                                    <div style="display: flex; flex-direction: column;">
-                                                        <span style="color: #aaa; font-size: 0.75rem; text-transform: uppercase;">รวมสินทรัพย์</span>
-                                                        <b id="ob-footer-assets" class="text-success" style="font-size: 1.1rem;">0.00</b>
-                                                    </div>
-                                                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.1);"></div>
-                                                    <div style="display: flex; flex-direction: column;">
-                                                        <span style="color: #aaa; font-size: 0.75rem; text-transform: uppercase;">รวมหนี้สิน</span>
-                                                        <b id="ob-footer-liabilities" class="text-danger" style="font-size: 1.1rem;">0.00</b>
-                                                    </div>
-                                                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.1);"></div>
-                                                    <div style="display: flex; flex-direction: column;">
-                                                        <span style="color: #aaa; font-size: 0.75rem; text-transform: uppercase;">ส่วนต่าง (ทุนยกมา)</span>
-                                                        <b id="ob-footer-diff" style="font-size: 1.1rem;">0.00</b>
-                                                    </div>
-                                                </div>
-                                                <button id="btn-save-opening-balance" class="btn btn-success" disabled style="padding: 8px 24px; border-radius: 20px; font-weight: 600;"><i class="fa-solid fa-save"></i> บันทึกยอดยกมา</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                                <div class="ob2-sub" style="margin:-4px 0 10px">เริ่มใช้ระบบ: ยอดบัญชี · ลูกหนี้/เจ้าหนี้ · หนี้สิน · สินทรัพย์ · รายได้/ค่าใช้จ่ายสะสม — เดบิตต้องเท่าเครดิต · แต่ละคนเริ่มคนละวันได้</div>
+                                <style>
+                                    #ob-root .ob2-card { background: var(--card-bg); border: 1.5px solid var(--border-color); border-radius: 14px; padding: 12px 15px; margin-bottom: 12px; }
+                                    #ob-root .ob2-card.bad { border-color: var(--danger-color); }
+                                    #ob-root .ob2-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 1.02rem; }
+                                    .ob2-sub { color: var(--text-secondary); font-size: .85rem; margin-top: 2px; }
+                                    #ob-root .ob2-tag { font-size: .78rem; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; background: var(--dv-chipbg, #eef); color: var(--text-secondary); }
+                                    #ob-root .ob2-tag.ok { background: rgba(16,185,129,.14); color: var(--success-color); }
+                                    #ob-root .ob2-tag.bad { background: rgba(239,68,68,.12); color: var(--danger-color); }
+                                    #ob-root .ob2-drcr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+                                    #ob-root .ob2-drcr div { background: var(--dv-amtbg, rgba(0,0,0,.04)); border-radius: 10px; padding: 7px 10px; min-width: 0; }
+                                    #ob-root .ob2-drcr small { display: block; color: var(--text-secondary); font-size: .74rem; }
+                                    #ob-root .ob2-drcr b { font-size: .98rem; white-space: nowrap; }
+                                    #ob-root .ob2-warn { background: #fff9db; color: #7a4a00; border-radius: 10px; padding: 8px 10px; font-size: .84rem; margin-top: 8px; }
+                                    #ob-root .ob2-g4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 8px; }
+                                    #ob-root .ob2-ln { display: grid; grid-template-columns: minmax(0, 2.2fr) 100px minmax(0, 1.1fr); gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border-color); }
+                                    #ob-root .ob2-nm b { display: block; font-weight: 600; overflow-wrap: anywhere; } #ob-root .ob2-nm small { color: var(--text-secondary); font-size: .78rem; }
+                                    #ob-root .ob2-lc { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr) 100px minmax(0, 1fr) 40px; gap: 6px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border-color); }
+                                    #ob-root .ob2-lc .ob2-nt { grid-column: 1 / -1; }
+                                    #ob-root .ob2-amt { text-align: right; }
+                                    #ob-root .form-control { height: 38px; }
+                                    #ob-root .ob2-bar { position: sticky; bottom: 0; z-index: 5; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+                                    #ob-root .ob2-bar .ob2-drcr div { background: rgba(255,255,255,.08); color: #fff; } #ob-root .ob2-bar .ob2-drcr small { color: #ccc; }
+                                    #ob-root .ob-summary { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+                                    @media (max-width: 700px) { #ob-root .ob2-lc { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } #ob-root .ob2-ln { grid-template-columns: minmax(0, 1fr) 108px; } #ob-root .ob2-ln .ob2-amt { grid-column: 1 / -1; } }
+                                </style>
+                                <div id="ob-root"></div>
                             </div>
 
                             <!-- Backup / Restore Tab -->
@@ -1157,15 +1124,14 @@
 
         <!-- Collapsible Bottom Navigation for Mobile -->
         <nav class="bottom-nav glass hidden">
-            <a href="ledger/home.html" class="nav-item" data-href="ledger/home.html"><i class="fa-solid fa-chart-line"></i><span>หน้าแรก</span></a>
-            <a href="ledger/index.html" class="nav-item" data-href="ledger/index.html" style="position: relative;"><i class="fa-solid fa-inbox"></i><span>รอเคลียร์</span><span id="badge-pending-mobile" class="badge" style="display:none; position: absolute; top: 4px; right: 4px; font-size: 0.6rem; padding: 1px 4px; border-radius: 10px; background: #EF4444; color: #fff; font-weight: 700;"></span></a>
-            <a href="ledger/index.html#hist" class="nav-item" data-href="ledger/index.html#hist"><i class="fa-solid fa-file-invoice-dollar"></i><span>ประวัติ</span></a>
-            <a href="ledger/index.html?add=1" class="nav-item" data-href="ledger/index.html?add=1"><i class="fa-solid fa-plus"></i><span>เพิ่มรายการ</span></a>
-            <a href="ledger/index.html#debt" class="nav-item" data-href="ledger/index.html#debt"><i class="fa-solid fa-hand-holding-dollar"></i><span>ลูกหนี้</span></a>
-            <!-- <a href="#" class="nav-item" data-target="travel"><i class="fa-solid fa-plane-departure"></i><span>ทริป</span></a> -->
+            <a href="#" class="nav-item active" data-target="dashboard"><i class="fa-solid fa-chart-line"></i><span>หน้าแรก</span></a>
+            <a href="#" class="nav-item" data-target="pending" style="position: relative;"><i class="fa-solid fa-clock-rotate-left"></i><span>รอตรวจ</span><span id="badge-pending-mobile" class="badge" style="display:none; position: absolute; top: 4px; right: 4px; font-size: 0.6rem; padding: 1px 4px; border-radius: 10px; background: #EF4444; color: #fff; font-weight: 700;"></span></a>
+            <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-file-invoice-dollar"></i><span>ประวัติ</span></a>
+            <a href="#" class="nav-item" data-target="pending"><i class="fa-solid fa-plus"></i><span>เพิ่มรายการ</span></a>
+            <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i><span>ลูกหนี้</span></a>
             <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link"><i class="fa-solid fa-mountain-sun"></i><span>ทริป</span></a>
-            <a href="ledger/reports.html" class="nav-item" data-href="ledger/reports.html"><i class="fa-solid fa-chart-bar"></i><span>รายงาน</span></a>
-            <a href="ledger/settings.html" class="nav-item" data-href="ledger/settings.html"><i class="fa-solid fa-gears"></i><span>ตั้งค่า</span></a>
+            <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-bar"></i><span>รายงาน</span></a>
+            <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i><span>ตั้งค่า</span></a>
         </nav>
 
         <!-- Transaction Modal (Add/Edit Dialog) -->
@@ -1482,7 +1448,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="travel.js?v=105"></script>
-    <script src="app.js?v=185"></script>
+    <script src="app.js?v=186"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">
