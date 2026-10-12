@@ -1230,21 +1230,29 @@ async function extractStatement(env, files) {
   if (!env.GEMINI_API_KEY) throw new Error('ยังไม่ได้ตั้ง GEMINI_API_KEY');
   const base = 'https://generativelanguage.googleapis.com';
   const model = env.GEMINI_STATEMENT_MODEL || env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+  /* 2026-10-12: รองรับไฟล์ PDF ทั้งไฟล์ (หน้าเว็บส่ง PDF ที่ไม่มีรหัสผ่านมาตรง ๆ แบบหน้าเก่า — AI อ่านตัวหนังสือในไฟล์ได้แม่นกว่ารูป)
+     อัปโหลดทุกไฟล์พร้อมกัน (เดิมทีละไฟล์ ช้า) · ลองใหม่อัตโนมัติเมื่อ AI ไม่ว่าง (429/500/503/504) แบบหน้าเก่า */
   const parts = [{ text: STATEMENT_PROMPT }];
-  for (const f of files) {                                                     // ส่งไบต์ดิบ (ไม่แปลง base64 → ไม่กิน CPU)
-    let part = null;
+  const uploaded = await Promise.all(files.map(async f => {                    // ส่งไบต์ดิบ (ไม่แปลง base64 → ไม่กิน CPU)
     try {
       const up = await fetch(`${base}/upload/v1beta/files?key=${env.GEMINI_API_KEY}`, {
         method: 'POST', headers: { 'X-Goog-Upload-Protocol': 'raw', 'Content-Type': f.mime }, body: f.bytes });
       const uri = up.ok ? (await up.json())?.file?.uri : null;
-      if (uri) part = { fileData: { mimeType: f.mime, fileUri: uri } };
+      if (uri) return { fileData: { mimeType: f.mime, fileUri: uri } };
     } catch { /* ถอยไปใช้ base64 */ }
-    parts.push(part || { inlineData: { mimeType: f.mime, data: toBase64(f.bytes) } });
-  }
-  const res = await fetch(`${base}/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
+    return { inlineData: { mimeType: f.mime, data: toBase64(f.bytes) } };
+  }));
+  parts.push(...uploaded);
+  const call = () => fetch(`${base}/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 60000 } }),
   });
+  let res;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    res = await call();
+    if (res.ok || ![429, 500, 503, 504].includes(res.status) || attempt === 3) break;
+    await new Promise(r => setTimeout(r, attempt * 2500));
+  }
   if (!res.ok) {
     let reason = '';
     try { const e = await res.json(); reason = e?.error?.message || e?.error?.status || ''; } catch { /* ไม่มีรายละเอียด */ }
@@ -1252,7 +1260,11 @@ async function extractStatement(env, files) {
   }
   const data = await res.json();
   const text = (data?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('') || '{}';
-  return JSON.parse(text.trim().replace(/^```json\s*|```$/g, ''));
+  try { return JSON.parse(text.trim().replace(/^```json\s*|```$/g, '')); }
+  catch {
+    const why = data?.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? 'statement ยาวเกินไป — แยกส่งทีละเดือนหรือทีละครึ่งไฟล์' : 'AI ตอบกลับไม่ครบ — ลองส่งใหม่อีกครั้ง';
+    throw new Error(`อ่าน statement ไม่สำเร็จ: ${why}`);
+  }
 }
 
 const validDate = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) ? String(d) : null;

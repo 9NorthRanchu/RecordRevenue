@@ -1138,7 +1138,11 @@
     });
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
-  /* PDF → รูปทีละหน้า (ถอดรหัสในเครื่อง · ส่งเฉพาะรูปขึ้นไป) */
+  /* PDF มีรหัสผ่านไหม (ดูคำว่า /Encrypt ในไฟล์) */
+  async function pdfEncrypted(file) {
+    try { const t = new TextDecoder('latin1').decode(await file.arrayBuffer()); return /\/Encrypt\b/.test(t); } catch { return true; }
+  }
+  /* PDF → รูปทีละหน้า (ถอดรหัสในเครื่อง · ส่งเฉพาะรูปขึ้นไป) — ความละเอียดเท่าหน้าเก่า (2.0 · 0.85) */
   async function pdfToImages(file, password, onPage) {
     await loadPdfJs();
     let pdf;
@@ -1152,10 +1156,10 @@
     for (let p = 1; p <= pdf.numPages; p++) {
       onPage?.(p, pdf.numPages);
       const page = await pdf.getPage(p);
-      const vp = page.getViewport({ scale: 1.7 });
+      const vp = page.getViewport({ scale: 2.0 });
       const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
       await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
-      out.push(await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82)));
+      out.push(await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85)));
     }
     return out;
   }
@@ -1165,7 +1169,10 @@
       const pages = [];
       for (const f of files) {
         if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
-          const imgs = await pdfToImages(f, $('#stPw').value.trim(), (p, n) => b.sub(`แปลง ${f.name} หน้า ${p}/${n}`));
+          /* 2026-10-12: PDF ที่ไม่มีรหัสผ่าน → ส่งทั้งไฟล์ให้ AI อ่านตรง ๆ แบบหน้าเก่า (อ่านตัวหนังสือในไฟล์ได้แม่น + เร็ว)
+             มีรหัสผ่าน → ถอดรหัสในเครื่องแล้วแปลงเป็นรูปทีละหน้า (รหัสไม่ถูกส่งออกไป) */
+          if (!(await pdfEncrypted(f))) { pages.push({ blob: new Blob([f], { type: 'application/pdf' }), name: f.name }); continue; }
+          const imgs = await pdfToImages(f, $('#stPw').value.trim(), (p, n) => b.sub(`ถอดรหัส ${f.name} หน้า ${p}/${n}`));
           imgs.forEach((x, n) => pages.push({ blob: x, name: `${f.name}-p${n + 1}.jpg` }));
         } else { const sm = await shrinkImage(f, 2200, 0.85); pages.push({ blob: sm, name: sm.name }); }   // statement ตัวเล็ก → ย่อน้อยกว่าสลิป
       }
@@ -1174,7 +1181,7 @@
       fd.append('account_id', accountId); fd.append('file_name', files[0].name);
       pages.forEach(p => fd.append('file', p.blob, p.name));
       b.done();
-      const b2 = busy(`AI กำลังอ่าน statement ${pages.length} หน้า…`);
+      const b2 = busy(`AI กำลังอ่าน statement${pages.some(p => /\.pdf$/i.test(p.name)) ? '' : ` ${pages.length} หน้า`}…`);
       b2.sub('ใช้เวลาประมาณ 20–90 วินาที อย่าปิดหน้านี้');
       try {
         const out = await api('/api/inbox/statement', { body: fd });
