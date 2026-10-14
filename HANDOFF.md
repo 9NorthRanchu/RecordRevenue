@@ -3597,3 +3597,7 @@ frontend
 - ปิดเดือน → เมนูใหม่ "ปิดเดือน" (view-close) · app.js ส่วน `// period_close.js` (PC) · ปุ่ม "ไปแก้" → หน้าในแอปเดิม (FIX map) · openSettingsTab(tab)
 - ledger/opening.html, ledger/close.html เลิกใช้ (ลิงก์ในหน้า ledger อื่นชี้ ../index.html แล้ว) — ให้ North `git rm`
 - ⚠️ ค้างตัดสินใจ: (1) สลิป LINE ไหลเข้า LedgerDocs → UI อยู่ ledger/index.html เท่านั้น (2) ปิดเดือนข้อ statements ใช้ LedgerStatements แต่แอปเดิมนำเข้า statement เป็นรายการรอตรวจสอบตรง ๆ → ข้อนี้ไม่ผ่านถ้านำเข้าทางแอปเดิม
+
+## 2026-10-15 · พื้นที่ทำงานร่วมกับ ChatGPT (ภาพ/ไอคอน)
+- โฟลเดอร์ `ภาพและไอคอน (ChatGPT)/` (อยู่ใน .gitignore) · Claude เขียนคำสั่งใน requests/ · ChatGPT เซฟภาพใน outputs/ · ทะเบียน STATUS.md กันงานซ้ำ · กติกาใน README-สำหรับ-ChatGPT.md
+- ภาพที่เลือกแล้ว Claude คัดลอกเข้า frontend/assets แล้วกรอก "ใช้ในแอปที่" ใน STATUS.md

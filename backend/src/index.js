@@ -2638,7 +2638,7 @@ async function sendMonthlySummaryFlex(replyToken, user, env) {
               action: {
                 type: "uri",
                 label: "🌐 เข้าสู่ระบบจัดการบัญชี",
-                uri: env.WEB_APP_URL || "https://recordrevenue.pages.dev"
+                uri: env.WEB_APP_URL || "https://record-revenue-web.pages.dev"
               }
             }
           ]
