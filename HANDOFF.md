@@ -3609,3 +3609,11 @@ frontend
 - ยกเลิกปิดเดือน: ลบเมนู + view-close + โค้ด PC ออกจากแอปเดิม (โค้ดเดิมอยู่ใน commit c1ee3c6) · backend period-close + trigger ยังอยู่ ไม่มีผลถ้าไม่มีเดือนที่ปิด
 - ledger/quick.html เก็บไว้ = หน้าแก้สลิปที่เปิดจากการ์ดใน LINE (ส่วนหนึ่งของ LINE ไม่ใช่หน้าแอป)
 - mockup: 007 ยกเลิก · เมนูใน prompt เหลือ 7 รายการ · 002 เพิ่มกล่องสลิป LINE
+
+## 2026-10-15 · บัตร & เงินกู้ + ทรัพย์สิน ย้ายเข้าแอปเดิม (ข. ก่อนปรับหน้าตาตาม mockup A / โหมดมืด C)
+- เมนูใหม่ในแอปเดิม: "บัตร & เงินกู้" (view-cards · app.js CardsView) · "ทรัพย์สิน" (view-assets · app.js AssetsView) ต่อจากลูกหนี้/เจ้าหนี้
+- ย้ายด้วยสคริปต์ ~/obport/port.py (ในเครื่อง VM ของ session): CSS เดิม prefix ด้วย #view-cards / #view-assets · id #view/#tabs → #cl-view/#cl-tabs, #as-view/#as-tabs · หน้าต่าง/toast ต่อเข้า ROOT แทน body · โค้ดหน้าเดิมแทบไม่แก้
+- ลิงก์ ?txId= จาก LINE เก่า → เปิด "รอตรวจสอบ" ของแอปเดิม (เดิมพาไป ledger/index.html)
+- ledger/cards.html, ledger/assets.html เลิกใช้ → git rm · หน้า ledger ที่เหลือ: home, index, reports, settings (ซ้ำกับแอปเดิม จะลบตอนปรับหน้าตา) · quick.html (หน้าแก้สลิปจากการ์ด LINE เก็บไว้)
+- ยังค้างในแอปเดิม: ปุ่มล้างข้อมูลในตั้งค่ายังชี้ ledger/settings.html · มือถือยังไม่มีเมนูบัตร/ทรัพย์สิน (จะทำตอนปรับเมนูล่างตาม mockup: 5 ปุ่ม + "เพิ่มเติม")
+- ถัดไป: ปรับหน้าตาตาม mockup แบบ A ทีละหน้า + โหมดมืด (แบบ C) ในตั้งค่า → ธีม

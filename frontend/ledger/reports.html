@@ -74,7 +74,7 @@
 <div class="top"><div class="wrap row">
   <div><h1>รายงาน</h1><p id="sub">นับเฉพาะรายการที่ยืนยันแล้ว</p></div>
   <nav class="nav" aria-label="เมนู">
-    <a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a href="index.html#hist">ประวัติ</a><a href="index.html#debt">ลูกหนี้</a><a href="cards.html">บัตร & เงินกู้</a><a href="assets.html">ทรัพย์สิน</a><a class="on" href="reports.html">รายงาน</a><a href="../index.html">ปิดเดือน</a><a href="settings.html">ตั้งค่า</a><a href="../trip-unified-prototype/trips.html">ทริป</a>
+    <a href="home.html">ภาพรวม</a><a href="index.html">รอเคลียร์</a><a href="index.html#hist">ประวัติ</a><a href="index.html#debt">ลูกหนี้</a><a href="../index.html">บัตร & เงินกู้</a><a href="../index.html">ทรัพย์สิน</a><a class="on" href="reports.html">รายงาน</a><a href="../index.html">ปิดเดือน</a><a href="settings.html">ตั้งค่า</a><a href="../trip-unified-prototype/trips.html">ทริป</a>
   </nav>
 </div></div>
 <main class="wrap">
@@ -290,7 +290,7 @@
       o.n++; o.amt = r2(o.amt + i.value); const c = i.expense_category || '-'; o.cats.set(c, r2((o.cats.get(c) || 0) + i.value)); return m.set(k, o); }, new Map()).entries()];
     const mName = k => `${MONTHS[+k.slice(5) - 1]} ${String(+k.slice(0, 4) + 543).slice(2)}`;
     const grp = i => i.group_id ? (gName.get(i.group_id) || '-') : 'ไม่ระบุกลุ่ม';
-    if (!(A.categories || []).length && !items.length) { $('#view').innerHTML = `<div class="card empty">ยังไม่ได้ตั้งหมวดทรัพย์สิน — ไปที่ <a href="assets.html">หน้าทรัพย์สิน</a> แล้วกด "เลือกหมวด"</div>`; return; }
+    if (!(A.categories || []).length && !items.length) { $('#view').innerHTML = `<div class="card empty">ยังไม่ได้ตั้งหมวดทรัพย์สิน — ไปที่ <a href="../index.html">หน้าทรัพย์สิน</a> แล้วกด "เลือกหมวด"</div>`; return; }
     $('#view').innerHTML = `
       <div class="tiles">
         <div class="tile"><b>${fmt(tot('open'))}</b><span>ยกมา ณ ${thDate(F)}</span></div>
@@ -314,7 +314,7 @@
         <thead><tr><th class="l">วันที่</th><th class="l">ทรัพย์สิน</th><th class="l">กลุ่ม</th><th class="l">ที่มา</th><th>มูลค่า</th></tr></thead><tbody>
         ${added.map(i => `<tr><td>${thDate(i.date)}</td><td class="l">${esc(i.name)}</td><td class="l">${esc(grp(i))}</td><td class="l">${i.source === 'OPENING' ? 'ยอดยกมา' : esc(i.account_name || '-')}</td><td>${fmt(i.value)}</td></tr>`).join('')}
         </tbody></table></div>` : '<div class="empty" style="padding:16px">ไม่มีรายการ</div>'}</div>
-      <div class="row2" style="margin-top:12px"><button class="b main" id="asX">⬇️ ส่งออก Excel</button><a class="b" href="assets.html" style="text-decoration:none;display:inline-flex;align-items:center">🏷️ ไปหน้าทรัพย์สิน</a></div>
+      <div class="row2" style="margin-top:12px"><button class="b main" id="asX">⬇️ ส่งออก Excel</button><a class="b" href="../index.html" style="text-decoration:none;display:inline-flex;align-items:center">🏷️ ไปหน้าทรัพย์สิน</a></div>
       <div class="note">ยกมา + ได้มา − ตัดจำหน่าย = คงเหลือ · ไม่นับรายการที่ซ่อนไว้ · ตัดจำหน่ายแล้วมูลค่าไปขึ้นในรายจ่ายแท็บรับ-จ่ายของเดือนนั้น ${S.entity ? '· กรองตามบริษัท (ยอดยกมาที่ไม่ได้ระบุบริษัทจะไม่แสดง)' : ''}</div>`;
     $('#asX').onclick = () => toXlsxSheets(`ทรัพย์สิน-${F}-ถึง-${T}`, [
       ['สรุปตามกลุ่ม', [['กลุ่ม', 'ยกมา', 'ได้มา', 'ตัดจำหน่าย', 'คงเหลือ', 'จำนวน'], ...rows.map(r => [r.name, r.open, r.add, -r.wo, r.end, r.n]), ['รวม', tot('open'), tot('add'), -tot('wo'), tot('end'), ending.length]]],

@@ -106,8 +106,8 @@
     <a href="index.html#hist">ประวัติ</a>
     <a href="index.html#debt">ลูกหนี้</a>
     <a href="reports.html">รายงาน</a>
-    <a href="cards.html">บัตร & เงินกู้</a>
-    <a href="assets.html">ทรัพย์สิน</a>
+    <a href="../index.html">บัตร & เงินกู้</a>
+    <a href="../index.html">ทรัพย์สิน</a>
     <a href="../index.html">ปิดเดือน</a>
     <a href="settings.html">ตั้งค่า</a>
     <a href="../trip-unified-prototype/trips.html">ทริป</a>
@@ -268,7 +268,7 @@
       { show: pending > 0, href: 'index.html', ic: 'inbox', bg: '#fff4e6', col: '#d9480f', big: `${pending}`, label: 'รายการรอเคลียร์' },
       { show: uncat > 0, href: 'index.html', ic: 'tag', bg: '#fff9db', col: '#b35c00', big: fmt(uncat), label: `ยังไม่ระบุหมวด (${monthLabel(S.month)})` },
       { show: negAccs.length > 0, href: '#accounts', ic: 'alert', bg: '#fff5f5', col: '#c92a2a', big: `${negAccs.length} บัญชี`, label: `เงินฝากติดลบ · ${negAccs.slice(0, 2).map(a => a.name).join(', ')}` },
-      { show: !!S.cards?.totals?.alert_count, href: 'cards.html', ic: 'card', bg: '#fff5f5', col: '#c92a2a', big: fmt(S.cards?.totals?.due_left || 0), label: `บัตรเครดิตใกล้/เลยกำหนด ${S.cards?.totals?.alert_count || 0} ใบ` },
+      { show: !!S.cards?.totals?.alert_count, href: '../index.html', ic: 'card', bg: '#fff5f5', col: '#c92a2a', big: fmt(S.cards?.totals?.due_left || 0), label: `บัตรเครดิตใกล้/เลยกำหนด ${S.cards?.totals?.alert_count || 0} ใบ` },
       { show: banks.length > 0 && stDone < banks.length, href: 'index.html#stmt', ic: 'file', bg: '#e7f5ff', col: '#1864ab', big: `${stDone}/${banks.length}`, label: `Statement ${monthLabel(pm)} ที่นำเข้าแล้ว` },
     ].filter(t => t.show);
 
@@ -334,7 +334,7 @@
           <div class="kv"><span>${icon('bank', '#087f5b')} เงินฝาก / เงินสด</span><b>${num(cashSum)}</b></div>
           <div class="kv"><span>${icon('user', '#5f3dc4')} ลูกหนี้ / เงินให้ยืม <small><a href="index.html#debt">${arN} ราย ›</a></small></span><b>${num(arSum)}</b></div>
           ${creditOver ? `<div class="kv"><span>${icon('card', '#087f5b')} บัตรเครดิตจ่ายเกิน</span><b>${num(creditOver)}</b></div>` : ''}
-          ${S.fixed?.totals?.count ? `<div class="kv"><span>${icon('build', '#e8590c')} ทรัพย์สิน <small><a href="assets.html">${S.fixed.totals.count} รายการ ›</a></small></span><b>${num(fixedVal)}</b></div>` : ''}
+          ${S.fixed?.totals?.count ? `<div class="kv"><span>${icon('build', '#e8590c')} ทรัพย์สิน <small><a href="../index.html">${S.fixed.totals.count} รายการ ›</a></small></span><b>${num(fixedVal)}</b></div>` : ''}
           <div class="kv total"><span>รวมสินทรัพย์</span><span class="pos">${fmt(assets)}</span></div>
         </section>
         <section class="card">

@@ -1147,9 +1147,8 @@ async function initApp() {
         const urlParams = new URLSearchParams(window.location.search);
         const txIdParam = urlParams.get('txId');
         if (txIdParam) {
-            // ลิงก์เก่าจาก LINE → หน้า "รอตรวจสอบ" ย้ายไปกล่องรอเคลียร์แล้ว (2026-10-10)
-            location.href = 'ledger/index.html';
-            return;
+            // ลิงก์จาก LINE → หน้า "รอตรวจสอบ" ของแอปเดิม (2026-10-15 · North เลือก 1ก)
+            switchView('pending');
         } else {
             switchView('dashboard');
         }
@@ -1340,6 +1339,8 @@ function switchView(viewName) {
         'debtor': 'ทะเบียนลูกหนี้/เจ้าหนี้คงค้าง',
         'reports': 'รายงานสรุปทางการเงิน',
         'settings': 'ตั้งค่าระบบข้อมูลหลัก',
+        'cards': '💳 บัตร & เงินกู้',
+        'assets': '🏷️ ทรัพย์สิน',
         'travel': '✈️ TRIPS',
         'puppup': '🗺️ Prototype Trip'
     };
@@ -1378,6 +1379,8 @@ function switchView(viewName) {
 
     // Trigger specific view loaders
     if (viewName === 'dashboard') loadDashboard();
+    if (viewName === 'cards') CardsView.open();
+    if (viewName === 'assets') AssetsView.open();
     else if (viewName === 'pending') loadPending();
     else if (viewName === 'history') loadHistory();
     // grid-input redirected to pending (no loadGridInput needed)
@@ -8624,6 +8627,441 @@ async function showSlip(path) {
     } catch (e) { try { window.showToast('⚠️ ' + e.message, 'error'); } catch { alert(e.message); } }
 }
 window.showSlip = showSlip;
+
+// CardsView — ย้ายจาก ledger/cards.html (2026-10-15) · โค้ดเดิมแทบไม่เปลี่ยน: แค่ผูกกับกล่อง #view-cards ในแอปเดิม
+const CardsView = (() => {
+    let started = false;
+    const ROOT = () => document.getElementById('view-cards');
+    function init() {
+  'use strict';
+  const API = (() => {
+    const PROD = 'https://record-revenue.9nimz.workers.dev';
+    try {
+      const q = new URLSearchParams(location.search).get('api');
+      if (q) sessionStorage.setItem('api_base_override', q);
+      const o = sessionStorage.getItem('api_base_override');
+      if (o) return o.replace(/\/$/, '');
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787';
+    } catch (e) { /* ใช้ของจริง */ }
+    return PROD;
+  })();
+  const token = () => { try { return localStorage.getItem('session_token') || sessionStorage.getItem('session_token') || ''; } catch { return ''; } };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = n => Number(n) < 0 ? `(${money(-n)})` : money(n);
+  const $ = s => document.querySelector(s);
+  const view = $('#cl-view');
+  const plain = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '').trim() || String(n || '');
+  const neg = n => Number(n) < 0 ? `<span class="neg">${fmt(n)}</span>` : fmt(n);
+  const S = { tab: location.hash === '#loans' ? 'loans' : 'cards', cards: null, loans: null, meta: null };
+  function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; ROOT().appendChild(d); setTimeout(() => d.remove(), 3000); }
+  async function api(path, body) {
+    const res = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) throw Object.assign(new Error('กรุณาเข้าสู่ระบบ'), { login: true });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) throw new Error(d.error || `ผิดพลาด (${res.status})`);
+    return d;
+  }
+  const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const thd = s => { if (!s) return '-'; const [y, m, d] = s.slice(0, 10).split('-').map(Number); return `${d} ${TH_M[m - 1]} ${String(y + 543).slice(2)}`; };
+  function sheet(title, html, footer) {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet" role="dialog" aria-label="${esc(title)}"><header><h2>${esc(title)}</h2><button class="x" data-close aria-label="ปิด">✕</button></header><div class="body">${html}<div class="err" data-err></div></div>${footer ? `<footer>${footer}</footer>` : ''}</div>`;
+    const close = () => bg.remove();
+    bg.addEventListener('click', e => { if (e.target === bg || e.target.closest('[data-close]')) close(); });
+    document.addEventListener('keydown', function k(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', k); } });
+    ROOT().appendChild(bg);
+    const el = bg.querySelector('.sheet');
+    return { el, close, err: t => { el.querySelector('[data-err]').textContent = t; }, v: id => el.querySelector('#' + id)?.value?.trim() ?? '' };
+  }
+  $('#cl-tabs').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; S.tab = b.dataset.t; syncTabs(); render(); };
+  const syncTabs = () => document.querySelectorAll('#cl-tabs button').forEach(x => x.classList.toggle('on', x.dataset.t === S.tab));
+
+  async function load() {
+    if (!token()) { view.innerHTML = `<div class="empty"><h3>ยังไม่ได้เข้าสู่ระบบ</h3><a href="#" onclick="location.reload();return false">ไปหน้าเข้าสู่ระบบ</a></div>`; return; }
+    syncTabs();
+    try {
+      [S.cards, S.loans] = await Promise.all([api('/api/inbox/cards'), api('/api/inbox/loans')]);
+      render();
+    } catch (e) { view.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
+  }
+  const render = () => S.tab === 'loans' ? renderLoans() : renderCards();
+
+  // ───── บัตรเครดิต ─────
+  const ST = { OVERDUE: ['over', 'เลยกำหนด'], DUE_SOON: ['soon', 'ใกล้ครบกำหนด'], UPCOMING: ['mut', 'ยังไม่ถึงกำหนด'], PAID: ['ok', 'จ่ายครบแล้ว'], NO_BILL: ['ok', 'ไม่มียอดบิล'], UNPAID: ['soon', 'ยังไม่จ่าย'], NO_CYCLE: ['mut', 'ยังไม่ตั้งรอบบิล'] };
+  function renderCards() {
+    const C = S.cards, cards = C.cards || [];
+    if (!cards.length) { view.innerHTML = `<div class="empty" style="margin-top:20px">ยังไม่มีบัญชีบัตรเครดิต — เพิ่มได้ที่ <a href="#" onclick="switchView('settings');return false">ตั้งค่า → บัญชี</a> (เลือกประเภท บัตรเครดิต)</div>`; return; }
+    view.innerHTML = `<div class="kpis">
+        <div class="kpi"><small>💳 หนี้บัตรทั้งหมด</small><b class="${C.totals.owed ? 'neg' : ''}">${money(C.totals.owed)}</b></div>
+        <div class="kpi"><small>📅 ต้องจ่ายตามบิล</small><b>${money(C.totals.due_left)}</b></div>
+        <div class="kpi"><small>⚠️ ใกล้/เลยกำหนด</small><b class="${C.totals.alert_count ? 'neg' : ''}">${C.totals.alert_count} ใบ</b></div></div>
+      <div class="cards">${cards.map(c => {
+        const [cls, label] = ST[c.status] || ['mut', c.status];
+        const used = c.credit_limit > 0 ? Math.min(100, Math.round(c.owed / c.credit_limit * 100)) : null;
+        const dueTxt = c.days_to_due == null ? '' : c.days_to_due < 0 ? `เลยมา ${-c.days_to_due} วัน` : c.days_to_due === 0 ? 'วันนี้!' : `อีก ${c.days_to_due} วัน`;
+        return `<div class="card ${cls === 'over' ? 'over' : cls === 'soon' ? 'soon' : ''}">
+          <h3><span>💳 ${esc(plain(c.name))}</span><span class="tag ${cls}">${label}</span></h3>
+          <div class="sub">${c.statement_day ? `ตัดรอบทุกวันที่ ${c.statement_day}${c.due_day ? ` · จ่ายภายในวันที่ ${c.due_day}` : ''}` : 'ตั้งวันตัดรอบ/วันครบกำหนดใน ตั้งค่า → บัญชี'}</div>
+          ${c.status === 'NO_CYCLE' ? `<div class="big neg">${money(c.owed)}</div><div class="sub">หนี้บัตรตอนนี้</div>` : `
+          <div class="big ${c.due_left ? 'neg' : 'pos'}">${money(c.due_left)}</div><div class="sub">ต้องจ่ายอีก${c.due ? ` ภายใน ${thd(c.due)} ${dueTxt ? '· ' + dueTxt : ''}` : ''}</div>
+          <div class="rows">
+            <div><span>ยอดตามบิล (ตัดรอบ ${thd(c.last_cut)})</span><b>${money(c.billed)}</b></div>
+            <div><span>จ่ายแล้วหลังตัดรอบ</span><b class="pos">${money(c.paid_since_cut)}</b></div>
+            <div><span>ใช้ไปรอบนี้ (บิลถัดไป ${thd(c.next_cut)})</span><b>${money(c.spent_this_cycle)}</b></div>
+            <div><span>หนี้บัตรทั้งหมดตอนนี้</span><b class="${c.owed ? 'neg' : ''}">${money(c.owed)}</b></div>
+          </div>`}
+          ${used != null ? `<div class="bar" title="ใช้วงเงิน ${used}%"><i style="width:${used}%;${used > 80 ? 'background:var(--neg)' : ''}"></i></div>
+            <div class="sub" style="margin-top:4px">วงเงิน ${money(c.credit_limit)} · เหลือใช้ได้ ${money(c.available)} (${100 - used}%)</div>` : ''}
+          <div class="btns"><a class="b" href="#" onclick="switchView('history');return false" style="text-align:center;text-decoration:none">📜 ดูรายการ</a></div>
+        </div>`; }).join('')}</div>
+      <div class="note">นับเฉพาะรายการที่ยืนยันแล้ว · จ่ายบัตรแล้วแต่ยังไม่ขึ้น = ยังไม่ได้บันทึก/ยืนยันรายการโอนเข้าบัตร</div>`;
+  }
+
+  // ───── เงินกู้ / ผ่อน ─────
+  function renderLoans() {
+    const L = S.loans, loans = L.loans || [];
+    const group = (type, title) => {
+      const xs = loans.filter(l => l.type === type);
+      return `<div class="sec"><h2>${title}</h2><button class="b main" data-add="${type}">＋ เพิ่มสัญญา</button></div>
+        ${xs.length ? `<div class="cards">${xs.map(l => `<div class="card">
+          <h3><span>${type === 'PAYABLE' ? '🏦' : '🤝'} ${esc(l.name)}</span>${l.outstanding <= 0.005 ? '<span class="tag ok">ปิดยอดแล้ว</span>' : ''}</h3>
+          <div class="sub">${esc(plain(l.contact_name))}${l.start_date ? ` · เริ่ม ${thd(l.start_date)}` : ''}</div>
+          <div class="big ${type === 'PAYABLE' && l.outstanding > 0 ? 'neg' : ''}">${l.outstanding < 0 ? fmt(l.outstanding) : money(l.outstanding)}</div><div class="sub">คงเหลือ</div>
+          <div class="bar"><i style="width:${l.progress}%"></i></div>
+          <div class="rows">
+            <div><span>ยอดตั้งต้น</span><b>${money(l.start_balance)}</b></div>
+            <div><span>${type === 'PAYABLE' ? 'จ่ายเงินต้นแล้ว' : 'รับคืนแล้ว'} (${l.payments} ครั้ง)</span><b class="pos">${fmt(l.paid_principal)}</b></div>
+            ${l.interest_category_id && !l.same_category ? `<div><span>ดอกเบี้ย${type === 'PAYABLE' ? 'จ่าย' : 'รับ'}</span><b>${money(l.interest)}</b></div>` : ''}
+            ${l.installment_amount ? `<div><span>ค่างวด ${money(l.installment_amount)}</span><b>เหลือ ~${l.installments_left} งวด</b></div>` : ''}
+            ${l.last_date ? `<div><span>ล่าสุด</span><b>${thd(l.last_date)}</b></div>` : ''}
+          </div>
+          ${l.same_category ? '<div class="note">หมวดเงินต้นกับดอกเบี้ยเป็นหมวดเดียวกัน — นับทั้งหมดเป็นเงินต้น (แยกหมวดดอกเบี้ยจะแม่นกว่า)</div>' : ''}
+          <div class="btns"><button class="b" data-view="${esc(l.debt_id)}">📜 ประวัติ</button><button class="b" data-edit="${esc(l.debt_id)}">✏️ แก้ไข</button></div>
+        </div>`).join('')}</div>` : '<div class="empty">ยังไม่มีสัญญา</div>'}`;
+    };
+    view.innerHTML = `<div class="kpis">
+        <div class="kpi"><small>🏦 เราเป็นหนี้คงเหลือ</small><b class="${L.totals.payable ? 'neg' : ''}">${money(L.totals.payable)}</b></div>
+        <div class="kpi"><small>🤝 เขาเป็นหนี้เราคงเหลือ</small><b>${money(L.totals.receivable)}</b></div></div>
+      ${group('PAYABLE', 'เราเป็นหนี้ (เงินกู้ · ผ่อน)')}${group('RECEIVABLE', 'เขาเป็นหนี้เรา (ให้ยืม)')}
+      <div class="note">ยอดคิดจากรายการที่ยืนยันแล้วของ <b>คู่ค้า + หมวดเงินต้น/ดอกเบี้ย</b> ของสัญญา ตั้งแต่วันเริ่ม · บันทึกการจ่าย/รับคืนให้เลือกคู่ค้าและหมวดตรงกับสัญญา</div>`;
+    view.querySelectorAll('[data-add]').forEach(b => b.onclick = () => loanForm(null, b.dataset.add));
+    view.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => loanForm(loans.find(l => l.debt_id === b.dataset.edit)));
+    view.querySelectorAll('[data-view]').forEach(b => b.onclick = () => loanHistory(b.dataset.view));
+  }
+  async function loanHistory(id) {
+    const sh = sheet('ประวัติสัญญา', '<div class="loading">กำลังโหลด…</div>', '');
+    try {
+      const d = await api('/api/inbox/loans/' + encodeURIComponent(id));
+      sh.el.querySelector('.body').innerHTML = `<p><b>${esc(d.name)}</b> · ยอดตั้งต้น ${money(d.start_balance)} · คงเหลือ <b>${money(d.outstanding)}</b></p>
+        ${d.lines.length ? `<table class="lines"><thead><tr><th>วันที่</th><th>รายการ</th><th class="n">ยอด</th><th class="n">คงเหลือ</th></tr></thead><tbody>
+        ${d.lines.map(l => `<tr><td>${thd(l.date)}</td><td>${l.kind === 'INTEREST' ? 'ดอกเบี้ย' : 'เงินต้น'}<br><small class="mut">${esc(plain(l.account_name))}${l.note ? ' · ' + esc(l.note) : ''}</small></td>
+          <td class="n">${neg(l.amount)}</td><td class="n">${l.balance_after == null ? '' : money(l.balance_after)}</td></tr>`).join('')}</tbody></table>`
+        : '<div class="empty">ยังไม่มีรายการจ่าย/รับคืน</div>'}<div class="err" data-err></div>`;
+    } catch (e) { sh.err(e.message); }
+  }
+  async function loanForm(l, type) {
+    if (!S.meta) { try { S.meta = await api('/api/inbox/meta'); } catch (e) { toast('⚠️ ' + e.message); return; } }
+    const t = l ? l.type : type;
+    const cats = (S.meta.categories || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'th'));
+    const catOpts = sel => cats.map(c => `<option value="${esc(c.category_id)}" ${c.category_id === sel ? 'selected' : ''}>${esc(plain(c.name))}${c.group ? ` · ${esc(plain(c.group))}` : ''}</option>`).join('');
+    const cons = (S.meta.contacts || []);
+    const sh = sheet(l ? 'แก้ไขสัญญา' : (t === 'PAYABLE' ? 'เพิ่มเงินกู้ / ผ่อน' : 'เพิ่มให้ยืม'), `
+      <label class="f">ประเภท</label><div class="seg" id="lt"><button type="button" data-v="PAYABLE" class="${t === 'PAYABLE' ? 'on' : ''}">🏦 เราเป็นหนี้</button><button type="button" data-v="RECEIVABLE" class="${t === 'RECEIVABLE' ? 'on' : ''}">🤝 เขาเป็นหนี้เรา</button></div>
+      <label class="f" for="lN">ชื่อสัญญา</label><input class="inp" id="lN" value="${esc(l?.name || '')}" placeholder="เช่น กู้บ้าน กรุงศรี">
+      <label class="f" for="lC">คู่ค้า (ธนาคาร / ผู้ยืม)</label><select class="inp" id="lC"><option value="">— เลือก —</option>${cons.map(c => `<option value="${esc(c.contact_id)}" ${c.contact_id === l?.contact_id ? 'selected' : ''}>${esc(plain(c.name))}</option>`).join('')}</select>
+      <label class="f" for="lP">หมวดเงินต้น</label><select class="inp" id="lP"><option value="">— เลือก —</option>${catOpts(l?.principal_category_id)}</select>
+      <label class="f" for="lI">หมวดดอกเบี้ย (ไม่บังคับ)</label><select class="inp" id="lI"><option value="">— ไม่มี —</option>${catOpts(l?.interest_category_id)}</select>
+      <div class="g2"><div><label class="f" for="lB">ยอดตั้งต้น</label><input class="inp" id="lB" inputmode="decimal" value="${l ? l.start_balance : ''}"></div>
+      <div><label class="f" for="lD">วันเริ่มนับ</label><input class="inp" id="lD" type="date" value="${esc(l?.start_date || '')}"></div></div>
+      <label class="f" for="lK">ค่างวด (ไม่บังคับ)</label><input class="inp" id="lK" inputmode="decimal" value="${l?.installment_amount ?? ''}">
+      <div class="note">ระบบนับรายการตั้งแต่ "วันเริ่มนับ" — ใส่ยอดตั้งต้น = ยอดหนี้ ณ วันนั้น</div>`,
+      `${l ? '<button class="b danger" data-del>ลบ</button>' : ''}<button class="b main" data-save>บันทึก</button>`);
+    let tt = t;
+    sh.el.querySelector('#lt').onclick = e => { const b = e.target.closest('button[data-v]'); if (!b) return; tt = b.dataset.v; sh.el.querySelectorAll('#lt button').forEach(x => x.classList.toggle('on', x === b)); };
+    const num = v => Number(String(v).replace(/,/g, ''));
+    sh.el.querySelector('[data-save]').onclick = async e => {
+      const name = sh.v('lN'), contact = sh.v('lC'), pc = sh.v('lP'), bal = num(sh.v('lB'));
+      if (!name || !contact || !pc) return sh.err('กรอก ชื่อ · คู่ค้า · หมวดเงินต้น ให้ครบ');
+      if (!Number.isFinite(bal) || bal <= 0) return sh.err('ยอดตั้งต้นต้องมากกว่า 0');
+      const inst = sh.v('lK') ? num(sh.v('lK')) : null;
+      e.target.disabled = true;
+      try {
+        await api('/api/debts', { debt_id: l?.debt_id, name, type: tt, contact_id: contact, principal_category_id: pc, interest_category_id: sh.v('lI') || null,
+          start_balance: bal, installment_amount: Number.isFinite(inst) ? inst : null, start_date: sh.v('lD') || null, icon_type: l?.icon_type || 'zodiac_1.png' });
+        sh.close(); toast('✅ บันทึกแล้ว'); S.loans = await api('/api/inbox/loans'); render();
+      } catch (err) { sh.err(err.message); e.target.disabled = false; }
+    };
+    sh.el.querySelector('[data-del]')?.addEventListener('click', async () => {
+      if (!confirm(`ลบสัญญา "${l.name}" ?\n(ลบแค่ทะเบียนสัญญา รายการเงินที่บันทึกไว้ไม่หาย)`)) return;
+      try { await api('/api/debts/delete', { debt_id: l.debt_id }); sh.close(); toast('🗑️ ลบแล้ว'); S.loans = await api('/api/inbox/loans'); render(); } catch (err) { sh.err(err.message); }
+    });
+  }
+  load();
+}
+    return { open() { if (started) return; started = true; init(); } };
+})();
+window.CardsView = CardsView;
+
+// AssetsView — ย้ายจาก ledger/assets.html (2026-10-15) · โค้ดเดิมแทบไม่เปลี่ยน: แค่ผูกกับกล่อง #view-assets ในแอปเดิม
+const AssetsView = (() => {
+    let started = false;
+    const ROOT = () => document.getElementById('view-assets');
+    function init() {
+  'use strict';
+  const API = (() => {
+    const PROD = 'https://record-revenue.9nimz.workers.dev';
+    try {
+      const q = new URLSearchParams(location.search).get('api');
+      if (q) sessionStorage.setItem('api_base_override', q);
+      const o = sessionStorage.getItem('api_base_override');
+      if (o) return o.replace(/\/$/, '');
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'http://localhost:8787';
+    } catch (e) { /* ใช้ของจริง */ }
+    return PROD;
+  })();
+  const token = () => { try { return localStorage.getItem('session_token') || sessionStorage.getItem('session_token') || ''; } catch { return ''; } };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const $ = s => document.querySelector(s);
+  const view = $('#as-view');
+  const plain = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '').trim() || String(n || '');
+  const S = { tab: 'ACTIVE', data: null, meta: null, q: '', g: '*', asc: true, sel: new Set(), admin: false };
+  function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; ROOT().appendChild(d); setTimeout(() => d.remove(), 3000); }
+  async function api(path, body) {
+    const res = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) throw Object.assign(new Error('กรุณาเข้าสู่ระบบ'), { login: true });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) throw new Error(d.error || `ผิดพลาด (${res.status})`);
+    return d;
+  }
+  const A = (path, body) => api('/api/inbox/assets' + path, body || {});
+  const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const thd = s => { if (!s) return '-'; const [y, m, d] = s.slice(0, 10).split('-').map(Number); return `${d} ${TH_M[m - 1]} ${String(y + 543).slice(2)}`; };
+  const todayTH = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+  function sheet(title, html, footer) {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet" role="dialog" aria-label="${esc(title)}"><header><h2>${esc(title)}</h2><button class="x" data-close aria-label="ปิด">✕</button></header><div class="body">${html}<div class="err" data-err></div></div>${footer ? `<footer>${footer}</footer>` : ''}</div>`;
+    const close = () => bg.remove();
+    bg.addEventListener('click', e => { if (e.target === bg || e.target.closest('[data-close]')) close(); });
+    document.addEventListener('keydown', function k(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', k); } });
+    ROOT().appendChild(bg);
+    const el = bg.querySelector('.sheet');
+    return { el, close, err: t => { el.querySelector('[data-err]').textContent = t; }, v: id => el.querySelector('#' + id)?.value?.trim() ?? '' };
+  }
+  /* ปุ่มบันทึกใน sheet: กันกดซ้ำ + แสดง error ใน sheet */
+  const onSave = (sh, fn) => { const b = sh.el.querySelector('[data-save]'); b.onclick = async () => { b.disabled = true; sh.err(''); try { await fn(); } catch (e) { sh.err(e.message); b.disabled = false; } }; };
+  $('#as-tabs').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; S.tab = b.dataset.t; S.sel.clear(); document.querySelectorAll('#as-tabs button').forEach(x => x.classList.toggle('on', x === b)); render(); };
+
+  async function load() {
+    if (!token()) { view.innerHTML = `<div class="empty"><h3>ยังไม่ได้เข้าสู่ระบบ</h3><a href="#" onclick="location.reload();return false">ไปหน้าเข้าสู่ระบบ</a></div>`; return; }
+    try {
+      [S.data, S.meta] = await Promise.all([api('/api/inbox/assets'), S.meta ? Promise.resolve(S.meta) : api('/api/inbox/meta')]);
+      S.admin = S.meta?.user?.role === 'admin';
+      if (S.g !== '*' && S.g !== '' && !S.data.groups.some(g => g.group_id === S.g)) S.g = '*';
+      for (const id of [...S.sel]) if (!S.data.items.some(i => i.asset_id === id)) S.sel.delete(id);
+      render();
+    } catch (e) { view.innerHTML = `<div class="empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
+  }
+  const groupOpts = (sel, none = '— ไม่ระบุกลุ่ม —') => `<option value="">${none}</option>` + S.data.groups.map(g => `<option value="${esc(g.group_id)}" ${g.group_id === sel ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
+  function visible() {
+    const q = S.q.toLowerCase();
+    return S.data.items.filter(i => i.status === S.tab
+      && (S.g === '*' || (S.g === '' ? !i.group_id : i.group_id === S.g))
+      && (!q || `${i.name} ${i.note} ${i.group_name || ''} ${i.category_name} ${i.account_name} ${i.entity_name} ${i.date} ${thd(i.date)} ${i.value}`.toLowerCase().includes(q)))
+      .sort((a, b) => (S.asc ? 1 : -1) * (a.date.localeCompare(b.date) || a.name.localeCompare(b.name, 'th')));
+  }
+  function render() {
+    const D = S.data, cats = D.categories || [];
+    const inTab = D.items.filter(i => i.status === S.tab);
+    const cnt = g => inTab.filter(i => g === '' ? !i.group_id : i.group_id === g).length;
+    const list = visible();
+    const sum = list.reduce((s, i) => s + i.value, 0);
+    view.innerHTML = `<div class="kpis">
+        <div class="kpi"><small>🏷️ มูลค่าทรัพย์สินที่มีอยู่</small><b class="pos">${money(D.totals.value)}</b></div>
+        <div class="kpi"><small>📋 จำนวนรายการ</small><b>${D.totals.count}</b></div>
+        <div class="kpi"><small>📥 ในนั้นเป็นยอดยกมา</small><b>${money(D.totals.opening)}</b></div></div>
+      <div class="catcard"><span class="lbl">🗂️ หมวดบัญชีที่นับเป็นทรัพย์สิน:</span>
+        ${cats.length ? cats.map(c => `<span class="chip2">${esc(c.name)}</span>`).join('') : '<span class="neg">ยังไม่ได้เลือก</span>'}
+        ${S.admin ? '<button class="b" id="cats" style="min-height:38px;padding:6px 12px;font-size:14px;margin-left:auto">⚙️ เลือกหมวด</button>' : ''}</div>
+      <div class="tools">
+        <input class="inp" id="q" type="search" placeholder="🔎 ค้นหาชื่อ กลุ่ม บัญชี วันที่ จำนวนเงิน" value="${esc(S.q)}">
+        <button class="b" id="sort" title="สลับการเรียง">${S.asc ? '📅 เก่า → ใหม่' : '📅 ใหม่ → เก่า'}</button>
+        <button class="b" id="groups">🗂️ จัดการกลุ่ม</button>
+        <button class="b main" id="add">＋ ยอดยกมา</button>
+      </div>
+      <div class="gchips" id="gchips">
+        <button data-g="*" class="${S.g === '*' ? 'on' : ''}">ทั้งหมด<small>${inTab.length}</small></button>
+        ${D.groups.map(g => `<button data-g="${esc(g.group_id)}" class="${S.g === g.group_id ? 'on' : ''}">${esc(g.name)}<small>${cnt(g.group_id)}</small></button>`).join('')}
+        <button data-g="" class="${S.g === '' ? 'on' : ''}">ไม่ระบุกลุ่ม<small>${cnt('')}</small></button>
+      </div>
+      <div class="sec" style="margin-top:6px"><span class="mut" style="font-size:14px">${list.length} รายการ · รวม ${money(sum)}</span>
+        ${list.length && S.tab !== 'REMOVED' ? `<label style="font-size:14px;display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="all" ${list.every(i => S.sel.has(i.asset_id)) ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--brand)"> เลือกทั้งหมด</label>` : ''}</div>
+      <div class="list" style="margin-top:8px">${list.length ? list.map(row).join('') : `<div class="empty">${!cats.length ? 'ผู้ดูแลต้องเลือกหมวดบัญชีที่นับเป็นทรัพย์สินก่อน' : S.q ? 'ไม่พบรายการที่ค้นหา' : S.tab === 'ACTIVE' ? 'ยังไม่มีทรัพย์สินในกลุ่มนี้ — บันทึกรายจ่ายเข้าหมวดทรัพย์สิน หรือกด "＋ ยอดยกมา"' : S.tab === 'WRITTEN_OFF' ? 'ยังไม่มีรายการที่ตัดจำหน่าย' : 'ไม่มีรายการที่ซ่อนไว้'}</div>`}</div>
+      ${S.sel.size ? `<div class="movebar"><b>เลือก ${S.sel.size} รายการ</b><select id="mvG" aria-label="ย้ายไปกลุ่ม">${groupOpts('', '→ ไม่ระบุกลุ่ม')}</select><button class="b main" id="mv">ย้ายกลุ่ม</button><button class="b" id="mvX">ยกเลิก</button></div>` : ''}
+      <div class="note">• รายจ่ายที่บันทึกเข้าหมวดทรัพย์สิน (ยืนยันแล้ว) ขึ้นในทะเบียนเอง และไม่นับเป็นรายจ่ายในรายงาน จนกว่าจะตัดจำหน่าย<br>
+        • ตัดจำหน่าย = ย้ายมูลค่าไปเป็นค่าใช้จ่ายหมวดที่เลือก ณ วันที่ตัด (ยอดเงินในบัญชีไม่เปลี่ยน) · ยอดยกมา = ทรัพย์สินที่มีก่อนเริ่มใช้ระบบ</div>`;
+    const q = $('#q'); q.oninput = () => { S.q = q.value; const p = q.selectionStart; render(); const n = $('#q'); n.focus(); try { n.setSelectionRange(p, p); } catch {} };
+    $('#sort').onclick = () => { S.asc = !S.asc; render(); };
+    $('#groups').onclick = groupMgr;
+    $('#add').onclick = () => itemForm(null);
+    $('#cats')?.addEventListener('click', catForm);
+    $('#gchips').onclick = e => { const b = e.target.closest('button[data-g]'); if (!b) return; S.g = b.dataset.g; S.sel.clear(); render(); };
+    $('#all')?.addEventListener('change', e => { list.forEach(i => e.target.checked ? S.sel.add(i.asset_id) : S.sel.delete(i.asset_id)); render(); });
+    view.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); render(); });
+    $('#mvX')?.addEventListener('click', () => { S.sel.clear(); render(); });
+    $('#mv')?.addEventListener('click', async e => {
+      e.target.disabled = true;
+      try { await A('/move', { asset_ids: [...S.sel], group_id: $('#mvG').value || null }); S.sel.clear(); toast('📂 ย้ายกลุ่มแล้ว'); await load(); }
+      catch (err) { toast('⚠️ ' + err.message); e.target.disabled = false; }
+    });
+    const find = id => D.items.find(i => i.asset_id === id);
+    view.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
+      const i = find(b.dataset.id), a = b.dataset.act;
+      if (a === 'edit') itemForm(i); else if (a === 'wo') woForm(i); else if (a === 'del') del(i); else if (a === 'undo') undo(i); else if (a === 'restore') restore(i);
+    });
+  }
+  function row(i) {
+    const id = esc(i.asset_id);
+    const meta = [`${i.source === 'OPENING' ? 'ได้มา' : 'ซื้อ'} ${thd(i.date)}`, i.category_name, i.account_name, i.entity_name].filter(Boolean).map(esc).join(' · ');
+    const acts = i.status === 'ACTIVE'
+      ? `<button class="b" data-act="edit" data-id="${id}">✏️ แก้ไข</button><button class="b" data-act="wo" data-id="${id}">📦 ตัดจำหน่าย</button><button class="b danger" data-act="del" data-id="${id}" aria-label="ลบ">🗑️ ลบ</button>`
+      : i.status === 'WRITTEN_OFF'
+        ? `<button class="b" data-act="edit" data-id="${id}">✏️ แก้ไข</button><button class="b" data-act="undo" data-id="${id}">↩️ ยกเลิกตัดจำหน่าย</button>`
+        : `<button class="b" data-act="restore" data-id="${id}">↩️ กู้คืน</button>`;
+    return `<div class="arow">
+      ${i.status !== 'REMOVED' ? `<input type="checkbox" data-sel="${id}" ${S.sel.has(i.asset_id) ? 'checked' : ''} aria-label="เลือก ${esc(i.name)}">` : ''}
+      <span class="t"><b>${esc(i.name)}</b>
+        <small>${i.source === 'OPENING' ? '<span class="tg op">ยอดยกมา</span>' : ''}${i.group_name ? `<span class="tg gr">${esc(i.group_name)}</span>` : ''}${meta}</small>
+        ${i.note ? `<small>📝 ${esc(i.note)}</small>` : ''}
+        ${i.status === 'WRITTEN_OFF' ? `<small>📦 ตัดจำหน่าย ${thd(i.writeoff_date)} → ${esc(i.expense_category || '-')}${i.writeoff_note ? ' · ' + esc(i.writeoff_note) : ''}</small>` : ''}</span>
+      <span class="v">${money(i.value)}</span>
+      <span class="acts">${acts}</span></div>`;
+  }
+  const allCats = () => (S.meta?.categories || []).slice().sort((a, b) => String(a.group || '').localeCompare(String(b.group || ''), 'th') || String(a.name).localeCompare(String(b.name), 'th'));
+
+  /* ── เพิ่มยอดยกมา / แก้ไข ── */
+  function itemForm(i) {
+    const isNew = !i, locked = i && (i.source === 'TX' || i.status === 'WRITTEN_OFF');
+    const cats = S.data.categories || [];
+    if (isNew && !cats.length) return toast(S.admin ? 'กด "เลือกหมวด" เพื่อกำหนดหมวดทรัพย์สินก่อน' : 'ให้ผู้ดูแลเลือกหมวดทรัพย์สินก่อน');
+    const sh = sheet(isNew ? 'เพิ่มทรัพย์สิน (ยอดยกมา)' : 'แก้ไขทรัพย์สิน', `
+      ${isNew ? '<div class="note" style="margin-top:4px">ใช้กับทรัพย์สินที่มีอยู่ก่อนเริ่มใช้ระบบ — ไม่สร้างรายการเงินในบัญชี</div>' : ''}
+      <label class="f" for="fN">ชื่อทรัพย์สิน</label><input class="inp" id="fN" maxlength="120" value="${esc(i?.name || '')}" placeholder="เช่น สว่านไร้สาย · ตู้เย็น · โน้ตบุ๊ก">
+      <div class="g2">
+        <div><label class="f" for="fD">วันที่ได้มา</label><input class="inp" id="fD" type="date" value="${esc(i?.date || todayTH())}" ${locked ? 'disabled' : ''}></div>
+        <div><label class="f" for="fA">จำนวนเงิน</label><input class="inp" id="fA" inputmode="decimal" value="${i ? esc(i.value) : ''}" placeholder="0.00" ${locked ? 'disabled' : ''}></div>
+      </div>
+      ${i?.source === 'TX' ? '<div class="mut" style="font-size:13px;margin-top:6px">วันที่/จำนวนเงิน มาจากรายการจริง — แก้ได้ที่หน้าประวัติรายการ</div>' : i?.status === 'WRITTEN_OFF' ? '<div class="mut" style="font-size:13px;margin-top:6px">ตัดจำหน่ายแล้ว — ยกเลิกตัดจำหน่ายก่อนจึงแก้วันที่/จำนวนเงินได้</div>' : ''}
+      <label class="f" for="fG">กลุ่ม</label><select class="inp" id="fG">${groupOpts(i?.group_id || (S.g !== '*' ? S.g : ''))}<option value="__new">＋ สร้างกลุ่มใหม่…</option></select>
+      ${(!i || i.source === 'OPENING') && cats.length > 1 ? `<label class="f" for="fC">หมวดบัญชี</label><select class="inp" id="fC" ${locked ? 'disabled' : ''}>${cats.map(c => `<option value="${esc(c.category_id)}" ${c.category_id === i?.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}
+      <label class="f" for="fM">หมายเหตุ (ไม่บังคับ)</label><input class="inp" id="fM" maxlength="300" value="${esc(i?.note || '')}" placeholder="เช่น ยี่ห้อ รุ่น เลขเครื่อง ที่ตั้ง">`,
+      `<button class="b main" data-save>${isNew ? 'เพิ่มเข้าทะเบียน' : 'บันทึก'}</button>`);
+    const gs = sh.el.querySelector('#fG');
+    gs.onchange = async () => {
+      if (gs.value !== '__new') return;
+      const name = (prompt('ชื่อกลุ่มใหม่ (เช่น อุปกรณ์ช่าง · เครื่องใช้ในบ้าน)') || '').trim();
+      if (!name) { gs.value = ''; return; }
+      try { const r = await A('/groups', { name }); S.data.groups.push({ group_id: r.group_id, name, count: 0, value: 0 }); gs.innerHTML = groupOpts(r.group_id) + '<option value="__new">＋ สร้างกลุ่มใหม่…</option>'; }
+      catch (e) { sh.err(e.message); gs.value = ''; }
+    };
+    onSave(sh, async () => {
+      const name = sh.v('fN'); if (!name) throw new Error('ใส่ชื่อทรัพย์สิน');
+      const body = { name, group_id: gs.value === '__new' ? null : (gs.value || null), note: sh.v('fM') };
+      if (!locked) {
+        const amount = Number(sh.v('fA').replace(/,/g, ''));
+        if (!(amount > 0)) throw new Error('ใส่จำนวนเงินมากกว่า 0');
+        if (!sh.v('fD')) throw new Error('เลือกวันที่ได้มา');
+        Object.assign(body, { date: sh.v('fD'), amount });
+        if (sh.el.querySelector('#fC')) body.category_id = sh.v('fC');
+      }
+      if (isNew) await A('/opening', body); else await A('/' + encodeURIComponent(i.asset_id), body);
+      sh.close(); toast(isNew ? '✅ เพิ่มเข้าทะเบียนแล้ว' : '✅ บันทึกแล้ว'); await load();
+    });
+    setTimeout(() => sh.el.querySelector('#fN').focus(), 50);
+  }
+
+  /* ── จัดการกลุ่มย่อย ── */
+  function groupMgr() {
+    const sh = sheet('จัดการกลุ่มทรัพย์สิน', `
+      <div class="glist" id="gl">${S.data.groups.map(g => `<div><input class="inp" value="${esc(g.name)}" data-gid="${esc(g.group_id)}" maxlength="60" aria-label="ชื่อกลุ่ม"><span class="mut" style="font-size:13px;white-space:nowrap">${g.count} รายการ</span><button class="b danger" data-gdel="${esc(g.group_id)}" aria-label="ลบกลุ่ม ${esc(g.name)}">🗑️</button></div>`).join('') || '<div class="mut">ยังไม่มีกลุ่ม</div>'}</div>
+      <label class="f" for="gN">เพิ่มกลุ่มใหม่</label>
+      <div style="display:flex;gap:8px"><input class="inp" id="gN" maxlength="60" placeholder="เช่น อุปกรณ์ช่าง · เครื่องใช้คอนโด"><button class="b main" id="gAdd">＋ เพิ่ม</button></div>
+      <div class="note">แก้ชื่อในช่องแล้วกด "บันทึกชื่อ" · ลบกลุ่มแล้วรายการในกลุ่มจะไปอยู่ "ไม่ระบุกลุ่ม" (ไม่หาย) · ย้ายรายการ: ติ๊กเลือกในรายการแล้วกด "ย้ายกลุ่ม"</div>`,
+      `<button class="b main" data-save>บันทึกชื่อ</button>`);
+    const add = async () => {
+      const name = sh.v('gN'); if (!name) return sh.err('ใส่ชื่อกลุ่ม');
+      try { await A('/groups', { name }); sh.close(); toast('✅ เพิ่มกลุ่มแล้ว'); await load(); groupMgr(); } catch (e) { sh.err(e.message); }
+    };
+    sh.el.querySelector('#gAdd').onclick = add;
+    sh.el.querySelector('#gN').onkeydown = e => { if (e.key === 'Enter') add(); };
+    sh.el.querySelectorAll('[data-gdel]').forEach(b => b.onclick = async () => {
+      const g = S.data.groups.find(x => x.group_id === b.dataset.gdel);
+      if (!confirm(`ลบกลุ่ม "${g.name}"?\n${g.count ? `${g.count} รายการในกลุ่มจะไปอยู่ "ไม่ระบุกลุ่ม"` : ''}`)) return;
+      try { await A(`/groups/${encodeURIComponent(g.group_id)}/delete`); sh.close(); toast('🗑️ ลบกลุ่มแล้ว'); await load(); groupMgr(); } catch (e) { sh.err(e.message); }
+    });
+    onSave(sh, async () => {
+      for (const inp of sh.el.querySelectorAll('[data-gid]')) {
+        const g = S.data.groups.find(x => x.group_id === inp.dataset.gid);
+        if (inp.value.trim() && inp.value.trim() !== g.name) await A('/groups/' + encodeURIComponent(g.group_id), { name: inp.value.trim() });
+      }
+      sh.close(); toast('✅ บันทึกแล้ว'); await load();
+    });
+  }
+
+  /* ── เลือกหมวดบัญชีที่นับเป็นทรัพย์สิน (ผู้ดูแล) ── */
+  function catForm() {
+    const on = new Set((S.data.categories || []).map(c => c.category_id));
+    const cats = allCats();
+    const sh = sheet('หมวดบัญชีที่นับเป็นทรัพย์สิน', `
+      <input class="inp" id="cq" placeholder="🔎 ค้นหาหมวด" style="margin-top:8px">
+      <div class="checks" id="cl" style="margin-top:10px;max-height:50vh;overflow:auto">${cats.map(c => `<label data-n="${esc((plain(c.name) + ' ' + (c.group || '')).toLowerCase())}"><input type="checkbox" value="${esc(c.category_id)}" ${on.has(c.category_id) ? 'checked' : ''}> ${esc(plain(c.name))}${c.group ? ` <small class="mut">· ${esc(plain(c.group))}</small>` : ''}</label>`).join('')}</div>
+      <div class="note">แนะนำ: สร้างหมวด "ทรัพย์สิน" ไว้ใต้กลุ่มสินทรัพย์ (ที่หน้าตั้งค่า → หมวดหมู่) แล้วติ๊กหมวดนั้นที่นี่</div>`, `<button class="b main" data-save>บันทึก</button>`);
+    sh.el.querySelector('#cq').oninput = e => { const t = e.target.value.toLowerCase(); sh.el.querySelectorAll('#cl label').forEach(l => { l.style.display = !t || l.dataset.n.includes(t) ? '' : 'none'; }); };
+    onSave(sh, async () => { await A('/categories', { category_ids: [...sh.el.querySelectorAll('#cl input:checked')].map(i => i.value) }); sh.close(); toast('✅ บันทึกหมวดแล้ว'); await load(); });
+  }
+
+  /* ── ตัดจำหน่าย ── */
+  function woForm(i) {
+    const assetIds = new Set((S.data.categories || []).map(c => c.category_id));
+    const cats = allCats().filter(c => !assetIds.has(c.category_id));
+    const exp = cats.filter(c => c.behavior === 'EXPENSE' || c.default_type === 'EXPENSE'), oth = cats.filter(c => !exp.includes(c));
+    const opt = c => `<option value="${esc(c.category_id)}">${esc(plain(c.name))}${c.group ? ` · ${esc(plain(c.group))}` : ''}</option>`;
+    const accs = (S.meta?.accounts || []);
+    const sh = sheet('ตัดจำหน่ายทรัพย์สิน', `
+      <p><b>${esc(i.name)}</b><br><span class="mut">${i.source === 'OPENING' ? 'ยอดยกมา · ได้มา' : 'ซื้อ'} ${thd(i.date)} · มูลค่า ${money(i.value)}</span></p>
+      <label class="f" for="wD">วันที่ตัดจำหน่าย</label><input class="inp" id="wD" type="date" value="${todayTH()}" min="${esc(i.date)}">
+      <label class="f" for="wC">บันทึกมูลค่าไปที่หมวดค่าใช้จ่าย</label><select class="inp" id="wC"><option value="">— เลือกหมวด —</option>
+        ${exp.length ? `<optgroup label="หมวดค่าใช้จ่าย">${exp.map(opt).join('')}</optgroup>` : ''}${oth.length ? `<optgroup label="หมวดอื่น">${oth.map(opt).join('')}</optgroup>` : ''}</select>
+      ${i.source === 'OPENING' ? `<label class="f" for="wA">บันทึกไว้ในบัญชี (ยอดเงินไม่เปลี่ยน)</label><select class="inp" id="wA"><option value="">— เลือกบัญชี —</option>${accs.map(a => `<option value="${esc(a.account_id)}">${esc(plain(a.name))}</option>`).join('')}</select>` : ''}
+      <label class="f" for="wN">เหตุผล (ไม่บังคับ)</label><input class="inp" id="wN" maxlength="200" placeholder="เช่น ชำรุด · ขายทิ้ง · สูญหาย · ใช้หมดแล้ว">
+      <div class="note">มูลค่า ${money(i.value)} จะไปเป็นค่าใช้จ่ายหมวดที่เลือก ณ วันที่ตัดจำหน่าย · ยอดเงินในบัญชีไม่เปลี่ยน · ยกเลิกภายหลังได้ถ้าเดือนนั้นยังไม่ปิด</div>`, `<button class="b main" data-save>ตัดจำหน่าย</button>`);
+    onSave(sh, async () => {
+      if (!sh.v('wC')) throw new Error('เลือกหมวดค่าใช้จ่าย');
+      if (i.source === 'OPENING' && !sh.v('wA')) throw new Error('เลือกบัญชี');
+      await A(`/${encodeURIComponent(i.asset_id)}/writeoff`, { date: sh.v('wD'), expense_category_id: sh.v('wC'), account_id: sh.v('wA') || undefined, note: sh.v('wN') });
+      sh.close(); toast('📦 ตัดจำหน่ายแล้ว'); await load();
+    });
+  }
+  async function del(i) {
+    const msg = i.source === 'OPENING'
+      ? `ลบ "${i.name}" ออกจากทะเบียน?\n(ยอดยกมา ${money(i.value)} — ลบแล้วกู้คืนไม่ได้)`
+      : `ซ่อน "${i.name}" จากทะเบียน?\nรายการจ่ายเงิน ${money(i.value)} ยังอยู่ในประวัติเหมือนเดิม · กู้คืนได้ที่แท็บ "ซ่อนไว้"\nถ้าบันทึกผิดหมวด ให้แก้หมวดที่หน้าประวัติรายการแทน`;
+    if (!confirm(msg)) return;
+    try { await A(`/${encodeURIComponent(i.asset_id)}/delete`); toast(i.source === 'OPENING' ? '🗑️ ลบแล้ว' : '🙈 ซ่อนแล้ว'); await load(); } catch (e) { toast('⚠️ ' + e.message); }
+  }
+  async function undo(i) {
+    if (!confirm(`ยกเลิกการตัดจำหน่าย "${i.name}"?\nค่าใช้จ่าย ${money(i.value)} วันที่ ${thd(i.writeoff_date)} จะถูกลบ และกลับเข้าทะเบียน`)) return;
+    try { await A(`/${encodeURIComponent(i.asset_id)}/undo`); toast('↩️ ยกเลิกแล้ว'); await load(); } catch (e) { toast('⚠️ ' + e.message); }
+  }
+  async function restore(i) {
+    try { await A(`/${encodeURIComponent(i.asset_id)}/restore`); toast('↩️ กู้คืนแล้ว'); await load(); } catch (e) { toast('⚠️ ' + e.message); }
+  }
+  load();
+}
+    return { open() { if (started) return; started = true; init(); } };
+})();
+window.AssetsView = AssetsView;
 
 
 
