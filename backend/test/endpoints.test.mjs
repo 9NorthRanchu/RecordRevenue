@@ -178,5 +178,13 @@ db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,s
 r = await call('/api/transactions/category-hints', { user: '9North' });
 const hk = r.j?.hints || {};
 check('category-hints: 7-ELEVEN (ตัดเลขแล้วเป็นคีย์เดียว) → T01 · ไม่เห็นของครอบครัวอื่น', hk['OUT|eleven bkk']?.category_id === 'T01' && hk['OUT|eleven bkk'].n === 2 && !Object.keys(hk).some(k => k.includes('secret')), hk);
+
+/* ── ยอด ณ วันที่ (ตรวจยอดยกมา statement) ── */
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id) VALUES ('TX-BA1','A09','2026-08-01',1000,'CONFIRMED','WEB_GRID','9North'),('TX-BA2','A09','2026-08-10',300,'PENDING_REVIEW','PDF_IMPORT','9North'),('TX-BA3','A09','2026-09-01',50,'CONFIRMED','WEB_GRID','9North');
+ INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('DBA2','TX-BA2',300,'T01','EXPENSE');`);
+r = await call('/api/accounts/balance-at?account_id=A09&date=2026-09-01', { user: '9North' });
+check('balance-at: ยืนยัน 1000 + รอตรวจนำเข้าเก่า (จ่าย 300 เก็บเป็นบวก) = 700 · ไม่รวมวันที่ 1 ก.ย.', r.j?.balance === 700 && r.j.count === 2, r.j);
+r = await call('/api/accounts/balance-at?account_id=X99&date=2026-09-01', { user: '9North' });
+check('balance-at: บัญชีคนอื่น → 403', r.s === 403, r);
 console.log(`${bad ? '❌' : '✅'} ผ่าน ${ok} · ไม่ผ่าน ${bad}`);
 if (bad) process.exit(1);

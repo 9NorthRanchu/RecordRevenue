@@ -487,6 +487,20 @@ export default {
       }
 
       // 5. Delete Transaction
+      /* 💰 ยอดในระบบ ณ ก่อนวันที่กำหนด (2026-10-15) — ใช้ตรวจ "ยอดยกมา" ของ statement ก่อนนำเข้า
+         นับทั้งที่ยืนยันแล้วและรอตรวจ (statement ช่วงก่อนหน้าอาจยังไม่ได้กดยืนยัน) · count = จำนวนรายการก่อนวันนั้น */
+      if (url.pathname === '/api/accounts/balance-at' && request.method === 'GET') {
+        const acc = url.searchParams.get('account_id') || '', date = String(url.searchParams.get('date') || '').slice(0, 10);
+        if (!acc || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return new Response(JSON.stringify({ error: 'ต้องระบุ account_id และ date (YYYY-MM-DD)' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        if (!(await canUseAccount(acc))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
+        /* รายการนำเข้ารุ่นเก่าที่รอตรวจเก็บยอดจ่ายเป็นบวก → ใช้ประเภทจากบรรทัดย่อยกลับเครื่องหมาย */
+        const r = await env.DB.prepare(`SELECT ROUND(COALESCE(SUM(CASE WHEN t.status = 'PENDING_REVIEW' AND t.total_amount > 0
+              AND EXISTS (SELECT 1 FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id AND d.type = 'EXPENSE') THEN -t.total_amount ELSE t.total_amount END), 0), 2) AS balance,
+            COUNT(*) AS n, SUM(CASE WHEN t.transaction_id LIKE 'TX-OB-%' THEN 1 ELSE 0 END) AS n_opening
+          FROM Transactions t WHERE t.account_id = ? AND t.date < ?`).bind(acc, date).first();
+        return new Response(JSON.stringify({ balance: r?.balance || 0, count: r?.n || 0, opening_rows: r?.n_opening || 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       /* 🏷️ จำหมวดจากรายการเดิม (2026-10-15): ข้อความธนาคาร/ร้านเดียวกัน → หมวด·คู่ค้า·Company ที่เคยยืนยัน (ล่าสุดชนะ)
          ดูจาก 3000 รายการยืนยันล่าสุดที่มีบรรทัดย่อยเดียวและระบุหมวดแล้ว · คีย์ = ข้อความตัดตัวเลข/สัญลักษณ์ (statementKey) */
       if (url.pathname === '/api/transactions/category-hints' && request.method === 'GET') {
@@ -2423,6 +2437,8 @@ It may be a PDF file or several page images/screenshots of the same account. Ext
 
 - account_number: the account / card / wallet number printed (masked like "xxxx-xxxx-xxxx-1234" or a phone number for wallets). null if none.
 - source_kind: "BANK" | "CREDIT_CARD" | "E_WALLET" | "SHOP_ORDERS"
+- opening_balance: the balance brought forward printed at the start (ยอดยกมา / Previous balance / ยอดค้างชำระงวดก่อน), null if not printed.
+- closing_balance: the ending balance printed (ยอดยกไป / ยอดคงเหลือ / New balance / ยอดที่ต้องชำระ), null if not printed. Use positive numbers (amount owed on a card is positive).
 - transactions: for each row:
   1. date: YYYY-MM-DD. Convert Buddhist year (2569 or 69) to Christian (2026). If the screenshot shows no year, use ${year} (or ${year - 1} if that date would be in the future).
   2. time: HH:MM:SS, "00:00:00" if not shown.
@@ -2435,7 +2451,7 @@ It may be a PDF file or several page images/screenshots of the same account. Ext
 Ignore rows that are opening balance, closing balance, totals, minimum payment, credit limit, or cancelled/failed orders.
 
 Output ONLY a valid JSON object:
-{"account_number":"...","source_kind":"BANK","transactions":[{"date":"YYYY-MM-DD","time":"HH:MM:SS","type":"INCOME","amount":123.45,"ref_code":null,"statement_desc":"...","note":null}]}
+{"account_number":"...","source_kind":"BANK","opening_balance":null,"closing_balance":null,"transactions":[{"date":"YYYY-MM-DD","time":"HH:MM:SS","type":"INCOME","amount":123.45,"ref_code":null,"statement_desc":"...","note":null}]}
 Do not wrap the JSON in markdown code blocks.`;
 
   let parts = [{ text: prompt }];

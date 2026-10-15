@@ -2289,8 +2289,14 @@ function renderPendingHero() {
         <div class="ph-act ph-pdf"><span class="dv2-kic" style="background:rgba(240,82,82,.12);color:#E03131"><i class="fa-solid fa-file-pdf"></i></span>
           <div class="ph-at"><b>นำเข้า Statement</b><small style="margin-top:-2px">PDF ธนาคาร/บัตร · ภาพแคป TrueMoney/Shopee</small><select id="ph-acc" aria-label="เลือกบัญชี"><option value="">— เลือกบัญชีก่อน —</option>${accOpts}</select></div>
           <button type="button" class="ph-go" id="ph-pdf-go">เลือกไฟล์</button></div>
-        <button type="button" class="ph-act" id="ph-xls"><span class="dv2-kic" style="background:rgba(32,201,151,.14);color:#087F5B"><i class="fa-solid fa-file-excel"></i></span>
-          <span class="ph-at"><b>นำเข้า Excel</b><small>ไฟล์รายการ .xlsx / .csv</small></span></button>
+        <div class="ph-act ph-xlsw"><button type="button" id="ph-xls" class="ph-xbtn"><span class="dv2-kic" style="background:rgba(32,201,151,.14);color:#087F5B"><i class="fa-solid fa-file-excel"></i></span>
+          <span class="ph-at"><b>นำเข้า Excel ▾</b><small>รายการ .xlsx · แม่แบบ · ข้อมูลเก่า</small></span></button>
+          <div class="ph-menu" id="ph-xls-menu" hidden>
+            <button type="button" data-x="normal">📥 นำเข้าเป็น "รอตรวจสอบ" (ตรวจซ้ำให้)</button>
+            <button type="button" data-x="bulk-pending">📦 ข้อมูลเก่าจำนวนมาก → รอตรวจสอบ</button>
+            <button type="button" data-x="bulk-confirmed">✅ ข้อมูลเก่าจำนวนมาก → บันทึกเป็นยืนยันแล้วเลย</button>
+            <button type="button" data-x="template">⬇️ ดาวน์โหลดแม่แบบ Excel</button>
+          </div></div>
         <button type="button" class="ph-act" id="ph-add"><span class="dv2-kic" style="background:rgba(121,80,242,.13);color:#6D4AE0"><i class="fa-solid fa-plus"></i></span>
           <span class="ph-at"><b>เพิ่มรายการเอง</b><small>บันทึกด้วยมือ</small></span></button>
         <label class="ph-act" id="ph-slip"><span class="dv2-kic" style="background:rgba(245,159,0,.15);color:#E67700"><i class="fa-solid fa-receipt"></i></span>
@@ -2320,7 +2326,18 @@ function renderPendingHero() {
     const trig = document.getElementById('btn-trigger-statement-upload'), go = box.querySelector('#ph-pdf-go');
     if (trig && !trig._phObs) { const orig = trig.innerHTML; trig._phObs = new MutationObserver(() => { const g = document.getElementById('ph-pdf-go'); if (g) { g.innerHTML = trig.innerHTML === orig ? 'เลือกไฟล์' : trig.innerHTML; g.disabled = trig.disabled; } });
         trig._phObs.observe(trig, { childList: true, subtree: true, characterData: true, attributes: true }); }
-    box.querySelector('#ph-xls').onclick = () => document.getElementById('btn-pending-upload-csv')?.click();
+    /* เมนู Excel: ปุ่มเดิมทั้ง 4 อย่างในแถบหัว (ซ่อนในหน้าตาแบบ A) — กดแล้วเรียกของเดิมตรง ๆ */
+    const xm = box.querySelector('#ph-xls-menu');
+    box.querySelector('#ph-xls').onclick = e => { e.stopPropagation(); xm.hidden = !xm.hidden; };
+    xm.onclick = e => { const b = e.target.closest('[data-x]'); if (!b) return; xm.hidden = true;
+        const st = document.getElementById('bulk-import-status-select');
+        if (b.dataset.x === 'normal') document.getElementById('btn-pending-upload-csv')?.click();
+        else if (b.dataset.x === 'template') document.getElementById('btn-pending-download-template')?.click();
+        else { if (st) st.value = b.dataset.x === 'bulk-confirmed' ? 'CONFIRMED' : 'PENDING_REVIEW'; document.getElementById('bulk-import-file-input')?.click(); } };
+    if (!window._phMenuClose) { window._phMenuClose = true; document.addEventListener('click', () => { const m = document.getElementById('ph-xls-menu'); if (m) m.hidden = true; }); }
+    // หน้าต่างความคืบหน้าของการนำเข้าจำนวนมาก อยู่ในแถบหัวที่ซ่อน → ย้ายออกมาให้เห็น
+    const ov = document.getElementById('bulk-import-overlay'); if (ov && ov.parentElement !== document.body) document.body.appendChild(ov);
+    if (AppState._openXlsMenu) { AppState._openXlsMenu = false; xm.hidden = false; xm.scrollIntoView({ block: 'center' }); }
     box.querySelector('#ph-add').onclick = () => document.getElementById('btn-pending-add-row')?.click();
     const sin = box.querySelector('#ph-slip-in'); sin.onchange = () => { const fs = [...sin.files]; sin.value = ''; uploadSlipFiles(fs); };
     box.querySelector('#ph-delbatch')?.addEventListener('click', deleteImportBatch);
@@ -7053,6 +7070,23 @@ async function statementPrecheck(accId, info) {
     const sOut = rows.filter(r => r.type === 'EXPENSE').reduce((t, r) => t + Math.abs(+r.amount || 0), 0);
     const f = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    /* 💰 ยอดยกมา (2026-10-15 · North: "บัญชีธนาคารไม่รวมยอดยกมา"): เทียบยอดยกมาในไฟล์กับยอดในระบบ ณ วันแรกของไฟล์
+       ยังไม่มีรายการก่อนหน้า → เสนอสร้างยอดยกมาให้ (ชุดยอดยกมาของบัญชีนี้ ณ วันแรก · ฝั่งตรงข้ามรอใส่ใน ตั้งค่า → ยอดยกมา)
+       มีรายการก่อนหน้าแล้วแต่ยอดไม่ตรง → เตือน (ผิดบัญชี / มีช่วงที่ยังไม่ได้นำเข้า) */
+    const firstDate = [...(info.rows || [])].map(r => String(r.date).slice(0, 10)).filter(Boolean).sort()[0];
+    const isCredit = me?.account_type === 'CREDIT';
+    const wantOpen = info.opening != null && !isNaN(+info.opening) ? (isCredit ? -Math.abs(+info.opening) : +info.opening) : null;
+    let bal = null;
+    if (wantOpen != null && firstDate) { try { const r = await fetch(`${API_BASE}/api/accounts/balance-at?account_id=${encodeURIComponent(accId)}&date=${firstDate}`); if (r.ok) bal = await r.json(); } catch { /* */ } }
+    const fm = n => { const v = Number(n || 0), t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    let openHtml = '';
+    if (bal && bal.count === 0 && Math.abs(wantOpen) >= 0.005)
+        openHtml = `<label style="display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:#F3F0FF;margin-top:10px;cursor:pointer"><input type="checkbox" id="pc-open" checked style="margin-top:4px">
+            <span>💰 บัญชีนี้ยังไม่มียอดยกมา — <b>สร้างยอดยกมา ${fm(wantOpen)}</b> ณ ${firstDate} ให้เลย<br><small style="color:#5C5872">ยอดบัญชีจะตรงกับ statement · อีกฝั่ง (ทุน/บัญชีพัก) ไปใส่ต่อที่ ตั้งค่า → ยอดยกมา</small></span></label>`;
+    else if (bal && bal.count > 0 && Math.abs(bal.balance - wantOpen) >= 0.01)
+        openHtml = `<div style="padding:10px 12px;border-radius:12px;background:#FFF5F5;color:#C92A2A;margin-top:10px">⚠️ ยอดยกมาในไฟล์ <b>${fm(wantOpen)}</b> ไม่ตรงกับยอดในระบบ ณ ${firstDate} <b>${fm(bal.balance)}</b> (ต่าง ${fm(wantOpen - bal.balance)})<br><small>อาจเลือกบัญชีผิด หรือยังมีช่วงก่อนหน้าที่ไม่ได้นำเข้า</small></div>`;
+    else if (bal && bal.count > 0)
+        openHtml = `<div style="padding:8px 12px;border-radius:12px;background:#E6FCF5;color:#087F5B;margin-top:10px">✅ ยอดยกมาในไฟล์ตรงกับยอดในระบบ (${fm(wantOpen)})</div>`;
     let state, note;
     if (match === true) { state = 'ok'; note = `✅ เลขบัญชีในไฟล์ <b>${esc(read)}</b> ตรงกับบัญชีที่เลือก`; }
     else if (match === false) { state = 'bad'; note = `❌ เลขบัญชีในไฟล์ <b>${esc(read)}</b> <u>ไม่ตรง</u> กับบัญชีที่เลือก (${esc(me?.account_number || '-')})`; }
@@ -7065,6 +7099,7 @@ async function statementPrecheck(accId, info) {
         <div>📅 ช่วงวันที่: <b>${dates[0] || '-'} ถึง ${dates[dates.length - 1] || '-'}</b></div>
         <div>🧾 จำนวน: <b>${rows.length.toLocaleString('en-US')} รายการ</b> · เข้า <b style="color:#087F5B">${f(sIn)}</b> · ออก <b style="color:#C92A2A">(${f(sOut)})</b></div>
         ${info.opening != null || info.closing != null ? `<div>💰 ยอดยกมา ${f(info.opening)} → ยอดยกไป ${f(info.closing)}</div>` : ''}
+        ${openHtml}
         <div style="color:#5C5872;font-size:.8rem;margin-top:6px">รายการที่มีอยู่แล้วจะถูกข้าม · รายการที่ตรงกับสลิป/ที่บันทึกไว้ก่อนจะจับคู่ ไม่สร้างซ้ำ</div></div>`;
     if (!window.Swal) {
         if (other && confirm(`${note.replace(/<[^>]+>/g, '')}\nไฟล์นี้ตรงกับบัญชี ${other.name}\nกดตกลง = นำเข้าเข้าบัญชี ${other.name}`)) return other.account_id;
@@ -7074,8 +7109,18 @@ async function statementPrecheck(accId, info) {
         showCancelButton: true, cancelButtonText: 'ยกเลิก',
         showDenyButton: !!other, denyButtonText: other ? `นำเข้าเข้า ${other.name}` : '', denyButtonColor: '#087F5B',
         confirmButtonText: state === 'bad' ? `ยืนยัน นำเข้าเข้า ${me?.name || ''}` : 'นำเข้า', confirmButtonColor: state === 'bad' ? '#C92A2A' : '#5F3DC4',
-        focusConfirm: state !== 'bad', focusCancel: state === 'bad' });
+        focusConfirm: state !== 'bad', focusCancel: state === 'bad', preConfirm: () => ({ open: !!document.getElementById('pc-open')?.checked }) });
     if (r.isDenied && other) { const sel = document.getElementById('import-account-selector'); if (sel) sel.value = other.account_id; return other.account_id; }
+    if (r.isConfirmed && r.value?.open && bal?.count === 0) {
+        try {
+            const res = await fetch(`${API_BASE}/api/inbox/opening`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+                set_id: null, name: `ยอดยกมา ${me?.name || accId} (จาก statement)`, date: firstDate, entity_id: me?.entity_id || null, anchor_account_id: null,
+                lines: [{ kind: 'ACC', account_id: accId, side: wantOpen >= 0 ? 'DR' : 'CR', amount: Math.abs(wantOpen) }] }) });
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || j.error) alert('สร้างยอดยกมาไม่สำเร็จ: ' + (j.error || res.status) + '\n(นำเข้ารายการต่อได้ · ใส่ยอดยกมาเองที่ ตั้งค่า → ยอดยกมา)');
+            else try { showToast(`💰 สร้างยอดยกมา ${fm(wantOpen)} แล้ว`); } catch { /* */ }
+        } catch (e) { alert('สร้างยอดยกมาไม่สำเร็จ: ' + e.message); }
+    }
     return r.isConfirmed ? accId : null;
 }
 
@@ -7243,7 +7288,7 @@ function bindPDFUpload() {
                     const data = await r.json().catch(() => ({}));
                     if (!r.ok || data.error) throw new Error(data.error || `อ่านภาพไม่สำเร็จ (${r.status})`);
                     if (!data.transactions?.length) { alert('ไม่พบรายการเงินในภาพ'); done(); return; }
-                    const useAcc = await statementPrecheck(selectedAccId, { account_number: data.account_number, rows: data.transactions });
+                    const useAcc = await statementPrecheck(selectedAccId, { account_number: data.account_number, rows: data.transactions, opening: data.opening_balance, closing: data.closing_balance });
                     if (!useAcc) { done(); return; }
                     const res = await importStatementRows(useAcc, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; });
                     alert(`อ่านจากภาพด้วย AI ${data.transactions.length} รายการ\nนำเข้า ${res.importedCount} รายการ` + (res.mergedCount ? `\n🔗 จับคู่กับสลิป/รายการที่บันทึกไว้แล้ว ${res.mergedCount}` : '') + (res.autoCatCount ? `\n🏷️ ใส่หมวดอัตโนมัติ ${res.autoCatCount}` : '')
@@ -7387,7 +7432,7 @@ function bindPDFUpload() {
                     if (res.ok) {
                         const data = await res.json();
                         if (data && data.transactions && data.transactions.length > 0) {
-                            const useAcc = await statementPrecheck(selectedAccId, { account_number: data.account_number, rows: data.transactions });
+                            const useAcc = await statementPrecheck(selectedAccId, { account_number: data.account_number, rows: data.transactions, opening: data.opening_balance, closing: data.closing_balance });
                             if (!useAcc) { if(btnIcon) btnIcon.className = originalIconClass; triggerUploadBtn.disabled = false; triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เริ่มนำเข้าข้อมูล`; pdfInput.value = ''; return; }
                             selectedAccId = useAcc;
                             const res = await importStatementRows(selectedAccId, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; });
@@ -9074,6 +9119,7 @@ function renderHistoryKpis(list) {
         ${kpi('<i class="fa-solid fa-list"></i>', 'rgba(121,80,242,.13)', 'var(--primary-color)', 'ทั้งหมด', `${_historyShown.length.toLocaleString('en-US')} <small>รายการ</small>`, 'ตามตัวกรอง')}
         ${kpi('<i class="fa-solid fa-arrow-trend-up"></i>', 'rgba(32,201,151,.14)', 'var(--success-color)', 'รายรับ', dv2F(sIn), 'เงินเข้า')}
         ${kpi('<i class="fa-solid fa-arrow-down"></i>', 'rgba(240,82,82,.13)', 'var(--danger-color)', 'รายจ่าย', dv2F(sOut), 'เงินออก')}
+        <button type="button" class="dv2-kpi hk-export" onclick="AppState._openXlsMenu = true; switchView('pending')"><span class="dv2-kic" style="background:rgba(121,80,242,.13);color:#6D4AE0"><i class="fa-solid fa-file-import"></i></span><div class="dv2-ktx"><div class="dv2-klab">นำเข้า Excel</div><div class="dv2-ksub">ไปที่เมนูนำเข้า (รอตรวจ / ยืนยันเลย)</div></div></button>
         <button type="button" class="dv2-kpi hk-export" onclick="exportHistoryShown()"><span class="dv2-kic" style="background:rgba(32,201,151,.14);color:#087F5B"><i class="fa-solid fa-file-excel"></i></span><div class="dv2-ktx"><div class="dv2-klab">ส่งออก Excel</div><div class="dv2-ksub">รายการที่เห็นอยู่ ${_historyShown.length} รายการ</div></div></button>
       </div>`;
 }

@@ -3654,3 +3654,10 @@ frontend
 - ค. action ใหม่ POST /api/inbox/{doc}/learn → learnFromDoc · เรียกหลังยืนยันการ์ดที่มีสลิป (slipDocIdOf) ทั้งทีละใบและบันทึกทั้งหมด
 - ง. ล็อกเวอร์ชัน CDN: pdf-lib@1.17.1 · sweetalert2@11.26.25 · chart.js@4.5.1 (xlsx ยังเป็น xlsx-latest — ตรวจเวอร์ชันจากเครื่องนี้ไม่ได้)
 - จ. renderSharedStatusSummary ใช้ AppState.pendingTransactions ที่เพิ่งโหลด (≤15 วิ) ไม่ดึงซ้ำ
+
+## 2026-10-15 (ต่อ) · ยอดยกมาจาก statement + เมนูนำเข้า Excel
+- สาเหตุ "บัญชีไม่รวมยอดยกมา": ตัวอ่าน statement ข้ามบรรทัด "ยอดยกมา" (ไม่ใช่รายการ) → ยอดบัญชี = ผลรวมการเคลื่อนไหวเท่านั้น จนกว่าจะใส่ชุดยอดยกมา
+- GET /api/accounts/balance-at?account_id&date → ยอดก่อนวันนั้น (ยืนยัน + รอตรวจ · กลับเครื่องหมายรายการนำเข้าเก่าที่จ่ายแต่เก็บบวก) + count
+- statementPrecheck: เทียบยอดยกมาในไฟล์ (บัตรเครดิต = ติดลบ) กับ balance-at(วันแรก) · count=0 → ติ๊ก "สร้างยอดยกมา" (POST /api/inbox/opening ชุดใหม่ 1 บัญชี ณ วันแรก) · ไม่ตรง → เตือนแดง · ตรง → ✅
+- prompt statement-ocr คืน opening_balance / closing_balance แล้ว (ทาง AI/ภาพแคปใช้ตรวจยอดยกมาได้)
+- เมนู "นำเข้า Excel ▾" ในการ์ด: รอตรวจ · ข้อมูลเก่า→รอตรวจ · ข้อมูลเก่า→ยืนยันเลย · แม่แบบ (เรียกปุ่มเดิมที่ซ่อน) · ย้าย #bulk-import-overlay ไป body (เดิมถูกซ่อนตามแถบหัว) · หน้าประวัติมีปุ่ม "นำเข้า Excel" พาไปเปิดเมนู
