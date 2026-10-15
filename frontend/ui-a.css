@@ -270,3 +270,8 @@ body.ui-dark .report-section, body.ui-dark .master-view, body.ui-dark .detail-vi
 body.ui-dark #view-settings .settings-section-header { background:var(--card-bg) !important; }
 body.ui-dark #view-settings .settings-section-header h4 { color:var(--text-primary) !important; }
 body.ui-a #view-settings .settings-section-header { background:var(--card-bg) !important; }
+/* รอตรวจสอบ: 4 ปุ่มใหญ่ + เครื่องมือ (2026-10-15) */
+.ph-actions { grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.2fr); }
+@media (max-width:1180px) { .ph-actions { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
+.ph-tools { margin:-4px 0 10px; text-align:right; }
+.ph-tools button { border:0; background:transparent; color:var(--danger-color); font:inherit; font-size:.85rem; font-weight:700; cursor:pointer; padding:4px 6px; }

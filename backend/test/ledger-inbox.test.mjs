@@ -179,6 +179,14 @@ console.log('\n── สลิปที่สองจากบัญชีเ�
   check('หมวด T01 จากที่จำ', lines(t.transaction_id)[0]?.category_id === 'T01' && out.legs[0].how === 'template-scaled');
 }
 
+console.log('\n── statement รุ่นเก่า (รอตรวจ ยอดบวก) แล้วส่งสลิปจ่าย → ยังจับคู่ได้ (2026-10-15) ──');
+{
+  db.prepare(`INSERT INTO Transactions (transaction_id,account_id,date,time,total_amount,status,source,created_by_user_id) VALUES ('TX-OLDPOS','A02','2026-10-12','08:00:00',777,'PENDING_REVIEW','PDF_IMPORT','9North')`).run();
+  db.prepare(`INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('D-OLDPOS','TX-OLDPOS',777,'Cat_Uncategorized','EXPENSE')`).run();
+  const out = await ingest(slip({ amount: 777, date: '2026-10-12', time: '08:02:00' }));
+  check('ผล = MATCHED กับรายการนำเข้าเก่า', out.outcome === 'MATCHED' && db.prepare(`SELECT transaction_id FROM LedgerDocLinks WHERE doc_id=?`).get(out.doc.doc_id)?.transaction_id === 'TX-OLDPOS', out.outcome);
+}
+
 console.log('\n── statement มาก่อน แล้วค่อยส่งสลิป → จับคู่ ไม่สร้างซ้ำ ──');
 {
   insertStatementTx('TX-STMT-1', 'A02', '2026-10-07', -1250, { time: '09:01:00' });

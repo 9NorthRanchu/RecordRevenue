@@ -2293,14 +2293,18 @@ function renderPendingHero() {
           <span class="ph-at"><b>นำเข้า Excel</b><small>ไฟล์รายการ .xlsx / .csv</small></span></button>
         <button type="button" class="ph-act" id="ph-add"><span class="dv2-kic" style="background:rgba(121,80,242,.13);color:#6D4AE0"><i class="fa-solid fa-plus"></i></span>
           <span class="ph-at"><b>เพิ่มรายการเอง</b><small>บันทึกด้วยมือ</small></span></button>
+        <label class="ph-act" id="ph-slip"><span class="dv2-kic" style="background:rgba(245,159,0,.15);color:#E67700"><i class="fa-solid fa-receipt"></i></span>
+          <span class="ph-at"><b>สลิป / ใบเสร็จ</b><small>เลือกได้หลายไฟล์ · จับคู่ให้อัตโนมัติ</small></span><span class="ph-go" id="ph-slip-go" style="display:grid;place-items:center">อัปโหลด</span>
+          <input type="file" id="ph-slip-in" accept="image/*,application/pdf" multiple hidden></label>
       </div>
+      ${pendingImportBatches().length ? `<div class="ph-tools"><button type="button" id="ph-delbatch">🗑️ ลบทั้งชุดที่นำเข้า (นำเข้าผิดบัญชี / ผิดไฟล์)</button></div>` : ''}
       <div id="ph-status"></div>
       <div class="dv2-kpis">
         ${kpi('<i class="fa-regular fa-clock"></i>', 'rgba(245,159,0,.15)', '#E67700', 'รอตรวจสอบ', `${list.length.toLocaleString('en-US')} <small>รายการ</small>`, 'ตรวจแล้วกดบันทึก ✓')}
         ${kpi('<i class="fa-solid fa-arrow-trend-up"></i>', 'rgba(32,201,151,.14)', 'var(--success-color)', 'รวมรายรับ (รอตรวจ)', f(sIn), `จาก ${nIn} รายการ`)}
         ${kpi('<i class="fa-solid fa-arrow-down"></i>', 'rgba(240,82,82,.13)', 'var(--danger-color)', 'รวมรายจ่าย (รอตรวจ)', f(-sOut), `จาก ${nOut} รายการ`)}
         ${kpi('<i class="fa-solid fa-rotate"></i>', 'rgba(121,80,242,.13)', 'var(--primary-color)', 'ผลนำเข้าล่าสุด', last ? `${Number(last.imported || 0).toLocaleString('en-US')} <small>รายการ</small>` : '-',
-            last ? `${last.ok ? '✅ ยอดตรงธนาคาร · ' : ''}ข้ามซ้ำ ${last.skipped || 0} · ${String(last.at || '').slice(0, 10)}` : 'ยังไม่เคยนำเข้า')}
+            last ? `${last.merged ? `จับคู่สลิป ${last.merged} · ` : ''}ข้ามซ้ำ ${last.skipped || 0} · ${String(last.at || '').slice(0, 10)}` : 'ยังไม่เคยนำเข้า')}
       </div>`;
     // ข้อความความคืบหน้าการนำเข้า (ของเดิมอยู่ในแถบหัว) → ย้ายมาแสดงตรงนี้
     const st = document.getElementById('statement-upload-status'); if (st) document.getElementById('ph-status').appendChild(st);
@@ -2317,6 +2321,8 @@ function renderPendingHero() {
         trig._phObs.observe(trig, { childList: true, subtree: true, characterData: true, attributes: true }); }
     box.querySelector('#ph-xls').onclick = () => document.getElementById('btn-pending-upload-csv')?.click();
     box.querySelector('#ph-add').onclick = () => document.getElementById('btn-pending-add-row')?.click();
+    const sin = box.querySelector('#ph-slip-in'); sin.onchange = () => { const fs = [...sin.files]; sin.value = ''; uploadSlipFiles(fs); };
+    box.querySelector('#ph-delbatch')?.addEventListener('click', deleteImportBatch);
 }
 
 // ── Top bar + master render ──
@@ -2996,7 +3002,7 @@ function getCardPayload(cardEl) {
         account_id: accId,
         date: txDate,
         time: txTime,
-        statement_desc: captionName || note || 'Imported Transaction',
+        statement_desc: (source !== 'WEB_GRID' && cardEl.dataset.desc) ? cardEl.dataset.desc : (captionName || note || 'Imported Transaction'),
         total_amount: parsedStmtAmount,   // signed
         ref_code: refCode,
         status: 'PENDING_REVIEW',
@@ -3184,7 +3190,8 @@ function renderPendingTransactions() {
         cardEl.dataset.accid = tx.account_id;
         cardEl.dataset.ref = tx.ref_code || '';
         cardEl.dataset.source = tx.source;
-        cardEl.dataset.slip = tx.slip_image_url || '';   // เก็บไว้ส่งกลับตอนบันทึก — ไม่งั้นลิงก์สลิปหาย
+        cardEl.dataset.slip = tx.slip_image_url || '';
+        cardEl.dataset.desc = tx.statement_desc || '';   // ข้อความธนาคารเดิม — เก็บไว้ ไม่ทับด้วยชื่อ Caption (ใช้กันนำเข้าซ้ำ)   // เก็บไว้ส่งกลับตอนบันทึก — ไม่งั้นลิงก์สลิปหาย
         cardEl.dataset.time = tx.time || '';
         
         const displayTime = tx.time ? tx.time.substring(0, 5) : '';
@@ -6964,10 +6971,118 @@ function statementAccountMatches(read, mine) {
     if (!groups.length || b.length < 4) return null;
     return groups.every(g => b.includes(g));
 }
+/* ✅ ตรวจก่อนนำเข้า statement (2026-10-15 · North: "นำเข้าผิดบัญชี ให้ระบบตรวจสอบความถูกต้องก่อนนำเข้า")
+   แสดงสรุปทุกครั้งก่อนบันทึก: เลขบัญชีในไฟล์เทียบบัญชีที่เลือก · ถ้าไม่ตรงแต่ตรงกับบัญชีอื่น → เสนอให้สลับ
+   ช่วงวันที่ · จำนวน · เงินเข้า/ออก · ยอดยกมา/ยกไป · คืนค่า account_id ที่จะใช้ หรือ null = ยกเลิก */
+async function statementPrecheck(accId, info) {
+    const accs = AppState.accounts || [], me = accs.find(a => a.account_id === accId);
+    const read = info.account_number || '';
+    const match = read ? statementAccountMatches(read, me?.account_number) : null;
+    const other = read && match !== true ? accs.find(a => a.account_id !== accId && statementAccountMatches(read, a.account_number) === true) : null;
+    const rows = info.rows || [], dates = rows.map(r => String(r.date).slice(0, 10)).filter(Boolean).sort();
+    const sIn = rows.filter(r => r.type !== 'EXPENSE').reduce((t, r) => t + Math.abs(+r.amount || 0), 0);
+    const sOut = rows.filter(r => r.type === 'EXPENSE').reduce((t, r) => t + Math.abs(+r.amount || 0), 0);
+    const f = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let state, note;
+    if (match === true) { state = 'ok'; note = `✅ เลขบัญชีในไฟล์ <b>${esc(read)}</b> ตรงกับบัญชีที่เลือก`; }
+    else if (match === false) { state = 'bad'; note = `❌ เลขบัญชีในไฟล์ <b>${esc(read)}</b> <u>ไม่ตรง</u> กับบัญชีที่เลือก (${esc(me?.account_number || '-')})`; }
+    else if (read && !me?.account_number) { state = 'warn'; note = `⚠️ ไฟล์เป็นบัญชี <b>${esc(read)}</b> แต่บัญชีที่เลือกยังไม่ได้ใส่เลขบัญชีในตั้งค่า — เทียบไม่ได้`; }
+    else { state = 'warn'; note = '⚠️ อ่านเลขบัญชีจากไฟล์ไม่ได้ — ตรวจชื่อบัญชีให้แน่ใจก่อนกดนำเข้า'; }
+    const html = `<div style="text-align:left;font-size:.92rem;line-height:1.6">
+        <div style="padding:10px 12px;border-radius:12px;margin-bottom:10px;background:${state === 'ok' ? '#E6FCF5' : state === 'bad' ? '#FFF5F5' : '#FFF9DB'};color:${state === 'ok' ? '#087F5B' : state === 'bad' ? '#C92A2A' : '#7A4A00'}">${note}
+          ${other ? `<br>👉 ตรงกับบัญชี <b>${esc(other.name)}</b> (${esc(other.account_number)})` : ''}</div>
+        <div>🏦 นำเข้าเข้าบัญชี: <b>${esc(me?.name || accId)}</b></div>
+        <div>📅 ช่วงวันที่: <b>${dates[0] || '-'} ถึง ${dates[dates.length - 1] || '-'}</b></div>
+        <div>🧾 จำนวน: <b>${rows.length.toLocaleString('en-US')} รายการ</b> · เข้า <b style="color:#087F5B">${f(sIn)}</b> · ออก <b style="color:#C92A2A">(${f(sOut)})</b></div>
+        ${info.opening != null || info.closing != null ? `<div>💰 ยอดยกมา ${f(info.opening)} → ยอดยกไป ${f(info.closing)}</div>` : ''}
+        <div style="color:#5C5872;font-size:.8rem;margin-top:6px">รายการที่มีอยู่แล้วจะถูกข้าม · รายการที่ตรงกับสลิป/ที่บันทึกไว้ก่อนจะจับคู่ ไม่สร้างซ้ำ</div></div>`;
+    if (!window.Swal) {
+        if (other && confirm(`${note.replace(/<[^>]+>/g, '')}\nไฟล์นี้ตรงกับบัญชี ${other.name}\nกดตกลง = นำเข้าเข้าบัญชี ${other.name}`)) return other.account_id;
+        return confirm(`นำเข้า ${rows.length} รายการ เข้าบัญชี ${me?.name || accId}?`) ? accId : null;
+    }
+    const r = await Swal.fire({ title: 'ตรวจก่อนนำเข้า', html, width: 560, icon: state === 'bad' ? 'warning' : undefined,
+        showCancelButton: true, cancelButtonText: 'ยกเลิก',
+        showDenyButton: !!other, denyButtonText: other ? `นำเข้าเข้า ${other.name}` : '', denyButtonColor: '#087F5B',
+        confirmButtonText: state === 'bad' ? `ยืนยัน นำเข้าเข้า ${me?.name || ''}` : 'นำเข้า', confirmButtonColor: state === 'bad' ? '#C92A2A' : '#5F3DC4',
+        focusConfirm: state !== 'bad', focusCancel: state === 'bad' });
+    if (r.isDenied && other) { const sel = document.getElementById('import-account-selector'); if (sel) sel.value = other.account_id; return other.account_id; }
+    return r.isConfirmed ? accId : null;
+}
+
+/* 🗑️ ลบทั้งชุดที่นำเข้า (2026-10-15): รายการรอตรวจที่มาจาก statement เดียวกัน = บัญชีเดียวกัน + เวลานำเข้าใกล้กัน (≤15 นาที)
+   ลบเฉพาะที่ยังรอตรวจสอบ · ที่ยืนยันไปแล้วต้องลบในหน้าประวัติ */
+function pendingImportBatches() {
+    const list = (AppState.pendingTransactions || []).filter(t => t.source === 'PDF_IMPORT');
+    const by = {};
+    for (const t of list) (by[t.account_id] = by[t.account_id] || []).push(t);
+    const out = [];
+    for (const [acc, txs] of Object.entries(by)) {
+        txs.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+        let cur = null;
+        for (const t of txs) {
+            const at = Date.parse(String(t.created_at || '').replace(' ', 'T') + (String(t.created_at || '').includes('Z') ? '' : 'Z')) || 0;
+            if (!cur || at - cur.last > 15 * 60e3) { cur = { account_id: acc, first: at, last: at, txs: [] }; out.push(cur); }
+            cur.last = at; cur.txs.push(t);
+        }
+    }
+    return out.sort((a, b) => b.first - a.first);
+}
+async function deleteImportBatch() {
+    const batches = pendingImportBatches();
+    if (!batches.length) { try { showToast('ไม่มีรายการรอตรวจที่มาจากการนำเข้า statement', 'error'); } catch { /* */ } return; }
+    const acc = id => (AppState.accounts || []).find(a => a.account_id === id)?.name || id;
+    const when = ms => ms ? new Date(ms).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+    const range = b => { const d = b.txs.map(t => String(t.date).slice(0, 10)).sort(); return `${d[0]} ถึง ${d[d.length - 1]}`; };
+    const html = `<div style="text-align:left">${batches.map((b, i) => `<label style="display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid #E9E3FA;border-radius:12px;margin-bottom:8px;cursor:pointer">
+        <input type="radio" name="ib" value="${i}" ${i === 0 ? 'checked' : ''} style="margin-top:4px">
+        <span><b>${acc(b.account_id)}</b> · ${b.txs.length} รายการ<br><small style="color:#5C5872">นำเข้าเมื่อ ${when(b.first)} · รายการวันที่ ${range(b)}</small></span></label>`).join('')}
+        <div style="font-size:.8rem;color:#C92A2A">ลบเฉพาะรายการที่ยังรอตรวจสอบ · กู้คืนไม่ได้ (นำเข้าไฟล์ใหม่ได้)</div></div>`;
+    const r = await Swal.fire({ title: 'ลบทั้งชุดที่นำเข้า', html, width: 560, showCancelButton: true, cancelButtonText: 'ยกเลิก', confirmButtonText: '🗑️ ลบชุดที่เลือก', confirmButtonColor: '#C92A2A',
+        preConfirm: () => Number(document.querySelector('input[name="ib"]:checked')?.value) });
+    if (!r.isConfirmed) return;
+    const b = batches[r.value];
+    if (!confirm(`ยืนยันลบ ${b.txs.length} รายการของ ${acc(b.account_id)}?`)) return;
+    const res = await fetch(`${API_BASE}/api/transactions/bulk-delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transaction_ids: b.txs.map(t => t.transaction_id) }) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { alert('ลบไม่สำเร็จ: ' + (j.error || res.status)); return; }
+    try { showToast(`🗑️ ลบแล้ว ${j.deleted} รายการ`); } catch { /* */ }
+    fetchMasterData(); loadPending();
+}
+
+/* 📎 อัปโหลดสลิป / ใบเสร็จ / รายการซื้อของ จากเว็บ (2026-10-15) — ทางเดียวกับส่งใน LINE
+   สลิป → จับคู่รายการที่ยอดตรง (±3 วัน) หรือสร้างรายการรอตรวจ · ใบเสร็จ/ออเดอร์ → แนบกับรายการจ่ายที่ยอดตรง หรือรอไว้
+   ส่งทีละไฟล์ (พร้อมกัน 2) เพื่อไม่ให้คำขอเดียวนานเกิน */
+async function uploadSlipFiles(files) {
+    files = [...(files || [])]; if (!files.length) return;
+    const go = document.getElementById('ph-slip-go'); const orig = go ? go.innerHTML : '';
+    let done = 0, matched = 0, created = 0, waiting = 0, failed = 0, dup = 0;
+    const q = files.slice();
+    const worker = async () => { while (q.length) { const f = q.shift();
+        const fd = new FormData(); fd.append('file', f, f.name);
+        try { const r = await fetch(`${API_BASE}/api/inbox/upload`, { method: 'POST', body: fd }); const j = await r.json().catch(() => ({}));
+            const o = j.results?.[0] || {};
+            if (!r.ok || o.error) failed++; else if (o.duplicate) dup++; else if (o.outcome === 'MATCHED' || o.outcome === 'ATTACHED') matched++; else if (o.outcome === 'SUGGESTED') created++; else waiting++;
+        } catch { failed++; }
+        done++; if (go) go.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${done}/${files.length}`; } };
+    await Promise.all([worker(), worker()]);
+    if (go) go.innerHTML = orig;
+    alert(`อ่านแล้ว ${files.length} ไฟล์\n🔗 จับคู่กับรายการที่มีอยู่ ${matched}\n🆕 สร้างเป็นรายการรอตรวจ ${created}\n⏳ รอเลือก/รอจับคู่ ${waiting} (ดูกล่องสีส้มด้านบน)` + (dup ? `\n♻️ เคยส่งแล้ว ${dup}` : '') + (failed ? `\n⚠️ ไม่สำเร็จ ${failed}` : ''));
+    loadPending();
+}
+/* หลังนำเข้า statement: ใบเสร็จ/สลิปที่รอจับคู่ ลองจับคู่ใหม่อีกรอบ (ไม่ต้องรอ) */
+async function rematchWaitingDocs() {
+    try {
+        const r = await fetch(`${API_BASE}/api/inbox?adopt=0`); if (!r.ok) return;
+        const docs = ((await r.json()).docs || []).filter(d => ['STORED', 'NEEDS_CHOICE'].includes(d.status)).slice(0, 30);
+        for (const d of docs) await fetch(`${API_BASE}/api/inbox/${d.doc_id}/rematch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+    } catch { /* ไม่เป็นไร */ }
+}
+
 /* สร้างรายการรอตรวจสอบจากบรรทัด statement (ใช้ทั้งทางอ่านเองและทาง AI) */
 async function importStatementRows(accId, transactions, onProgress) {
     const entityId = AppState.allowedEntities[0] || null;
-    let importedCount = 0, skippedCount = 0, errorCount = 0, done = 0;
+    let importedCount = 0, skippedCount = 0, errorCount = 0, mergedCount = 0, done = 0;
     const skippedDetails = [];
     const queue = transactions.slice();
     const worker = async () => {
@@ -6975,14 +7090,16 @@ async function importStatementRows(accId, transactions, onProgress) {
             const tx = queue.shift();
             const payload = {
                 transaction_id: generateTxId(tx.date, accId, tx.amount, 'PDF', { refCode: tx.ref_code, statementDesc: tx.statement_desc, time: tx.time }),
-                account_id: accId, date: tx.date, time: tx.time, statement_desc: tx.statement_desc, total_amount: tx.amount, ref_code: tx.ref_code,
-                status: 'PENDING_REVIEW', source: 'PDF_IMPORT',
-                details: [{ amount: tx.amount, fee: 0, wht: 0, category_id: null, entity_id: entityId, note: tx.note, type: tx.type }]
+                // ยอดติดเครื่องหมายตามจริง (จ่าย = ลบ) ให้ตรงกับรายการจาก LINE/ที่บันทึกแล้ว · match_existing = จับคู่สลิปที่บันทึกไว้ก่อน (2026-10-15)
+                account_id: accId, date: tx.date, time: tx.time, statement_desc: tx.statement_desc, total_amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), ref_code: tx.ref_code,
+                status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true,
+                details: [{ amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), fee: 0, wht: 0, category_id: null, entity_id: entityId, note: tx.note, type: tx.type }]
             };
             try {
                 const r = await fetch(`${API_BASE}/api/transactions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) }, body: JSON.stringify(payload) });
                 const json = await r.json().catch(() => ({}));
                 if (!r.ok) errorCount++;
+                else if (json.merged) mergedCount++;
                 else if (json.skipped) { skippedCount++; skippedDetails.push(json.message || `${tx.date} | ${tx.amount}`); }
                 else importedCount++;
             } catch { errorCount++; }
@@ -6990,8 +7107,9 @@ async function importStatementRows(accId, transactions, onProgress) {
         }
     };
     await Promise.all(Array.from({ length: Math.min(6, transactions.length) }, worker));
-    try { localStorage.setItem('rr_last_import', JSON.stringify({ imported: importedCount, skipped: skippedCount, errors: errorCount, at: new Date().toISOString() })); } catch { /* */ }
-    return { importedCount, skippedCount, errorCount, skippedDetails };
+    try { localStorage.setItem('rr_last_import', JSON.stringify({ imported: importedCount, skipped: skippedCount, merged: mergedCount, errors: errorCount, at: new Date().toISOString() })); } catch { /* */ }
+    rematchWaitingDocs();
+    return { importedCount, skippedCount, errorCount, mergedCount, skippedDetails };
 }
 
 function bindPDFUpload() {
@@ -7013,7 +7131,7 @@ function bindPDFUpload() {
             if (!file) return;
             
             const importAccSel = document.getElementById("import-account-selector");
-            const selectedAccId = importAccSel ? importAccSel.value : '';
+            let selectedAccId = importAccSel ? importAccSel.value : '';
             if (!selectedAccId) {
                 alert("กรุณาเลือกบัญชีธนาคารก่อนอัปโหลดไฟล์ PDF");
                 pdfInput.value = '';
@@ -7043,17 +7161,17 @@ function bindPDFUpload() {
                 if (opened.pdf) {
                     const parsed = await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
                     if (parsed.ok) {
-                        const accObj0 = AppState.accounts.find(a => a.account_id === selectedAccId);
-                        const match = statementAccountMatches(parsed.account_number, accObj0?.account_number);
-                        if (match === false && !confirm(`⚠️ เลขบัญชีในไฟล์ (${parsed.account_number}) ไม่ตรงกับบัญชีที่เลือก (${accObj0?.account_number})\nยังต้องการนำเข้าเข้าบัญชีนี้หรือไม่?`)) { resetUploadBtn(); return; }
                         const txs = parsed.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00',
                             type: l.amount > 0 ? 'INCOME' : 'EXPENSE', amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null }));
+                        const useAcc = await statementPrecheck(selectedAccId, { account_number: parsed.account_number, rows: txs, opening: parsed.opening, closing: parsed.closing });
+                        if (!useAcc) { resetUploadBtn(); return; }
+                        selectedAccId = useAcc;
                         const res = await importStatementRows(selectedAccId, txs, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; });
                         const sumIn = parsed.lines.filter(l => l.amount > 0).reduce((t, l) => t + l.amount, 0), sumOut = -parsed.lines.filter(l => l.amount < 0).reduce((t, l) => t + l.amount, 0);
                         let msg = `อ่านจากตัวหนังสือในไฟล์ (ไม่ใช้ AI) ${parsed.lines.length} รายการ\n` +
                             `ยอดยกมา ${Number(parsed.opening ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} · ยอดยกไป ${Number(parsed.closing ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +
                             `ฝาก ${sumIn.toLocaleString('en-US', { minimumFractionDigits: 2 })} · ถอน ${sumOut.toLocaleString('en-US', { minimumFractionDigits: 2 })} · ยอดคงเหลือเดินลงทุกแถว ✅\n\n` +
-                            `นำเข้า ${res.importedCount} รายการ`;
+                            `นำเข้า ${res.importedCount} รายการ` + (res.mergedCount ? `\n🔗 จับคู่กับสลิป/รายการที่บันทึกไว้แล้ว ${res.mergedCount} รายการ (ไม่สร้างซ้ำ)` : '');
                         if (res.skippedCount) msg += `\nข้ามรายการซ้ำ ${res.skippedCount} รายการ:\n` + res.skippedDetails.slice(0, 10).join('\n') + (res.skippedDetails.length > 10 ? `\n...และอีก ${res.skippedDetails.length - 10} รายการ` : '');
                         if (res.errorCount) msg += `\n⚠️ บันทึกไม่สำเร็จ ${res.errorCount} รายการ — นำเข้าไฟล์เดิมอีกครั้งได้ (รายการที่มีแล้วจะถูกข้าม)`;
                         alert(msg);
@@ -7159,8 +7277,11 @@ function bindPDFUpload() {
                     if (res.ok) {
                         const data = await res.json();
                         if (data && data.transactions && data.transactions.length > 0) {
+                            const useAcc = await statementPrecheck(selectedAccId, { account_number: data.account_number, rows: data.transactions });
+                            if (!useAcc) { if(btnIcon) btnIcon.className = originalIconClass; triggerUploadBtn.disabled = false; triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เริ่มนำเข้าข้อมูล`; pdfInput.value = ''; return; }
+                            selectedAccId = useAcc;
                             const res = await importStatementRows(selectedAccId, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; });
-                            let msg = `อ่านด้วย AI · นำเข้า ${res.importedCount} รายการ`;
+                            let msg = `อ่านด้วย AI · นำเข้า ${res.importedCount} รายการ` + (res.mergedCount ? `\n🔗 จับคู่กับสลิป/รายการที่บันทึกไว้แล้ว ${res.mergedCount} รายการ (ไม่สร้างซ้ำ)` : '');
                             if (res.skippedCount > 0) {
                                 msg += `\n\nข้ามรายการซ้ำ ${res.skippedCount} รายการ:\n` + res.skippedDetails.slice(0, 10).join('\n');
                                 if (res.skippedDetails.length > 10) msg += `\n...และอีก ${res.skippedDetails.length - 10} รายการ`;

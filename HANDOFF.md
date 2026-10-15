@@ -3634,3 +3634,13 @@ frontend
 - ตั้งค่า: แท็บเป็นการ์ด · แถบเลือกธีม .st-theme (bindSettingsTheme → #theme-selector) · resetData ยกระดับ: preview จำนวน + closed_periods → RESET → สำรอง → ลบ (reopen_closed)
 - เลิกใช้: frontend/ledger/home.html, index.html, reports.html, settings.html → git rm · เหลือ ledger/quick.html + theme.js (หน้าแก้สลิปจากการ์ด LINE)
 - โหมดมืด: บัตร & เงินกู้/ทรัพย์สิน ใช้ตัวแปรสีของธีม (--ink/--bg/--brand → ธีม) + ทับพื้นขาวตายตัว · หัวข้อตั้งค่า sticky ใช้สีการ์ด (ui-a.css v7)
+
+## 2026-10-15 · นำเข้า statement ปลอดภัยขึ้น + จับคู่สลิป/ใบเสร็จ (North: นำเข้าผิดบัญชี)
+- ตรวจก่อนนำเข้า statementPrecheck (ทั้งทางอ่านเองและทาง AI): เลขบัญชีในไฟล์ vs บัญชีที่เลือก · ไม่ตรงแต่ตรงบัญชีอื่น → ปุ่ม "นำเข้าเข้า <บัญชีนั้น>" · สรุปช่วงวันที่/จำนวน/เข้า-ออก/ยอดยกมา-ยกไป ทุกครั้ง
+- ลบทั้งชุดที่นำเข้า: pendingImportBatches (บัญชีเดียวกัน + created_at ห่าง ≤15 นาที) → POST /api/transactions/bulk-delete (เฉพาะ PENDING_REVIEW ของบัญชีที่มีสิทธิ์ · ≤3000 · ลบ details + LedgerDocLinks)
+- ยอดนำเข้า statement เก็บติดเครื่องหมายจริงแล้ว (จ่าย = ลบ) · dedupe PDF เทียบ ABS + ไม่นับตัวเอง (เดิมกดบันทึกการ์ดอาจถูกมองว่าซ้ำตัวเอง)
+- การ์ดรอตรวจ: บันทึกแล้วเก็บข้อความธนาคารเดิม (dataset.desc) ไม่ทับด้วยชื่อ Caption — เดิมทำให้นำเข้าไฟล์เดิมซ้ำแล้วกันซ้ำไม่ได้
+- match_existing: บรรทัด statement ยอด+ทิศ+บัญชีตรงกับรายการ LINE_SLIP/LINE_TEXT/WEB_GRID ภายใน ±3 วัน (ใกล้สุดตัวเดียว) → ไม่สร้างใหม่ ปรับรายการเดิมเป็นวันที่/ข้อความธนาคาร source=PDF_IMPORT (เก็บรูปสลิป)
+- findCandidates (สลิปมาทีหลัง) จับคู่รายการนำเข้ารุ่นเก่าที่ยอดเป็นบวกได้ · action ใหม่ POST /api/inbox/{doc}/rematch (STORED/NEEDS_CHOICE) · หลังนำเข้าเรียก rematchWaitingDocs อัตโนมัติ
+- รอตรวจสอบ: ปุ่ม "สลิป / ใบเสร็จ" อัปโหลดหลายไฟล์จากเว็บ (uploadSlipFiles → /api/inbox/upload ทีละไฟล์ พร้อมกัน 2)
+- เทสต์เพิ่ม: endpoints (+5) · ledger-inbox (+1)

@@ -179,7 +179,7 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
       return json(out, cors, out.error ? (out.status || 400) : 200);
     }
 
-    const act = path.match(/^\/api\/inbox\/([\w-]+)\/(accept|link|account|dismiss)$/);
+    const act = path.match(/^\/api\/inbox\/([\w-]+)\/(accept|link|account|dismiss|rematch)$/);
     if (act && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
       const out = await runAction(env, user, act[1], act[2], body);
@@ -426,23 +426,28 @@ function shiftDate(date, days) {
   return Number.isFinite(t) ? new Date(t + days * 864e5).toISOString().slice(0, 10) : '0000-00-00';
 }
 
-const CANDIDATE_COLS = `t.transaction_id, t.account_id, t.date, t.time, t.total_amount, t.ref_code, t.status, t.statement_desc,
+const CANDIDATE_COLS = `t.transaction_id, t.account_id, t.date, t.time, t.total_amount, t.ref_code, t.status, t.statement_desc, t.source,
   (SELECT COUNT(*) FROM LedgerDocLinks l WHERE l.transaction_id = t.transaction_id AND l.role IN ('MATCHED','CREATED')) AS linked`;
 
 async function findCandidates(env, accountIds, ev) {
   if (!accountIds.length) return [];
   const marks = accountIds.map(() => '?').join(',');
   // ช่วงวันที่ใช้ >= / < เพื่อให้ดัชนีวันที่ทำงาน (บทเรียนโควตา D1 เดือน ก.ย.)
+  /* รายการรอตรวจที่นำเข้าจาก statement รุ่นเก่าเก็บยอดเป็นบวกเสมอ (ดูประเภทจากบรรทัดย่อย) → เทียบแบบไม่สนเครื่องหมายด้วย (2026-10-15) */
   const rows = await env.DB.prepare(`SELECT ${CANDIDATE_COLS} FROM Transactions t
-    WHERE t.account_id IN (${marks}) AND t.date >= ? AND t.date < ? AND ABS(t.total_amount - ?) < 0.005`)
-    .bind(...accountIds, shiftDate(ev.date, -3), shiftDate(ev.date, 4), ev.signedAmount).all();
+    WHERE t.account_id IN (${marks}) AND t.date >= ? AND t.date < ? AND (ABS(t.total_amount - ?) < 0.005
+      OR (t.source = 'PDF_IMPORT' AND t.status = 'PENDING_REVIEW' AND t.total_amount > 0 AND ? < 0 AND ABS(t.total_amount + ?) < 0.005
+          AND EXISTS (SELECT 1 FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id AND d.type = 'EXPENSE')))`)
+    .bind(...accountIds, shiftDate(ev.date, -3), shiftDate(ev.date, 4), ev.signedAmount, ev.signedAmount, ev.signedAmount).all();
   const list = rows.results || [];
   if (ev.ref) {
     const byRef = await env.DB.prepare(`SELECT ${CANDIDATE_COLS} FROM Transactions t
       WHERE t.ref_code = ? AND t.account_id IN (${marks})`).bind(ev.ref, ...accountIds).all();
     for (const r of byRef.results || []) if (!list.some(x => x.transaction_id === r.transaction_id)) list.push(r);
   }
-  return list.map(tx => ({ ...tx, linked: Number(tx.linked) > 0, score: scoreCandidate(ev, tx) }));
+  // รายการนำเข้ารุ่นเก่าเก็บยอดจ่ายเป็นบวก → คิดคะแนนด้วยยอดติดลบตามจริง
+  const signed = tx => (tx.source === 'PDF_IMPORT' && tx.status === 'PENDING_REVIEW' && tx.total_amount > 0 && ev.signedAmount < 0) ? { ...tx, total_amount: -tx.total_amount } : tx;
+  return list.map(tx => ({ ...tx, linked: Number(tx.linked) > 0, score: scoreCandidate(ev, signed(tx)) }));
 }
 
 async function processSlip(env, user, doc, ex, forced) {
@@ -647,6 +652,13 @@ export async function runAction(env, user, docId, action, body = {}) {
     for (const l of createdPending) await deleteTx(env, l.transaction_id);
     await env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE doc_id=?`).bind(docId).run();
     return processDoc(env, user, docId, { forced: { account_id: body.account_id, side } });
+  }
+
+  /* จับคู่อีกครั้ง (2026-10-15): ใบเสร็จ/สลิปที่รออยู่ ลองหารายการที่ยอดตรงใหม่ (เช่น หลังนำเข้า statement) */
+  if (action === 'rematch') {
+    if (!['STORED', 'NEEDS_CHOICE'].includes(doc.status)) return { ok: true, status: doc.status, unchanged: true };
+    if (doc.status === 'NEEDS_CHOICE') for (const l of createdPending) await deleteTx(env, l.transaction_id);
+    return processDoc(env, user, docId, {});
   }
 
   if (action === 'link') {

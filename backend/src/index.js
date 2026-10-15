@@ -368,10 +368,13 @@ export default {
           if (mappedSource === 'PDF_IMPORT') {
             // PDF: check by ref_code (if present) OR (account+date+time+amount+statement_desc)
             let dupTx = null;
+            /* 2026-10-15: ไม่นับตัวเอง (กดบันทึกการ์ดเดิมเคยถูกมองว่า "ซ้ำ" แล้วไม่บันทึก)
+               และเทียบยอดแบบไม่สนเครื่องหมาย (รายการนำเข้าเก่าเก็บยอดบวก · ใหม่เก็บติดลบตามจริง) */
+            const selfId = transaction_id || '';
             if (ref_code) {
               dupTx = await env.DB.prepare(
-                `SELECT transaction_id, date, total_amount, status, statement_desc FROM Transactions WHERE account_id = ? AND ref_code = ?`
-              ).bind(account_id, ref_code).first();
+                `SELECT transaction_id, date, total_amount, status, statement_desc FROM Transactions WHERE account_id = ? AND ref_code = ? AND transaction_id != ?`
+              ).bind(account_id, ref_code, selfId).first();
             }
             if (!dupTx) {
               dupTx = await env.DB.prepare(`
@@ -379,9 +382,32 @@ export default {
                 WHERE account_id = ?
                   AND date = ?
                   AND (time = ? OR (time IS NULL AND ? IS NULL))
-                  AND ABS(total_amount - ?) < 0.01
+                  AND ABS(ABS(total_amount) - ABS(?)) < 0.01
                   AND (statement_desc = ? OR (statement_desc IS NULL AND ? IS NULL))
-              `).bind(account_id, date, time||null, time||null, total_amount, statement_desc||null, statement_desc||null).first();
+                  AND transaction_id != ?
+              `).bind(account_id, date, time||null, time||null, total_amount, statement_desc||null, statement_desc||null, selfId).first();
+            }
+            /* จับคู่กับสลิป/รายการที่บันทึกไว้ก่อน (2026-10-15 · North: "สลิป รอ match กับ statement")
+               บรรทัด statement ที่ยอด+บัญชีตรงกับรายการจาก LINE/พิมพ์เอง ภายใน ±3 วัน → ไม่สร้างใหม่ (กันซ้ำ)
+               แต่ปรับรายการเดิมให้ใช้วันที่/ข้อความของธนาคาร และนับว่ามี statement ยืนยันแล้ว (source = PDF_IMPORT) */
+            if (!dupTx && body.match_existing) {
+              const day = 864e5, base = Date.parse(String(date).slice(0, 10));
+              const from = new Date(base - 3 * day).toISOString().slice(0, 10), to = new Date(base + 3 * day).toISOString().slice(0, 10);
+              const cands = (await env.DB.prepare(`SELECT transaction_id, date, total_amount, status, statement_desc, source FROM Transactions
+                  WHERE account_id = ? AND source IN ('LINE_SLIP','LINE_TEXT','WEB_GRID') AND date >= ? AND date <= ?
+                    AND ABS(ABS(total_amount) - ABS(?)) < 0.01 AND ((total_amount < 0) = (? < 0)) AND transaction_id != ?`)
+                .bind(account_id, from, to + ' 23:59:59', total_amount, total_amount, selfId).all()).results || [];
+              const dist = c => Math.abs(Date.parse(String(c.date).slice(0, 10)) - base);
+              cands.sort((a, b) => dist(a) - dist(b));
+              if (cands.length && (cands.length === 1 || dist(cands[0]) < dist(cands[1]))) {
+                const c = cands[0];
+                if (!(await isMonthClosed(env, account_id, c.date))) {
+                  await env.DB.prepare(`UPDATE Transactions SET date = ?, time = COALESCE(?, time), statement_desc = ?, source = 'PDF_IMPORT', ref_code = COALESCE(ref_code, ?) WHERE transaction_id = ?`)
+                    .bind(date, time || null, statement_desc || c.statement_desc || null, ref_code || null, c.transaction_id).run();
+                  return new Response(JSON.stringify({ success: true, skipped: true, merged: true, existingId: c.transaction_id,
+                    message: `จับคู่กับรายการเดิม: ${String(c.date).slice(0, 10)} | ${fmtAmt(c.total_amount)} | ${c.statement_desc || '-'} (${c.status})` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+                }
+              }
             }
             if (dupTx) {
               return new Response(JSON.stringify({
@@ -461,6 +487,30 @@ export default {
       }
 
       // 5. Delete Transaction
+      /* ลบหลายรายการ "รอตรวจสอบ" พร้อมกัน (2026-10-15 · ลบทั้งชุด statement ที่นำเข้าผิดบัญชี)
+         ลบได้เฉพาะ PENDING_REVIEW ของบัญชีที่มีสิทธิ์ · สูงสุด 3000 รายการต่อครั้ง */
+      if (url.pathname === '/api/transactions/bulk-delete' && request.method === 'POST') {
+        const body = await request.json().catch(() => ({}));
+        const ids = [...new Set((body.transaction_ids || []).map(String))].slice(0, 3000);
+        if (!ids.length) return new Response(JSON.stringify({ error: 'ไม่มีรายการที่เลือก' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        let deleted = 0;
+        for (let i = 0; i < ids.length; i += 90) {
+          const chunk = ids.slice(i, i + 90), marks = chunk.map(() => '?').join(',');
+          const ok = ((await env.DB.prepare(`SELECT t.transaction_id FROM Transactions t JOIN Accounts a ON a.account_id = t.account_id
+              JOIN UserPermissions up ON up.entity_id = a.entity_id AND up.user_id = ?
+              WHERE t.status = 'PENDING_REVIEW' AND t.transaction_id IN (${marks})`).bind(authUserId, ...chunk).all()).results || []).map(r => r.transaction_id);
+          if (!ok.length) continue;
+          const m2 = ok.map(() => '?').join(',');
+          await env.DB.batch([
+            env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id IN (${m2})`).bind(...ok),
+            env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE transaction_id IN (${m2})`).bind(...ok),
+            env.DB.prepare(`DELETE FROM Transactions WHERE transaction_id IN (${m2}) AND status = 'PENDING_REVIEW'`).bind(...ok),
+          ]);
+          deleted += ok.length;
+        }
+        return new Response(JSON.stringify({ success: true, deleted, requested: ids.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       if (url.pathname === '/api/transactions/delete' && request.method === 'POST') {
         const { transaction_id } = await request.json();
         if (!(await ownTx(transaction_id))) return new Response(JSON.stringify({ error: 'ไม่พบรายการ หรือไม่มีสิทธิ์' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

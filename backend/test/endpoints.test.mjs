@@ -146,5 +146,28 @@ r = await call('/api/restore/full', { user: '9North', method: 'POST', body: { mo
 check('กู้ด้วยไฟล์ว่าง → 400 ไม่ล้าง', r.s === 400 && nTx() === before, { r, n: nTx() });
 r = await call('/api/restore/full', { user: '9North', method: 'POST', body: { mode: 'replace', entities: [{ entity_id: 'Ent_North', name: 'N' }], accounts: [{ account_id: 'A01', entity_id: 'Ent_North', name: 'x' }], transactions: [{ transaction_id: 'T1' }] } });
 check('ไฟล์มีรายการน้อยกว่าครึ่ง → ต้องยืนยันก่อน (409) ไม่ล้าง', r.s === 409 && r.j.needs_confirm && nTx() === before, { r, n: nTx() });
+
+/* ── นำเข้า statement 2026-10-15: จับคู่สลิปเดิม · ไม่นับตัวเองเป็นรายการซ้ำ · ลบทั้งชุด ── */
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,time,total_amount,status,source,created_by_user_id,statement_desc,slip_image_url) VALUES
+ ('TX-SLIP','A06','2026-10-08','10:00:00',-350,'PENDING_REVIEW','LINE_SLIP','9North','โอนให้ ร้าน ก','/api/inbox/file/D1');
+ INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('D-SLIP','TX-SLIP',-350,'T01','EXPENSE');`);
+const stmtRow = (id, date, amt, desc, extra = {}) => ({ transaction_id: id, account_id: 'A06', date, time: '10:01:00', statement_desc: desc, total_amount: amt, status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true,
+  details: [{ amount: amt, category_id: 'Cat_Uncategorized', type: amt < 0 ? 'EXPENSE' : 'INCOME' }], ...extra });
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: stmtRow('TX-ST1', '2026-10-09', -350, 'TR TO SHOP K') });
+const slip = db.prepare(`SELECT * FROM Transactions WHERE transaction_id='TX-SLIP'`).get();
+check('statement ยอดตรงสลิป (±3 วัน) → จับคู่ ไม่สร้างใหม่', r.j?.merged && r.j.existingId === 'TX-SLIP' && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='TX-ST1'`).get(), r);
+check('รายการเดิมใช้วันที่/ข้อความธนาคาร + เก็บรูปสลิป', slip.date === '2026-10-09' && slip.statement_desc === 'TR TO SHOP K' && slip.source === 'PDF_IMPORT' && slip.slip_image_url === '/api/inbox/file/D1', slip);
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: stmtRow('TX-ST1b', '2026-10-09', -350, 'TR TO SHOP K') });
+check('นำเข้าไฟล์เดิมซ้ำ → ข้าม (ไม่จับคู่ซ้ำ ไม่สร้างซ้ำ)', r.j?.skipped && !r.j.merged && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='TX-ST1b'`).get(), r);
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: stmtRow('TX-ST2', '2026-10-09', 350, 'DEPOSIT') });
+check('ยอดเท่ากันแต่คนละทิศ (เงินเข้า) → ไม่จับคู่ สร้างใหม่', !r.j?.merged && db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='TX-ST2'`).get(), r);
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: stmtRow('TX-ST2', '2026-10-09', 350, 'DEPOSIT', { status: 'CONFIRMED', match_existing: false }) });
+check('กดบันทึกการ์ดเดิม (ข้อความเหมือนเดิม) → ไม่ถูกมองว่าซ้ำตัวเอง', !r.j?.skipped && db.prepare(`SELECT status FROM Transactions WHERE transaction_id='TX-ST2'`).get().status === 'CONFIRMED', r);
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id) VALUES ('TX-B1','A06','2026-10-01',100,'PENDING_REVIEW','PDF_IMPORT','9North'),('TX-B2','A06','2026-10-02',200,'PENDING_REVIEW','PDF_IMPORT','9North'),('TX-BOTHER','X99','2026-10-02',200,'PENDING_REVIEW','PDF_IMPORT','Other');
+ INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id) VALUES ('DB1','TX-B1',100,'T01'),('DB2','TX-B2',200,'T01');`);
+r = await call('/api/transactions/bulk-delete', { user: '9North', method: 'POST', body: { transaction_ids: ['TX-B1', 'TX-B2', 'TX-ST2', 'TX-BOTHER'] } });
+const left = id => !!db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id=?`).get(id);
+check('ลบทั้งชุด: ลบเฉพาะรอตรวจของเรา (ไม่แตะที่ยืนยันแล้ว/ครอบครัวอื่น)', r.j?.deleted === 2 && !left('TX-B1') && !left('TX-B2') && left('TX-ST2') && left('TX-BOTHER')
+  && !db.prepare(`SELECT 1 FROM TransactionDetails WHERE detail_id='DB1'`).get(), { r });
 console.log(`${bad ? '❌' : '✅'} ผ่าน ${ok} · ไม่ผ่าน ${bad}`);
 if (bad) process.exit(1);
