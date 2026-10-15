@@ -3601,3 +3601,11 @@ frontend
 ## 2026-10-15 · พื้นที่ทำงานร่วมกับ ChatGPT (ภาพ/ไอคอน)
 - โฟลเดอร์ `ภาพและไอคอน (ChatGPT)/` (อยู่ใน .gitignore) · Claude เขียนคำสั่งใน requests/ · ChatGPT เซฟภาพใน outputs/ · ทะเบียน STATUS.md กันงานซ้ำ · กติกาใน README-สำหรับ-ChatGPT.md
 - ภาพที่เลือกแล้ว Claude คัดลอกเข้า frontend/assets แล้วกรอก "ใช้ในแอปที่" ใน STATUS.md
+
+## 2026-10-15 · North ตัดสินใจ: 1ก สลิป LINE เข้า "รอตรวจสอบ" แอปเดิม · ยกเลิกฟีเจอร์ปิดเดือน
+- สลิป LINE ที่จับบัญชีได้ → เป็น Transactions PENDING_REVIEW อยู่แล้ว (processSlip) → เห็นในรอตรวจสอบ · การ์ดมีปุ่ม 📎 (showSlip ดึง /api/inbox/file/{doc} แบบมี token)
+- app.js `// line_slips.js` (LineSlips) กล่องบนสุดของรอตรวจสอบ: เอกสารสถานะ NEEDS_ACCOUNT / NEEDS_CHOICE / ERROR / READING / STORED → ปุ่มเลือกบัญชี / ผูกรายการ / อ่านใหม่ / ไม่ต้องบันทึก · เรียก GET /api/inbox?adopt=0 (ใหม่: ไม่ดึงรายการรอตรวจเข้ากล่อง)
+- แก้บั๊ก: บันทึกการ์ดรอตรวจสอบเดิมไม่ส่ง slip_image_url → INSERT OR REPLACE ลบลิงก์สลิปทิ้ง · ตอนนี้ส่งกลับแล้ว (cardEl.dataset.slip)
+- ยกเลิกปิดเดือน: ลบเมนู + view-close + โค้ด PC ออกจากแอปเดิม (โค้ดเดิมอยู่ใน commit c1ee3c6) · backend period-close + trigger ยังอยู่ ไม่มีผลถ้าไม่มีเดือนที่ปิด
+- ledger/quick.html เก็บไว้ = หน้าแก้สลิปที่เปิดจากการ์ดใน LINE (ส่วนหนึ่งของ LINE ไม่ใช่หน้าแอป)
+- mockup: 007 ยกเลิก · เมนูใน prompt เหลือ 7 รายการ · 002 เพิ่มกล่องสลิป LINE

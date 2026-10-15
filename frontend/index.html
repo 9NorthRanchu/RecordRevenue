@@ -90,7 +90,6 @@
                     <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i> <span>ทะเบียนลูกหนี้/เจ้าหนี้</span></a>
                     <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link"><i class="fa-solid fa-wand-sparkles"></i> <span>Enjoy Life Trip</span><small>ข้อมูลจริง</small></a>
                     <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-pie"></i> <span>รายงานทางการเงิน</span></a>
-                    <a href="#" class="nav-item" data-target="close"><i class="fa-solid fa-lock"></i> <span>ปิดเดือน</span></a>
                     <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i> <span>ตั้งค่าระบบ</span></a>
                     <!-- ชั่วคราว: ฟีเจอร์ที่ยังไม่มีในแอปเดิม — รอย้ายเข้าแอปเดิมทีละอย่าง แล้วลบหน้า ledger/* -->
                     <div style="margin:10px 12px 4px;font-size:.72rem;opacity:.6;font-weight:700">รอย้ายเข้าแอปหลัก</div>
@@ -296,6 +295,7 @@
 
 
                 <section id="view-pending" class="content-view hidden">
+                    <div id="line-docs-panel"></div>
                     <div id="pending-status-summary-container" style="margin-bottom: 12px;"></div>
                     <div id="pending-cards-container" style="display: flex; flex-direction: column; gap: 8px;">
                         <!-- Dynamic pending transaction cards -->
@@ -645,34 +645,6 @@
                 </section>
 
                 <!-- 7. Settings View -->
-                <!-- 🔒 ปิดเดือน (2026-10-12 ย้ายจาก ledger/close.html) — โค้ดอยู่ app.js ส่วน "period_close.js" (PC) -->
-                <section id="view-close" class="content-view hidden">
-                    <style>
-                        #view-close .pc-layout { display: grid; gap: 14px; }
-                        @media (min-width: 900px) { #view-close .pc-layout { grid-template-columns: 340px minmax(0,1fr); align-items: start; } #pc-detail { position: sticky; top: 12px; } }
-                        #view-close .pc-months { display: grid; gap: 8px; }
-                        #view-close .pc-mrow { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 12px; background: var(--card-bg); border: 1.5px solid var(--border-color); border-radius: 14px; padding: 10px 14px; min-height: 60px; cursor: pointer; }
-                        #view-close .pc-mrow.sel { outline: 2px solid var(--primary-color); }
-                        #view-close .pc-ic { font-size: 22px; }
-                        #view-close .pc-t { flex: 1; min-width: 0; } #view-close .pc-t b { display: block; } #view-close .pc-t small { display: block; color: var(--text-secondary); font-size: .8rem; }
-                        #view-close .pc-st { font-size: .78rem; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; background: rgba(0,0,0,.06); color: var(--text-secondary); }
-                        #view-close .pc-st.closed { background: rgba(16,185,129,.14); color: var(--success-color); }
-                        #pc-detail { background: var(--card-bg); border: 1.5px solid var(--border-color); border-radius: 14px; padding: 14px 16px; }
-                        #view-close .pc-chk { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--border-color); }
-                        #view-close .pc-i { font-size: 18px; }
-                        #view-close .pc-acc { font-size: .82rem; padding: 6px 10px; border-radius: 10px; background: rgba(0,0,0,.04); margin-top: 6px; }
-                        #view-close .pc-acc.bad { background: rgba(239,68,68,.1); color: var(--danger-color); }
-                        #view-close .pc-empty { text-align: center; color: var(--text-secondary); padding: 24px; }
-                        #pc-log { margin-top: 18px; font-size: .82rem; color: var(--text-secondary); } #pc-log div { padding: 6px 0; border-bottom: 1px dashed var(--border-color); }
-                    </style>
-                    <div class="ob2-sub" style="margin-bottom:10px">ตรวจครบ → ปิด → ตัวเลขเดือนนั้นล็อก แก้ย้อนหลังไม่ได้ (ผู้ดูแลเปิดใหม่ได้ ต้องใส่เหตุผล)</div>
-                    <div class="pc-layout">
-                        <div class="pc-months" id="pc-months"></div>
-                        <div id="pc-detail" aria-live="polite"><div class="pc-empty">เลือกเดือนทางซ้ายเพื่อตรวจ</div></div>
-                    </div>
-                    <div id="pc-log"></div>
-                </section>
-
                 <section id="view-settings" class="content-view hidden">
                     <div class="settings-container card glass">
                         <div class="card-body">
@@ -1448,7 +1420,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="travel.js?v=105"></script>
-    <script src="app.js?v=186"></script>
+    <script src="app.js?v=187"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">

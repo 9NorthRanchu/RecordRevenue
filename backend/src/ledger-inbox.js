@@ -723,7 +723,8 @@ async function learnFromDoc(env, user, doc, txIds) {
 // ───────────────────────── รายการในกล่อง ─────────────────────────
 async function listInbox(env, user, url) {
   const all = url.searchParams.get('status') === 'all';
-  if (!all) await adoptPendingTransactions(env, user);
+  // ?adopt=0 = แอปเดิมดูเฉพาะสลิปที่ต้องเลือก ไม่ต้องดึงรายการรอตรวจสอบเข้ากล่อง (ประหยัดการเขียน D1)
+  if (!all && url.searchParams.get('adopt') !== '0') await adoptPendingTransactions(env, user);
   const limit = Math.min(Number(url.searchParams.get('limit')) || 100, 300);
   const marks = OPEN_STATUSES.map(() => '?').join(',');
   let docs = (await env.DB.prepare(`SELECT * FROM LedgerDocs WHERE family_id=? ${all ? '' : `AND status IN (${marks})`}

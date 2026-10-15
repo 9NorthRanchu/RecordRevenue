@@ -1340,7 +1340,6 @@ function switchView(viewName) {
         'debtor': 'ทะเบียนลูกหนี้/เจ้าหนี้คงค้าง',
         'reports': 'รายงานสรุปทางการเงิน',
         'settings': 'ตั้งค่าระบบข้อมูลหลัก',
-        'close': '🔒 ปิดเดือน',
         'travel': '✈️ TRIPS',
         'puppup': '🗺️ Prototype Trip'
     };
@@ -1379,7 +1378,6 @@ function switchView(viewName) {
 
     // Trigger specific view loaders
     if (viewName === 'dashboard') loadDashboard();
-    if (viewName === 'close') PC.open();
     else if (viewName === 'pending') loadPending();
     else if (viewName === 'history') loadHistory();
     // grid-input redirected to pending (no loadGridInput needed)
@@ -2873,6 +2871,7 @@ function getCardPayload(cardEl) {
         ref_code: refCode,
         status: 'PENDING_REVIEW',
         source: source,
+        slip_image_url: cardEl.dataset.slip || null,
         details
     };
 }
@@ -2984,6 +2983,7 @@ async function loadPending() {
         }
 
         renderPendingTransactions();
+        LineSlips.load();   // 📲 สลิป LINE ที่ต้องเลือกก่อน (2026-10-15)
 
         // If triggered from dashboard quick-action, create blank card AFTER render
         if (AppState._createNewAfterLoad) {
@@ -3053,6 +3053,7 @@ function renderPendingTransactions() {
         cardEl.dataset.accid = tx.account_id;
         cardEl.dataset.ref = tx.ref_code || '';
         cardEl.dataset.source = tx.source;
+        cardEl.dataset.slip = tx.slip_image_url || '';   // เก็บไว้ส่งกลับตอนบันทึก — ไม่งั้นลิงก์สลิปหาย
         cardEl.dataset.time = tx.time || '';
         
         const displayTime = tx.time ? tx.time.substring(0, 5) : '';
@@ -3078,6 +3079,7 @@ function renderPendingTransactions() {
                     <input type="text" class="form-control input-stmt-amount" value="${formattedStmtAmount}" oninput="this.value = this.value.replace(/[^0-9.,()\\-]/g, '')" onblur="this.value = formatNumberWithCommas(this.value)" onfocus="this.value = this.value.replace(/,/g, '')" style="width: 130px; min-width: 90px; flex-shrink: 0; height: 28px; padding: 2px 8px; font-size: 0.85rem; font-weight: 800; text-align: right; color: ${isExpense ? '#FCA5A5' : '#6EE7B7'}; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; letter-spacing: 0.5px;">
                     <input type="text" class="form-control input-stmt-note" value="${displayNote}" placeholder="หมายเหตุ..." style="flex: 1 1 40px; min-width: 40px; height: 28px; padding: 2px 8px; font-size: 0.8rem; background: rgba(255,255,255,0.07); color: #94A3B8; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                    ${tx.slip_image_url ? `<button class="btn" type="button" onclick="showSlip('${String(tx.slip_image_url).replace(/[^\w/.:-]/g, '')}')" style="width: 34px; height: 34px; padding: 0; font-size: 1rem; border-radius: 8px; background: #F59F00; color: #fff; border: none; cursor: pointer;" title="ดูสลิปจาก LINE">📎</button>` : ''}
                     <button class="btn btn-add-subrow-header" style="width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; border-radius: 8px; background: #3B82F6; color: #ffffff; border: none; cursor: pointer; box-shadow: 0 2px 6px rgba(59,130,246,0.4); transition: all 0.2s;" title="เพิ่มรายการย่อย" onmouseover="this.style.background='#2563EB'" onmouseout="this.style.background='#3B82F6'"><i class="fa-solid fa-plus"></i></button>
                     <button class="btn btn-confirm-single-pending" style="width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; border-radius: 8px; background: #10B981; color: #ffffff; border: none; cursor: pointer; box-shadow: 0 2px 6px rgba(16,185,129,0.4); transition: all 0.2s;" title="บันทึกรายการ" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'"><i class="fa-solid fa-floppy-disk"></i></button>
                     <button class="btn btn-delete-pending" style="width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; border-radius: 8px; background: #EF4444; color: #ffffff; border: none; cursor: pointer; box-shadow: 0 2px 6px rgba(239,68,68,0.4); transition: all 0.2s;" title="ลบ" onmouseover="this.style.background='#DC2626'" onmouseout="this.style.background='#EF4444'"><i class="fa-solid fa-trash"></i></button>
@@ -8348,7 +8350,7 @@ const OB = (() => {
           }).join('') : `<div class="ob2-card" style="text-align:center;padding:24px">ยังไม่มีชุดยอดยกมา<br><small class="ob2-sub">แต่ละคนสร้างชุดของตัวเองได้ และเริ่มคนละวันได้</small></div>`}
           <div class="ob2-warn" style="margin-top:12px">• 1 บัญชี / 1 สัญญาเงินกู้ อยู่ได้ชุดเดียว · ยอดยกมาสร้างเป็นรายการจริง ณ วันเริ่ม — ยอดบัญชี ลูกหนี้ รายงาน เห็นทันที<br>
             • ค่าใช้จ่าย/รายได้สะสมต้นปี นับในรายงานรับ-จ่าย ณ วันเริ่ม · บัญชีพักไม่นับเป็นรายรับ/รายจ่าย<br>
-            • ปิดเดือนได้เมื่อชุดสมดุล และไม่มีรายการก่อนวันเริ่ม</div>`;
+            • ตรวจให้ชุดสมดุล (บัญชีพัก = 0) และไม่มีรายการก่อนวันเริ่ม</div>`;
         q('[data-ob="add"]').onclick = () => openEditor(null);
         root().querySelectorAll('[data-ed]').forEach(b => b.onclick = () => openEditor(D.sets.find(s => s.set_id === b.dataset.ed)));
         root().querySelectorAll('[data-del]').forEach(b => b.onclick = () => delSet(D.sets.find(s => s.set_id === b.dataset.del)));
@@ -8481,7 +8483,7 @@ const OB = (() => {
         const send = lines.filter(l => l.amount);
         if (!send.length) return err('ยังไม่มีบรรทัดที่มีจำนวนเงิน');
         const t = sums();
-        if (Math.abs(t.diff) >= 0.005 && !confirm(`เดบิต ${money(t.dr)} ≠ เครดิต ${money(t.cr)}\nบัญชีพักค้าง ${money(t.diff)} — ปิดเดือนจะไม่ผ่านจนกว่าจะสมดุล\n\nบันทึกไว้ก่อนไหม?`)) return;
+        if (Math.abs(t.diff) >= 0.005 && !confirm(`เดบิต ${money(t.dr)} ≠ เครดิต ${money(t.cr)}\nบัญชีพักค้าง ${money(t.diff)} — ยังไม่สมดุล\n\nบันทึกไว้ก่อนไหม?`)) return;
         const b = q('[data-ob="save"]'); b.disabled = true; err('');
         try {
             const r = await api('/api/inbox/opening', { set_id: E.set_id, name: E.name.trim(), date: E.date, entity_id: E.entity_id || null, anchor_account_id: E.anchor_account_id || null, lines: send });
@@ -8532,104 +8534,96 @@ const OB = (() => {
 })();
 window.OB = OB;
 
-// period_close.js
-/* 🔒 ปิดเดือน (ย้ายเข้าแอปเดิม 2026-10-12 · เดิมอยู่ ledger/close.html)
-   ตรวจครบ → ปิด → ตัวเลขเดือนนั้นล็อก แก้ย้อนหลังไม่ได้ (ผู้ดูแลเปิดใหม่ได้ ต้องใส่เหตุผล)
-   API: GET /api/inbox/periods?months=13 · GET /api/inbox/periods/{YYYY-MM}/check
-        POST /api/inbox/periods/{YYYY-MM}/close · POST /api/inbox/periods/{YYYY-MM}/reopen {reason}
-   กติกาการตรวจอยู่ใน backend/src/period-close.js */
-function openSettingsTab(tab) {
-    switchView('settings');
-    setTimeout(() => document.querySelector(`.settings-tab[data-settings-tab="${tab}"]`)?.click(), 50);
-}
-const PC = (() => {
+// period_close.js — ยกเลิกแล้ว (North 2026-10-15: ไม่ใช้ฟีเจอร์ปิดเดือน) · โค้ดเดิมดูได้ใน git commit c1ee3c6
+
+// line_slips.js
+/* 📲 สลิปจาก LINE ในหน้า "รอตรวจสอบ" (North เลือก 1ก · 2026-10-15)
+   สลิปที่ระบบจับบัญชีได้ → สร้างเป็นรายการรอตรวจสอบตามปกติอยู่แล้ว (source LINE_SLIP · มีปุ่ม 📎 ดูสลิปบนการ์ด)
+   กล่องนี้แสดงเฉพาะสลิปที่ "ยังสร้างรายการไม่ได้" ต้องให้คนช่วยเลือกก่อน:
+     NEEDS_ACCOUNT = ไม่รู้ว่าบัญชีไหนของเรา · NEEDS_CHOICE = เจอรายการยอดตรงหลายรายการ
+     ERROR/READING = AI อ่านไม่สำเร็จ · STORED = ใบเสร็จ/เอกสารที่ยังผูกกับรายการไม่ได้
+   API (ledger-inbox.js): GET /api/inbox · GET /api/inbox/file/{id} · POST /api/inbox/{id}/(account|link|dismiss|retry) */
+const LineSlips = (() => {
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const money = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const fmt = n => Number(n) < 0 ? `(${money(-n)})` : money(n);
-    const $ = s => document.getElementById('view-close')?.querySelector(s);
-    const S = { list: null, sel: null };
+    const money = n => { const v = Number(n || 0); const t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `<span style="color:#C92A2A">(${t})</span>` : t; };
+    const SHOW = ['NEEDS_ACCOUNT', 'NEEDS_CHOICE', 'ERROR', 'READING', 'STORED'];
+    const LABEL = { NEEDS_ACCOUNT: '❓ เลือกบัญชีของเรา', NEEDS_CHOICE: '🔗 เลือกรายการที่ตรงกัน', ERROR: '⚠️ อ่านสลิปไม่สำเร็จ', READING: '⏳ กำลังอ่าน', STORED: '🧾 เก็บไว้ ยังไม่ผูกรายการ' };
+    let docs = [];
     const toast = (t, type) => { try { window.showToast(t, type || 'success'); } catch { alert(t); } };
-    async function api(path, body) {
-        const res = await fetch(API_BASE + path, { method: body ? 'POST' : 'GET', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+    async function post(path, body) {
+        const res = await fetch(API_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
         const d = await res.json().catch(() => ({}));
-        if (res.status === 401) throw new Error('กรุณาเข้าสู่ระบบใหม่');
-        if (!res.ok) throw Object.assign(new Error(d.error || `ผิดพลาด (${res.status})`), { data: d });
+        if (!res.ok || d.error) throw new Error(d.error || `ผิดพลาด (${res.status})`);
         return d;
     }
-    const when = iso => iso ? new Date(iso).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '';
-    const thisMonth = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
-    /* ลิงก์ "ไปแก้" จากผลตรวจ → หน้าในแอปเดิม */
-    const FIX = { pending: () => switchView('pending'), uncat: () => switchView('history'), statements: () => switchView('pending'),
-        opening: () => openSettingsTab('opening-balances'), inbox: () => { location.href = 'ledger/index.html'; } };
+    const accName = id => (AppState.accounts || []).find(a => a.account_id === id)?.name || id;
     async function load() {
-        const box = $('#pc-months'); if (!box) return;
-        if (!S.list) box.innerHTML = '<div class="pc-empty"><i class="fa-solid fa-spinner fa-spin"></i> กำลังโหลด…</div>';
-        try { S.list = await api('/api/inbox/periods?months=13'); }
-        catch (e) { box.innerHTML = `<div class="pc-empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
-        renderList();
-        if (S.sel) openMonth(S.sel);
+        const box = document.getElementById('line-docs-panel'); if (!box) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/inbox?adopt=0`);
+            if (!res.ok) { box.innerHTML = ''; return; }
+            docs = ((await res.json()).docs || []).filter(d => SHOW.includes(d.status));
+        } catch { box.innerHTML = ''; return; }
+        render();
     }
-    function renderList() {
-        const L = S.list, box = $('#pc-months');
-        if (!L.ready) { box.innerHTML = `<div class="ob2-sub">${esc(L.error_note || 'ยังไม่พร้อม')}</div>`; return; }
-        box.innerHTML = L.months.map(m => {
-            const closed = m.status === 'CLOSED', cur = m.month === thisMonth();
-            const sub = closed ? `ปิดโดย ${esc(m.closed_by || '-')} · ${when(m.closed_at)}` : cur ? 'เดือนปัจจุบัน — ปิดได้เมื่อจบเดือน' : (m.reopened_at ? `เปิดใหม่โดย ${esc(m.reopened_by || '-')} · ${when(m.reopened_at)}` : 'ยังไม่ปิด');
-            return `<button class="pc-mrow ${S.sel === m.month ? 'sel' : ''}" data-m="${m.month}"><span class="pc-ic">${closed ? '🔒' : cur ? '🗓️' : '📂'}</span>
-              <span class="pc-t"><b>${esc(m.label)}</b><small>${sub}</small></span><span class="pc-st ${closed ? 'closed' : ''}">${closed ? 'ปิดแล้ว' : 'เปิดอยู่'}</span></button>`;
-        }).join('');
-        box.querySelectorAll('[data-m]').forEach(b => b.onclick = () => openMonth(b.dataset.m));
-        const log = L.log || [];
-        $('#pc-log').innerHTML = log.length ? '<b>ประวัติการปิด/เปิดเดือน</b>' + log.map(l => `<div>${l.action === 'CLOSE' ? '🔒 ปิด' : '🔓 เปิด'} ${esc(l.label)} · ${esc(l.user_name || '')} · ${when(l.created_at)}${l.note ? ` · “${esc(l.note)}”` : ''}</div>`).join('') : '';
+    function summary(d) {
+        const ex = d.extracted || {};
+        const who = [ex.sender?.name, ex.receiver?.name].filter(Boolean).join(' → ') || ex.merchant || d.file_name || '';
+        return `<b>${ex.date ? esc(ex.date) : '-'}${ex.time ? ' ' + esc(String(ex.time).slice(0, 5)) : ''}</b> · <b>${ex.amount != null ? money(ex.amount) : '-'}</b> · ${esc(who)}${ex.memo ? ` · <i>${esc(ex.memo)}</i>` : ''}`;
     }
-    async function openMonth(month) {
-        S.sel = month; renderList();
-        const m = S.list.months.find(x => x.month === month), box = $('#pc-detail');
-        if (m.status === 'CLOSED') {
-            box.innerHTML = `<h4>🔒 ${esc(m.label)}</h4><p class="ob2-sub">ปิดโดย ${esc(m.closed_by || '-')} เมื่อ ${when(m.closed_at)}<br>รายการในเดือนนี้แก้ เพิ่ม หรือลบไม่ได้</p>
-              ${S.list.is_admin ? `<div class="input-group"><label for="pc-why">เหตุผลที่ต้องเปิดเดือน (บันทึกไว้เป็นประวัติ)</label><input class="form-control" id="pc-why" maxlength="300" placeholder="เช่น ลูกค้าแจ้งยอดผิด"></div>
-              <button class="btn btn-outline-danger" id="pc-reopen" style="margin-top:10px"><i class="fa-solid fa-lock-open"></i> เปิดเดือนเพื่อแก้ไข</button>` : '<div class="ob2-sub">เฉพาะผู้ดูแลเท่านั้นที่เปิดเดือนได้</div>'}`;
-            $('#pc-reopen')?.addEventListener('click', async e => {
-                const reason = $('#pc-why').value.trim();
-                if (reason.length < 3) { toast('กรุณาใส่เหตุผล', 'error'); $('#pc-why').focus(); return; }
-                if (!confirm(`เปิด ${m.label} เพื่อแก้ไข?\nอย่าลืมปิดอีกครั้งเมื่อแก้เสร็จ`)) return;
-                e.currentTarget.disabled = true;
-                try { await api(`/api/inbox/periods/${month}/reopen`, { reason }); toast(`🔓 เปิด ${m.label} แล้ว`); await load(); }
-                catch (err) { toast('⚠️ ' + err.message, 'error'); }
-            });
-            return;
+    function actions(d) {
+        const s = d.suggestion || {}, id = esc(d.doc_id);
+        let h = '';
+        if (d.status === 'NEEDS_ACCOUNT') {
+            const opts = (s.options || []).map(o => `<button class="btn btn-sm btn-outline-primary" data-acc="${id}" data-a="${esc(o.account_id)}" data-s="${esc(o.side)}">${o.side === 'IN' ? '⬇️ เงินเข้า' : '⬆️ เงินออก'} · ${esc(accName(o.account_id))}</button>`).join('');
+            h += opts + `<span style="display:inline-flex;gap:4px"><select class="form-control" data-accsel="${id}" style="height:32px;width:auto;max-width:200px"><option value="">บัญชีอื่น…</option>${(AppState.accounts || []).map(a => `<option value="${esc(a.account_id)}">${esc(a.name)}</option>`).join('')}</select>
+                <select class="form-control" data-sidesel="${id}" style="height:32px;width:auto"><option value="OUT">เงินออก</option><option value="IN">เงินเข้า</option></select>
+                <button class="btn btn-sm btn-primary" data-accgo="${id}">ใช้บัญชีนี้</button></span>`;
         }
-        box.innerHTML = `<h4>${esc(m.label)}</h4><div class="pc-empty"><i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจ…</div>`;
-        let c;
-        try { c = await api(`/api/inbox/periods/${month}/check`); } catch (e) { box.innerHTML = `<h4>${esc(m.label)}</h4><div class="pc-empty">ตรวจไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
-        if (S.sel !== month) return;
-        const name = s => String(s).replace(/^\s*\[[^\]]+\]\s*/, '');
-        const accHtml = (c.accounts || []).map(a => `<div class="pc-acc ${a.ok ? '' : 'bad'}">${a.ok ? '✅' : '❌'} <b>${esc(name(a.name))}</b>
-          ${a.ok ? `· ตรง ${esc(a.statement_to || '')} ยอด ${fmt(a.system_balance)}` : '· ' + esc(a.problem)}</div>`).join('');
-        const cur = month >= thisMonth();
-        box.innerHTML = `<h4>${esc(c.label)} ${c.ok ? '✅' : ''}</h4>
-          <p class="ob2-sub">${c.ok ? 'ผ่านครบทุกข้อ พร้อมปิดเดือน' : 'ต้องผ่านครบทุกข้อจึงจะปิดเดือนได้'}</p>
-          ${c.items.map(i => `<div class="pc-chk"><span class="pc-i">${i.ok ? '✅' : '❌'}</span><span class="pc-t"><b>${esc(i.title)}</b>${i.detail ? `<small>${esc(i.detail)}</small>` : ''}
-            ${i.key === 'statements' ? accHtml : ''}</span>${!i.ok && FIX[i.key] ? `<button class="btn btn-sm btn-outline-primary" data-fix="${esc(i.key)}">ไปแก้ ›</button>` : ''}</div>`).join('')}
-          <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-            <button class="btn btn-outline-primary" id="pc-recheck"><i class="fa-solid fa-rotate"></i> ตรวจอีกครั้ง</button>
-            ${S.list.is_admin ? `<button class="btn btn-primary" id="pc-close" ${c.ok && !cur ? '' : 'disabled'}><i class="fa-solid fa-lock"></i> ปิด ${esc(c.label)}</button>` : ''}
-          </div>
-          ${cur ? '<div class="ob2-sub" style="margin-top:8px">เดือนปัจจุบันยังไม่จบ — ปิดได้ตั้งแต่วันที่ 1 ของเดือนถัดไป</div>' : ''}
-          ${!S.list.is_admin ? '<div class="ob2-sub" style="margin-top:8px">เฉพาะผู้ดูแลเท่านั้นที่ปิดเดือนได้</div>' : ''}`;
-        box.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => FIX[b.dataset.fix]());
-        $('#pc-recheck').onclick = () => openMonth(month);
-        if (!matchMedia('(min-width: 900px)').matches) box.scrollIntoView({ behavior: 'smooth', block: 'start' });   // มือถือ: ผลตรวจอยู่ใต้รายการเดือน
-        $('#pc-close')?.addEventListener('click', async e => {
-            if (!confirm(`ปิด ${c.label}?\n\nหลังปิด รายการในเดือนนี้จะแก้ เพิ่ม หรือลบไม่ได้\nจนกว่าผู้ดูแลจะเปิดเดือน (ต้องใส่เหตุผล)`)) return;
-            const b = e.currentTarget; b.disabled = true;
-            try { await api(`/api/inbox/periods/${month}/close`, {}); toast(`🔒 ปิด ${c.label} เรียบร้อย`); await load(); }
-            catch (err) { toast('⚠️ ' + err.message, 'error'); b.disabled = false; if (err.data?.check) openMonth(month); }
-        });
+        if (d.status === 'NEEDS_CHOICE' || (d.status === 'STORED' && (s.choices || []).length)) {
+            const ch = (s.legs || []).flatMap(l => l.choices || []).concat(s.choices || []);
+            h += ch.map(c => `<button class="btn btn-sm btn-outline-primary" data-link="${id}" data-tx="${esc(c.transaction_id)}">🔗 ${esc(c.date)} · ${money(c.total_amount)}${c.statement_desc ? ' · ' + esc(String(c.statement_desc).slice(0, 30)) : ''}</button>`).join('');
+        }
+        if (['ERROR', 'READING'].includes(d.status)) h += `<button class="btn btn-sm btn-outline-primary" data-retry="${id}">🔄 ให้ AI อ่านใหม่</button>`;
+        h += `<button class="btn btn-sm btn-outline-danger" data-dis="${id}">ไม่ต้องบันทึก</button>`;
+        return h;
     }
-    return { open: load };
+    function render() {
+        const box = document.getElementById('line-docs-panel'); if (!box) return;
+        if (!docs.length) { box.innerHTML = ''; return; }
+        box.innerHTML = `<div style="background:var(--card-bg,#fff);border:1.5px solid #F59F00;border-radius:12px;padding:10px 14px;margin-bottom:12px">
+            <div style="font-weight:700;margin-bottom:6px">📲 สลิปจาก LINE ที่ต้องเลือกก่อน (${docs.length})</div>
+            ${docs.map(d => `<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border-color,#eee);flex-wrap:wrap">
+                ${d.has_file ? `<button class="btn btn-sm btn-outline-primary" data-img="${esc(d.doc_id)}" title="ดูสลิป">📎</button>` : ''}
+                <div style="flex:1;min-width:220px"><div style="font-size:.78rem;font-weight:700;color:#8a5a00">${LABEL[d.status] || d.status}</div>
+                  <div style="font-size:.88rem">${summary(d)}</div>${d.error ? `<div style="font-size:.78rem;color:#C92A2A">${esc(String(d.error).slice(0, 160))}</div>` : ''}
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${actions(d)}</div></div></div>`).join('')}
+          </div>`;
+        const run = async (btn, fn) => { btn.disabled = true; try { await fn(); await loadPending(); } catch (e) { toast('⚠️ ' + e.message, 'error'); btn.disabled = false; } };
+        box.querySelectorAll('[data-img]').forEach(b => b.onclick = () => showSlip(`/api/inbox/file/${b.dataset.img}`));
+        box.querySelectorAll('[data-acc]').forEach(b => b.onclick = () => run(b, async () => { await post(`/api/inbox/${b.dataset.acc}/account`, { account_id: b.dataset.a, side: b.dataset.s }); toast('✅ สร้างรายการรอตรวจสอบแล้ว'); }));
+        box.querySelectorAll('[data-accgo]').forEach(b => b.onclick = () => { const id = b.dataset.accgo, a = box.querySelector(`[data-accsel="${id}"]`).value, s = box.querySelector(`[data-sidesel="${id}"]`).value;
+            if (!a) return toast('เลือกบัญชีก่อน', 'error'); run(b, async () => { await post(`/api/inbox/${id}/account`, { account_id: a, side: s }); toast('✅ สร้างรายการรอตรวจสอบแล้ว · ครั้งหน้าระบบจำบัญชีนี้'); }); });
+        box.querySelectorAll('[data-link]').forEach(b => b.onclick = () => run(b, async () => { await post(`/api/inbox/${b.dataset.link}/link`, { transaction_id: b.dataset.tx }); toast('🔗 ผูกสลิปกับรายการแล้ว'); }));
+        box.querySelectorAll('[data-retry]').forEach(b => b.onclick = () => run(b, async () => { await post(`/api/inbox/${b.dataset.retry}/retry`); toast('🔄 อ่านใหม่แล้ว'); }));
+        box.querySelectorAll('[data-dis]').forEach(b => b.onclick = () => { if (confirm('ไม่ต้องบันทึกสลิปนี้?')) run(b, async () => { await post(`/api/inbox/${b.dataset.dis}/dismiss`); toast('ลบออกจากรายการแล้ว'); }); });
+    }
+    return { load };
 })();
-window.PC = PC;
+window.LineSlips = LineSlips;
+/* เปิดรูปสลิป (ต้องแนบ token → ดึงเป็น blob ก่อน แล้วแสดงในหน้าต่าง) */
+async function showSlip(path) {
+    try {
+        const res = await fetch(/^https?:/.test(path) ? path : API_BASE + path);
+        if (!res.ok) throw new Error(res.status === 404 ? 'ไม่พบไฟล์ (ระบบลบไฟล์อัตโนมัติหลัง 30 วัน)' : `เปิดไม่ได้ (${res.status})`);
+        const url = URL.createObjectURL(await res.blob());
+        const isPdf = /pdf/i.test(res.headers.get('Content-Type') || '');
+        if (window.Swal) await Swal.fire({ html: isPdf ? `<iframe src="${url}" style="width:100%;height:70vh;border:0"></iframe>` : `<img src="${url}" style="max-width:100%;max-height:75vh;border-radius:8px">`, width: 640, showConfirmButton: false, showCloseButton: true });
+        else window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { try { window.showToast('⚠️ ' + e.message, 'error'); } catch { alert(e.message); } }
+}
+window.showSlip = showSlip;
 
 
 
