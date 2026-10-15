@@ -275,6 +275,15 @@ function applyTheme(t) {
     document.body.classList.toggle('ui-dark', t === 'dark');
     try { document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'dark' ? '#0E1016' : '#5F3DC4'); } catch { /* */ }
 }
+/* ปุ่มธีมในหน้าตั้งค่า → ใช้ตัวเลือกเดิมที่เมนูซ้าย (จำค่าที่เดียว) */
+function bindSettingsTheme() {
+    const sel = document.getElementById('theme-selector');
+    const set = t => { if (!t || !sel) return; sel.value = t; sel.dispatchEvent(new Event('change')); mark(); };
+    const mark = () => document.querySelectorAll('.st-theme [data-th]').forEach(b => b.classList.toggle('on', b.dataset.th === document.body.dataset.theme));
+    document.querySelectorAll('.st-theme [data-th]').forEach(b => b.onclick = () => set(b.dataset.th));
+    const s2 = document.querySelector('.st-theme [data-th-sel]'); if (s2) s2.onchange = () => { set(s2.value); s2.value = ''; };
+    mark();
+}
 function initTheme() {
     const VALID_THEMES = ['purple','dark','kawaii','sakura','fuji','hokkaido','anime','ghibli'];
     let savedTheme = localStorage.getItem('app-theme2') || 'purple';   // คีย์ใหม่ → ทุกคนเริ่มที่แบบ A (เลือกธีมเก่าคืนได้)
@@ -301,6 +310,7 @@ function initTheme() {
 
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
+    bindSettingsTheme();
     
     // Sidebar Toggle Logic
     const sidebarToggle = document.getElementById('sidebar-toggle');
@@ -1393,7 +1403,7 @@ function switchView(viewName) {
     else if (viewName === 'pending') loadPending();
     else if (viewName === 'history') loadHistory();
     // grid-input redirected to pending (no loadGridInput needed)
-    else if (viewName === 'debtor') { Promise.all([fetchDebts(), fetchTransactions()]).then(() => renderDebtsDashboard()); }
+    else if (viewName === 'debtor') DebtorView.open();   // 2026-10-15 ลูกหนี้/เจ้าหนี้ตามรายการจริง · แท็บสัญญาเงินกู้ = หน้าเดิม
     else if (viewName === 'reports') loadReports();
     else if (viewName === 'settings') { loadSettings(); fitSettingsHeight(); }
     else if (viewName === 'travel') loadTrips();
@@ -3661,6 +3671,7 @@ async function loadHistory() {
             return sortFilter === 'asc' ? dateA - dateB : dateB - dateA;
         });
         
+        renderHistoryKpis(history);
         const listContainer = document.getElementById("history-master-list");
         if (!listContainer) return; 
         listContainer.innerHTML = '';
@@ -6547,31 +6558,28 @@ async function deleteMember(userId, userName) {
 }
 
 // ── ล้างข้อมูล (Admin เท่านั้น) — scope: 'transactions' | 'all' ──
+/* ล้างข้อมูล (2026-10-15 ยกระดับ · ของดีจากหน้าตั้งค่าใหม่): ดูจำนวนที่จะลบก่อน → พิมพ์ RESET → สำรองอัตโนมัติ → ลบ */
 async function resetData(scope) {
     if (AppState.userRole !== 'admin') { alert('เฉพาะ Admin เท่านั้นที่ล้างข้อมูลได้'); return; }
-    const label = scope === 'all' ? 'ล้างข้อมูลทั้งหมด (ธุรกรรม + ข้อมูลหลักทุกอย่าง)' : 'ล้างเฉพาะธุรกรรม (เก็บ Company/Customer/Caption/Category/Statement/Trip)';
-    if (!confirm(`⚠️ ${label}\n\nการกระทำนี้ลบถาวร กู้คืนไม่ได้!\nแนะนำให้ Export Full Backup เก็บไว้ก่อน\n\nกดตกลงเพื่อไปขั้นยืนยันสุดท้าย`)) return;
+    const post = async body => { const r = await fetch(`${API_BASE}/api/reset`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) }, body: JSON.stringify(body) }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || `ผิดพลาด (${r.status})`); return j; };
+    let pv; try { pv = await post({ scope, preview: true }); } catch (e) { alert('ดูจำนวนไม่สำเร็จ: ' + e.message); return; }
+    const all = scope === 'all', closed = pv.closed_periods || [], n = x => Number(x || 0).toLocaleString('en-US');
+    const msg = `⚠️ ${all ? 'ล้างข้อมูลทั้งหมด เริ่มต้นใหม่' : 'ล้างเฉพาะรายการ'}\n\nจะลบ:\n• ${n(pv.transactions)} รายการ (รวมเอกสารรอเคลียร์ ${n(pv.docs)} · statement ${n(pv.statements)})`
+        + (all ? `\n• ${n(pv.accounts)} บัญชี · ${n(pv.categories)} หมวด · บริษัท คู่ค้า โปรเจกต์ หนี้/บัตร ทะเบียนทรัพย์สิน` : `\n\nเก็บไว้: บัญชี หมวด บริษัท คู่ค้า สมาชิก โปรเจกต์ หนี้/บัตร`)
+        + (closed.length ? `\n\nมี ${closed.length} เดือนที่เคยปิดไว้ (${closed.slice(0, 6).join(', ')}) — จะเปิดแล้วลบด้วย` : '')
+        + `\n\nลบถาวร กู้คืนไม่ได้ (ยกเว้นจากไฟล์สำรอง)\nกดตกลงเพื่อไปขั้นยืนยันสุดท้าย`;
+    if (!confirm(msg)) return;
     const typed = prompt('พิมพ์คำว่า  RESET  (ตัวใหญ่) เพื่อยืนยันการลบถาวร:');
     if (typed !== 'RESET') { alert('ยกเลิก — คุณไม่ได้พิมพ์ RESET'); return; }
-    // #1 สำรองข้อมูลอัตโนมัติก่อนล้าง (ตาข่ายกันพลาด)
     alert('ระบบจะดาวน์โหลด Full Backup ให้อัตโนมัติก่อนล้างข้อมูล...');
     const backedUp = await runFullBackup('', '', { tag: 'before-reset' });
-    if (!backedUp) {
-        if (!confirm('⚠️ สำรองข้อมูลอัตโนมัติไม่สำเร็จ!\nยังต้องการล้างข้อมูลต่อโดยไม่มี backup หรือไม่?')) return;
-    }
+    if (!backedUp && !confirm('⚠️ สำรองข้อมูลอัตโนมัติไม่สำเร็จ!\nยังต้องการล้างข้อมูลต่อโดยไม่มี backup หรือไม่?')) return;
     try {
-        const res = await fetch(`${API_BASE}/api/reset`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
-            body: JSON.stringify({ scope, confirm: 'RESET' })
-        });
-        const j = await res.json();
-        if (!res.ok) { alert('ล้างข้อมูลไม่สำเร็จ: ' + (j.error || '')); return; }
-        alert(`ล้างข้อมูลเรียบร้อย (${j.steps_done} ตาราง)` + (j.skipped && j.skipped.length ? `\nข้าม: ${j.skipped.length} รายการ` : ''));
-        await loadSettings();
-        await fetchMasterData();
+        const j = await post({ scope, confirm: 'RESET', reopen_closed: closed.length > 0 });
+        try { Object.keys(sessionStorage).filter(k => k.startsWith('mdcache:')).forEach(k => sessionStorage.removeItem(k)); } catch { /* */ }
+        alert(`✅ ล้างข้อมูลเรียบร้อย · ${n(j.transactions)} รายการ`);
         location.reload();
-    } catch (e) { alert('เกิดข้อผิดพลาด: ' + e.message); }
+    } catch (e) { alert('ล้างข้อมูลไม่สำเร็จ: ' + e.message); }
 }
 
 function openUserModal(userId = '') {
@@ -8746,6 +8754,108 @@ async function showSlip(path) {
     } catch (e) { try { window.showToast('⚠️ ' + e.message, 'error'); } catch { alert(e.message); } }
 }
 window.showSlip = showSlip;
+
+// debtor_view.js
+/* 👥 ลูกหนี้/เจ้าหนี้ แบบ A (mockup งาน 004 · 2026-10-15)
+   ใครติดเงินเรา (ลูกหนี้) · เราติดเงินใคร (เจ้าหนี้) คิดจากรายการจริงในหมวดสินทรัพย์/หนี้สิน (หักที่ตัดชำระแล้ว)
+   ซ้าย = รายชื่อ + ยอดค้าง · ขวา = ไทม์ไลน์ ยืม/คืน ของคนที่เลือก
+   API: GET /api/inbox/parties · GET /api/inbox/parties/{key}
+   แท็บ "สัญญาเงินกู้" = หน้าทะเบียนหนี้สินแบบเดิม (ยังอยู่ครบ) */
+const DebtorView = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const S = { data: null, tab: 'SUM', sel: null, q: '' };
+    const root = () => document.getElementById('dbt-root');
+    const thd = s => { if (!s) return '-'; const M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']; const [y, m, d] = s.slice(0, 10).split('-').map(Number); return `${d} ${M[m - 1]} ${String(y + 543).slice(2)}`; };
+    const initial = n => esc(String(n || '?').replace(/^(นาย|นาง|นางสาว|คุณ|บจก\.|บริษัท)\s*/, '').trim().charAt(0) || '?');
+    async function get(path) { const r = await fetch(API_BASE + path); const d = await r.json().catch(() => ({})); if (!r.ok || d.error) throw new Error(d.error || `ผิดพลาด (${r.status})`); return d; }
+    async function open() {
+        const el = root(); if (!el) return;
+        legacy(S.tab === 'LOAN');
+        if (S.tab === 'LOAN') return render();
+        el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-secondary)"><i class="fa-solid fa-spinner fa-spin"></i> กำลังโหลด…</div>';
+        try { S.data = await get('/api/inbox/parties'); render(); } catch (e) { el.innerHTML = `<div class="dbt-card">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
+    }
+    function legacy(show) {
+        const l = document.querySelector('#view-debtor .debts-neumorph-dashboard'); if (l) l.style.display = show ? '' : 'none';
+        if (show) Promise.all([fetchDebts(), fetchTransactions()]).then(() => renderDebtsDashboard());
+    }
+    function render() {
+        const el = root(), D = S.data || { parties: [], totals: { ar: 0, ap: 0, ar_n: 0, ap_n: 0 } }, t = D.totals || {};
+        const tabs = [['SUM', 'สรุป'], ['AR', 'ลูกหนี้ (เขาติดเรา)'], ['AP', 'เจ้าหนี้ (เราติดเขา)'], ['LOAN', 'สัญญาเงินกู้/ผ่อน']];
+        const kpi = (ic, bg, col, lab, val, sub) => `<div class="dv2-kpi"><span class="dv2-kic" style="background:${bg};color:${col}">${ic}</span><div class="dv2-ktx"><div class="dv2-klab">${lab}</div><div class="dv2-kval" style="color:${col}">${val}</div><div class="dv2-ksub">${sub}</div></div></div>`;
+        let html = `<div class="dbt-tabs">${tabs.map(([k, l]) => `<button type="button" class="${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
+        if (S.tab === 'LOAN') { el.innerHTML = html + '<div class="ob2-sub" style="margin:4px 0 10px">ทะเบียนสัญญาเงินกู้/ผ่อนแบบเดิม · ดูยอดคงเหลือที่คำนวณละเอียดกว่าได้ที่เมนู <a href="#" onclick="switchView(\'cards\');return false">บัตร & เงินกู้</a></div>'; bind(); return; }
+        html += `<div class="dv2-kpis dbt-kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+            ${kpi('<i class="fa-solid fa-arrow-up-right"></i>', 'rgba(32,201,151,.14)', 'var(--success-color)', 'ลูกหนี้รวม (เขาติดเรา)', dv2F(t.ar || 0), `${t.ar_n || 0} คน`)}
+            ${kpi('<i class="fa-solid fa-arrow-down-left"></i>', 'rgba(240,82,82,.13)', 'var(--danger-color)', 'เจ้าหนี้รวม (เราติดเขา)', dv2F(-(t.ap || 0)), `${t.ap_n || 0} คน`)}
+            ${kpi('<i class="fa-solid fa-scale-balanced"></i>', 'rgba(121,80,242,.13)', 'var(--primary-color)', 'ยอดสุทธิ', dv2F((t.ar || 0) - (t.ap || 0)), (t.ar || 0) >= (t.ap || 0) ? 'ลูกหนี้มากกว่าเจ้าหนี้' : 'เจ้าหนี้มากกว่าลูกหนี้')}
+          </div>`;
+        const q = S.q.trim().toLowerCase();
+        const list = (D.parties || []).filter(p => Math.abs(p.balance) >= 0.005 || S.tab !== 'SUM').filter(p => S.tab === 'SUM' || p.side === S.tab)
+            .filter(p => !q || String(p.name).toLowerCase().includes(q));
+        html += `<div class="dbt-split"><div class="dbt-card dbt-list"><div class="dbt-lh"><b>รายชื่อ</b><span class="ob2-sub">${list.length} ราย</span></div>
+            <input class="form-control dbt-q" placeholder="ค้นหาชื่อ…" value="${esc(S.q)}">
+            ${list.length ? list.map(p => `<button type="button" class="dbt-row ${S.sel === p.side + p.key ? 'on' : ''}" data-k="${esc(p.key)}" data-s="${p.side}">
+                <span class="dbt-av ${p.side === 'AR' ? 'ar' : 'ap'}">${initial(p.name)}</span>
+                <span class="dbt-nm"><b>${esc(p.name)}</b><small><span class="dbt-tag ${p.side === 'AR' ? 'ar' : 'ap'}">${p.side === 'AR' ? 'ลูกหนี้' : 'เจ้าหนี้'}</span> ล่าสุด ${thd(p.last_date)}</small></span>
+                <span class="dbt-amt ${p.side === 'AR' ? 'pos' : 'neg'}">${dv2F(p.side === 'AR' ? p.balance : -p.balance)}</span></button>`).join('')
+              : '<div class="ob2-sub" style="text-align:center;padding:24px">ไม่มีรายการค้าง<br><small>บันทึกรายการโดยเลือกหมวดลูกหนี้/เจ้าหนี้ แล้วระบุคู่ค้า</small></div>'}
+          </div><div class="dbt-card dbt-detail" id="dbt-detail"><div class="ob2-sub" style="text-align:center;padding:60px 10px"><i class="fa-regular fa-hand-pointer" style="font-size:2rem;opacity:.5"></i><br>เลือกชื่อทางซ้ายเพื่อดูประวัติยืม-คืน</div></div></div>`;
+        el.innerHTML = html; bind();
+        if (S.sel) { const p = (D.parties || []).find(x => x.side + x.key === S.sel); if (p) detail(p); }
+    }
+    function bind() {
+        const el = root();
+        el.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.sel = null; open(); });
+        const qi = el.querySelector('.dbt-q'); if (qi) qi.oninput = () => { S.q = qi.value; const p = qi.selectionStart; render(); const n = root().querySelector('.dbt-q'); n.focus(); try { n.setSelectionRange(p, p); } catch { /* */ } };
+        el.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const p = S.data.parties.find(x => x.key === b.dataset.k && x.side === b.dataset.s); S.sel = p.side + p.key;
+            el.querySelectorAll('.dbt-row').forEach(r => r.classList.toggle('on', r === b)); detail(p); });
+    }
+    async function detail(p) {
+        const box = document.getElementById('dbt-detail'); if (!box) return;
+        box.innerHTML = '<div style="padding:30px;text-align:center"><i class="fa-solid fa-spinner fa-spin"></i></div>';
+        let d; try { d = await get('/api/inbox/parties/' + encodeURIComponent(p.key)); } catch (e) { box.innerHTML = `<div class="ob2-sub">${esc(e.message)}</div>`; return; }
+        const side = d[p.side] || { lines: [] }, ar = p.side === 'AR';
+        box.innerHTML = `<div class="dbt-dh"><span class="dbt-av big ${ar ? 'ar' : 'ap'}">${initial(d.name)}</span><div><b style="font-size:1.15rem">${esc(d.name)}</b>
+            <div class="ob2-sub">${ar ? 'ลูกหนี้ · เขาติดเรา' : 'เจ้าหนี้ · เราติดเขา'} · ${p.categories.map(c => esc(c.name)).join(', ')}</div></div></div>
+          <div class="ob2-drcr dbt-3"><div><small>ยอดค้าง</small><b class="${ar ? 'pos' : 'neg'}">${dv2F(ar ? p.balance : -p.balance)}</b></div>
+            <div><small>${ar ? 'ให้ยืมทั้งหมด' : 'ยืมมาทั้งหมด'}</small><b>${dv2F(p.lent)}</b></div><div><small>${ar ? 'ได้คืนแล้ว' : 'คืนไปแล้ว'}</small><b>${dv2F(p.repaid)}</b></div></div>
+          <button type="button" class="btn btn-primary dbt-add" onclick="AppState._createNewAfterLoad = true; switchView('pending')"><i class="fa-solid fa-plus"></i> บันทึกรายการ${ar ? 'รับคืน / ให้ยืมเพิ่ม' : 'จ่ายคืน / ยืมเพิ่ม'}</button>
+          <div class="dbt-lh" style="margin-top:14px"><b>ประวัติ</b><span class="ob2-sub">${side.lines.length} รายการ</span></div>
+          <div class="dbt-tl">${side.lines.map(l => `<div class="dbt-tli"><span class="dbt-dot ${l.delta > 0 ? 'up' : 'down'}">${l.delta > 0 ? '↑' : '↓'}</span>
+              <div class="dbt-tlt"><b>${l.delta > 0 ? (ar ? 'ให้ยืม' : 'ยืมมา') : (ar ? 'ได้คืน' : 'จ่ายคืน')}</b><small>${thd(l.date)} · ${esc(l.account)}${l.note ? ' · ' + esc(l.note) : ''}</small></div>
+              <div class="dbt-tla"><b class="${(l.delta > 0) !== ar ? 'pos' : 'neg'}">${dv2F(Math.abs(l.delta))}</b><small>คงเหลือ ${dv2F(l.balance)}</small></div></div>`).join('') || '<div class="ob2-sub">ไม่มีรายการ</div>'}</div>`;
+        if (!matchMedia('(min-width: 900px)').matches) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    return { open };
+})();
+window.DebtorView = DebtorView;
+
+/* 📜 ประวัติ: สรุปผลค้นหา (จำนวน · รับ · จ่าย · สุทธิ) + ส่งออก Excel (mockup งาน 003) */
+let _historyShown = [];
+function renderHistoryKpis(list) {
+    _historyShown = list || [];
+    const box = document.getElementById('history-kpis'); if (!box) return;
+    let sIn = 0, sOut = 0;
+    for (const tx of _historyShown) { const a = Number(tx.total_amount) || 0; if (a >= 0) sIn += a; else sOut += a; }
+    const kpi = (ic, bg, col, lab, val, sub) => `<div class="dv2-kpi"><span class="dv2-kic" style="background:${bg};color:${col}">${ic}</span><div class="dv2-ktx"><div class="dv2-klab">${lab}</div><div class="dv2-kval" style="color:${col}">${val}</div><div class="dv2-ksub">${sub}</div></div></div>`;
+    box.innerHTML = `<div class="dv2-kpis">
+        ${kpi('<i class="fa-solid fa-list"></i>', 'rgba(121,80,242,.13)', 'var(--primary-color)', 'ทั้งหมด', `${_historyShown.length.toLocaleString('en-US')} <small>รายการ</small>`, 'ตามตัวกรอง')}
+        ${kpi('<i class="fa-solid fa-arrow-trend-up"></i>', 'rgba(32,201,151,.14)', 'var(--success-color)', 'รายรับ', dv2F(sIn), 'เงินเข้า')}
+        ${kpi('<i class="fa-solid fa-arrow-down"></i>', 'rgba(240,82,82,.13)', 'var(--danger-color)', 'รายจ่าย', dv2F(sOut), 'เงินออก')}
+        <button type="button" class="dv2-kpi hk-export" onclick="exportHistoryShown()"><span class="dv2-kic" style="background:rgba(32,201,151,.14);color:#087F5B"><i class="fa-solid fa-file-excel"></i></span><div class="dv2-ktx"><div class="dv2-klab">ส่งออก Excel</div><div class="dv2-ksub">รายการที่เห็นอยู่ ${_historyShown.length} รายการ</div></div></button>
+      </div>`;
+}
+function exportHistoryShown() {
+    if (!_historyShown.length) { try { showToast('ไม่มีรายการให้ส่งออก', 'error'); } catch { /* */ } return; }
+    const rows = [];
+    for (const tx of _historyShown) for (const d of (tx.details && tx.details.length ? tx.details : [{}])) rows.push({
+        'วันที่': String(tx.date || '').slice(0, 10), 'บัญชี': tx.account_name || tx.account_id, 'รายละเอียด': tx.statement_desc || '', 'ยอดรายการ': Number(tx.total_amount) || 0,
+        'หมวด': d.category_name || '', 'Company': d.entity_name || '', 'คู่ค้า': d.contact_name || '', 'ยอดย่อย': Number(d.amount) || 0, 'ค่าธรรมเนียม': Number(d.fee) || 0, 'หัก ณ ที่จ่าย': Number(d.wht) || 0, 'หมายเหตุ': d.note || '' });
+    const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'ประวัติ');
+    XLSX.writeFile(wb, `ประวัติรายการ-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
 
 // CardsView — ย้ายจาก ledger/cards.html (2026-10-15) · โค้ดเดิมแทบไม่เปลี่ยน: แค่ผูกกับกล่อง #view-cards ในแอปเดิม
 const CardsView = (() => {

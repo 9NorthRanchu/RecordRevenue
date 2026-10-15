@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=129">
-    <link rel="stylesheet" href="ui-a.css?v=4">
+    <link rel="stylesheet" href="ui-a.css?v=5">
     <!-- pdf-lib -->
     <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
     <!-- pdf.js (Mozilla) for AES-256 fallback -->
@@ -385,6 +385,7 @@
                                 </div>
                             </div>
 
+                    <div id="history-kpis"></div>
                     <div class="history-split-view" style="display: flex; gap: 15px; flex: 1; min-height: 0; margin-bottom: 0;">
                         <!-- Master View (Left List) -->
                         <div class="master-view card glass" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
@@ -421,6 +422,7 @@
                 <!-- 5. Debtor / Creditor View -->
                 <section id="view-debtor" class="content-view hidden" style="min-height: 80vh;">
 
+                    <div id="dbt-root"></div>
                     <div class="debts-neumorph-dashboard">
                         <!-- Left Panel: Debt List -->
                         <div class="debt-list-panel" style="padding: 15px; border-radius: 20px; background: #ffffff; border: 1px solid #e2e8f0;">
@@ -530,9 +532,9 @@
                 <!-- 6. Reports View -->
                 <section id="view-reports" class="content-view hidden">
                     <div class="reports-tabs">
-                        <button class="report-tab active" data-report="wht">ภาษีหัก ณ ที่จ่าย (WHT)</button>
-                        <button class="report-tab" data-report="tb">งบทดลอง (Trial Balance)</button>
-                        <button class="report-tab" data-report="project">รายงานเฉพาะทริป / โปรเจกต์</button>
+                        <button class="report-tab active" data-report="wht"><span class="rt-ic" style="background:rgba(240,82,82,.12);color:#E03131">%</span><span class="rt-tx"><b>ภาษีหัก ณ ที่จ่าย</b><small>สรุปรายการภาษี (WHT)</small></span></button>
+                        <button class="report-tab" data-report="tb"><span class="rt-ic" style="background:rgba(121,80,242,.13);color:#6D4AE0"><i class="fa-solid fa-scale-balanced"></i></span><span class="rt-tx"><b>งบทดลอง</b><small>ยอดคงเหลือทุกบัญชี (Trial Balance)</small></span></button>
+                        <button class="report-tab" data-report="project"><span class="rt-ic" style="background:rgba(245,159,0,.15);color:#E67700"><i class="fa-solid fa-suitcase"></i></span><span class="rt-tx"><b>ทริป / โปรเจกต์</b><small>สรุปรับ-จ่ายแต่ละทริป</small></span></button>
                     </div>
 
                     <!-- WHT Report -->
@@ -942,6 +944,11 @@
                                 <span id="settings-view-label" style="font-size:0.75rem; color:var(--text-secondary,#94a3b8);">แสดงข้อมูลทั้งหมดในระบบ</span>
                             </div>
 
+                            <!-- ธีม (2026-10-15) — บนมือถือไม่มีเมนูซ้าย จึงเลือกธีมที่นี่ได้ด้วย -->
+                            <div class="st-theme"><span>🎨 ธีม</span>
+                                <button type="button" data-th="purple">💜 ม่วงนุ่ม</button><button type="button" data-th="dark">🌙 โหมดมืด</button>
+                                <select aria-label="ธีมอื่น" data-th-sel><option value="">ธีมอื่น…</option><option value="kawaii">🎀 Kawaii</option><option value="sakura">🌸 Sakura</option><option value="fuji">🗻 Fuji</option><option value="hokkaido">❄️ Hokkaido</option><option value="anime">🍃 Anime</option><option value="ghibli">🌿 Ghibli</option></select>
+                            </div>
                             <div class="settings-tabs" style="display: flex; flex-wrap: nowrap; gap: 4px; padding-bottom: 8px;">
                                 <button class="settings-tab active" data-settings-tab="entities">👑 Company</button>
                                 <button class="settings-tab" data-settings-tab="contacts">👥 Customer</button>
@@ -1176,7 +1183,7 @@
                                 <div class="card" id="danger-zone-card" style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.35);margin-top:16px;">
                                     <div class="card-body">
                                         <h5 style="color:#f87171;margin-bottom:6px;"><i class="fa-solid fa-triangle-exclamation"></i> Danger Zone — ล้างข้อมูล (เฉพาะ Admin)</h5>
-                                        <p style="font-size:0.85rem;margin-bottom:8px;">แนะนำใช้ <a href="ledger/settings.html" style="color:#fbbf24;font-weight:700">ตั้งค่าหน้าใหม่ → อื่น ๆ → ล้างข้อมูล</a> (เห็นจำนวนที่จะลบก่อน + จัดการเดือนที่ปิดแล้ว)</p>
+                                        <p style="font-size:0.85rem;margin-bottom:8px;">ระบบจะแสดงจำนวนที่จะถูกลบให้ดูก่อน แล้วสำรองเป็น Excel อัตโนมัติ แล้วพิมพ์ RESET ยืนยัน</p>
                                         <p style="font-size:0.8rem;color:#fca5a5;margin-bottom:12px;">การล้างข้อมูลลบถาวร กู้คืนไม่ได้ — แนะนำให้ดาวน์โหลด Full Backup เก็บไว้ก่อนทุกครั้ง</p>
                                         <div style="display:flex;gap:10px;flex-wrap:wrap;">
                                             <button class="btn" onclick="resetData('transactions')" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.5);white-space:nowrap;">
@@ -1714,7 +1721,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="travel.js?v=105"></script>
-    <script src="app.js?v=189"></script>
+    <script src="app.js?v=190"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">

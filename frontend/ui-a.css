@@ -180,3 +180,69 @@ body.ui-a .tx-card-footer { background:var(--dv-amtbg) !important; border-top-co
     body.ui-a .top-header > div { flex-wrap:wrap !important; }
     body.ui-a #page-title { font-size:1.2rem !important; white-space:normal !important; }
 }
+
+/* ── ประวัติ (mockup งาน 003) ── */
+#history-kpis .dv2-kpis, #dbt-root .dv2-kpis { --cardbg:var(--card-bg); --bd1:var(--border-color); --r:18px; --txt:var(--text-primary); --txt2:var(--text-secondary); --glow:rgba(95,61,196,.08); }
+#history-kpis .dv2-kpis { margin-bottom:10px; }
+.hk-export { font:inherit; text-align:left; cursor:pointer; color:var(--text-primary); }
+.hk-export:hover { border-color:var(--success-color) !important; }
+body:not(.ui-a) #history-kpis { display:none; }
+body.ui-a #view-history .filters-grid { display:grid !important; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px !important; }
+body.ui-a #view-history .filters-grid label { text-align:left !important; font-size:.75rem; color:var(--text-secondary); }
+body.ui-a #view-history .filters-grid input, body.ui-a #view-history .filters-grid select { height:36px !important; border-radius:10px; }
+body.ui-a .history-master-item { background:var(--card-bg) !important; border:1px solid var(--border-color) !important; border-radius:12px !important; }
+@media (max-width:768px) {
+    body.ui-a #view-history { height:auto !important; }
+    body.ui-a #view-history .filters-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+    body.ui-a .history-split-view { flex-direction:column; }
+    body.ui-a .history-split-view .master-view { max-height:60vh; }
+}
+
+/* ── ลูกหนี้/เจ้าหนี้ (mockup งาน 004) ── */
+.dbt-tabs { display:flex; gap:6px; background:var(--card-bg); border:1px solid var(--border-color); border-radius:14px; padding:5px; margin-bottom:12px; overflow-x:auto; }
+.dbt-tabs button { flex:1; border:0; background:transparent; border-radius:10px; padding:9px 12px; font:inherit; font-weight:700; color:var(--text-secondary); cursor:pointer; white-space:nowrap; }
+.dbt-tabs button.on { background:var(--primary-color); color:#fff; }
+.dbt-split { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); gap:12px; align-items:start; }
+.dbt-card { background:var(--card-bg); border:1px solid var(--border-color); border-radius:18px; padding:14px; }
+.dbt-lh { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.dbt-q { height:38px !important; border-radius:10px !important; margin-bottom:8px; }
+.dbt-row { all:unset; box-sizing:border-box; display:flex; gap:10px; align-items:center; width:100%; padding:10px; border-radius:12px; cursor:pointer; }
+.dbt-row:hover { background:var(--dv-amtbg,#f7f4ff); } .dbt-row.on { background:var(--dv-amtbg,#f7f4ff); outline:2px solid var(--primary-light); }
+.dbt-av { width:40px; height:40px; border-radius:50%; display:grid; place-items:center; font-weight:700; flex:none; color:#fff; }
+.dbt-av.ar { background:linear-gradient(135deg,#20C997,#12B886); } .dbt-av.ap { background:linear-gradient(135deg,#FF8787,#F03E3E); }
+.dbt-av.big { width:52px; height:52px; font-size:1.3rem; }
+.dbt-nm { flex:1; min-width:0; } .dbt-nm b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .dbt-nm small { color:var(--text-secondary); font-size:.75rem; }
+.dbt-tag { font-size:.68rem; font-weight:700; border-radius:999px; padding:1px 7px; margin-right:4px; } .dbt-tag.ar { background:rgba(32,201,151,.15); color:var(--success-color); } .dbt-tag.ap { background:rgba(240,82,82,.13); color:var(--danger-color); }
+.dbt-amt { font-weight:700; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.dbt-card .pos, .dbt-amt.pos { color:var(--success-color); } .dbt-card .neg, .dbt-amt.neg { color:var(--danger-color); }
+.dbt-dh { display:flex; gap:12px; align-items:center; }
+.ob2-drcr.dbt-3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; }
+.ob2-drcr.dbt-3 div { background:var(--dv-amtbg,#f7f4ff); border-radius:12px; padding:8px 10px; } .ob2-drcr.dbt-3 small { display:block; color:var(--text-secondary); font-size:.72rem; }
+.dbt-add { width:100%; margin-top:12px; border-radius:12px; }
+.dbt-tl { display:grid; gap:2px; } .dbt-tli { display:flex; gap:10px; align-items:center; padding:9px 0; border-bottom:1px dashed var(--border-color); }
+.dbt-dot { width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font-weight:700; flex:none; }
+.dbt-dot.up { background:rgba(240,82,82,.13); color:var(--danger-color); } .dbt-dot.down { background:rgba(32,201,151,.15); color:var(--success-color); }
+.dbt-tlt { flex:1; min-width:0; } .dbt-tlt b { display:block; } .dbt-tlt small, .dbt-tla small { color:var(--text-secondary); font-size:.74rem; display:block; }
+.dbt-tla { text-align:right; white-space:nowrap; }
+@media (max-width:900px) { .dbt-split { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:560px) { .dbt-kpis { grid-template-columns:minmax(0,1fr) !important; } }
+
+/* ── รายงาน (mockup งาน 005): แท็บเป็นการ์ดไอคอน ── */
+body.ui-a .reports-tabs { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; border:0 !important; margin-bottom:12px; }
+.report-tab .rt-ic { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; font-weight:800; font-size:1.1rem; flex:none; }
+.report-tab .rt-tx { display:flex; flex-direction:column; text-align:left; min-width:0; } .report-tab .rt-tx small { font-weight:500; opacity:.75; font-size:.75rem; }
+body.ui-a .report-tab { display:flex !important; align-items:center; gap:10px; background:var(--card-bg) !important; color:var(--text-primary) !important; border:1px solid var(--border-color) !important; border-radius:16px !important; padding:12px !important; min-height:68px; }
+body.ui-a .report-tab.active { outline:2px solid var(--primary-color); background:var(--dv-amtbg,#f7f4ff) !important; }
+body:not(.ui-a) .report-tab .rt-ic, body:not(.ui-a) .report-tab .rt-tx small { display:none; }
+body.ui-a #view-reports .card-body { overflow-x:auto; }
+body.ui-a #view-reports table { min-width:640px; }
+@media (max-width:768px) { body.ui-a .reports-tabs { grid-template-columns:minmax(0,1fr); } body.ui-a #view-reports .filter-row { flex-wrap:wrap; } }
+
+/* ── ตั้งค่า (mockup งาน 006): แท็บเป็นการ์ด + เลือกธีม ── */
+.st-theme { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; font-weight:700; }
+.st-theme button, .st-theme select { border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-primary); border-radius:12px; padding:8px 14px; font:inherit; font-weight:600; cursor:pointer; min-height:40px; }
+.st-theme button.on { background:var(--primary-color); color:#fff; border-color:transparent; }
+body.ui-a .settings-tabs { display:grid !important; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px !important; overflow:visible !important; }
+body.ui-a .settings-tab { border:1px solid var(--border-color) !important; background:var(--card-bg) !important; color:var(--text-primary) !important; border-radius:14px !important; padding:12px 10px !important; min-height:48px; text-align:left; font-weight:700; white-space:nowrap; }
+body.ui-a .settings-tab.active { background:var(--primary-color) !important; color:#fff !important; border-color:transparent !important; }
+@media (max-width:768px) { body.ui-a .settings-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); } }

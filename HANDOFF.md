@@ -3626,3 +3626,10 @@ frontend
 - รอตรวจสอบ: #pending-hero (renderPendingHero) ปุ่มใหญ่ 3 ปุ่มเรียกปุ่มเดิม (ซ่อน #pending-import-actions ใน ui-a) + KPI 4 ใบ · ความคืบหน้านำเข้าสะท้อนจากปุ่มเดิม (MutationObserver) · ผลนำเข้าล่าสุด localStorage 'rr_last_import' · การ์ดรายการหัวสีอ่อน · มือถือแถวย่อยเป็น 2 คอลัมน์
 - ทดสอบหน้าตาด้วย Playwright ใน cloud (scratchpad/shot.mjs + mock API) — ไอคอน FontAwesome ไม่ขึ้นในเครื่องทดสอบ (CDN)
 - ถัดไป: ประวัติ → ลูกหนี้ → รายงาน → ตั้งค่า (+ ย้ายปุ่มล้างข้อมูล) → ลบ ledger/home, index, reports, settings
+
+## 2026-10-15 · ปรับหน้าตารอบ 2 (ประวัติ · ลูกหนี้/เจ้าหนี้ · รายงาน · ตั้งค่า) + เลิกใช้หน้า ledger ที่เหลือ
+- ประวัติ: #history-kpis (renderHistoryKpis) จำนวน/รับ/จ่าย + ปุ่มส่งออก Excel รายการที่กรองอยู่ (exportHistoryShown) · ตัวกรองเป็นกริด · มือถือ 2 คอลัมน์
+- ลูกหนี้/เจ้าหนี้: DebtorView (app.js `// debtor_view.js`) ใช้ /api/inbox/parties + /parties/{key} · แท็บ สรุป/ลูกหนี้/เจ้าหนี้/สัญญาเงินกู้ (= หน้าทะเบียนหนี้แบบเดิม .debts-neumorph-dashboard ซ่อน/แสดงตามแท็บ)
+- รายงาน: แท็บเป็นการ์ดไอคอน (.rt-ic/.rt-tx) · ตารางเลื่อนแนวนอนบนมือถือ
+- ตั้งค่า: แท็บเป็นการ์ด · แถบเลือกธีม .st-theme (bindSettingsTheme → #theme-selector) · resetData ยกระดับ: preview จำนวน + closed_periods → RESET → สำรอง → ลบ (reopen_closed)
+- เลิกใช้: frontend/ledger/home.html, index.html, reports.html, settings.html → git rm · เหลือ ledger/quick.html + theme.js (หน้าแก้สลิปจากการ์ด LINE)
