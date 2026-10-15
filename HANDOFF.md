@@ -3633,3 +3633,4 @@ frontend
 - รายงาน: แท็บเป็นการ์ดไอคอน (.rt-ic/.rt-tx) · ตารางเลื่อนแนวนอนบนมือถือ
 - ตั้งค่า: แท็บเป็นการ์ด · แถบเลือกธีม .st-theme (bindSettingsTheme → #theme-selector) · resetData ยกระดับ: preview จำนวน + closed_periods → RESET → สำรอง → ลบ (reopen_closed)
 - เลิกใช้: frontend/ledger/home.html, index.html, reports.html, settings.html → git rm · เหลือ ledger/quick.html + theme.js (หน้าแก้สลิปจากการ์ด LINE)
+- โหมดมืด: บัตร & เงินกู้/ทรัพย์สิน ใช้ตัวแปรสีของธีม (--ink/--bg/--brand → ธีม) + ทับพื้นขาวตายตัว · หัวข้อตั้งค่า sticky ใช้สีการ์ด (ui-a.css v7)

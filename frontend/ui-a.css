@@ -246,3 +246,27 @@ body.ui-a .settings-tabs { display:grid !important; grid-template-columns:repeat
 body.ui-a .settings-tab { border:1px solid var(--border-color) !important; background:var(--card-bg) !important; color:var(--text-primary) !important; border-radius:14px !important; padding:12px 10px !important; min-height:48px; text-align:left; font-weight:700; white-space:nowrap; }
 body.ui-a .settings-tab.active { background:var(--primary-color) !important; color:#fff !important; border-color:transparent !important; }
 @media (max-width:768px) { body.ui-a .settings-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* ── บัตร & เงินกู้ · ทรัพย์สิน: ใช้สีตามธีม (เดิมสีตายตัวของหน้าใหม่) ── */
+body.ui-a #view-cards, body.ui-a #view-assets { --ink:var(--text-primary); --muted:var(--text-secondary); --line:var(--border-color); --bg:var(--background-color); --brand:var(--primary-color); font-family:inherit; }
+body.ui-a #view-cards .tabs2, body.ui-a #view-assets .tabs3 { margin-top:0; }
+body.ui-dark :is(#view-cards, #view-assets) :is(.card, .kpi, .list, .tabs, .tabs2, .tabs3, .catcard, .sheet, .seg button, .gchips button, .chip2, .inp) { background:var(--card-bg) !important; color:var(--text-primary); border-color:var(--border-color) !important; box-shadow:none; }
+body.ui-dark :is(#view-cards, #view-assets) :is(.b, .pill, .tg) { background:var(--dv-amtbg) !important; color:var(--dv-ac) !important; }
+body.ui-dark :is(#view-cards, #view-assets) :is(.b.main, .seg button.on, .gchips button.on, .tabs2 button.on, .tabs3 button.on) { background:var(--primary-color) !important; color:#fff !important; }
+body.ui-dark :is(#view-cards, #view-assets) .b.danger { background:rgba(255,92,92,.12) !important; color:var(--danger-color) !important; }
+body.ui-dark :is(#view-cards, #view-assets) .note { background:#3A2E12 !important; color:#FFD8A8 !important; }
+body.ui-dark :is(#view-cards, #view-assets) :is(.tag.over) { background:rgba(255,92,92,.14) !important; }
+body.ui-dark :is(#view-cards, #view-assets) :is(.tag.soon, .tg.op) { background:#3A2E12 !important; color:#FFD8A8 !important; }
+body.ui-dark :is(#view-cards, #view-assets) :is(.item, .arow, .row2):hover { background:var(--dv-amtbg) !important; }
+body.ui-dark :is(#view-cards, #view-assets) .bar { background:#262B3A; }
+
+/* ── โหมดมืด: จุดสีขาวที่เหลือในหน้าตั้งค่า/ทั่วไป ── */
+body.ui-dark .settings-section-header, body.ui-dark .settings-section-header h4 { background:transparent !important; color:var(--text-primary) !important; }
+body.ui-dark .btn-secondary, body.ui-dark .btn-light { background:#262B3A !important; color:var(--text-primary) !important; border-color:#363C50 !important; }
+body.ui-dark thead th, body.ui-dark .table thead th { background:#1D2130 !important; color:var(--text-secondary) !important; }
+body.ui-dark .history-master-item { background:var(--card-bg) !important; }
+body.ui-dark #settings-view-toggle { background:#1D2130 !important; border-color:var(--border-color) !important; }
+body.ui-dark .report-section, body.ui-dark .master-view, body.ui-dark .detail-view { background:var(--card-bg) !important; }
+body.ui-dark #view-settings .settings-section-header { background:var(--card-bg) !important; }
+body.ui-dark #view-settings .settings-section-header h4 { color:var(--text-primary) !important; }
+body.ui-a #view-settings .settings-section-header { background:var(--card-bg) !important; }
