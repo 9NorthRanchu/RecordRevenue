@@ -268,19 +268,26 @@ const AppState = {
 // ==========================================
 // 🎨 THEME SWITCHER
 // ==========================================
+/* ธีม purple (แบบ A · ค่าเริ่มต้นตั้งแต่ 2026-10-15) และ dark (แบบ C) ใช้หน้าตาใหม่ ui-a.css */
+function applyTheme(t) {
+    document.body.setAttribute('data-theme', t);
+    document.body.classList.toggle('ui-a', t === 'purple' || t === 'dark');
+    document.body.classList.toggle('ui-dark', t === 'dark');
+    try { document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'dark' ? '#0E1016' : '#5F3DC4'); } catch { /* */ }
+}
 function initTheme() {
-    const VALID_THEMES = ['kawaii','sakura','fuji','hokkaido','anime','ghibli'];
-    let savedTheme = localStorage.getItem('app-theme') || 'kawaii';
-    if (!VALID_THEMES.includes(savedTheme)) savedTheme = 'kawaii'; // ธีมเก่าที่ยกเลิกแล้ว → กลับเป็นค่าเริ่มต้น
-    document.body.setAttribute('data-theme', savedTheme);
+    const VALID_THEMES = ['purple','dark','kawaii','sakura','fuji','hokkaido','anime','ghibli'];
+    let savedTheme = localStorage.getItem('app-theme2') || 'purple';   // คีย์ใหม่ → ทุกคนเริ่มที่แบบ A (เลือกธีมเก่าคืนได้)
+    if (!VALID_THEMES.includes(savedTheme)) savedTheme = 'purple';
+    applyTheme(savedTheme);
     
     const themeSelector = document.getElementById('theme-selector');
     if (themeSelector) {
         themeSelector.value = savedTheme;
         themeSelector.addEventListener('change', (e) => {
             const newTheme = e.target.value;
-            document.body.setAttribute('data-theme', newTheme);
-            localStorage.setItem('app-theme', newTheme);
+            applyTheme(newTheme);
+            try { localStorage.setItem('app-theme2', newTheme); } catch { /* */ }
         });
     }
 }
@@ -1303,6 +1310,8 @@ function switchView(viewName) {
     // grid-input merged into pending
     if (viewName === 'grid-input') viewName = 'pending';
     AppState.activeView = viewName;
+    const _ms = document.getElementById('more-sheet'); if (_ms) _ms.hidden = true;
+    document.body.dataset.view = viewName;   // ui-a.css ซ่อนหัวหน้าซ้ำในหน้าภาพรวม   // ปิดเมนู "เพิ่มเติม" บนมือถือ
 
     // หน้า Settings: ล็อกไม่ให้ main-content เลื่อน (เลื่อนเฉพาะกรอบข้อมูลด้านใน)
     const _mc = document.querySelector('.main-content');
@@ -2196,6 +2205,110 @@ async function dv2SaveBudget(evt) {
     } catch (e) { showToast('บันทึกไม่สำเร็จ: ' + e.message, 'error'); }
 }
 
+
+/* ── หน้าตาแบบ A (mockup งาน 001 · 2026-10-15) ─────────────────────────────
+   แถวบน: ตัวเลขสำคัญ 4 ตัว (รายรับ · รายจ่าย · คงเหลือสุทธิ · รอตรวจสอบ)
+   แถว 2: เงินฝาก/เงินสด · บัตรเครดิต · เงินลงทุน (การ์ดเดิม)
+   แถว 3: วงกลมรายรับตามหมวด · วงกลมรายจ่ายตามหมวด · เงินไปไหน 5 อันดับ
+   ที่เหลือ (งบ · เฉลี่ย · ลูกหนี้/เจ้าหนี้ · ภาษีหัก ณ ที่จ่าย · แผน) อยู่ด้านล่างเหมือนเดิม */
+const DV2_PAL = ['#7950F2', '#20C997', '#FF922B', '#4DABF7', '#F06595', '#ADB5BD'];
+function dv2Kpis() {
+    const d = DashState.data;
+    const sIn = dv2Sum(d.income), sOut = dv2Sum(d.expense, x => Math.abs(x.amount)), net = sIn - sOut;
+    const pend = DashState.pendingCount;
+    const card = (ic, bg, col, label, val, sub, onclick) => `<div class="dv2-kpi"${onclick ? ` onclick="${onclick}" style="cursor:pointer"` : ''}>
+        <span class="dv2-kic" style="background:${bg};color:${col}">${ic}</span>
+        <div class="dv2-ktx"><div class="dv2-klab">${label}</div><div class="dv2-kval" style="color:${col}">${val}</div><div class="dv2-ksub">${sub}</div></div></div>`;
+    return `<div class="dv2-kpis">
+      ${card('<i class="fa-solid fa-arrow-trend-up"></i>', 'rgba(32,201,151,.14)', 'var(--pos)', `รายรับ${DashState.period === 'month' ? 'เดือนนี้' : ''}`, dv2F(sIn), `จาก ${(d.income || []).length} รายการ`)}
+      ${card('<i class="fa-solid fa-arrow-down"></i>', 'rgba(240,82,82,.13)', 'var(--neg)', `รายจ่าย${DashState.period === 'month' ? 'เดือนนี้' : ''}`, dv2F(-sOut), `จาก ${(d.expense || []).length} รายการ`)}
+      ${card('<i class="fa-solid fa-wallet"></i>', 'rgba(121,80,242,.13)', net < 0 ? 'var(--neg)' : 'var(--ac)', 'คงเหลือสุทธิ', dv2F(net), 'รายรับ - รายจ่าย')}
+      ${card('<i class="fa-regular fa-clock"></i>', 'rgba(245,159,0,.15)', '#E67700', 'รอตรวจสอบ', pend == null ? '…' : `${pend.toLocaleString('en-US')} <small>รายการ</small>`, 'แตะเพื่อไปตรวจ', "switchView('pending')")}
+    </div>`;
+}
+function dv2Donut(kind) {
+    const isIn = kind === 'income';
+    const a = (isIn ? DashState.data.income : DashState.data.expense) || [];
+    const g = dv2ByCat(a, x => Math.abs(Number(x.amount) || 0));
+    const total = g.reduce((s, x) => s + x.sum, 0);
+    const top = g.slice(0, 5); const rest = g.slice(5).reduce((s, x) => s + x.sum, 0);
+    if (rest > 0) top.push({ name: 'อื่น ๆ', sum: rest });
+    let acc = 0;
+    const stops = top.map((x, i) => { const from = acc; acc += total ? x.sum / total * 100 : 0; return `${DV2_PAL[i % DV2_PAL.length]} ${from}% ${acc}%`; }).join(',');
+    return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">${isIn ? '📥' : '📤'}</span>${isIn ? 'รายรับตามหมวด' : 'รายจ่ายตามหมวด'}</span>
+        <span class="dv2-xs">รวม <b class="${isIn ? 'dv2-pos' : 'dv2-neg'}">${dv2F(isIn ? total : -total)}</b></span><button class="dv2-zoombtn" onclick="dv2Zoom('${kind}')" title="ขยายดูชัด ๆ">🔍</button></h3>
+      ${g.length ? `<div class="dv2-donutwrap"><div class="dv2-donut" style="background:conic-gradient(${stops})"><div><b>${dv2F(total)}</b><small>บาท</small></div></div>
+        <div class="dv2-legend">${top.map((x, i) => `<div><i style="background:${DV2_PAL[i % DV2_PAL.length]}"></i><span>${x.name}</span><b class="${isIn ? '' : 'dv2-neg'}">${dv2F(isIn ? x.sum : -x.sum)}</b><em>${total ? (x.sum / total * 100).toFixed(1) : 0}%</em></div>`).join('')}</div></div>`
+        : '<div class="dv2-xs" style="text-align:center;padding:24px 0">ไม่มีรายการในช่วงนี้</div>'}</div>`;
+}
+function dv2Top5() {
+    const b = [...(DashState.data.budget || [])].filter(x => x.spent > 0).sort((p, q) => q.spent - p.spent).slice(0, 5);
+    return `<div class="dv2-card"><h3><span class="dv2-ti"><span class="dv2-ico">🎯</span>เงินไปไหน</span>
+        <span class="dv2-xs">5 อันดับรายจ่ายสูงสุด</span><button class="dv2-zoombtn" onclick="dv2Zoom('budget')" title="ดูทุกหมวด">🔍</button></h3>
+      <div class="dv2-list">${b.length ? b.map((x, i) => `<div class="dv2-item"><div class="dv2-itxt"><div class="dv2-iname"><span class="dv2-rank">${i + 1}</span> ${x.category_name}</div>
+        ${x.budget ? `<div class="dv2-imeta">งบ ${dv2F(x.budget)} · ${x.spent > x.budget ? 'เกินงบ' : 'เหลือ'} ${dv2F(Math.abs(x.budget - x.spent))}</div>` : ''}</div>
+        <div class="dv2-iamt dv2-neg">${dv2F(-x.spent)}</div></div>`).join('') : '<div class="dv2-xs" style="text-align:center;padding:24px 0">ยังไม่มีรายจ่ายในช่วงนี้</div>'}</div></div>`;
+}
+async function dv2LoadPendingCount() {
+    try {
+        const res = await fetch(`${API_BASE}/api/transactions?status=PENDING_REVIEW&count=1`, { headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) } });
+        DashState.pendingCount = Number((await res.json())?.count) || 0;
+    } catch { DashState.pendingCount = null; }
+}
+
+
+/* ── หน้ารอตรวจสอบ แบบ A (mockup งาน 002 · 2026-10-15) ─────────────────────
+   แถวบน: ตัวเลข 4 ตัว (รอตรวจ · รับ · จ่าย · ผลนำเข้าล่าสุด) + ปุ่มใหญ่ 3 ปุ่ม (PDF · Excel · เพิ่มเอง)
+   ปุ่มใหญ่เรียกปุ่มเดิมในแถบหัว (ยังอยู่ แค่ซ่อนเมื่อใช้หน้าตาแบบ A) — ขั้นตอนนำเข้าเหมือนเดิมทุกอย่าง */
+function renderPendingHero() {
+    const box = document.getElementById('pending-hero'); if (!box) return;
+    const list = AppState.pendingTransactions || [];
+    let sIn = 0, sOut = 0, nIn = 0, nOut = 0;
+    for (const tx of list) {
+        const t = tx.auto_match?.type || tx.details?.[0]?.type || 'INCOME';
+        const exp = t === 'EXPENSE' || t === 'CREDIT_AR' || Number(tx.details?.[0]?.amount) < 0;
+        if (exp) { sOut += Math.abs(Number(tx.total_amount) || 0); nOut++; } else { sIn += Math.abs(Number(tx.total_amount) || 0); nIn++; }
+    }
+    let last = null; try { last = JSON.parse(localStorage.getItem('rr_last_import') || 'null'); } catch { /* */ }
+    const f = n => dv2F(n);
+    const kpi = (ic, bg, col, lab, val, sub) => `<div class="dv2-kpi"><span class="dv2-kic" style="background:${bg};color:${col}">${ic}</span>
+        <div class="dv2-ktx"><div class="dv2-klab">${lab}</div><div class="dv2-kval" style="color:${col}">${val}</div><div class="dv2-ksub">${sub}</div></div></div>`;
+    const sel = document.getElementById('import-account-selector');
+    const accOpts = (AppState.accounts || []).map(a => `<option value="${a.account_id}" ${sel && sel.value === a.account_id ? 'selected' : ''}>${a.name}</option>`).join('');
+    box.innerHTML = `<div class="ph-actions">
+        <div class="ph-act ph-pdf"><span class="dv2-kic" style="background:rgba(240,82,82,.12);color:#E03131"><i class="fa-solid fa-file-pdf"></i></span>
+          <div class="ph-at"><b>นำเข้า PDF Statement</b><select id="ph-acc" aria-label="เลือกบัญชี"><option value="">— เลือกบัญชีก่อน —</option>${accOpts}</select></div>
+          <button type="button" class="ph-go" id="ph-pdf-go">เลือกไฟล์</button></div>
+        <button type="button" class="ph-act" id="ph-xls"><span class="dv2-kic" style="background:rgba(32,201,151,.14);color:#087F5B"><i class="fa-solid fa-file-excel"></i></span>
+          <span class="ph-at"><b>นำเข้า Excel</b><small>ไฟล์รายการ .xlsx / .csv</small></span></button>
+        <button type="button" class="ph-act" id="ph-add"><span class="dv2-kic" style="background:rgba(121,80,242,.13);color:#6D4AE0"><i class="fa-solid fa-plus"></i></span>
+          <span class="ph-at"><b>เพิ่มรายการเอง</b><small>บันทึกด้วยมือ</small></span></button>
+      </div>
+      <div id="ph-status"></div>
+      <div class="dv2-kpis">
+        ${kpi('<i class="fa-regular fa-clock"></i>', 'rgba(245,159,0,.15)', '#E67700', 'รอตรวจสอบ', `${list.length.toLocaleString('en-US')} <small>รายการ</small>`, 'ตรวจแล้วกดบันทึก ✓')}
+        ${kpi('<i class="fa-solid fa-arrow-trend-up"></i>', 'rgba(32,201,151,.14)', 'var(--success-color)', 'รวมรายรับ (รอตรวจ)', f(sIn), `จาก ${nIn} รายการ`)}
+        ${kpi('<i class="fa-solid fa-arrow-down"></i>', 'rgba(240,82,82,.13)', 'var(--danger-color)', 'รวมรายจ่าย (รอตรวจ)', f(-sOut), `จาก ${nOut} รายการ`)}
+        ${kpi('<i class="fa-solid fa-rotate"></i>', 'rgba(121,80,242,.13)', 'var(--primary-color)', 'ผลนำเข้าล่าสุด', last ? `${Number(last.imported || 0).toLocaleString('en-US')} <small>รายการ</small>` : '-',
+            last ? `${last.ok ? '✅ ยอดตรงธนาคาร · ' : ''}ข้ามซ้ำ ${last.skipped || 0} · ${String(last.at || '').slice(0, 10)}` : 'ยังไม่เคยนำเข้า')}
+      </div>`;
+    // ข้อความความคืบหน้าการนำเข้า (ของเดิมอยู่ในแถบหัว) → ย้ายมาแสดงตรงนี้
+    const st = document.getElementById('statement-upload-status'); if (st) document.getElementById('ph-status').appendChild(st);
+    const acc = box.querySelector('#ph-acc');
+    acc.onchange = () => { if (sel) { sel.value = acc.value; sel.dispatchEvent(new Event('change')); } };
+    box.querySelector('#ph-pdf-go').onclick = () => {
+        if (!acc.value) { try { showToast('เลือกบัญชีของ statement ก่อน', 'error'); } catch { /* */ } acc.focus(); return; }
+        if (sel) sel.value = acc.value;
+        document.getElementById('btn-trigger-statement-upload')?.click();
+    };
+    // ปุ่มเดิมแสดงความคืบหน้า (กำลังอ่าน / กำลังบันทึก n/m) → สะท้อนมาที่ปุ่ม "เลือกไฟล์"
+    const trig = document.getElementById('btn-trigger-statement-upload'), go = box.querySelector('#ph-pdf-go');
+    if (trig && !trig._phObs) { const orig = trig.innerHTML; trig._phObs = new MutationObserver(() => { const g = document.getElementById('ph-pdf-go'); if (g) { g.innerHTML = trig.innerHTML === orig ? 'เลือกไฟล์' : trig.innerHTML; g.disabled = trig.disabled; } });
+        trig._phObs.observe(trig, { childList: true, subtree: true, characterData: true, attributes: true }); }
+    box.querySelector('#ph-xls').onclick = () => document.getElementById('btn-pending-upload-csv')?.click();
+    box.querySelector('#ph-add').onclick = () => document.getElementById('btn-pending-add-row')?.click();
+}
+
 // ── Top bar + master render ──
 function dv2TopBar() {
     const p = DashState.period;
@@ -2204,9 +2317,13 @@ function dv2TopBar() {
         <span class="dv2-chip on dv2-plabel" style="cursor:default">${dv2PeriodLabel()}</span>
         <button onclick="dv2ChangeMonth(1)" title="${p==='year'?'ปีถัดไป':'เดือนถัดไป'}"><i class="fa-solid fa-chevron-right"></i></button>`;
     const thru = DashState.range?.last_date ? `<span class="dv2-thru">📅 ข้อมูลถึง ${dv2DateTH(DashState.range.last_date)}</span>` : '';
+    const d = DashState.data || {};
+    const mem = [`<span class="dv2-chip${DashState.member==='ALL'?' on':''}" onclick="dv2SetMember('ALL')">ทั้งหมด</span>`]
+        .concat((d.members || []).map(m => `<span class="dv2-chip${DashState.member===m.user_id?' on':''}" onclick="dv2SetMember('${m.user_id}')">${m.name}</span>`)).join('');
     return `<div class="dv2-topbar">
-      <h2>💰 ภาพรวมระบบการเงิน</h2>
+      <div><h2>ภาพรวม</h2><div class="dv2-xs">สรุปสถานะการเงินของคุณและครอบครัว</div></div>
       <div class="dv2-period">
+        <span class="dv2-pswitch dv2-members"><i class="fa-solid fa-user-group" style="opacity:.6;padding:0 4px"></i>${mem}</span>
         <span class="dv2-pswitch">${chip('month','เดือน')}${chip('year','ปี')}${chip('all','ทั้งหมด')}</span>
         ${nav}
         ${p === 'all' ? `<span class="dv2-chip on dv2-plabel" style="cursor:default">${dv2PeriodLabel()}</span>` : ''}
@@ -2316,18 +2433,18 @@ function dv2Render() {
     const root = document.getElementById('dv2-root');
     if (!root || !DashState.data) return;
     root.innerHTML = `${dv2TopBar()}
-      <div class="dv2-sec dv2-g1">${dv2Hero()}</div>
+      ${dv2Kpis()}
       <div class="dv2-sec dv2-g3">${dv2Stmt()}${dv2Credit()}${dv2Invest()}</div>
+      <div class="dv2-sec dv2-g3">${dv2Donut('income')}${dv2Donut('expense')}${dv2Top5()}</div>
       <div class="dv2-sec dv2-g1">${dv2Budget()}</div>
-      <div class="dv2-sec dv2-g3">${dv2Income()}${dv2Expense()}${dv2Avg()}</div>
-      <div class="dv2-sec dv2-g2">${dv2AR()}${dv2AP()}</div>
+      <div class="dv2-sec dv2-g3">${dv2Avg()}${dv2AR()}${dv2AP()}</div>
       <div class="dv2-sec dv2-g2">${dv2WhtCard('received','ถูกหัก ณ ที่จ่าย','เครดิตภาษีขอคืนได้','ถูกหัก')}${dv2WhtCard('withheld','หัก ณ ที่จ่ายไว้','ต้องนำส่งสรรพากร','หักไว้')}</div>
       <div class="dv2-sec dv2-g1">${dv2Plan()}</div>`;
 }
 
 async function loadDashboard() {
     try {
-        await loadDashboardV2Data();
+        await Promise.all([loadDashboardV2Data(), dv2LoadPendingCount()]);
         dv2Render();
     } catch (err) {
         console.error('Dashboard Load Error:', err);
@@ -2986,6 +3103,7 @@ async function loadPending() {
         }
 
         renderPendingTransactions();
+        renderPendingHero();
         LineSlips.load();   // 📲 สลิป LINE ที่ต้องเลือกก่อน (2026-10-15)
 
         // If triggered from dashboard quick-action, create blank card AFTER render
@@ -3079,7 +3197,7 @@ function renderPendingTransactions() {
                     <input type="date" class="form-control input-date" value="${tx.date.split(' ')[0]}" style="padding: 2px 6px; font-size: 0.8rem; width: 118px; min-width: 118px; height: 28px; background: rgba(255,255,255,0.12); color: #E2E8F0; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; font-weight: 600; flex-shrink: 0;">
                     ${timeFieldHtml}
                     ${accFieldHtml}
-                    <input type="text" class="form-control input-stmt-amount" value="${formattedStmtAmount}" oninput="this.value = this.value.replace(/[^0-9.,()\\-]/g, '')" onblur="this.value = formatNumberWithCommas(this.value)" onfocus="this.value = this.value.replace(/,/g, '')" style="width: 130px; min-width: 90px; flex-shrink: 0; height: 28px; padding: 2px 8px; font-size: 0.85rem; font-weight: 800; text-align: right; color: ${isExpense ? '#FCA5A5' : '#6EE7B7'}; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; letter-spacing: 0.5px;">
+                    <input type="text" class="form-control input-stmt-amount ${isExpense ? 'is-exp' : 'is-inc'}" value="${formattedStmtAmount}" oninput="this.value = this.value.replace(/[^0-9.,()\\-]/g, '')" onblur="this.value = formatNumberWithCommas(this.value)" onfocus="this.value = this.value.replace(/,/g, '')" style="width: 130px; min-width: 90px; flex-shrink: 0; height: 28px; padding: 2px 8px; font-size: 0.85rem; font-weight: 800; text-align: right; color: ${isExpense ? '#FCA5A5' : '#6EE7B7'}; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; letter-spacing: 0.5px;">
                     <input type="text" class="form-control input-stmt-note" value="${displayNote}" placeholder="หมายเหตุ..." style="flex: 1 1 40px; min-width: 40px; height: 28px; padding: 2px 8px; font-size: 0.8rem; background: rgba(255,255,255,0.07); color: #94A3B8; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
                     ${tx.slip_image_url ? `<button class="btn" type="button" onclick="showSlip('${String(tx.slip_image_url).replace(/[^\w/.:-]/g, '')}')" style="width: 34px; height: 34px; padding: 0; font-size: 1rem; border-radius: 8px; background: #F59F00; color: #fff; border: none; cursor: pointer;" title="ดูสลิปจาก LINE">📎</button>` : ''}
@@ -6864,6 +6982,7 @@ async function importStatementRows(accId, transactions, onProgress) {
         }
     };
     await Promise.all(Array.from({ length: Math.min(6, transactions.length) }, worker));
+    try { localStorage.setItem('rr_last_import', JSON.stringify({ imported: importedCount, skipped: skippedCount, errors: errorCount, at: new Date().toISOString() })); } catch { /* */ }
     return { importedCount, skippedCount, errorCount, skippedDetails };
 }
 
