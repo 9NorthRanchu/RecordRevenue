@@ -169,5 +169,14 @@ r = await call('/api/transactions/bulk-delete', { user: '9North', method: 'POST'
 const left = id => !!db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id=?`).get(id);
 check('ลบทั้งชุด: ลบเฉพาะรอตรวจของเรา (ไม่แตะที่ยืนยันแล้ว/ครอบครัวอื่น)', r.j?.deleted === 2 && !left('TX-B1') && !left('TX-B2') && left('TX-ST2') && left('TX-BOTHER')
   && !db.prepare(`SELECT 1 FROM TransactionDetails WHERE detail_id='DB1'`).get(), { r });
+
+/* ── จำหมวดจากรายการเดิม (category-hints) ── */
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES
+ ('TX-H1','A06','2026-09-01',-120,'CONFIRMED','PDF_IMPORT','9North','7-ELEVEN 12345 BKK'),('TX-H2','A06','2026-09-05',-45,'CONFIRMED','PDF_IMPORT','9North','7-ELEVEN 99887 BKK'),
+ ('TX-H3','X99','2026-09-05',-45,'CONFIRMED','PDF_IMPORT','Other','SECRET SHOP');
+ INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,contact_id,type) VALUES ('DH1','TX-H1',-120,'T01','CT1','EXPENSE'),('DH2','TX-H2',-45,'T01',NULL,'EXPENSE'),('DH3','TX-H3',-45,'X_SECRET',NULL,'EXPENSE');`);
+r = await call('/api/transactions/category-hints', { user: '9North' });
+const hk = r.j?.hints || {};
+check('category-hints: 7-ELEVEN (ตัดเลขแล้วเป็นคีย์เดียว) → T01 · ไม่เห็นของครอบครัวอื่น', hk['OUT|eleven bkk']?.category_id === 'T01' && hk['OUT|eleven bkk'].n === 2 && !Object.keys(hk).some(k => k.includes('secret')), hk);
 console.log(`${bad ? '❌' : '✅'} ผ่าน ${ok} · ไม่ผ่าน ${bad}`);
 if (bad) process.exit(1);

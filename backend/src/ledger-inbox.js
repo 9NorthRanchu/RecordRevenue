@@ -179,7 +179,7 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
       return json(out, cors, out.error ? (out.status || 400) : 200);
     }
 
-    const act = path.match(/^\/api\/inbox\/([\w-]+)\/(accept|link|account|dismiss|rematch)$/);
+    const act = path.match(/^\/api\/inbox\/([\w-]+)\/(accept|link|account|dismiss|rematch|learn)$/);
     if (act && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
       const out = await runAction(env, user, act[1], act[2], body);
@@ -317,7 +317,10 @@ Return ONLY JSON:
  "sender":{"name":"","bank":"","account":""},"receiver":{"name":"","bank":"","account":""},
  "ref_code":"","memo":"","merchant":"","items":[{"name":"","qty":1,"amount":0}],"vat":0,"total":0,
  "statement_period":"","due_date":""}
-For SLIP keep masked account numbers exactly as printed (e.g. "xxx-x-x1234-x"). amount is positive.`;
+For SLIP keep masked account numbers exactly as printed (e.g. "xxx-x-x1234-x"). amount is positive.
+E-wallet (TrueMoney, ShopeePay, Rabbit LINE Pay) payment/transfer receipts are "SLIP" (sender = the wallet owner when paying out).
+A single Shopee/Lazada order screenshot = "ORDER" with amount = total paid.
+If the image shows a LIST of many transactions or orders (wallet history, order list, statement page), set doc_type to "LIST" and amount to null.`;
 
 /* เรียก Gemini แบบทนทาน (2026-10-12): รุ่นหลักไม่ว่าง (429/500/503/504) → ลองซ้ำ แล้วสลับไปรุ่นสำรองอัตโนมัติ
    รุ่นที่ไม่มีให้ใช้ (400/404) → ข้ามไปรุ่นถัดไป · ตั้งรุ่นสำรองเองได้ที่ secret GEMINI_FALLBACK_MODELS (คั่นด้วย ,) */
@@ -415,8 +418,8 @@ async function processDoc(env, user, docId, { forced } = {}) {
     return processSlip(env, user, doc, ex, forced);
   }
   if ((type === 'RECEIPT' || type === 'ORDER') && ex.amount) return processSupporting(env, user, doc, ex);
-  const note = type === 'BANK_STATEMENT' || type === 'CARD_STATEMENT'
-    ? 'เก็บไว้แล้ว · การนำเข้า statement ทั้งฉบับจะมาในระยะ 2' : 'เก็บไว้แล้ว · ยังไม่รู้ว่าเป็นรายการเงินไหน';
+  const note = ['BANK_STATEMENT', 'CARD_STATEMENT', 'LIST'].includes(type)
+    ? 'ภาพนี้มีหลายรายการ — ใช้ปุ่ม "นำเข้า Statement" (รับ PDF และภาพแคป) แล้วเลือกบัญชี/บัตร/กระเป๋าเงิน' : 'เก็บไว้แล้ว · ยังไม่รู้ว่าเป็นรายการเงินไหน';
   await setDoc(env, docId, { status: 'STORED', suggestion: JSON.stringify({ note }) });
   return { doc: publicDoc(await getDoc(env, user, docId)), outcome: 'STORED' };
 }
@@ -652,6 +655,14 @@ export async function runAction(env, user, docId, action, body = {}) {
     for (const l of createdPending) await deleteTx(env, l.transaction_id);
     await env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE doc_id=?`).bind(docId).run();
     return processDoc(env, user, docId, { forced: { account_id: body.account_id, side } });
+  }
+
+  /* จำจากการยืนยันในแอปหลัก (2026-10-15): การ์ดที่มีสลิปถูกบันทึก+ยืนยันในหน้ารอตรวจสอบ → จำบัญชี/หมวดของร้านนี้ เหมือนกดยืนยันในการ์ด LINE */
+  if (action === 'learn') {
+    const ids = links.filter(l => ['CREATED', 'MATCHED'].includes(l.role) && l.status === 'CONFIRMED').map(l => l.transaction_id);
+    if (ids.length) await learnFromDoc(env, user, doc, ids);
+    if (OPEN_STATUSES.includes(doc.status) && ids.length) await setDoc(env, docId, { status: 'DONE' });
+    return { ok: true, learned: ids.length };
   }
 
   /* จับคู่อีกครั้ง (2026-10-15): ใบเสร็จ/สลิปที่รออยู่ ลองหารายการที่ยอดตรงใหม่ (เช่น หลังนำเข้า statement) */

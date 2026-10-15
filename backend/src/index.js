@@ -487,6 +487,26 @@ export default {
       }
 
       // 5. Delete Transaction
+      /* 🏷️ จำหมวดจากรายการเดิม (2026-10-15): ข้อความธนาคาร/ร้านเดียวกัน → หมวด·คู่ค้า·Company ที่เคยยืนยัน (ล่าสุดชนะ)
+         ดูจาก 3000 รายการยืนยันล่าสุดที่มีบรรทัดย่อยเดียวและระบุหมวดแล้ว · คีย์ = ข้อความตัดตัวเลข/สัญลักษณ์ (statementKey) */
+      if (url.pathname === '/api/transactions/category-hints' && request.method === 'GET') {
+        const rows = (await env.DB.prepare(`SELECT t.statement_desc, t.total_amount, MIN(d.category_id) AS category_id, MIN(d.contact_id) AS contact_id, MIN(d.entity_id) AS entity_id,
+            MIN(d.type) AS type, MIN(d.note) AS note, COUNT(d.detail_id) AS n_lines
+          FROM Transactions t JOIN Accounts a ON a.account_id = t.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id AND up.user_id = ?
+          JOIN TransactionDetails d ON d.transaction_id = t.transaction_id
+          WHERE t.status = 'CONFIRMED' AND t.statement_desc IS NOT NULL
+          GROUP BY t.transaction_id HAVING n_lines = 1 AND category_id IS NOT NULL AND category_id != 'Cat_Uncategorized'
+          ORDER BY t.date DESC LIMIT 3000`).bind(authUserId).all()).results || [];
+        const hints = {};
+        for (const r of rows) {
+          const k = statementKey(r.statement_desc); if (!k) continue;
+          const dir = (Number(r.total_amount) < 0 || r.type === 'EXPENSE') ? 'OUT' : 'IN', key = dir + '|' + k;
+          if (!hints[key]) hints[key] = { category_id: r.category_id, contact_id: r.contact_id || null, entity_id: r.entity_id || null, type: r.type || null, n: 0 };
+          hints[key].n++;
+        }
+        return new Response(JSON.stringify({ hints }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       /* ลบหลายรายการ "รอตรวจสอบ" พร้อมกัน (2026-10-15 · ลบทั้งชุด statement ที่นำเข้าผิดบัญชี)
          ลบได้เฉพาะ PENDING_REVIEW ของบัญชีที่มีสิทธิ์ · สูงสุด 3000 รายการต่อครั้ง */
       if (url.pathname === '/api/transactions/bulk-delete' && request.method === 'POST') {
@@ -2381,43 +2401,41 @@ function dbErrorResponse(err, corsHeaders) {
   }), { status: quota ? 503 : 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
+/* คีย์ของข้อความธนาคาร: ตัดเลขบัญชี/เลขอ้างอิง/วันที่/สัญลักษณ์ → เหลือชื่อร้าน/คู่โอน (ใช้คู่กับ statementKey ใน app.js) */
+function statementKey(desc) {
+  const k = String(desc || '').toLowerCase().replace(/[x*]{2,}/g, ' ').replace(/[0-9]+/g, ' ').replace(/[^a-z\u0e00-\u0e7f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  return k.length >= 3 ? k : null;
+}
+
 async function runGeminiStatement(pdfBase64, imagesBase64, env) {
   const apiKey = env?.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured on Cloudflare Workers.');
   }
 
-  const prompt = `You are an expert financial assistant.
-Extract all transaction records and the statement owner's bank account number from the provided bank statement PDF.
-The statement may be from Kasikornbank (KBank) or Krungthai Bank (KTB) or other Thai banks.
+  /* 2026-10-15 (North): นอกจาก statement ธนาคาร ต้องอ่าน ใบแจ้งยอดบัตรเครดิต · ภาพแคปประวัติกระเป๋าเงิน (TrueMoney, ShopeePay, Rabbit LINE Pay)
+     · ภาพแคปรายการสั่งซื้อ Shopee/Lazada ได้ด้วย — ทุกแบบออกมาเป็น "รายการเงินเข้า/ออกของบัญชีนั้น" ชุดเดียวกัน */
+  const year = new Date(Date.now() + 7 * 3600e3).getUTCFullYear();
+  const prompt = `You are an expert Thai financial assistant.
+The input is ONE of: a bank statement, a credit card statement (ใบแจ้งยอดบัตรเครดิต), screenshots of an e-wallet history
+(TrueMoney Wallet, ShopeePay, Rabbit LINE Pay, K PLUS / mobile banking history), or screenshots of an online shop order list (Shopee, Lazada).
+It may be a PDF file or several page images/screenshots of the same account. Extract EVERY money movement row (no summary/total rows) and the account number.
 
-Identify the following information:
-- account_number: The bank account number of this statement (e.g., "123-4-56789-0" or "X-XXXXX-123-4"). If not found, output null.
-- transactions: Array of transaction records. For each transaction, identify:
-  1. date: The transaction date in format YYYY-MM-DD. Convert year to Christian era (e.g. 2569 or 26 -> 2026).
-  2. time: The transaction time in format HH:MM:SS. If time is not provided, use "00:00:00".
-  3. type: Either "INCOME" (for deposits/receive/ฝากเงิน) or "EXPENSE" (for withdrawals/transfer/ถอนเงิน/ชำระเงิน/หักบัญชี).
-  4. amount: The transaction amount as a positive decimal number.
-  5. ref_code: The reference code, transaction ID, if available.
-  6. statement_desc: The raw bank description, channel, or statement note (e.g. "TR to 123456789", "เพื่อชำระ Ref X9042").
-  7. note: Any additional memo if present, otherwise null.
+- account_number: the account / card / wallet number printed (masked like "xxxx-xxxx-xxxx-1234" or a phone number for wallets). null if none.
+- source_kind: "BANK" | "CREDIT_CARD" | "E_WALLET" | "SHOP_ORDERS"
+- transactions: for each row:
+  1. date: YYYY-MM-DD. Convert Buddhist year (2569 or 69) to Christian (2026). If the screenshot shows no year, use ${year} (or ${year - 1} if that date would be in the future).
+  2. time: HH:MM:SS, "00:00:00" if not shown.
+  3. type: "EXPENSE" for money leaving this account/card/wallet (purchase, payment to merchant, transfer out, withdrawal, fee, top-up spent, Shopee order paid);
+     "INCOME" for money coming in (deposit, salary, refund, cashback, top-up INTO the wallet, credit card payment received / ชำระบัตร).
+  4. amount: positive number.
+  5. ref_code: reference / order number / transaction id if shown, else null.
+  6. statement_desc: merchant / counterparty / description as printed (e.g. "Shopee", "7-Eleven", "เติมเงินจาก KBank", "TR to 123456").
+  7. note: product name(s) for shop orders or other short memo, else null.
+Ignore rows that are opening balance, closing balance, totals, minimum payment, credit limit, or cancelled/failed orders.
 
-Output ONLY a valid JSON object matching this schema:
-{
-  "account_number": "...",
-  "transactions": [
-    {
-      "date": "YYYY-MM-DD",
-      "time": "HH:MM:SS",
-      "type": "INCOME" | "EXPENSE",
-      "amount": 123.45,
-      "ref_code": "...",
-      "statement_desc": "...",
-      "note": "..."
-    },
-    ...
-  ]
-}
+Output ONLY a valid JSON object:
+{"account_number":"...","source_kind":"BANK","transactions":[{"date":"YYYY-MM-DD","time":"HH:MM:SS","type":"INCOME","amount":123.45,"ref_code":null,"statement_desc":"...","note":null}]}
 Do not wrap the JSON in markdown code blocks.`;
 
   let parts = [{ text: prompt }];

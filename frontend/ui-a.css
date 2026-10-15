@@ -275,3 +275,5 @@ body.ui-a #view-settings .settings-section-header { background:var(--card-bg) !i
 @media (max-width:1180px) { .ph-actions { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
 .ph-tools { margin:-4px 0 10px; text-align:right; }
 .ph-tools button { border:0; background:transparent; color:var(--danger-color); font:inherit; font-size:.85rem; font-weight:700; cursor:pointer; padding:4px 6px; }
+.ph-tools { display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap; }
+.ph-tools button.pt-ok { color:var(--primary-color); background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:6px 12px; }

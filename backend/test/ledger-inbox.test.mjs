@@ -187,6 +187,17 @@ console.log('\n── statement รุ่นเก่า (รอตรวจ ย
   check('ผล = MATCHED กับรายการนำเข้าเก่า', out.outcome === 'MATCHED' && db.prepare(`SELECT transaction_id FROM LedgerDocLinks WHERE doc_id=?`).get(out.doc.doc_id)?.transaction_id === 'TX-OLDPOS', out.outcome);
 }
 
+console.log('\n── ยืนยันสลิปในแอปหลัก แล้วสั่ง learn → จำหมวดร้านนี้ (2026-10-15) ──');
+{
+  const out = await ingest(slip({ amount: 88, date: '2026-10-13', receiver: { name: 'ร้านกาแฟใหม่', bank: 'KBANK', account: 'xxx-x-x9999-x' } }));
+  const txId = out.legs?.[0]?.transaction_id;
+  db.prepare(`UPDATE TransactionDetails SET category_id='T05' WHERE transaction_id=?`).run(txId);
+  db.prepare(`UPDATE Transactions SET status='CONFIRMED' WHERE transaction_id=?`).run(txId);
+  const r = await inbox.runAction(env, user, out.doc.doc_id, 'learn', {});
+  const rule = db.prepare(`SELECT value FROM LedgerRules WHERE kind='PARTY' AND value LIKE '%T05%'`).get();
+  check('learn: จำหมวด T05 ของร้านนี้ + ปิดเอกสาร', r.learned === 1 && !!rule && db.prepare(`SELECT status FROM LedgerDocs WHERE doc_id=?`).get(out.doc.doc_id).status === 'DONE', { r, rule });
+}
+
 console.log('\n── statement มาก่อน แล้วค่อยส่งสลิป → จับคู่ ไม่สร้างซ้ำ ──');
 {
   insertStatementTx('TX-STMT-1', 'A02', '2026-10-07', -1250, { time: '09:01:00' });

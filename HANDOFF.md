@@ -3644,3 +3644,13 @@ frontend
 - findCandidates (สลิปมาทีหลัง) จับคู่รายการนำเข้ารุ่นเก่าที่ยอดเป็นบวกได้ · action ใหม่ POST /api/inbox/{doc}/rematch (STORED/NEEDS_CHOICE) · หลังนำเข้าเรียก rematchWaitingDocs อัตโนมัติ
 - รอตรวจสอบ: ปุ่ม "สลิป / ใบเสร็จ" อัปโหลดหลายไฟล์จากเว็บ (uploadSlipFiles → /api/inbox/upload ทีละไฟล์ พร้อมกัน 2)
 - เทสต์เพิ่ม: endpoints (+5) · ledger-inbox (+1)
+
+## 2026-10-15 (ต่อ) · อ่านภาพแคป/บัตรเครดิต/กระเป๋าเงิน + ข้อเสนอ ก–จ
+- นำเข้า Statement รับ PDF + ภาพหลายภาพ (input multiple, image/*): ภาพ → ย่อ ≤1800px → /api/statement-ocr imagesBase64 → precheck → import · prompt runGeminiStatement รองรับ BANK / CREDIT_CARD / E_WALLET (TrueMoney, ShopeePay, Rabbit LINE Pay) / SHOP_ORDERS (Shopee, Lazada) + ปีหายในภาพแคป = ปีปัจจุบัน
+- EXTRACT_PROMPT (สลิป/ใบเสร็จ): e-wallet = SLIP · ออเดอร์เดียว = ORDER · ภาพหลายรายการ = LIST → STORED พร้อมข้อความให้ใช้ปุ่มนำเข้า Statement
+- ก. จำหมวด: GET /api/transactions/category-hints (3000 รายการยืนยันล่าสุด บรรทัดเดียว มีหมวด → key "OUT|IN" + statementKey) · importStatementRows เติม category/contact/entity/type · statementKey ต้องเหมือนกันทั้ง app.js และ index.js
+- ข. รอตรวจสอบ: "🏷️ ใส่หมวดหลายรายการ" (bulkCategorize: คำในข้อความธนาคาร → หมวด/Company/คู่ค้า แถวย่อยแรก) · "💾 บันทึกทั้งหมดที่พร้อม" (bulkSaveReady: Caption+หมวดครบ + ✅ → POST + confirm ทีละ 3)
+- การ์ดที่หมวดมาจากระบบ → เลือก Caption ให้จากหมวด (initialCaptionId)
+- ค. action ใหม่ POST /api/inbox/{doc}/learn → learnFromDoc · เรียกหลังยืนยันการ์ดที่มีสลิป (slipDocIdOf) ทั้งทีละใบและบันทึกทั้งหมด
+- ง. ล็อกเวอร์ชัน CDN: pdf-lib@1.17.1 · sweetalert2@11.26.25 · chart.js@4.5.1 (xlsx ยังเป็น xlsx-latest — ตรวจเวอร์ชันจากเครื่องนี้ไม่ได้)
+- จ. renderSharedStatusSummary ใช้ AppState.pendingTransactions ที่เพิ่งโหลด (≤15 วิ) ไม่ดึงซ้ำ
