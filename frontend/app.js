@@ -7012,7 +7012,7 @@ async function parseTextStatement(pdf) {
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
-    const items = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim(), w: it.width || 0 }));
+    const items = tc.items.filter(it => it.str && it.str.trim() && !/^[lI|]{1,4}$/.test(it.str.trim())).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim(), w: it.width || 0 }));   // ตัดขีดขอบกระดาษ "l"/"ll" (2026-10-30)
     textChars += items.reduce((n, it) => n + it.s.length, 0);
     if (!accountNumber) { const a = items.find(it => /^[\dXx*]{3}-[\dXx*]-[\dXx*]{5}-[\dXx*]$|^[\dXx*]{3}-[\dXx*]{6}-[\dXx*]$/.test(it.s)); if (a) accountNumber = a.s; }
     // จัดเป็นบรรทัด (y ใกล้กัน ≤ 2.5)
@@ -7091,7 +7091,8 @@ async function parseCardStatement(pdf) {
   const cardOf = m => { const key = m[3], masked = `${m[1]} ${m[2]}XX XXXX ${m[3]}`; if (!byKey[key]) { byKey[key] = { masked, last4: key, type: '', opening: null, closing: null, rows: [] }; cards.push(byKey[key]); } return byKey[key]; };
   for (let p = 1; p <= pdf.numPages; p++) {
     const tc = await (await pdf.getPage(p)).getTextContent();
-    const items = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim() }));
+    /* ขีดดำขอบกระดาษ (เครื่องหมายเครื่องพิมพ์) ถูกเก็บเป็นตัวอักษร "l"/"ll" อยู่บรรทัดเดียวกับรายการ → ตัดทิ้ง ไม่งั้นบรรทัดไม่ขึ้นต้นด้วยวันที่แล้วถูกข้าม (2026-10-30 · 13/05/26 134.00 หาย) */
+    const items = tc.items.filter(it => it.str && it.str.trim() && !/^[lI|]{1,4}$/.test(it.str.trim())).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim() }));
     items.sort((a, b) => b.y - a.y || a.x - b.x);
     const lines = [];
     for (const it of items) { const L = lines.find(l => Math.abs(l.y - it.y) <= 2.5); if (L) L.items.push(it); else lines.push({ y: it.y, items: [it] }); }
