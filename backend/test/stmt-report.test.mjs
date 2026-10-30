@@ -131,4 +131,19 @@ r = await call('/api/statements/header', { user: '9North', method: 'POST', body:
 check('header check_only: เคยนำเข้า + จำนวนบรรทัด', r.j.exists === true && r.j.stmt_id === sid && r.j.lines_in_system >= 3, r.j);
 r = await call('/api/statements/header', { user: '9North', method: 'POST', body: { account_id: 'A02', period_from: '2026-12-01', period_to: '2026-12-31', closing: 5, check_only: true } });
 check('header check_only: ยังไม่เคย · ไม่สร้างหัว', r.j.exists === false && !db.prepare(`SELECT 1 FROM StatementImports WHERE period_from='2026-12-01'`).get(), r.j);
+
+/* นำเข้าผิดบัญชีแล้วลบทั้งชุด → หัว statement + จุดตรวจยอดหายตาม */
+r = await H('A09', '2025-11-23', '2025-12-17', 9591.36, 10441); const wrong = r.j.stmt_id;
+db.exec(`CREATE TABLE IF NOT EXISTS AccountCheckpoints (account_id TEXT NOT NULL, as_of TEXT NOT NULL, balance REAL NOT NULL, source TEXT, created_by TEXT, created_at TEXT, PRIMARY KEY (account_id, as_of));
+INSERT INTO AccountCheckpoints VALUES ('A09','2025-12-20',-10441,'STATEMENT','9North',''),('A09','2026-01-31',5,'MANUAL','9North','');`);
+for (const [i, amt] of [[0, -306], [1, -438]].entries ? [[0, -306], [1, -438]] : []) {
+  await call('/api/transactions', { user: '9North', method: 'POST', body: { transaction_id: 'WR' + i, account_id: 'A09', date: '2025-11-23', time: '00:00:0' + i, statement_desc: 'FOR SHOPEE ' + i, total_amount: amt,
+    status: 'PENDING_REVIEW', source: 'PDF_IMPORT', stmt_id: wrong, stmt_seq: i, details: [{ amount: amt, category_id: null, type: 'EXPENSE' }] } });
+}
+r = await call('/api/statements/delete', { user: '9North', method: 'POST', body: { stmt_id: wrong } }); check('ลบหัวที่ยังมีรายการ → ไม่ให้', r.s === 409, r);
+r = await call('/api/transactions/bulk-delete', { user: '9North', method: 'POST', body: { transaction_ids: ['WR0', 'WR1'] } });
+check('ลบทั้งชุด → หัว statement หาย', r.j.deleted === 2 && r.j.headers_removed === 1 && !db.prepare(`SELECT 1 FROM StatementImports WHERE stmt_id=?`).get(wrong), r.j);
+check('จุดตรวจยอดจาก statement หาย (ที่ใส่เองยังอยู่)', !db.prepare(`SELECT 1 FROM AccountCheckpoints WHERE account_id='A09' AND as_of='2025-12-20'`).get() && db.prepare(`SELECT 1 FROM AccountCheckpoints WHERE account_id='A09' AND as_of='2026-01-31'`).get());
+r = await H('A09', '2025-10-01', '2025-10-31', 1, 2);
+r = await call('/api/statements/delete', { user: '9North', method: 'POST', body: { stmt_id: r.j.stmt_id } }); check('ลบหัวว่างเอง', r.s === 200 && r.j.removed === 1, r);
 console.log(`stmt-report: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);

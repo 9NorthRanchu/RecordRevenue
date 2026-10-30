@@ -6,7 +6,7 @@ import { isMonthClosed, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-
 import { IS_ASSET_SQL, assetCategorySet } from './assets.js';
 import { verifyPassword, upgradeStoredPassword, hashPassword, isHashed } from './auth.js';
 import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSessions } from './session.js';
-import { handleStmtReport, ensureStmtCols, stmtFields } from './stmt-report.js';
+import { handleStmtReport, ensureStmtCols, stmtFields, cleanupStatementHeaders } from './stmt-report.js';
 import { handleRevenueChart } from './revenue-chart.js';
 // backend/src/index.js
 
@@ -580,7 +580,7 @@ export default {
         const body = await request.json().catch(() => ({}));
         const ids = [...new Set((body.transaction_ids || []).map(String))].slice(0, 3000);
         if (!ids.length) return new Response(JSON.stringify({ error: 'ไม่มีรายการที่เลือก' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        let deleted = 0;
+        let deleted = 0; const touchedStmt = new Set();
         for (let i = 0; i < ids.length; i += 90) {
           const chunk = ids.slice(i, i + 90), marks = chunk.map(() => '?').join(',');
           const ok = ((await env.DB.prepare(`SELECT t.transaction_id FROM Transactions t JOIN Accounts a ON a.account_id = t.account_id
@@ -588,6 +588,8 @@ export default {
               WHERE t.status = 'PENDING_REVIEW' AND t.transaction_id IN (${marks})`).bind(authUserId, ...chunk).all()).results || []).map(r => r.transaction_id);
           if (!ok.length) continue;
           const m2 = ok.map(() => '?').join(',');
+          await ensureStmtCols(env);
+          ((await env.DB.prepare(`SELECT DISTINCT stmt_id FROM Transactions WHERE stmt_id IS NOT NULL AND transaction_id IN (${m2})`).bind(...ok).all()).results || []).forEach(r => touchedStmt.add(r.stmt_id));
           await env.DB.batch([
             env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id IN (${m2})`).bind(...ok),
             env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE transaction_id IN (${m2})`).bind(...ok),
@@ -595,17 +597,22 @@ export default {
           ]);
           deleted += ok.length;
         }
-        return new Response(JSON.stringify({ success: true, deleted, requested: ids.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        /* ลบทั้งชุด statement → หัว statement + จุดตรวจยอดของชุดนั้นหายตาม (2026-10-30 · นำเข้าผิดบัญชีแล้วลบ หัวไม่ค้าง) */
+        const headersRemoved = touchedStmt.size ? await cleanupStatementHeaders(env, [...touchedStmt]) : 0;
+        return new Response(JSON.stringify({ success: true, deleted, requested: ids.length, headers_removed: headersRemoved }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       if (url.pathname === '/api/transactions/delete' && request.method === 'POST') {
         const { transaction_id } = await request.json();
         if (!(await ownTx(transaction_id))) return new Response(JSON.stringify({ error: 'ไม่พบรายการ หรือไม่มีสิทธิ์' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         // ลบรายการย่อยด้วย (เดิมลบแค่หัว รายการย่อยค้างในฐาน)
+        await ensureStmtCols(env);
+        const delStmt = (await env.DB.prepare(`SELECT stmt_id FROM Transactions WHERE transaction_id = ?`).bind(transaction_id).first())?.stmt_id;
         await env.DB.batch([
           env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id = ?`).bind(transaction_id),
           env.DB.prepare(`DELETE FROM Transactions WHERE transaction_id = ?`).bind(transaction_id),
         ]);
+        if (delStmt) await cleanupStatementHeaders(env, [delStmt]);
         return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 

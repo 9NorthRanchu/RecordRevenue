@@ -40,9 +40,27 @@ export function stmtFields(body) {
   return { stmt_id: id, stmt_seq: id ? seq : null, stmt_balance: id ? numOrNull(body.stmt_balance) : null };
 }
 
+/* ลบหัว statement ที่ไม่เหลือรายการแล้ว + จุดตรวจยอดที่มาจาก statement นั้น (2026-10-30 · North: "นำเข้าผิดบัญชี/บริษัท" ลบรายการแล้วหัวยังค้าง)
+   จุดตรวจ: บัญชีเดียวกัน · source STATEMENT · วันที่อยู่ในช่วง statement ถึง +10 วัน (ใบแจ้งยอดบัตรใช้วันสรุปยอด) */
+export async function cleanupStatementHeaders(env, stmtIds) {
+  const ids = [...new Set((stmtIds || []).filter(Boolean))];
+  let removed = 0;
+  for (const id of ids) {
+    const h = await env.DB.prepare(`SELECT stmt_id, account_id, period_from, period_to FROM StatementImports WHERE stmt_id = ?`).bind(id).first().catch(() => null);
+    if (!h) continue;
+    const n = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM Transactions WHERE stmt_id = ?`).bind(id).first())?.n || 0;
+    if (n) continue;
+    await env.DB.prepare(`DELETE FROM StatementImports WHERE stmt_id = ?`).bind(id).run();
+    try { await env.DB.prepare(`DELETE FROM AccountCheckpoints WHERE account_id = ? AND source = 'STATEMENT' AND as_of >= ? AND as_of <= date(?, '+10 day')`)
+      .bind(h.account_id, h.period_from, h.period_to).run(); } catch { /* ไม่มีตาราง */ }
+    removed++;
+  }
+  return removed;
+}
+
 export async function handleStmtReport({ url, request, env, cors, authUserId, canUseAccount, deny }) {
   const p = url.pathname;
-  if (!['/api/statements/header', '/api/reports/statement-running', '/api/transactions/duplicates', '/api/transactions/merge'].includes(p)) return null;
+  if (!['/api/statements/header', '/api/reports/statement-running', '/api/transactions/duplicates', '/api/transactions/merge', '/api/statements/delete'].includes(p)) return null;
   await ensureStmtCols(env);
 
   /* หัว statement: ส่งก่อนนำเข้ารายการ → ได้ stmt_id กลับไปใส่ทุกบรรทัด
@@ -91,6 +109,16 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
         .bind(acc, from, to).all()).results) || [];
     } catch { /* ยังไม่มีตาราง */ }
     return json({ account, from, to, opening: before?.bal || 0, opening_count: before?.n || 0, rows, headers, checkpoints, truncated: rows.length >= 6000 }, cors);
+  }
+
+  /* ลบหัว statement เอง (ปุ่มในรายงาน · หัวที่ไม่มีรายการเหลือ เช่น นำเข้าผิดบัญชีแล้วลบรายการไปแล้ว) */
+  if (p === '/api/statements/delete' && request.method === 'POST') {
+    const b = await request.json().catch(() => ({}));
+    const h = await env.DB.prepare(`SELECT account_id FROM StatementImports WHERE stmt_id = ?`).bind(String(b.stmt_id || '')).first();
+    if (!h || !(await canUseAccount(h.account_id))) return json({ error: 'ไม่พบ statement นี้' }, cors, 404);
+    const n = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM Transactions WHERE stmt_id = ?`).bind(String(b.stmt_id)).first())?.n || 0;
+    if (n) return json({ error: `ยังมีรายการจาก statement นี้ ${n} รายการ — ลบรายการก่อน (หน้ารอตรวจสอบ → ลบทั้งชุดที่นำเข้า)` }, cors, 409);
+    return json({ success: true, removed: await cleanupStatementHeaders(env, [String(b.stmt_id)]) }, cors);
   }
 
   /* 🔁 รายการซ้ำ (2026-10-30 · North: "ทำไมมีข้อมูลซ้ำ") — บรรทัด statement ที่รอตรวจ ซ้ำกับรายการเดิมที่ยืนยันแล้ว

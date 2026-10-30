@@ -7134,6 +7134,14 @@ async function parseCardStatement(pdf) {
 }
 
 /* นำเข้าใบแจ้งยอดบัตรที่อ่านแล้ว: บัตรละ 1 บัญชี (หาบัญชีบัตรจากเลขบัตรในตั้งค่า · ไม่เจอ = ให้เลือก) แล้วผ่านด่านตรวจเดิม (statementPrecheck) ทีละบัตร */
+/* รอบบัญชีบัตร: วันสรุปยอดเดือนก่อน + 1 วัน → วันสรุปยอด (ช่วง statement ไม่ขึ้นกับวันที่รายการแรก/สุดท้าย) */
+function cardCycle(stmtDate, txs) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(stmtDate || '')) return {};
+  const [y, m, d] = stmtDate.split('-').map(Number), prev = new Date(Date.UTC(y, m - 2, Math.min(d, 28)));
+  if (d > 28) prev.setUTCDate(Math.min(d, new Date(Date.UTC(y, m - 1, 0)).getUTCDate()));
+  const from = new Date(prev.getTime() + 864e5).toISOString().slice(0, 10), first = (txs || []).map(t => t.date).sort()[0];
+  return { period_from: first && first < from ? first : from, period_to: stmtDate };
+}
 async function importCardStatement(card, selectedAccId, fileName, btn) {
   const accs = AppState.accounts || [], f = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -7165,7 +7173,7 @@ async function importCardStatement(card, selectedAccId, fileName, btn) {
     /* จุดตรวจยอด: ยอดค้างตามใบแจ้งยอด ณ วันสรุปยอด (ระบบเก็บบัตรเป็นลบ) */
     if (p.c.closing != null) window._rrCheckpoint = { account_id: useAcc, as_of: card.statementDate || p.c.txs.map(t => t.date).sort().pop(), balance: -Math.abs(p.c.closing) };
     const res = await importStatementRows(useAcc, p.c.txs, (d, n) => { if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 💳 ${p.c.last4} ${d}/${n}`; },
-      { opening: p.c.opening, closing: p.c.closing, source_kind: 'CREDIT_CARD', file_name: `${fileName} · ${p.c.masked}` });
+      { opening: p.c.opening, closing: p.c.closing, source_kind: 'CREDIT_CARD', file_name: `${fileName} · ${p.c.masked}`, ...cardCycle(card.statementDate, p.c.txs) });
     done.push(`💳 ${p.c.masked} → ${(accs.find(a => a.account_id === useAcc) || {}).name || useAcc}: นำเข้า ${res.importedCount}` + (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · ข้ามซ้ำ ${res.skippedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : ''));
   }
   alert('อ่านใบแจ้งยอดบัตรจากตัวหนังสือในไฟล์ (ไม่ใช้ AI)\n\n' + (done.join('\n') || 'ไม่ได้นำเข้าบัตรใด'));
@@ -7439,7 +7447,7 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
         const dates = transactions.map(t => String(t.date || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
         if (dates.length) try {
             const hr = await fetch(`${API_BASE}/api/statements/header`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accId,
-                period_from: dates[0], period_to: dates[dates.length - 1], opening: meta.opening ?? null, closing: meta.closing ?? null, line_count: transactions.length,
+                period_from: meta.period_from || dates[0], period_to: meta.period_to || dates[dates.length - 1], opening: meta.opening ?? null, closing: meta.closing ?? null, line_count: transactions.length,
                 file_name: meta.file_name || null, source_kind: meta.source_kind || null }) });
             if (hr.ok) stmtId = (await hr.json()).stmt_id || null;
         } catch { /* ไม่มีหัวก็นำเข้าได้ */ }
@@ -7535,11 +7543,12 @@ async function batchImportStatements(files, btn) {
     } catch (e) { skipped.push({ name: file.name, why: '⚠️ ' + e.message }); }
   }
   if (!items.length) { alert('ไม่มีไฟล์ที่นำเข้าได้\n\n' + skipped.map(s => `${s.name}: ${s.why}`).join('\n')); return; }
-  for (const it of items) { const d = it.txs.map(t => t.date).sort(); it.from = d[0]; it.to = d[d.length - 1]; }
+  for (const it of items) { const d = it.txs.map(t => t.date).sort(); it.from = d[0]; it.to = d[d.length - 1];
+    const cy = it.kind === 'CARD' ? cardCycle(it.asOf, it.txs) : {}; it.pf = cy.period_from || it.from; it.pt = cy.period_to || it.to; }
   /* ── เคยนำเข้าแล้วไหม + ต่อเนื่อง (คิดใหม่ทุกครั้งที่เปลี่ยนบัญชี) ── */
   const checkDup = async it => {
     it.dup = null; if (!it.acc) return;
-    try { const r = await fetch(`${API_BASE}/api/statements/header`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: it.acc, period_from: it.from, period_to: it.to, closing: it.closing, check_only: true }) });
+    try { const r = await fetch(`${API_BASE}/api/statements/header`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: it.acc, period_from: it.pf, period_to: it.pt, closing: it.closing, check_only: true }) });
       const j = await r.json(); if (j.exists) it.dup = j; } catch { /* */ }
   };
   const sysOpen = {};
@@ -7602,7 +7611,8 @@ async function batchImportStatements(files, btn) {
   for (const [k, it] of todo.entries()) {
     if (it.closing != null) window._rrCheckpoint = { account_id: it.acc, as_of: it.asOf || it.to, balance: it.kind === 'CARD' ? -Math.abs(it.closing) : it.closing };
     const res = await importStatementRows(it.acc, it.txs, (d, n) => setBtn(`ไฟล์ ${k + 1}/${todo.length} · ${d}/${n}`),
-      { opening: it.opening, closing: it.closing, source_kind: it.kind === 'CARD' ? 'CREDIT_CARD' : 'BANK', file_name: it.kind === 'CARD' ? `${it.file} · ${it.read}` : it.file });
+      { opening: it.opening, closing: it.closing, source_kind: it.kind === 'CARD' ? 'CREDIT_CARD' : 'BANK', file_name: it.kind === 'CARD' ? `${it.file} · ${it.read}` : it.file,
+        ...(it.kind === 'CARD' ? cardCycle(it.asOf, it.txs) : {}) });
     out.push(`${it.kind === 'CARD' ? '💳' : '🏦'} ${(accs.find(a => a.account_id === it.acc) || {}).name || it.acc} · ${dTh(it.from)}–${dTh(it.to)}: นำเข้า ${res.importedCount}` +
       (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · ข้ามซ้ำ ${res.skippedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : ''));
   }
@@ -14569,7 +14579,15 @@ const StmtReport = (() => {
         }
         /* ช่วงที่ไม่มี statement (ระหว่าง statement ที่นำเข้า) */
         const hs = groups.filter(g => g.header).sort((a, b) => a.from.localeCompare(b.from)), gaps = [];
-        for (let i = 1; i < hs.length; i++) if (hs[i].from > addDay(hs[i - 1].to, 1)) gaps.push({ from: addDay(hs[i - 1].to, 1), to: addDay(hs[i].from, -1) });
+        /* ช่วงขาด (2026-10-30): ตัดสินจาก "ยอดต่อกันไหม" ก่อน (ยกไป statement ก่อน = ยกมา statement ถัดไป → ไม่ขาด แม้วันที่ไม่ชิดกัน
+           เช่น ใบแจ้งยอดบัตรที่รายการแรกเริ่มหลังวันตัดรอบ) · ไม่มียอดให้เทียบ → ใช้ระยะห่างวันที่ > 35 วัน */
+        for (let i = 1; i < hs.length; i++) {
+            const a = hs[i - 1], b = hs[i];
+            if (a.empty || b.empty || b.from <= addDay(a.to, 1)) continue;
+            const known = a.closeBank != null && b.openBank != null;
+            if (known ? Math.abs(r2(a.closeBank) - r2(b.openBank)) >= 0.01 : (Date.parse(b.from) - Date.parse(a.to)) / 864e5 > 35)
+                gaps.push({ from: addDay(a.to, 1), to: addDay(b.from, -1), diff: known ? r2(b.openBank - a.closeBank) : null });
+        }
         groups.sort((a, b) => a.from.localeCompare(b.from) || (a.header ? -1 : 1));
         return { account: acc, isCredit, groups, gaps, from: data.from, to: data.to, opening: r2(sg * data.opening), truncated: !!data.truncated };
     }
@@ -14604,14 +14622,24 @@ const StmtReport = (() => {
         if (!res.reports.length) { box.innerHTML = '<div class="sr-empty">ไม่มีรายการในช่วงนี้</div>'; return; }
         box.innerHTML = res.reports.map(rep => `<div class="sr-acc"><h4>${rep.isCredit ? '💳' : '🏦'} ${esc(accName(rep.account))} <small>${esc(rep.account.account_number || '')}</small></h4>
             ${rep.truncated ? '<div class="sr-warn">⚠️ รายการเกิน 6,000 — แสดงไม่ครบ กรุณาเลือกช่วงสั้นลง</div>' : ''}
-            ${rep.gaps.map(x => `<div class="sr-warn">⚠️ ไม่มี statement ช่วง ${dTh(x.from)} – ${dTh(x.to)}</div>`).join('')}
+            ${rep.gaps.map(x => `<div class="sr-warn">⚠️ ไม่มี statement ช่วง ${dTh(x.from)} – ${dTh(x.to)}${x.diff != null ? ` · ยอดไม่ต่อกัน ต่าง ${fmH(x.diff)}` : ''}</div>`).join('')}
             ${rep.groups.map(g => `<details class="sr-grp ${g.flags || g.empty ? 'bad' : ''}"${g.flags ? ' open' : ''}><summary>
                 <b>📄 ${esc(g.label)}</b><span>${g.rows.length} รายการ${g.pending ? ` · ⏳ ${g.pending}` : ''}</span>
                 <span>ยกมา ${fmH(g.openSys)}${g.openBank != null ? ` / ธ. ${fmH(g.openBank)}` : ''}</span>
-                <span>ยกไป ${fmH(g.closeSys)}${g.closeBank != null ? ` / ธ. ${fmH(g.closeBank)}` : ''}</span><em>${esc(g.status)}${g.missingLines ? ` · ขาด ${g.missingLines} บรรทัด` : ''}</em></summary>
+                <span>ยกไป ${fmH(g.closeSys)}${g.closeBank != null ? ` / ธ. ${fmH(g.closeBank)}` : ''}</span><em>${esc(g.status)}${g.missingLines ? ` · ขาด ${g.missingLines} บรรทัด` : ''}</em>
+                ${g.empty && g.header ? `<button type="button" class="btn btn-sm btn-outline-danger sr-delhdr" data-stmt="${esc(g.header.stmt_id)}" title="นำเข้าผิดบัญชีแล้วลบรายการไปแล้ว → ลบหัว statement + ยอดธนาคารที่ค้าง">🗑️ ลบหัว statement นี้</button>` : ''}</summary>
                 <div class="table-responsive"><table class="sr-tbl"><thead><tr>${COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
                 ${g.rows.map((r, i) => { const c = rowCells(r, i); return `<tr class="${r._flag ? 'sr-' + r._flag : ''}">${c.map((v, k) => `<td class="${k >= 5 && k <= 9 ? 'r' : ''}">${k >= 5 && k <= 9 ? fmH(v) : esc(v)}</td>`).join('')}</tr>`; }).join('')}
                 </tbody></table></div></details>`).join('')}</div>`).join('');
+        box.querySelectorAll('.sr-delhdr').forEach(b => b.onclick = async e => {
+            e.preventDefault(); e.stopPropagation();
+            if (!confirm('ลบหัว statement นี้ (และยอดตามธนาคารที่มากับมัน) ออกจากบัญชีนี้?\nใช้เมื่อนำเข้าผิดบัญชี/บริษัท แล้วลบรายการไปแล้ว')) return;
+            b.disabled = true;
+            try { const r = await fetch(`${API_BASE}/api/statements/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stmt_id: b.dataset.stmt }) });
+                const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || r.status);
+                document.getElementById('sr-run')?.click(); }
+            catch (err) { alert('ลบไม่สำเร็จ: ' + err.message); b.disabled = false; }
+        });
     }
 
     /* ── Excel: แผ่น "สรุป" + 1 แผ่นต่อ statement ── */
