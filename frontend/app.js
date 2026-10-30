@@ -7110,13 +7110,14 @@ function statementPdfPasswords(accId) {
    · ไม่ใช่ใบแจ้งยอดบัตร / อ่านไม่ได้ → ok:false (ไปใช้ AI ตามเดิม) */
 async function parseCardStatement(pdf) {
   /* 2026-10-30 · CardX (บัตร SCB เดิม): วันที่รายการไม่มีปี "10/11" → ใช้ DM แล้วเติมปีจากวันสรุปยอด */
-  const MONEY = /^-?\(?[\d,]+\.\d{2}\)?-?$/, DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/, DM = /^(\d{1,2})\/(\d{1,2})$/;
-  const CARD = /(\d{4})\s?(\d{2})[Xx*]{2}\s?[Xx*]{4}\s?(\d{4})/;
-  const num = s => { const neg = /^\(.*\)$|^-|-$/.test(s); const v = Number(String(s).replace(/[(),-]/g, '')); return neg ? -v : v; };
+  /* 2026-10-30 · KTC: "- 120.00" (ลบมีช่องว่าง) · เลขบัตร "4304-45XX-XXXX-3128" (คั่นด้วยขีด) */
+  const MONEY = /^-?\s?\(?[\d,]+\.\d{2}\)?-?$/, DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/, DM = /^(\d{1,2})\/(\d{1,2})$/;
+  const CARD = /(\d{4})[\s-]?(\d{2})[Xx*]{2}[\s-]?[Xx*]{4}[\s-]?(\d{4})/;
+  const num = s => { const neg = /^\(.*\)$|^-|-$/.test(s); const v = Number(String(s).replace(/[(),\s-]/g, '')); return neg ? -v : v; };
   const r2 = n => Math.round(n * 100) / 100;
   /* ปี 2 หลัก: < 60 = ค.ศ. (25 → 2025) · ≥ 60 = พ.ศ. (68 → 2025) · ปี 4 หลัก พ.ศ. → ลบ 543 */
   const iso = (d, m, y) => { let yy = +y; if (yy < 100) yy = yy >= 60 ? 2500 + yy - 543 : 2000 + yy; if (yy > 2400) yy -= 543; return `${yy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
-  const cards = [], byKey = {}, loose = []; let cur = null, stmtDate = null, allText = '', wantStmtDate = false, postFirst = false;
+  const cards = [], byKey = {}, loose = []; let cur = null, stmtDate = null, allText = '', wantStmtDate = false, postFirst = false, anyCard = null;
   const cardOf = m => { const key = m[3], masked = `${m[1]} ${m[2]}XX XXXX ${m[3]}`; if (!byKey[key]) { byKey[key] = { masked, last4: key, type: '', opening: null, closing: null, rows: [] }; cards.push(byKey[key]); } return byKey[key]; };
   for (let p = 1; p <= pdf.numPages; p++) {
     const tc = await (await pdf.getPage(p)).getTextContent();
@@ -7136,12 +7137,12 @@ async function parseCardStatement(pdf) {
       /* CardX: หัวข้อ "CLOSING DATE / วันสรุปยอดบัญชี" อยู่บรรทัดหนึ่ง วันที่อยู่บรรทัดถัดไป (วันแรกในบรรทัด) */
       else if (!stmtDate && wantStmtDate && dates.length) { const d = dates[0].s.match(DATE); stmtDate = iso(d[1], d[2], d[3]); wantStmtDate = false; }
       if (!stmtDate && /CLOSING DATE|วันสรุปยอดบัญชี/i.test(text) && !dates.length) wantStmtDate = true;
-      const cm = text.match(CARD);
+      const cm = text.match(CARD); if (cm && !anyCard) anyCard = cm;
       /* หัวบัตร: มีเลขบัตร ไม่มีตัวเงิน ไม่มีวันที่ (ไม่ใช่แถวสรุปวงเงิน/ใบนำฝาก) */
       if (cm && !money.length && !dates.length) { cur = cardOf(cm); const t = text.match(/ACCOUNT DETAILS\s+(.+?)\s+\d{4}\s?\d{2}[Xx*]/i) || text.match(/\d{4}\s?\d{2}[Xx*]{2}\s?[Xx*]{4}\s?\d{4}\s+([A-Za-z][A-Za-z ]+?)(?:\s+[\d,]+)*$/);
         if (t && !cur.type) cur.type = t[1].trim(); continue; }
-      if (/PREVIOUS BALANCE|ยอดเรียกเก็บของรอบบัญชีที่แล้ว|ยอดยกมา/i.test(text) && money.length) { const v = num(money[money.length - 1].s); if (cur) { if (cur.opening == null) cur.opening = v; } else loose.opening = v; continue; }
-      if (/TOTAL BALANCE/i.test(text) && money.length) { if (cur && cur.closing == null && cur.rows.length) cur.closing = num(money[money.length - 1].s); cur = null; continue; }
+      if (/PREVIOUS BALANCE|ยอดเรียกเก็บของรอบบัญชีที่แล้ว|ยอดเรียกเก็บรอบที่แล้ว|ยอดยกมา/i.test(text) && money.length) { const v = num(money[money.length - 1].s); if (cur) { if (cur.opening == null) cur.opening = v; } else loose.opening = v; continue; }
+      if (/TOTAL BALANCE|สรุปยอดรอบนี้/i.test(text) && money.length) { if (cur && cur.closing == null && cur.rows.length) cur.closing = num(money[money.length - 1].s); else if (!cur && !cards.length && loose.length && loose.closing == null) loose.closing = num(money[money.length - 1].s); cur = null; continue; }
       const f0 = L.items[0]?.s.match(DATE) || L.items[0]?.s.match(DM), f1 = L.items[1]?.s.match(DATE) || L.items[1]?.s.match(DM);
       if (f0 && f1 && money.length) {
         const amtIt = money[money.length - 1], v = num(amtIt.s);
@@ -7154,12 +7155,16 @@ async function parseCardStatement(pdf) {
       }
     }
   }
+  /* KTC: บรรทัดเลขบัตรมีวงเงินอยู่ด้วย (ไม่ใช่หัวบัตรตามกติกา) → ไฟล์บัตรใบเดียว: ใช้เลขบัตรแรกที่เจอ กับรายการทั้งหมด */
+  if (!cards.length && anyCard && loose.length) { const c = cardOf(anyCard); c.opening = loose.opening ?? null; c.closing = loose.closing ?? null; c.rows.push(...loose.splice(0)); }
   if (!cards.length || !/CREDIT CARD|บัตรเครดิต|Billing Statement/i.test(allText)) return { ok: false, reason: 'ไม่ใช่ใบแจ้งยอดบัตรเครดิต' };
   /* แปลงวันที่: มีปีใช้ปีนั้น · ไม่มีปี (วัน/เดือน) → ปีของวันสรุปยอด ถ้าเดือนเกินเดือนสรุปยอด = ปีก่อน */
   const sY = stmtDate ? +stmtDate.slice(0, 4) : new Date().getFullYear(), sM = stmtDate ? +stmtDate.slice(5, 7) : 12;
   const toIso = m => m[3] ? iso(m[1], m[2], m[3]) : iso(m[1], m[2], String(+m[2] > sM ? sY - 1 : sY));
   for (const r of [...loose, ...cards.flatMap(c => c.rows)]) if (r.d0) { r.date = toIso(r.d0); r.post = toIso(r.d1); delete r.d0; delete r.d1; }
-  if (loose.length) { cards[0].rows.unshift(...loose); if (cards[0].opening == null && loose.opening != null) cards[0].opening = loose.opening; }
+  if (loose.length) { cards[0].rows.unshift(...loose); if (cards[0].opening == null && loose.opening != null) cards[0].opening = loose.opening;
+    if (cards[0].closing == null && loose.closing != null) cards[0].closing = loose.closing; }   // KTC: ยอดยกไป "สรุปยอดรอบนี้" อยู่ก่อนหัวบัตร (หน้า 2)
+  { const t = allText.match(/TYPE OF CARD\s*:?\s*([^\n]+)/i); if (t && cards.length === 1 && !cards[0].type) cards[0].type = t[1].trim(); }   // KTC: "ประเภทบัตร TYPE OF CARD : KTC VISA SIGNATURE"
   const used = cards.filter(c => c.rows.length || c.closing);
   if (!used.some(c => c.rows.length)) return { ok: false, reason: 'ไม่พบรายการในใบแจ้งยอด' };
   for (const c of used) {
