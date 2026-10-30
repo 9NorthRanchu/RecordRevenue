@@ -2323,8 +2323,7 @@ function renderPendingHero() {
     const acc = box.querySelector('#ph-acc');
     acc.onchange = () => { if (sel) { sel.value = acc.value; sel.dispatchEvent(new Event('change')); } };
     box.querySelector('#ph-pdf-go').onclick = () => {
-        if (!acc.value) { try { showToast('เลือกบัญชีของ statement ก่อน', 'error'); } catch { /* */ } acc.focus(); return; }
-        if (sel) sel.value = acc.value;
+        if (sel) sel.value = acc.value;   // ไม่เลือกบัญชีก็ได้ถ้านำเข้าหลายไฟล์ (ระบบหาบัญชีจากเลขในไฟล์)
         document.getElementById('btn-trigger-statement-upload')?.click();
     };
     // ปุ่มเดิมแสดงความคืบหน้า (กำลังอ่าน / กำลังบันทึก n/m) → สะท้อนมาที่ปุ่ม "เลือกไฟล์"
@@ -7486,6 +7485,132 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
     return { importedCount, skippedCount, errorCount, mergedCount, autoCatCount, skippedDetails };
 }
 
+// batch_statement_import.js
+/* 📚 นำเข้า statement หลายไฟล์พร้อมกัน (2026-10-30 · North เลือก ก: "ระบบจะตรวจสอบเลขที่บัญชีหรือข้อมูลซ้ำด้วยไหม")
+   ตรวจ 4 ชั้นก่อนนำเข้า:
+   ① เลขบัญชี/เลขบัตรในไฟล์ → หาบัญชีให้เอง (ไม่เจอ/เจอหลายบัญชี = ให้เลือก · ไม่เลือก = ไม่นำเข้าไฟล์นั้น)
+   ② ยอดเดินในไฟล์ (ยกมา + รายการ = ยกไป)  ③ ต่อเนื่อง: ยกมาของไฟล์ = ยกไปของไฟล์ก่อนหน้า (บัญชีเดียวกัน) หรือ = ยอดในระบบ ณ วันแรก
+   ④ ซ้ำ: statement นี้เคยนำเข้าแล้ว (บัญชี+ช่วงวัน+ยกไป เดิม) → ไม่ติ๊กให้ · ไฟล์ซ้ำกันในชุด → ข้าม · รายการซ้ำรายบรรทัด → ระบบข้าม/จับคู่ให้เหมือนเดิม
+   อ่านเฉพาะไฟล์ที่มีตัวหนังสือ (ไม่ใช้ AI) · ไฟล์สแกน/Print to PDF → แจ้งให้นำเข้าทีละไฟล์ */
+async function batchImportStatements(files, btn) {
+  const accs = AppState.accounts || [], f = n => n == null || n === '' ? '-' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${m[3]}/${m[2]}/${(+m[1] + 543) % 100}` : '-'; };
+  const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+  const setBtn = t => { if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${t}`; };
+  const findAcc = (read, last4, credit) => {
+    const hit = accs.filter(a => statementAccountMatches(read, a.account_number) === true);
+    if (hit.length === 1) return hit[0].account_id;
+    if (credit && last4) { const t = accs.filter(a => a.account_type === 'CREDIT' && String(a.account_number || '').replace(/[^0-9]/g, '').endsWith(last4)); if (t.length === 1) return t[0].account_id; }
+    return '';
+  };
+  /* ── อ่านทุกไฟล์ ── */
+  const items = [], skipped = [], seenHash = new Set();
+  for (const [i, file] of files.entries()) {
+    setBtn(`อ่านไฟล์ ${i + 1}/${files.length}`);
+    try {
+      const buf = await file.arrayBuffer();
+      const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', buf))).slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join('');
+      if (seenHash.has(hash)) { skipped.push({ name: file.name, why: '♻️ ไฟล์ซ้ำกับไฟล์อื่นในชุดนี้' }); continue; }
+      seenHash.add(hash);
+      const opened = await openStatementPdf(buf, document.getElementById('import-account-selector')?.value || '');
+      if (opened.needPassword) { skipped.push({ name: file.name, why: '🔒 รหัส PDF ไม่ตรงกับบัญชีใด — ตั้งรหัสที่ ตั้งค่า→บัญชี' }); continue; }
+      if (!opened.pdf) { skipped.push({ name: file.name, why: '⚠️ เปิดไฟล์ไม่ได้' }); continue; }
+      const bank = await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
+      if (bank.ok) {
+        const txs = bank.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00', type: l.amount > 0 ? 'INCOME' : 'EXPENSE',
+          amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null }));
+        const sum = r2(bank.lines.reduce((t, l) => t + l.amount, 0));
+        items.push({ file: file.name, kind: 'BANK', read: bank.account_number || '', acc: findAcc(bank.account_number || '', '', false), txs, opening: bank.opening, closing: bank.closing,
+          walk: bank.opening != null && bank.closing != null ? Math.abs(r2(bank.opening + sum) - r2(bank.closing)) < 0.01 : null, sign: 1 });
+        continue;
+      }
+      const card = await parseCardStatement(opened.pdf).catch(() => ({ ok: false }));
+      if (card.ok) {
+        for (const c of card.cards) items.push({ file: file.name, kind: 'CARD', read: c.masked, label: c.type, acc: findAcc(c.masked, c.last4, true), txs: c.txs, opening: c.opening, closing: c.closing,
+          walk: c.agree, sign: -1, asOf: card.statementDate });
+        continue;
+      }
+      skipped.push({ name: file.name, why: `🤖 ${bank.reason || 'อ่านตัวหนังสือในไฟล์ไม่ได้'} — นำเข้าไฟล์นี้ทีละไฟล์ (ระบบใช้ AI อ่าน)` });
+    } catch (e) { skipped.push({ name: file.name, why: '⚠️ ' + e.message }); }
+  }
+  if (!items.length) { alert('ไม่มีไฟล์ที่นำเข้าได้\n\n' + skipped.map(s => `${s.name}: ${s.why}`).join('\n')); return; }
+  for (const it of items) { const d = it.txs.map(t => t.date).sort(); it.from = d[0]; it.to = d[d.length - 1]; }
+  /* ── เคยนำเข้าแล้วไหม + ต่อเนื่อง (คิดใหม่ทุกครั้งที่เปลี่ยนบัญชี) ── */
+  const checkDup = async it => {
+    it.dup = null; if (!it.acc) return;
+    try { const r = await fetch(`${API_BASE}/api/statements/header`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: it.acc, period_from: it.from, period_to: it.to, closing: it.closing, check_only: true }) });
+      const j = await r.json(); if (j.exists) it.dup = j; } catch { /* */ }
+  };
+  const sysOpen = {};
+  const continuity = async () => {
+    const byAcc = {};
+    for (const it of items) if (it.acc) (byAcc[it.acc] = byAcc[it.acc] || []).push(it);
+    for (const [acc, list] of Object.entries(byAcc)) {
+      list.sort((a, b) => a.from.localeCompare(b.from));
+      list.forEach((it, i) => {
+        const prev = list[i - 1];
+        if (prev) { it.cont = prev.closing != null && it.opening != null ? (Math.abs(r2(prev.closing) - r2(it.opening)) < 0.01 ? 'ok' : 'gap') : null;
+          const days = (Date.parse(it.from) - Date.parse(prev.to)) / 864e5;
+          it.contNote = (prev.closing != null ? `ยกไปไฟล์ก่อน ${f(prev.closing)}` : '') + (it.cont === 'gap' && days > 20 ? ` · น่าจะขาด statement ช่วง ${dTh(prev.to)} – ${dTh(it.from)}` : ''); return; }
+        const k = acc + '|' + it.from;
+        it.cont = null; it.contNote = '';
+        /* ไฟล์แรกของบัญชี: ยกมาในไฟล์ เทียบยอดในระบบ ณ วันแรก (บัตรเก็บติดลบในระบบ) */
+        if (sysOpen[k] != null && it.opening != null) { const sys = sysOpen[k], want = it.kind === 'CARD' ? -Math.abs(it.opening) : it.opening;
+          it.cont = sys.count === 0 ? 'new' : Math.abs(r2(sys.balance) - r2(want)) < 0.01 ? 'ok' : 'gap';
+          it.contNote = sys.count === 0 ? 'บัญชีนี้ยังไม่มีรายการก่อนหน้า' : `ยอดในระบบ ${f(it.kind === 'CARD' ? -sys.balance : sys.balance)}`; }
+      });
+    }
+  };
+  setBtn('ตรวจซ้ำ/ความต่อเนื่อง…');
+  for (const it of items) {
+    await checkDup(it);
+    if (it.acc && !(it.acc + '|' + it.from in sysOpen)) { try { const r = await fetch(`${API_BASE}/api/accounts/balance-at?account_id=${encodeURIComponent(it.acc)}&date=${it.from}`); if (r.ok) sysOpen[it.acc + '|' + it.from] = await r.json(); } catch { /* */ } }
+    it.on = !!it.acc && !it.dup;
+  }
+  await continuity();
+  /* ── ตารางตรวจก่อนนำเข้า ── */
+  const accOpts = sel => `<option value="">— เลือกบัญชี —</option>` + accs.map(a => `<option value="${esc(a.account_id)}"${a.account_id === sel ? ' selected' : ''}>${a.account_type === 'CREDIT' ? '💳' : '🏦'} ${esc(a.name)}</option>`).join('');
+  const rowHtml = (it, i) => `<tr class="${it.on ? '' : 'bi-off'}"><td><input type="checkbox" data-on="${i}"${it.on ? ' checked' : ''}${it.acc ? '' : ' disabled'}></td>
+    <td><b>${esc(it.file)}</b><br><small>${it.kind === 'CARD' ? '💳' : '🏦'} ${esc(it.read || 'ไม่พบเลขบัญชีในไฟล์')} ${esc(it.label || '')}</small></td>
+    <td><select data-acc="${i}">${accOpts(it.acc)}</select>${it.acc ? '' : '<br><small style="color:#E67700">① หาบัญชีจากเลขในไฟล์ไม่เจอ</small>'}</td>
+    <td>${dTh(it.from)} – ${dTh(it.to)}<br><small>${it.txs.length} รายการ</small></td>
+    <td class="r">${f(it.opening)} → ${f(it.closing)}<br><small>${it.walk === true ? '② ✅ ยอดเดินตรง' : it.walk === false ? '<span style="color:#C92A2A">② ⚠️ ยอดเดินไม่ตรง</span>' : '② ไม่มียอดให้ตรวจ'}</small></td>
+    <td><small>${it.cont === 'ok' ? '③ ✅ ต่อเนื่อง' : it.cont === 'gap' ? '<span style="color:#C92A2A">③ ⚠️ ไม่ต่อเนื่อง</span>' : it.cont === 'new' ? '③ 🆕 เริ่มบัญชี' : '③ -'} ${esc(it.contNote || '')}</small>
+      ${it.dup ? `<br><small style="color:#C92A2A">④ ♻️ เคยนำเข้าแล้ว (ในระบบ ${it.dup.lines_in_system} บรรทัด) — ติ๊กเพื่อนำเข้าซ้ำ (เติมยอดรายบรรทัด · รายการซ้ำจะถูกข้าม)</small>` : ''}</td></tr>`;
+  const html = () => `<div style="text-align:left;font-size:.85rem">
+    <div style="margin-bottom:8px">อ่านได้ <b>${items.length}</b> statement จาก ${files.length} ไฟล์ · เลือกแล้ว <b id="bi-n">${items.filter(i => i.on).length}</b></div>
+    <div style="max-height:56vh;overflow:auto"><table class="bi-tbl"><thead><tr><th></th><th>ไฟล์</th><th>บัญชี</th><th>ช่วงวันที่</th><th>ยกมา → ยกไป</th><th>ตรวจ</th></tr></thead><tbody>${items.map(rowHtml).join('')}</tbody></table></div>
+    ${skipped.length ? `<div style="margin-top:10px;padding:8px 10px;border-radius:10px;background:#FFF5F5;color:#862E2E"><b>ไม่ได้นำเข้า ${skipped.length} ไฟล์</b><br>${skipped.map(s => `${esc(s.name)} — ${esc(s.why)}`).join('<br>')}</div>` : ''}
+    <div style="margin-top:8px;color:#5C5872;font-size:.78rem">รายการซ้ำรายบรรทัด (มีอยู่แล้ว / ตรงกับสลิปหรือข้อมูลเก่า) ระบบข้ามหรือจับคู่ให้อัตโนมัติ · ทุกรายการเข้า "รอตรวจ" ก่อน</div></div>`;
+  if (!document.getElementById('bi-css')) { const st = document.createElement('style'); st.id = 'bi-css'; st.textContent = `.bi-tbl{width:100%;border-collapse:collapse;font-size:.8rem}.bi-tbl th{background:#5F3DC4;color:#fff;padding:6px;position:sticky;top:0}.bi-tbl td{padding:6px;border-bottom:1px solid #E9E3FA;vertical-align:top}.bi-tbl td.r{text-align:right;white-space:nowrap}.bi-tbl select{max-width:190px;min-height:34px;border-radius:8px}.bi-tbl tr.bi-off td{opacity:.55}`; document.head.appendChild(st); }
+  const go = await Swal.fire({ title: '📚 นำเข้า statement หลายไฟล์', html: html(), width: 980, showCancelButton: true, confirmButtonText: 'นำเข้าที่เลือก', cancelButtonText: 'ยกเลิก',
+    didOpen: el => {
+      const wire = () => {
+        el.querySelectorAll('[data-on]').forEach(c => c.onchange = () => { items[+c.dataset.on].on = c.checked; c.closest('tr').classList.toggle('bi-off', !c.checked); el.querySelector('#bi-n').textContent = items.filter(i => i.on).length; });
+        el.querySelectorAll('[data-acc]').forEach(s => s.onchange = async () => {
+          const it = items[+s.dataset.acc]; it.acc = s.value; await checkDup(it);
+          if (it.acc && !(it.acc + '|' + it.from in sysOpen)) { try { const r = await fetch(`${API_BASE}/api/accounts/balance-at?account_id=${encodeURIComponent(it.acc)}&date=${it.from}`); if (r.ok) sysOpen[it.acc + '|' + it.from] = await r.json(); } catch { /* */ } }
+          it.on = !!it.acc && !it.dup; await continuity(); Swal.update({ html: html() }); wire(); });
+      };
+      wire();
+    } });
+  if (!go.isConfirmed) return;
+  /* ── นำเข้า: เรียงตามบัญชี แล้วตามวันที่ ── */
+  const todo = items.filter(i => i.on && i.acc).sort((a, b) => a.acc.localeCompare(b.acc) || a.from.localeCompare(b.from));
+  const out = [];
+  for (const [k, it] of todo.entries()) {
+    if (it.closing != null) window._rrCheckpoint = { account_id: it.acc, as_of: it.asOf || it.to, balance: it.kind === 'CARD' ? -Math.abs(it.closing) : it.closing };
+    const res = await importStatementRows(it.acc, it.txs, (d, n) => setBtn(`ไฟล์ ${k + 1}/${todo.length} · ${d}/${n}`),
+      { opening: it.opening, closing: it.closing, source_kind: it.kind === 'CARD' ? 'CREDIT_CARD' : 'BANK', file_name: it.kind === 'CARD' ? `${it.file} · ${it.read}` : it.file });
+    out.push(`${it.kind === 'CARD' ? '💳' : '🏦'} ${(accs.find(a => a.account_id === it.acc) || {}).name || it.acc} · ${dTh(it.from)}–${dTh(it.to)}: นำเข้า ${res.importedCount}` +
+      (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · ข้ามซ้ำ ${res.skippedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : ''));
+  }
+  alert(`📚 นำเข้าเสร็จ ${todo.length} statement\n\n${out.join('\n')}` + (skipped.length ? `\n\nไม่ได้นำเข้า ${skipped.length} ไฟล์:\n` + skipped.map(s => `${s.name} — ${s.why}`).join('\n') : '') +
+    '\n\nตรวจความครบได้ที่ รายงาน → ยอดสะสม statement');
+  loadPending();
+}
+
 function bindPDFUpload() {
     const triggerUploadBtn = document.getElementById("btn-trigger-statement-upload");
     const pdfInput = document.getElementById("statement-pdf-input");
@@ -7493,16 +7618,20 @@ function bindPDFUpload() {
     if (triggerUploadBtn && pdfInput) {
         triggerUploadBtn.addEventListener("click", () => {
             const importAccSel = document.getElementById("import-account-selector");
-            if (importAccSel && !importAccSel.value) {
-                alert("กรุณาเลือกบัญชีธนาคารก่อนอัปโหลดไฟล์ PDF");
-                return;
-            }
+            /* 2026-10-30: ไม่บังคับเลือกบัญชีก่อน — หลายไฟล์ระบบหาบัญชีเอง · ไฟล์เดียวยังต้องเลือก (เตือนตอนเลือกไฟล์) */
             pdfInput.click();
         });
 
         pdfInput.addEventListener("change", async (e) => {
             const file = e.target.files[0];
             if (!file) return;
+            /* 📚 เลือก PDF หลายไฟล์ → นำเข้าหลายไฟล์ (หาบัญชีจากเลขในไฟล์ · ไม่ต้องเลือกบัญชีก่อน) 2026-10-30 */
+            const pdfs = [...e.target.files].filter(f => /pdf/i.test(f.type) || /\.pdf$/i.test(f.name));
+            if (pdfs.length > 1 && pdfs.length === e.target.files.length) {
+                const orig = triggerUploadBtn.innerHTML; triggerUploadBtn.disabled = true;
+                try { await batchImportStatements(pdfs, triggerUploadBtn); } catch (err) { alert('นำเข้าหลายไฟล์ไม่สำเร็จ: ' + err.message); }
+                triggerUploadBtn.disabled = false; triggerUploadBtn.innerHTML = orig; pdfInput.value = ''; return;
+            }
             
             const importAccSel = document.getElementById("import-account-selector");
             let selectedAccId = importAccSel ? importAccSel.value : '';

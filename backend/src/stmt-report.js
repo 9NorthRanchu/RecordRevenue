@@ -55,6 +55,11 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
     const opening = numOrNull(b.opening), closing = numOrNull(b.closing);
     const same = await env.DB.prepare(`SELECT stmt_id FROM StatementImports WHERE account_id = ? AND period_from = ? AND period_to = ?
         AND ((closing IS NULL AND ? IS NULL) OR ABS(closing - ?) < 0.005)`).bind(acc, b.period_from, b.period_to, closing, closing ?? 0).first();
+    /* check_only (2026-10-30 · นำเข้าหลายไฟล์): ถามอย่างเดียวว่าเคยนำเข้า statement นี้แล้วไหม ไม่บันทึก */
+    if (b.check_only) {
+      const n = same ? (await env.DB.prepare(`SELECT COUNT(*) AS n FROM Transactions WHERE stmt_id = ?`).bind(same.stmt_id).first())?.n || 0 : 0;
+      return json({ exists: !!same, stmt_id: same?.stmt_id || null, lines_in_system: n }, cors);
+    }
     const stmtId = same?.stmt_id || `STM-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`.toUpperCase();
     await env.DB.prepare(`INSERT OR REPLACE INTO StatementImports (stmt_id, account_id, period_from, period_to, opening, closing, line_count, file_name, source_kind, created_by, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)

@@ -127,4 +127,8 @@ r = await call('/api/transactions', { user: '9North', method: 'POST', body: { tr
 k = db.prepare(`SELECT * FROM Transactions WHERE transaction_id='OLD3'`).get();
 check('นำเข้า: จับคู่ข้อมูลเก่า ไม่สร้างซ้ำ + โน้ตเดิม', r.j.merged && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='IMP4080'`).get() && k.time === '11:49:00'
   && db.prepare(`SELECT note FROM TransactionDetails WHERE transaction_id='OLD3'`).get().note === 'Pna 16.10.25', { r: r.j, k });
+r = await call('/api/statements/header', { user: '9North', method: 'POST', body: { account_id: 'A02', period_from: '2026-10-01', period_to: '2026-10-31', closing: 1150, check_only: true } });
+check('header check_only: เคยนำเข้า + จำนวนบรรทัด', r.j.exists === true && r.j.stmt_id === sid && r.j.lines_in_system >= 3, r.j);
+r = await call('/api/statements/header', { user: '9North', method: 'POST', body: { account_id: 'A02', period_from: '2026-12-01', period_to: '2026-12-31', closing: 5, check_only: true } });
+check('header check_only: ยังไม่เคย · ไม่สร้างหัว', r.j.exists === false && !db.prepare(`SELECT 1 FROM StatementImports WHERE period_from='2026-12-01'`).get(), r.j);
 console.log(`stmt-report: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);
