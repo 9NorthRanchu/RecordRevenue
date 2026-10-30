@@ -149,10 +149,20 @@ r = await call('/api/statements/delete', { user: '9North', method: 'POST', body:
 
 /* ใบแจ้งยอดบัตร: ร้านเดิม ยอดเท่ากัน วันเดียวกัน 2 บรรทัด (ไม่มีเวลา) → ต้องได้ทั้ง 2 · นำเข้าไฟล์เดิมซ้ำ → ไม่เพิ่ม */
 r = await H('C01', '2026-04-21', '2026-05-20', 0, 268); const cs = r.j.stmt_id;
-const cardLine = (id, seq) => call('/api/transactions', { user: '9North', method: 'POST', body: { transaction_id: id, account_id: 'C01', date: '2026-05-13', time: '00:00:00', statement_desc: '(FOR SHOPEE) BANGKOK', total_amount: -134,
-  status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true, stmt_id: cs, stmt_seq: seq, details: [{ amount: -134, category_id: null, type: 'EXPENSE' }] } });
-r = await cardLine('CA1', 5); r = await cardLine('CA2', 6);
-check('บรรทัดเหมือนกัน 2 บรรทัดใน statement เดียวกัน → ได้ทั้งคู่', !r.j.skipped && db.prepare(`SELECT COUNT(*) n FROM Transactions WHERE account_id='C01' AND total_amount=-134`).get().n === 2, r.j);
-r = await cardLine('CA3', 5);
-check('นำเข้าไฟล์เดิมซ้ำ → บรรทัดเดิมถูกข้าม', r.j.skipped && db.prepare(`SELECT COUNT(*) n FROM Transactions WHERE account_id='C01' AND total_amount=-134`).get().n === 2, r.j);
+const cardLine = (id, seq, idx = 0, amt = -134) => call('/api/transactions', { user: '9North', method: 'POST', body: { transaction_id: id, account_id: 'C01', date: '2026-05-13', time: '00:00:00', statement_desc: '(FOR SHOPEE) BANGKOK', total_amount: amt,
+  status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true, stmt_id: cs, stmt_seq: seq, dup_idx: idx, details: [{ amount: amt, category_id: null, type: 'EXPENSE' }] } });
+const n134 = () => db.prepare(`SELECT COUNT(*) n FROM Transactions WHERE account_id='C01' AND total_amount=-134`).get().n;
+r = await cardLine('CA1', 5, 0); r = await cardLine('CA2', 6, 1);
+check('รายการเหมือนกัน 2 บรรทัดในไฟล์ (dup_idx 0,1) → ได้ทั้งคู่', !r.j.skipped && n134() === 2, r.j);
+r = await cardLine('CA3', 9, 0); const r2b = await cardLine('CA4', 10, 1);
+check('นำเข้าไฟล์เดิมซ้ำ ลำดับบรรทัดเลื่อน → ไม่สร้างซ้ำ', r.j.skipped && r2b.j.skipped && n134() === 2, [r.j, r2b.j]);
+r = await cardLine('CA5', 11, 2);
+check('ไฟล์ใหม่มีรายการเหมือนกันตัวที่ 3 → เพิ่ม', !r.j.skipped && n134() === 3, r.j);
+/* ซิงก์: ไฟล์มี 2 ตัว ระบบมี 3 → ลบส่วนเกิน 1 (ตัวที่สร้างทีหลัง) */
+r = await call('/api/statements/sync', { user: '9North', method: 'POST', body: { account_id: 'C01', period_from: '2026-04-21', period_to: '2026-05-20', keys: [{ date: '2026-05-13', time: '00:00:00', amount: -134, desc: '(FOR SHOPEE) BANGKOK', count: 2 }] } });
+check('sync ลบส่วนเกิน 1 · เก็บตัวแรก', r.j.removed === 1 && n134() === 2 && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='CA5'`).get() && db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='CA1'`).get(), r.j);
+r = await call('/api/statements/sync', { user: 'Other', method: 'POST', body: { account_id: 'C01', period_from: '2026-04-21', period_to: '2026-05-20', keys: [] } }); check('sync ครอบครัวอื่นไม่ได้', r.s === 403, r);
+/* หัว statement: ช่วงวันที่เปลี่ยน (รอบบัตร) แต่ยกไปเท่าเดิม → ใช้หัวเดิม */
+r = await H('C01', '2026-04-20', '2026-05-18', 0, 268);
+check('หัวเดิมช่วงวันที่ทับกัน + ยกไปเท่ากัน → ใช้ id เดิม', r.j.stmt_id === cs && r.j.reused, r.j);
 console.log(`stmt-report: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);

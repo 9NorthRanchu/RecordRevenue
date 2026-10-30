@@ -60,7 +60,7 @@ export async function cleanupStatementHeaders(env, stmtIds) {
 
 export async function handleStmtReport({ url, request, env, cors, authUserId, canUseAccount, deny }) {
   const p = url.pathname;
-  if (!['/api/statements/header', '/api/reports/statement-running', '/api/transactions/duplicates', '/api/transactions/merge', '/api/statements/delete'].includes(p)) return null;
+  if (!['/api/statements/header', '/api/reports/statement-running', '/api/transactions/duplicates', '/api/transactions/merge', '/api/statements/delete', '/api/statements/sync'].includes(p)) return null;
   await ensureStmtCols(env);
 
   /* หัว statement: ส่งก่อนนำเข้ารายการ → ได้ stmt_id กลับไปใส่ทุกบรรทัด
@@ -71,13 +71,15 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
     if (!acc || !isDate(b.period_from) || !isDate(b.period_to)) return json({ error: 'ต้องระบุ account_id, period_from, period_to' }, cors, 400);
     if (!(await canUseAccount(acc))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
     const opening = numOrNull(b.opening), closing = numOrNull(b.closing);
-    const same = await env.DB.prepare(`SELECT stmt_id FROM StatementImports WHERE account_id = ? AND period_from = ? AND period_to = ?
-        AND ((closing IS NULL AND ? IS NULL) OR ABS(closing - ?) < 0.005)`).bind(acc, b.period_from, b.period_to, closing, closing ?? 0).first();
+    /* statement เดิม = บัญชีเดียวกัน · ช่วงวันที่ทับกัน · ยอดยกไปเท่ากัน (2026-10-30: เดิมต้องวันที่ตรงเป๊ะ → เปลี่ยนวิธีคิดรอบบัตรแล้วเกิดหัวซ้อน)
+       หลายหัว → เอาหัวที่มีรายการมากสุด · หัวอื่นที่ทับกันและไม่มีรายการ = ลบทิ้ง */
+    const sameList = ((await env.DB.prepare(`SELECT h.stmt_id, (SELECT COUNT(*) FROM Transactions t WHERE t.stmt_id = h.stmt_id) AS n FROM StatementImports h
+        WHERE h.account_id = ? AND h.period_from <= ? AND h.period_to >= ? AND ((h.closing IS NULL AND ? IS NULL) OR ABS(h.closing - ?) < 0.005)
+        ORDER BY n DESC, h.created_at`).bind(acc, b.period_to, b.period_from, closing, closing ?? 0).all()).results) || [];
+    const same = sameList[0] || null;
     /* check_only (2026-10-30 · นำเข้าหลายไฟล์): ถามอย่างเดียวว่าเคยนำเข้า statement นี้แล้วไหม ไม่บันทึก */
-    if (b.check_only) {
-      const n = same ? (await env.DB.prepare(`SELECT COUNT(*) AS n FROM Transactions WHERE stmt_id = ?`).bind(same.stmt_id).first())?.n || 0 : 0;
-      return json({ exists: !!same, stmt_id: same?.stmt_id || null, lines_in_system: n }, cors);
-    }
+    if (b.check_only) return json({ exists: !!same, stmt_id: same?.stmt_id || null, lines_in_system: same?.n || 0 }, cors);
+    if (sameList.length > 1) await cleanupStatementHeaders(env, sameList.slice(1).filter(x => !x.n).map(x => x.stmt_id));
     const stmtId = same?.stmt_id || `STM-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`.toUpperCase();
     await env.DB.prepare(`INSERT OR REPLACE INTO StatementImports (stmt_id, account_id, period_from, period_to, opening, closing, line_count, file_name, source_kind, created_by, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -109,6 +111,35 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
         .bind(acc, from, to).all()).results) || [];
     } catch { /* ยังไม่มีตาราง */ }
     return json({ account, from, to, opening: before?.bal || 0, opening_count: before?.n || 0, rows, headers, checkpoints, truncated: rows.length >= 6000 }, cors);
+  }
+
+  /* 🧹 ซิงก์กับไฟล์ (2026-10-30 · North: "อัพไฟล์เดิมแล้วขึ้นข้อมูลซ้ำ"): ไฟล์คือความจริง
+     รายการเหมือนกัน (วันที่ เวลา ยอด เครื่องหมาย ข้อความ) ในช่วงของไฟล์ ถ้าในระบบมีมากกว่าในไฟล์ → ลบส่วนเกิน
+     ลบได้เฉพาะ "รอตรวจ" ที่มาจาก statement (PDF_IMPORT) ตัวที่สร้างทีหลังก่อน · ไม่แตะรายการที่ยืนยันแล้ว/สลิป/พิมพ์เอง */
+  if (p === '/api/statements/sync' && request.method === 'POST') {
+    const b = await request.json().catch(() => ({}));
+    const acc = String(b.account_id || '');
+    if (!acc || !isDate(b.period_from) || !isDate(b.period_to)) return json({ error: 'ต้องระบุ account_id, period_from, period_to' }, cors, 400);
+    if (!(await canUseAccount(acc))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
+    const want = new Map();
+    for (const k of (b.keys || []).slice(0, 2000)) want.set([k.date, k.time || '', r2(Math.abs(k.amount)), Number(k.amount) < 0 ? '-' : '+', k.desc || ''].join('|'), Number(k.count) || 0);
+    const rows = ((await env.DB.prepare(`SELECT t.transaction_id, substr(t.date,1,10) AS d, COALESCE(t.time,'') AS tm, ROUND(${SIGNED_AMOUNT_SQL}, 2) AS a, COALESCE(t.statement_desc,'') AS ds,
+        t.status, t.source, t.created_at FROM Transactions t WHERE t.account_id = ? AND t.date >= ? AND t.date < date(?, '+1 day') ORDER BY t.created_at, t.transaction_id`)
+      .bind(acc, b.period_from, b.period_to).all()).results) || [];
+    const groups = new Map();
+    for (const r of rows) { const k = [r.d, r.tm, r2(Math.abs(r.a)), r.a < 0 ? '-' : '+', r.ds].join('|'); if (want.has(k)) (groups.get(k) || groups.set(k, []).get(k)).push(r); }
+    const del = [];
+    for (const [k, list] of groups) {
+      let extra = list.length - want.get(k);
+      for (const r of [...list].reverse()) { if (extra <= 0) break; if (r.status === 'PENDING_REVIEW' && r.source === 'PDF_IMPORT') { del.push(r.transaction_id); extra--; } }
+    }
+    for (let i = 0; i < del.length; i += 90) {
+      const c = del.slice(i, i + 90), m = c.map(() => '?').join(',');
+      await env.DB.batch([env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id IN (${m})`).bind(...c),
+        env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE transaction_id IN (${m})`).bind(...c),
+        env.DB.prepare(`DELETE FROM Transactions WHERE transaction_id IN (${m}) AND status = 'PENDING_REVIEW'`).bind(...c)]);
+    }
+    return json({ success: true, removed: del.length }, cors);
   }
 
   /* ลบหัว statement เอง (ปุ่มในรายงาน · หัวที่ไม่มีรายการเหลือ เช่น นำเข้าผิดบัญชีแล้วลบรายการไปแล้ว) */

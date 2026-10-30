@@ -397,10 +397,11 @@ export default {
                   AND ABS(ABS(total_amount) - ABS(?)) < 0.01
                   AND (statement_desc = ? OR (statement_desc IS NULL AND ? IS NULL))
                   AND transaction_id != ?
-                  /* 2026-10-30: บรรทัดอื่นใน statement เดียวกัน (ลำดับต่างกัน) ไม่ใช่รายการซ้ำ — ใบแจ้งยอดบัตรไม่มีเวลา
-                     ซื้อร้านเดิม ยอดเท่ากัน วันเดียวกัน 2 ครั้ง เคยถูกข้ามเป็น "ซ้ำ" */
-                  AND NOT (? IS NOT NULL AND stmt_id = ? AND stmt_seq IS NOT NULL AND stmt_seq != ?)
-              `).bind(account_id, date, time||null, time||null, total_amount, statement_desc||null, statement_desc||null, selfId, stmt.stmt_id, stmt.stmt_id, stmt.stmt_seq ?? -1).first();
+                  /* 2026-10-30: รายการเหมือนกันทุกช่องหลายบรรทัดในไฟล์ (ใบแจ้งยอดบัตรไม่มีเวลา · ร้านเดิม ยอดเดิม วันเดิม)
+                     dup_idx = บรรทัดนี้เป็นตัวที่เท่าไรของรายการเหมือนกันในไฟล์ (0,1,2…) → ซ้ำก็ต่อเมื่อในระบบมีถึงตัวนั้นแล้ว
+                     (เดิมใช้ลำดับบรรทัด stmt_seq → นำเข้าไฟล์เดิมที่อ่านได้ครบกว่าเดิม ลำดับเลื่อน → สร้างซ้ำ) */
+                ORDER BY created_at, transaction_id LIMIT 1 OFFSET ?
+              `).bind(account_id, date, time||null, time||null, total_amount, statement_desc||null, statement_desc||null, selfId, Math.max(0, parseInt(body.dup_idx, 10) || 0)).first();
             }
             /* จับคู่กับสลิป/รายการที่บันทึกไว้ก่อน (2026-10-15 · North: "สลิป รอ match กับ statement")
                บรรทัด statement ที่ยอด+บัญชีตรงกับรายการจาก LINE/พิมพ์เอง ภายใน ±3 วัน → ไม่สร้างใหม่ (กันซ้ำ)

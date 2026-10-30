@@ -7174,7 +7174,8 @@ async function importCardStatement(card, selectedAccId, fileName, btn) {
     if (p.c.closing != null) window._rrCheckpoint = { account_id: useAcc, as_of: card.statementDate || p.c.txs.map(t => t.date).sort().pop(), balance: -Math.abs(p.c.closing) };
     const res = await importStatementRows(useAcc, p.c.txs, (d, n) => { if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 💳 ${p.c.last4} ${d}/${n}`; },
       { opening: p.c.opening, closing: p.c.closing, source_kind: 'CREDIT_CARD', file_name: `${fileName} · ${p.c.masked}`, ...cardCycle(card.statementDate, p.c.txs) });
-    done.push(`💳 ${p.c.masked} → ${(accs.find(a => a.account_id === useAcc) || {}).name || useAcc}: นำเข้า ${res.importedCount}` + (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · ข้ามซ้ำ ${res.skippedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : ''));
+    done.push(`💳 ${p.c.masked} → ${(accs.find(a => a.account_id === useAcc) || {}).name || useAcc}: นำเข้า ${res.importedCount}` + (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · มีอยู่แล้ว ${res.skippedCount}` : '') + (res.removedCount ? ` · 🧹 ลบที่ซ้ำ ${res.removedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : '') +
+      (res.skippedCount && res.addedDetails?.length && res.addedDetails.length <= 10 ? `\n   ➕ ${res.addedDetails.join('\n   ➕ ')}` : ''));
   }
   alert('อ่านใบแจ้งยอดบัตรจากตัวหนังสือในไฟล์ (ไม่ใช้ AI)\n\n' + (done.join('\n') || 'ไม่ได้นำเข้าบัตรใด'));
   loadPending();
@@ -7452,6 +7453,19 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
             if (hr.ok) stmtId = (await hr.json()).stmt_id || null;
         } catch { /* ไม่มีหัวก็นำเข้าได้ */ }
     }
+    /* 🔢 รายการเหมือนกันทุกช่องในไฟล์ (บัตร: ร้านเดิม ยอดเดิม วันเดิม) → ลำดับที่ 0,1,2… ส่งเป็น dup_idx (ไฟล์คือความจริง) */
+    const keyOf = t => [String(t.date).slice(0, 10), t.time || '', Math.round(Math.abs(t.amount) * 100) / 100, t.type === 'EXPENSE' ? '-' : '+', t.statement_desc || ''].join('|');
+    const occ = new Map(), dupIdx = new Map();
+    for (const t of transactions) { const k = keyOf(t), n = occ.get(k) || 0; dupIdx.set(t, n); occ.set(k, n + 1); }
+    let removedCount = 0;
+    /* 🧹 ซิงก์กับไฟล์ก่อนนำเข้า (2026-10-30): รายการรอตรวจจาก statement ที่ในระบบมีมากกว่าในไฟล์ (นำเข้าซ้ำ) → ลบส่วนเกิน */
+    if (stmtId && transactions.length) {
+        const dates = transactions.map(t => String(t.date).slice(0, 10)).sort();
+        const keys = [...occ.entries()].map(([k, n]) => { const [date, time, amount, sg, ...d] = k.split('|'); return { date, time, amount: (sg === '-' ? -1 : 1) * Number(amount), desc: d.join('|'), count: n }; });
+        try { const sr = await fetch(`${API_BASE}/api/statements/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accId, period_from: dates[0], period_to: dates[dates.length - 1], keys }) });
+            if (sr.ok) removedCount = (await sr.json()).removed || 0; } catch { /* ซิงก์ไม่ได้ก็นำเข้าต่อ */ }
+    }
+    const addedDetails = [];
     let importedCount = 0, skippedCount = 0, errorCount = 0, mergedCount = 0, autoCatCount = 0, done = 0;
     /* 🏷️ จำหมวดจากรายการเดิม (2026-10-15): ร้าน/ผู้รับโอนเดิม → เติมหมวด คู่ค้า Company ให้เลย (ยังต้องกดตรวจ/บันทึกเหมือนเดิม) */
     let hints = {};
@@ -7467,6 +7481,7 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
                 account_id: accId, date: tx.date, time: tx.time, statement_desc: tx.statement_desc, total_amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), ref_code: tx.ref_code,
                 status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true,
                 ...(stmtId ? { stmt_id: stmtId, stmt_seq: seqOf.get(tx), stmt_balance: (tx.balance == null || tx.balance === '' || !isFinite(tx.balance)) ? null : Number(tx.balance) } : {}),
+                dup_idx: dupIdx.get(tx) || 0,
                 details: [(() => { const k = statementKey(tx.statement_desc), h = k && hints[(tx.type === 'EXPENSE' ? 'OUT' : 'IN') + '|' + k];
                     const d = { amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), fee: 0, wht: 0, category_id: null, entity_id: entityId, note: tx.note, type: tx.type };
                     if (h) { d.category_id = h.category_id; d.contact_id = h.contact_id; d.entity_id = h.entity_id || entityId; if (h.type) d.type = h.type; d._hint = 1; }
@@ -7479,9 +7494,9 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
                 const json = await r.json().catch(() => ({}));
                 if (!r.ok) errorCount++;
                 else if (json.merged) mergedCount++;
-                else if (!json.skipped && payload.details[0]._hint) { importedCount++; autoCatCount++; }
+                else if (!json.skipped && payload.details[0]._hint) { importedCount++; autoCatCount++; addedDetails.push(`${tx.date} ${tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${tx.statement_desc || ''}`); }
                 else if (json.skipped) { skippedCount++; skippedDetails.push(json.message || `${tx.date} | ${tx.amount}`); }
-                else importedCount++;
+                else { importedCount++; addedDetails.push(`${tx.date} ${tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${tx.statement_desc || ''}`); }
             } catch { errorCount++; }
             onProgress?.(++done, transactions.length);
         }
@@ -7490,7 +7505,7 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
     await saveStatementCheckpoint(accId);
     try { localStorage.setItem('rr_last_import', JSON.stringify({ imported: importedCount, skipped: skippedCount, merged: mergedCount, errors: errorCount, at: new Date().toISOString() })); } catch { /* */ }
     rematchWaitingDocs();
-    return { importedCount, skippedCount, errorCount, mergedCount, autoCatCount, skippedDetails };
+    return { importedCount, skippedCount, errorCount, mergedCount, autoCatCount, skippedDetails, removedCount, addedDetails };
 }
 
 // batch_statement_import.js
@@ -7614,7 +7629,8 @@ async function batchImportStatements(files, btn) {
       { opening: it.opening, closing: it.closing, source_kind: it.kind === 'CARD' ? 'CREDIT_CARD' : 'BANK', file_name: it.kind === 'CARD' ? `${it.file} · ${it.read}` : it.file,
         ...(it.kind === 'CARD' ? cardCycle(it.asOf, it.txs) : {}) });
     out.push(`${it.kind === 'CARD' ? '💳' : '🏦'} ${(accs.find(a => a.account_id === it.acc) || {}).name || it.acc} · ${dTh(it.from)}–${dTh(it.to)}: นำเข้า ${res.importedCount}` +
-      (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · ข้ามซ้ำ ${res.skippedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : ''));
+      (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · มีอยู่แล้ว ${res.skippedCount}` : '') + (res.removedCount ? ` · 🧹 ลบที่ซ้ำ ${res.removedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : '') +
+      (res.skippedCount && res.addedDetails?.length && res.addedDetails.length <= 10 ? `\n     ➕ ${res.addedDetails.join('\n     ➕ ')}` : ''));
   }
   alert(`📚 นำเข้าเสร็จ ${todo.length} statement\n\n${out.join('\n')}` + (skipped.length ? `\n\nไม่ได้นำเข้า ${skipped.length} ไฟล์:\n` + skipped.map(s => `${s.name} — ${s.why}`).join('\n') : '') +
     '\n\nตรวจความครบได้ที่ รายงาน → ยอดสะสม statement');
