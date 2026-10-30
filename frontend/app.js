@@ -15302,7 +15302,7 @@ const AccView = (() => {
           <div class="av-tw"><table class="av-tx"><thead><tr><th>วันที่</th><th>รายละเอียด</th><th>หมวดหมู่</th><th class="r">${isCard ? 'ชำระ/คืน' : 'รายรับ'}</th><th class="r">${isCard ? 'ใช้จ่าย' : 'รายจ่าย'}</th>
               <th class="r">${isCard ? 'ยอดค้าง' : 'คงเหลือ'}<br><small>ในระบบ</small></th><th class="r">${isCard ? 'ยอดค้าง' : 'คงเหลือ'}<br><small>ธนาคาร</small></th><th class="r">ต่าง</th><th>หลักฐาน</th></tr></thead><tbody>
             <tr class="av-ob"><td>${dTh(from)}</td><td colspan="4"><b>ยอดยกมา</b></td><td class="r">${fm(openSys)}</td><td class="r">${fm(openBank)}</td><td class="r">${dOpen == null ? '' : fm(dOpen)}</td><td></td></tr>
-            ${rows.map(r => `<tr class="${r._flag === 'start' ? 'av-bad' : r._flag ? 'av-warnrow' : ''}${r.status === 'PENDING_REVIEW' ? ' av-pendrow' : ''}" title="${esc((r._notes || []).join(' · '))}">
+            ${rows.map(r => `<tr class="av-click ${r._flag === 'start' ? 'av-bad' : r._flag ? 'av-warnrow' : ''}${r.status === 'PENDING_REVIEW' ? ' av-pendrow' : ''}" title="กดเพื่อแก้ไข${(r._notes || []).length ? ' · ' + esc((r._notes || []).join(' · ')) : ''}" onclick="AccView.edit('${esc(r.transaction_id)}')">
               <td>${dTh(r.date)}${r.time && r.time !== '00:00:00' ? `<br><small>${String(r.time).slice(0, 5)}</small>` : ''}</td>
               <td><b>${esc(r.notes || r.statement_desc || '-')}</b>${r.notes && r.statement_desc ? `<br><small>${esc(r.statement_desc)}</small>` : ''}${r.status === 'PENDING_REVIEW' ? ' <span class="av-chip">รอตรวจ</span>' : ''}${(r._notes || []).filter(n => n.startsWith('⚠️') || n.startsWith('🔁')).map(n => `<br><small class="av-neg">${esc(n)}</small>`).join('')}</td>
               <td>${esc(String(r.categories || '').replace(/^\s*\[[^\]]+\]\s*/, '') || '–')}</td>
@@ -15311,7 +15311,7 @@ const AccView = (() => {
               <td>${r.has_slip ? '<span class="av-slip" title="มีสลิป/หลักฐาน"><i class="fa-solid fa-receipt"></i></span>' : ''}</td></tr>`).join('')}
             <tr class="av-ob"><td>${dTh(to)}</td><td colspan="2"><b>ยอดยกไป</b></td><td class="r av-pos">${fm(sumIn)}</td><td class="r av-neg">${fm(sumOut)}</td><td class="r">${fm(closeSys)}</td><td class="r">${o.bank && o.bank.as_of === to ? fm(bankEnd) : ''}</td><td class="r">${o.bank && o.bank.as_of === to && dClose != null ? fm(dClose) : ''}</td><td></td></tr>
           </tbody></table></div>
-          <div class="av-list">${rows.map(r => `<div class="av-li ${r._flag === 'start' ? 'av-bad' : r._flag ? 'av-warnrow' : ''}">
+          <div class="av-list">${rows.map(r => `<div class="av-li av-click ${r._flag === 'start' ? 'av-bad' : r._flag ? 'av-warnrow' : ''}" onclick="AccView.edit('${esc(r.transaction_id)}')">
               <div class="av-li-d">${dTh(r.date)}</div>
               <div class="av-li-t"><b>${esc(r.notes || r.statement_desc || '-')}</b><small>${esc(String(r.categories || '').replace(/^\s*\[[^\]]+\]\s*/, '') || '')}${r.status === 'PENDING_REVIEW' ? ' · รอตรวจ' : ''}${r.has_slip ? ' · 🧾' : ''}</small>
                 ${(r._notes || []).filter(n => n.startsWith('⚠️') || n.startsWith('🔁')).map(n => `<small class="av-neg">${esc(n)}</small>`).join('')}</div>
@@ -15319,8 +15319,64 @@ const AccView = (() => {
           ${rows.length ? '' : '<div class="av-mute" style="padding:16px;text-align:center">ไม่มีรายการในเดือนนี้</div>'}`;
     }
     const pack = () => S.detail ? { reports: [S.detail.res], from: S.detail.from, to: S.detail.to } : null;
+
+    /* ✏️ แก้รายการจากแถวในหน้ารายละเอียดบัญชี (2026-10-30 · แนวคิด ข)
+       หมวด · Company · คู่ค้า · หมายเหตุ · ยืนยันรายการ — คงวันที่/เวลา/ข้อความธนาคาร/ที่มา (statement) ไว้ตามเดิม
+       รายการที่มีหลายรายการย่อย → พาไปแก้ที่หน้ารอตรวจ/ประวัติ */
+    async function edit(txId) {
+        let tx;
+        try { const r = await fetch(`${API_BASE}/api/transactions?id=${encodeURIComponent(txId)}`, { headers: hdr() }); tx = (await r.json())?.[0]; } catch { /* */ }
+        if (!tx) { alert('ไม่พบรายการนี้'); return; }
+        const pend = tx.status === 'PENDING_REVIEW';
+        if ((tx.details || []).length > 1) {
+            if (confirm(`รายการนี้แบ่งเป็น ${tx.details.length} รายการย่อย — ไปแก้ที่หน้า${pend ? 'รอตรวจ' : 'ประวัติ'}?`)) switchView(pend ? 'pending' : 'history');
+            return;
+        }
+        const d = tx.details?.[0] || { amount: tx.total_amount, fee: 0, wht: 0 };
+        const cats = (AppState.categories || []).filter(c => !/uncategor/i.test(c.category_id || '') && !String(c.name || '').includes('รอการระบุ'));
+        const caps = AppState.captions || [];
+        const opt = (list, id, name, sel) => list.map(x => `<option value="${esc(x[id])}"${x[id] === sel ? ' selected' : ''}>${esc(x[name])}</option>`).join('');
+        const catHtml = caps.map(cp => { const l = cats.filter(c => c.caption_id === cp.type_id); return l.length ? `<optgroup label="${esc(cp.name)}">${opt(l, 'category_id', 'name', d.category_id)}</optgroup>` : ''; }).join('')
+            + opt(cats.filter(c => !caps.some(cp => cp.type_id === c.caption_id)), 'category_id', 'name', d.category_id);
+        const html = `<div class="av-ed">
+            <div class="av-ed-h"><b>${esc(dTh(tx.date))}${tx.time && tx.time !== '00:00:00' ? ' · ' + String(tx.time).slice(0, 5) : ''}</b><span class="${tx.total_amount < 0 ? 'av-neg' : 'av-pos'}">${fm(tx.total_amount)}</span></div>
+            <div class="av-ed-d">${esc(tx.statement_desc || '-')}</div>
+            <label>หมวด<select id="ave-cat"><option value="">— เลือกหมวด —</option>${catHtml}</select></label>
+            <label>Company<select id="ave-ent"><option value="">—</option>${opt(AppState.entities || [], 'entity_id', 'name', d.entity_id || (AppState.allowedEntities || [])[0])}</select></label>
+            <label>คู่ค้า<select id="ave-con"><option value="">— ไม่ระบุ —</option>${opt(AppState.contacts || [], 'contact_id', 'name', d.contact_id)}</select></label>
+            <label>หมายเหตุ<input id="ave-note" value="${esc(d.note || '')}" placeholder="เช่น ค่าอาหารกลางวัน"></label>
+            ${pend ? '<label class="av-ed-ck"><input type="checkbox" id="ave-ok" checked> ยืนยันรายการนี้ด้วย (ย้ายจากรอตรวจไปประวัติ)</label>' : ''}</div>`;
+        const r = await Swal.fire({ title: 'แก้ไขรายการ', html, width: 520, showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก', focusConfirm: false,
+            preConfirm: () => {
+                const v = { cat: document.getElementById('ave-cat').value, ent: document.getElementById('ave-ent').value, con: document.getElementById('ave-con').value,
+                    note: document.getElementById('ave-note').value.trim(), ok: !!document.getElementById('ave-ok')?.checked };
+                if (v.ok && !v.cat) { Swal.showValidationMessage('ยืนยันรายการต้องเลือกหมวดก่อน'); return false; }
+                return v;
+            } });
+        if (!r.isConfirmed) return;
+        const v = r.value, catObj = cats.find(c => c.category_id === v.cat), cap = catObj && caps.find(cp => cp.type_id === catObj.caption_id);
+        const type = d.type || (cap?.behavior === 'REVENUE' ? 'INCOME' : cap?.behavior === 'EXPENSE' ? 'EXPENSE' : (Number(tx.total_amount) < 0 ? 'EXPENSE' : 'INCOME'));
+        const payload = { transaction_id: tx.transaction_id, account_id: tx.account_id, date: tx.date, time: tx.time, statement_desc: tx.statement_desc, ref_code: tx.ref_code,
+            total_amount: tx.total_amount, status: tx.status, source: tx.source, slip_image_url: tx.slip_image_url,
+            details: [{ detail_id: d.detail_id, amount: d.amount ?? tx.total_amount, fee: d.fee || 0, wht: d.wht || 0, category_id: v.cat || d.category_id || null, entity_id: v.ent || d.entity_id || null,
+                contact_id: v.con || null, project_id: d.project_id || null, note: v.note, type }] };
+        try {
+            const res = await fetch(`${API_BASE}/api/transactions`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...hdr() }, body: JSON.stringify(payload) });
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || j.error) throw new Error(j.error || res.status);
+            if (j.skipped || j.duplicate) throw new Error('ระบบมองว่าซ้ำกับรายการอื่น — แก้ที่หน้ารอตรวจแทน');
+            if (pend && v.ok) {
+                const c = await fetch(`${API_BASE}/api/transactions/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transaction_id: tx.transaction_id }) });
+                if (!c.ok) throw new Error('บันทึกแล้ว แต่ยืนยันไม่สำเร็จ');
+            }
+            window.showToast?.(pend && v.ok ? '✅ บันทึกและยืนยันแล้ว' : '✅ บันทึกแล้ว');
+            updatePendingBadge?.();
+            if (S.acc) open(S.acc.account_id, S.month);
+        } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }
+    }
+
     return {
-        home, open,
+        home, open, edit,
         excel: () => { const p = pack(); if (p) StmtReport.excel(p); },
         pdf: () => { const p = pack(); if (p) StmtReport.pdf(p); },
         _shift: k => shift(S.month || new Date().toISOString().slice(0, 7), k),

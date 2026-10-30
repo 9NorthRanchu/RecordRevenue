@@ -175,6 +175,7 @@ export default {
           let startDate = url.searchParams.get('startDate');
           let endDate = url.searchParams.get('endDate');
           const search = url.searchParams.get('search');
+          const idParam = url.searchParams.get('id');   // 2026-10-30: ดึงรายการเดียว (แก้จากหน้ารายละเอียดบัญชี)
           /* 2026-09-08 · ฟรีเทียร์ D1 เต็ม (5M rows_read/วัน) — หน้าประวัติส่ง ?month= มาตลอด
              แต่ฝั่งนี้ไม่เคยอ่าน จึงดึง 14,143 รายการ + รายการย่อยทั้งหมดทุกครั้งที่เปิดหน้า
              · รองรับ month=YYYY-MM (แปลงเป็นช่วงวันที่ให้ index ใช้ได้)
@@ -194,14 +195,14 @@ export default {
             return new Response(JSON.stringify({ count: c?.n || 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
           }
           const limitParam = url.searchParams.get('limit');
-          const noRange = !startDate && !endDate && !search;
+          const noRange = !startDate && !endDate && !search && !idParam;
           const limit = limitParam !== null ? Math.max(0, parseInt(limitParam, 10) || 0) : (noRange ? 500 : 0);
           
           let query = `
             SELECT 
               t.transaction_id, t.account_id, t.ref_code, t.date, t.time, t.statement_desc, t.total_amount, t.status, t.source, t.slip_image_url, t.created_by_user_id, t.created_at,
               a.name as account_name, a.bank_name,
-              d.detail_id, d.amount, d.fee, d.wht, d.category_id, d.entity_id, d.contact_id, d.project_id, d.note, cp.type_id as caption_id, cp.behavior as behavior, cp.sub_behavior as sub_behavior,
+              d.detail_id, d.amount, d.fee, d.wht, d.category_id, d.entity_id, d.contact_id, d.project_id, d.note, d.type as detail_type, cp.type_id as caption_id, cp.behavior as behavior, cp.sub_behavior as sub_behavior,
               c.name as category_name, co.name as contact_name, p.name as project_name
             FROM Transactions t
             JOIN Accounts a ON t.account_id = a.account_id
@@ -226,6 +227,10 @@ export default {
           if (endDate) {
             query += ` AND t.date <= ?`;
             params.push(endDate);
+          }
+          if (idParam) {
+            query += ` AND t.transaction_id = ?`;
+            params.push(idParam);
           }
           if (search) {
             query += ` AND (t.ref_code LIKE ? OR t.transaction_id LIKE ? OR d.note LIKE ? OR c.name LIKE ? OR co.name LIKE ?)`;
@@ -284,6 +289,7 @@ export default {
                   contact_id: row.contact_id,
                   project_id: row.project_id,
                   note: row.note,
+                  type: row.detail_type,
                   caption_id: row.caption_id,
                   behavior: row.behavior,
                   category_name: row.category_name,
@@ -379,7 +385,11 @@ export default {
           // ── Duplicate Check (split by source) ─────────────────────────────
           const fmtAmt = (n) => { const a = Math.abs(Number(n)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); return Number(n)<0?`(${a})`:a; };
 
-          if (mappedSource === 'PDF_IMPORT') {
+          /* 2026-10-30: แก้รายการเดิม (มีรหัสอยู่แล้ว · ไม่ได้มาจากการนำเข้า) = ไม่ต้องเช็กซ้ำ
+             (เดิมแก้หมวดบรรทัด statement ที่เหมือนกันทุกช่องกับอีกบรรทัด → ถูกมองว่า "ซ้ำ" แล้วไม่บันทึก) */
+          const isPdfEdit = mappedSource === 'PDF_IMPORT' && transaction_id && !body.match_existing
+            && !!(await env.DB.prepare(`SELECT 1 FROM Transactions WHERE transaction_id = ? AND account_id = ?`).bind(transaction_id, account_id).first());
+          if (mappedSource === 'PDF_IMPORT' && !isPdfEdit) {
             // PDF: check by ref_code (if present) OR (account+date+time+amount+statement_desc)
             let dupTx = null;
             /* 2026-10-15: ไม่นับตัวเอง (กดบันทึกการ์ดเดิมเคยถูกมองว่า "ซ้ำ" แล้วไม่บันทึก)
@@ -451,7 +461,7 @@ export default {
                 existingId: dupTx.transaction_id
               }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
             }
-          } else {
+          } else if (mappedSource !== 'PDF_IMPORT') {
             // Non-PDF (WEB_GRID etc.): check (account+date+amount) against OTHER transactions only.
             // NOTE: a matching transaction_id means this is an UPDATE of the same record — not a duplicate.
             let dupTx = null;

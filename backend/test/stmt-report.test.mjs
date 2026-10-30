@@ -188,4 +188,13 @@ r = await call('/api/statements/delete', { user: '9North', method: 'POST', body:
 r = await call('/api/statements/delete', { user: 'Other', method: 'POST', body: { stmt_id: badS, with_rows: true } }); check('ครอบครัวอื่นลบไม่ได้', r.s === 404, r);
 r = await call('/api/statements/delete', { user: '9North', method: 'POST', body: { stmt_id: badS, with_rows: true } });
 check('with_rows → ลบรายการรอตรวจ + หัว', r.j.removed_rows === 1 && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='BADX'`).get() && !db.prepare(`SELECT 1 FROM StatementImports WHERE stmt_id=?`).get(badS), r.j);
+/* ดึงรายการเดียว ?id= + แก้หมวดแล้วคง stmt/ข้อความธนาคาร/เวลา */
+r = await call('/api/transactions?id=CA1', { user: '9North' });
+check('?id= ได้รายการเดียวพร้อมรายละเอียด', Array.isArray(r.j) && r.j.length === 1 && r.j[0].transaction_id === 'CA1' && r.j[0].details.length === 1 && 'type' in r.j[0].details[0], r.j);
+const t0 = r.j[0];
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: { transaction_id: 'CA1', account_id: t0.account_id, date: t0.date, time: t0.time, statement_desc: t0.statement_desc, total_amount: t0.total_amount, status: t0.status, source: t0.source,
+  details: [{ detail_id: t0.details[0].detail_id, amount: t0.details[0].amount, category_id: 'T01', note: 'แก้จากหน้าบัญชี', type: 'EXPENSE' }] } });
+const after = db.prepare(`SELECT t.stmt_id, t.statement_desc, t.time, d.category_id, d.note FROM Transactions t JOIN TransactionDetails d ON d.transaction_id = t.transaction_id WHERE t.transaction_id='CA1'`).get();
+check('แก้หมวด → คง stmt_id/ข้อความ/เวลา', r.s === 200 && !r.j.skipped && after.stmt_id && after.statement_desc === t0.statement_desc && after.category_id === 'T01' && after.note === 'แก้จากหน้าบัญชี', [r.j, after]);
+r = await call('/api/transactions?id=TX-OTHER', { user: '9North' }); check('?id= ของครอบครัวอื่น → ว่าง', Array.isArray(r.j) && r.j.length === 0, r.j);
 console.log(`stmt-report: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);
