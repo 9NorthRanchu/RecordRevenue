@@ -2307,6 +2307,7 @@ function renderPendingHero() {
         ${(() => { const all = AppState.pendingTransactions || [], n = all.filter(t => t.slip_image_url).length, f = AppState.pendingSlipFilter || 'ALL';
             return `<button type="button" class="ph-slipf${f === 'SLIP' ? ' on' : ''}" data-f="SLIP">📎 มีสลิป ${n.toLocaleString('en-US')}</button><button type="button" class="ph-slipf${f === 'NOSLIP' ? ' on' : ''}" data-f="NOSLIP">ไม่มีสลิป ${(all.length - n).toLocaleString('en-US')}</button>`; })()}
         <button type="button" id="ph-slipreview" class="pt-ok">🧾 สลิปที่ยังไม่จับคู่</button>
+        <button type="button" id="ph-revchart" class="pt-ok">👥 ผังรายได้</button>
         ${pendingImportBatches().length ? `<button type="button" id="ph-delbatch">🗑️ ลบทั้งชุดที่นำเข้า</button>` : ''}</div>
       <div id="ph-status"></div>
       <div class="dv2-kpis">
@@ -2345,6 +2346,7 @@ function renderPendingHero() {
     const sin = box.querySelector('#ph-slip-in'); sin.onchange = () => { const fs = [...sin.files]; sin.value = ''; uploadSlipFiles(fs); };
     box.querySelector('#ph-delbatch')?.addEventListener('click', deleteImportBatch);
     box.querySelector('#ph-slipreview')?.addEventListener('click', () => SlipReview.open());
+    box.querySelector('#ph-revchart')?.addEventListener('click', () => RevenueChart.open());
     box.querySelectorAll('.ph-slipf').forEach(b => b.onclick = () => { AppState.pendingSlipFilter = AppState.pendingSlipFilter === b.dataset.f ? 'ALL' : b.dataset.f; renderPendingTransactions(); renderPendingHero(); });
     box.querySelector('#ph-bulkcat')?.addEventListener('click', bulkCategorize);
     box.querySelector('#ph-saveall')?.addEventListener('click', bulkSaveReady);
@@ -3502,6 +3504,7 @@ function renderPendingTransactions() {
     unsavedCards.forEach(c => container.insertBefore(c, container.firstChild));
 
     updatePendingStatusSummary();
+    RevenueChart.decorate(container);   // 👥 เงินเข้าที่ตรงกับผังรายได้ → แถบ "ใช้" (2026-10-30)
 }
 
 async function updatePendingStatusSummary() {
@@ -14632,3 +14635,104 @@ const SlipThumbs = (() => {
     return { watch: el => io ? io.observe(el) : load(el) };
 })();
 window.SlipThumbs = SlipThumbs;
+
+// revenue_chart.js
+/* 👥 ผังเก็บรายได้ BKP → จับเงินเข้า (2026-10-30 · North: เพื่อการบันทึกเท่านั้น · customertest.xlsx = ไฟล์สุดท้าย)
+   ปุ่ม "👥 ผังรายได้" ในหน้ารอตรวจสอบ: นำเข้า .xlsx (ครั้งเดียว · ส่งใหม่ได้) · ผูก OWNER → บริษัท · บัญชีที่เงินเข้า → บัญชี · หมวดเงินรับแทน
+   การ์ดเงินเข้าที่รอตรวจ: ระบบหาแถวที่ยอดตรง (หลายเดือนรวมกันได้) → แถบ "👥 ผังรายได้ … [ใช้]" → แตกบรรทัดค่าบริการ/หัก ณ ที่จ่าย/เงินรับแทน ให้ (ยังต้องกดยืนยันเอง)
+   API (revenue-chart.js): /api/revenue-chart/(import|summary|map|suggest|apply) */
+const RevenueChart = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fm = n => { const v = Math.round((Number(n) || 0) * 100) / 100, t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const S = { count: null, sugg: {}, asked: new Set() };
+    async function api(path, body) {
+        const r = await fetch(API_BASE + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+        const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || `ผิดพลาด (${r.status})`); return j;
+    }
+    /* ── อ่านไฟล์ Excel ── */
+    const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+    function toISO(v) {
+        if (v == null || v === '') return null;
+        if (v instanceof Date && !isNaN(v)) { const y = v.getFullYear(); const d = new Date(y > 2400 ? y - 543 : y, v.getMonth(), v.getDate()); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+        const s = String(v).trim(); let m;
+        if ((m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s))) { let y = +m[3]; if (y > 2400) y -= 543; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+        if ((m = /^([A-Za-z]{3})[a-z]*\.?\s+(\d{4})$/.exec(s)) && MON[m[1].toLowerCase()]) { let y = +m[2]; if (y > 2400) y -= 543; return `${y}-${String(MON[m[1].toLowerCase()]).padStart(2, '0')}-01`; }
+        if ((m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s))) return `${m[1]}-${m[2]}-${m[3]}`;
+        return null;
+    }
+    const num = v => (typeof v === 'number' ? v : (v != null && v !== '' && isFinite(Number(String(v).replace(/,/g, ''))) ? Number(String(v).replace(/,/g, '')) : null));
+    async function parseFile(file) {
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+        for (const name of wb.SheetNames) {
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: null, raw: true });
+            if (!rows.length || !('Code' in rows[0])) continue;
+            const g = (r, ...ks) => { for (const k of ks) if (r[k] != null && r[k] !== '') return r[k]; return null; };
+            const seen = new Map();   // รหัสแถวซ้ำในไฟล์ (ลูกค้า+เดือน+ประเภท+เลขเอกสารเดียวกัน) → ต่อท้ายลำดับ กันทับกันตอนนำเข้า
+            return rows.filter(r => g(r, 'Code')).map((r, i) => {
+                const code = String(g(r, 'Code')).trim(), tm = toISO(g(r, 'Tax Month')), type = g(r, 'Type'), inv = g(r, 'Invoice No. (Formula)'), rec = g(r, 'Receipt No. (Formula)');
+                let id = ['RC', code, tm || '', type || '', inv || rec || g(r, 'No.') || i].join('|').slice(0, 110);
+                const k = (seen.get(id) || 0) + 1; seen.set(id, k); if (k > 1) id += '#' + k;
+                return { row_id: id, owner: g(r, 'OWNER'), code, name: g(r, 'Name'), tax_month: tm,
+                    invoice_no: inv, invoice_date: toISO(g(r, 'Invoice Date')), receipt_no: rec, receipt_date: toISO(g(r, 'Receipt Date')), type, service: g(r, 'Service (Formula)'),
+                    fee: num(g(r, 'ค่าบริการ')), wht: num(g(r, 'WHT2')), total: num(g(r, 'รวม (Formula)')), paid: num(g(r, 'ยอดชำระ')), bank_fee: num(g(r, 'ค่าธรรมเนียมธนาคาร')),
+                    account_label: g(r, 'บัญชีที่เงินเข้า') ? String(g(r, 'บัญชีที่เงินเข้า')).trim() : null, note: g(r, 'Note') };
+            });
+        }
+        throw new Error('ไม่พบแผ่นงานที่มีคอลัมน์ "Code" (ผังรายได้)');
+    }
+    /* ── หน้าต่างตั้งค่า ── */
+    async function open() {
+        const sum = await api('/api/revenue-chart/summary').catch(e => ({ error: e.message }));
+        const ents = AppState.entities || [], accs = AppState.accounts || [], cats = (AppState.categories || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'th'));
+        const sel = (list, val, idk, namek, empty) => `<option value="">${empty}</option>` + list.map(x => `<option value="${esc(x[idk])}"${x[idk] === val ? ' selected' : ''}>${esc(x[namek])}</option>`).join('');
+        const html = `<div style="text-align:left;font-size:.9rem">
+          <div style="padding:10px 12px;border-radius:12px;background:#F3F0FF;margin-bottom:10px">${sum.error ? '⚠️ ' + esc(sum.error) : sum.count ? `📒 มีในระบบ <b>${sum.count.toLocaleString('en-US')}</b> แถว · ใช้แล้ว ${(sum.used || 0).toLocaleString('en-US')}` : 'ยังไม่ได้นำเข้า'}</div>
+          <label style="display:block;margin-bottom:12px">📥 นำเข้าไฟล์ผังรายได้ (.xlsx) <small>— ส่งใหม่ได้ แถวที่ใช้กับรายการไปแล้วจะไม่ถูกลบ</small><input type="file" id="rc-file" accept=".xlsx,.xls" style="display:block;margin-top:6px"></label>
+          <div id="rc-prog"></div>
+          ${sum.count ? `<h4 style="margin:12px 0 6px;font-size:.95rem">🏢 OWNER → บริษัท</h4>${(sum.owners || []).map(o => `<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><span style="width:110px">${esc(o.owner || '(ว่าง)')} <small>${o.n}</small></span>
+              <select data-map="OWNER" data-key="${esc(o.owner || '')}" style="flex:1;min-height:40px;border-radius:10px">${sel(ents, o.entity_id, 'entity_id', 'name', '— ไม่ระบุ —')}</select></div>`).join('')}
+            <h4 style="margin:12px 0 6px;font-size:.95rem">🏦 บัญชีที่เงินเข้า → บัญชีในแอป</h4>${(sum.accounts || []).map(a => `<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><span style="width:110px">${esc(a.account_label)} <small>${a.n}</small></span>
+              <select data-map="ACCOUNT" data-key="${esc(a.account_label)}" style="flex:1;min-height:40px;border-radius:10px">${sel(accs, a.account_id, 'account_id', 'name', '— ไม่ระบุ —')}</select></div>`).join('')}
+            <h4 style="margin:12px 0 6px;font-size:.95rem">🧾 หมวดของ "เงินรับแทน" (ภาษี/ประกันสังคม/ค่าธรรมเนียมที่ลูกค้าโอนมาให้จ่ายแทน)</h4>
+              <select data-map="SETTING" data-key="advance_category" style="width:100%;min-height:40px;border-radius:10px">${sel(cats, sum.advance_category_id, 'category_id', 'name', '— ยังไม่เลือก (จะเป็น "รอการระบุ") —')}</select>` : ''}
+        </div>`;
+        if (!window.Swal) return alert('ไม่พบหน้าต่าง (SweetAlert)');
+        Swal.fire({ title: '👥 ผังรายได้', html, width: 640, showConfirmButton: false, showCloseButton: true, didOpen: el => {
+            el.querySelectorAll('[data-map]').forEach(s => s.onchange = async () => { try { await api('/api/revenue-chart/map', { kind: s.dataset.map, key: s.dataset.key, value: s.value || null }); s.style.outline = '2px solid #20C997'; } catch (e) { alert('⚠️ ' + e.message); } });
+            el.querySelector('#rc-file').onchange = async e => {
+                const f = e.target.files[0]; if (!f) return; const pg = el.querySelector('#rc-prog');
+                try {
+                    pg.textContent = '⏳ กำลังอ่านไฟล์…'; const rows = await parseFile(f);
+                    for (let i = 0; i < rows.length; i += 250) { pg.textContent = `⏳ ส่งข้อมูล ${Math.min(i + 250, rows.length).toLocaleString('en-US')} / ${rows.length.toLocaleString('en-US')}`; await api('/api/revenue-chart/import', { reset: i === 0, rows: rows.slice(i, i + 250) }); }
+                    S.count = rows.length; S.sugg = {}; S.asked.clear(); pg.textContent = `✅ นำเข้า ${rows.length.toLocaleString('en-US')} แถวแล้ว`; setTimeout(open, 600);
+                } catch (err) { pg.textContent = '⚠️ ' + err.message; }
+            };
+        } });
+    }
+    /* ── แถบเสนอบนการ์ดเงินเข้า ── */
+    async function decorate(container) {
+        try {
+            if (S.count == null) S.count = (await api('/api/revenue-chart/summary')).count || 0;
+            if (!S.count || !container) return;
+            const cards = [...container.querySelectorAll('.tx-card[data-txid]')];
+            const inc = (AppState.pendingTransactions || []).filter(t => Number(t.total_amount) > 0).map(t => t.transaction_id);
+            const want = cards.map(c => c.dataset.txid).filter(id => inc.includes(id) && !S.asked.has(id)).slice(0, 80);
+            if (want.length) { want.forEach(id => S.asked.add(id)); Object.assign(S.sugg, (await api('/api/revenue-chart/suggest', { transaction_ids: want })).suggestions || {}); }
+            for (const c of cards) {
+                const list = S.sugg[c.dataset.txid]; if (!list || c.querySelector('.rev-hint')) continue;
+                const box = document.createElement('div'); box.className = 'rev-hint';
+                box.innerHTML = list.map((s, i) => `<div class="rev-opt"><span>👥 ${esc(s.rows[0].code)} · ${esc(String(s.rows[0].name || '').slice(0, 40))}${s.rows.length > 1 ? ` · ${s.rows.length} เดือน` : ''}
+                    <small>${esc(s.rows.map(r => (r.receipt_date ? `รับ ${r.receipt_date.slice(8, 10)}/${r.receipt_date.slice(5, 7)} · ` : '') + (r.service || r.type || '') + (Number(r.other) ? ` + รับแทน ${fm(r.other)}` : '')).join(' / ').slice(0, 140))}${s.gap ? ` · ค่าธรรมเนียม ${fm(-s.gap)}` : ''}</small></span>
+                    <button type="button" class="btn btn-sm btn-primary" data-i="${i}">ใช้</button></div>`).join('');
+                box.querySelectorAll('button').forEach(b => b.onclick = async () => {
+                    b.disabled = true;
+                    try { await api('/api/revenue-chart/apply', { transaction_id: c.dataset.txid, row_ids: list[+b.dataset.i].rows.map(r => r.row_id) }); delete S.sugg[c.dataset.txid]; try { showToast('👥 ใส่ข้อมูลจากผังรายได้แล้ว — ตรวจแล้วกดยืนยัน'); } catch { /* */ } loadPending(); }
+                    catch (e) { alert('⚠️ ' + e.message); b.disabled = false; }
+                });
+                c.querySelector('.tx-card-body')?.prepend(box);
+            }
+        } catch { /* ไม่มีผังรายได้ก็ใช้งานปกติ */ }
+    }
+    return { open, decorate, _toISO: toISO };
+})();
+window.RevenueChart = RevenueChart;

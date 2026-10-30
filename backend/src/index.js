@@ -7,6 +7,7 @@ import { IS_ASSET_SQL, assetCategorySet } from './assets.js';
 import { verifyPassword, upgradeStoredPassword, hashPassword, isHashed } from './auth.js';
 import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSessions } from './session.js';
 import { handleStmtReport, ensureStmtCols, stmtFields } from './stmt-report.js';
+import { handleRevenueChart } from './revenue-chart.js';
 // backend/src/index.js
 
 export default {
@@ -133,6 +134,8 @@ export default {
       const deny = (msg, status = 403) => new Response(JSON.stringify({ error: msg }), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       /* 📒 หัว statement + รายงานยอดสะสมต่อ statement (2026-10-30 · stmt-report.js) */
       { const sr = await handleStmtReport({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny }); if (sr) return sr; }
+      /* 👥 ผังเก็บรายได้ BKP → จับเงินเข้า (2026-10-30 · revenue-chart.js) */
+      { const rc = await handleRevenueChart({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny }); if (rc) return rc; }
 
       // 2. OCR Test Endpoint (Direct Web Upload)
       if (url.pathname === '/api/slip-ocr' && request.method === 'POST') {

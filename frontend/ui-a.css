@@ -354,3 +354,10 @@ body.ui-dark .bc-bad small { color:#FFC9C9; }
 .ph-slipf { min-height:36px; padding:4px 12px; border-radius:999px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-primary); font-size:.82rem; cursor:pointer; }
 .ph-slipf.on { background:var(--primary-color); color:#fff; border-color:var(--primary-color); }
 [data-theme="dark"] .slip-strip { background:#2E2A1A; border-color:#4A4220; color:#F5E6A8; }
+
+/* 👥 ผังรายได้บนการ์ดเงินเข้า (2026-10-30) */
+.rev-hint { display:flex; flex-direction:column; gap:4px; margin:-4px 0 8px; }
+.rev-opt { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:10px; background:#E6FCF5; border:1px solid #B2F2DB; font-size:.82rem; color:#0B5A45; }
+.rev-opt span { flex:1; min-width:0; } .rev-opt small { display:block; color:#2B7A65; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rev-opt .btn { min-height:34px; flex-shrink:0; }
+[data-theme="dark"] .rev-opt { background:#14322A; border-color:#1F5446; color:#B2F2DB; } [data-theme="dark"] .rev-opt small { color:#8CE0C4; }
