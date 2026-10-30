@@ -496,9 +496,39 @@ export default {
         /* รายการนำเข้ารุ่นเก่าที่รอตรวจเก็บยอดจ่ายเป็นบวก → ใช้ประเภทจากบรรทัดย่อยกลับเครื่องหมาย */
         const r = await env.DB.prepare(`SELECT ROUND(COALESCE(SUM(CASE WHEN t.status = 'PENDING_REVIEW' AND t.total_amount > 0
               AND EXISTS (SELECT 1 FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id AND d.type = 'EXPENSE') THEN -t.total_amount ELSE t.total_amount END), 0), 2) AS balance,
-            COUNT(*) AS n, SUM(CASE WHEN t.transaction_id LIKE 'TX-OB-%' THEN 1 ELSE 0 END) AS n_opening
+            COUNT(*) AS n, SUM(CASE WHEN t.transaction_id LIKE 'TX-OB-%' THEN 1 ELSE 0 END) AS n_opening,
+            MIN(CASE WHEN t.transaction_id NOT LIKE 'TX-OB-%' THEN substr(t.date, 1, 10) END) AS first_date
           FROM Transactions t WHERE t.account_id = ? AND t.date < ?`).bind(acc, date).first();
-        return new Response(JSON.stringify({ balance: r?.balance || 0, count: r?.n || 0, opening_rows: r?.n_opening || 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ balance: r?.balance || 0, count: r?.n || 0, opening_rows: r?.n_opening || 0, first_date: r?.first_date || null }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      /* 📄 ยอดตามธนาคาร (2026-10-30 · North: "ตรวจว่าข้อมูลตรงกับยอดคงเหลือที่ถูกต้องไหม")
+         เก็บยอดยกไปของ statement ล่าสุด (หรือที่พิมพ์เอง) ต่อบัญชี → เทียบกับยอดในระบบ (ยืนยัน + รอตรวจ) ณ สิ้นวันเดียวกัน
+         balance เก็บเครื่องหมายแบบระบบ: บัตรเครดิตค้างชำระ = ติดลบ */
+      if (url.pathname === '/api/accounts/checkpoint' || url.pathname === '/api/accounts/checkpoints') {
+        await env.DB.prepare(`CREATE TABLE IF NOT EXISTS AccountCheckpoints (account_id TEXT NOT NULL, as_of TEXT NOT NULL, balance REAL NOT NULL,
+          source TEXT, created_by TEXT, created_at TEXT, PRIMARY KEY (account_id, as_of))`).run();
+      }
+      if (url.pathname === '/api/accounts/checkpoint' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const acc = String(b.account_id || ''), asOf = String(b.as_of || '').slice(0, 10), bal = Number(b.balance);
+        if (!acc || !/^\d{4}-\d{2}-\d{2}$/.test(asOf) || !Number.isFinite(bal)) return new Response(JSON.stringify({ error: 'ต้องระบุ account_id, as_of (YYYY-MM-DD) และ balance' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        if (!(await canUseAccount(acc))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
+        const src = ['STATEMENT', 'MANUAL'].includes(b.source) ? b.source : 'MANUAL';
+        await env.DB.prepare(`INSERT OR REPLACE INTO AccountCheckpoints (account_id, as_of, balance, source, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+          .bind(acc, asOf, Math.round(bal * 100) / 100, src, authUserId, new Date().toISOString()).run();
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (url.pathname === '/api/accounts/checkpoints' && request.method === 'GET') {
+        /* ล่าสุดต่อบัญชี (เฉพาะบัญชีที่มีสิทธิ์) + ยอดในระบบ ณ สิ้นวัน as_of · รายการนำเข้ารุ่นเก่าที่รอตรวจ (จ่ายเก็บเป็นบวก) กลับเครื่องหมาย */
+        const rows = (await env.DB.prepare(`SELECT c.account_id, c.as_of, c.balance AS bank, c.source,
+            (SELECT ROUND(COALESCE(SUM(CASE WHEN t.status = 'PENDING_REVIEW' AND t.total_amount > 0
+                AND EXISTS (SELECT 1 FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id AND d.type = 'EXPENSE') THEN -t.total_amount ELSE t.total_amount END), 0), 2)
+              FROM Transactions t WHERE t.account_id = c.account_id AND substr(t.date, 1, 10) <= c.as_of) AS system
+          FROM AccountCheckpoints c JOIN Accounts a ON a.account_id = c.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id AND up.user_id = ?
+          WHERE c.as_of = (SELECT MAX(c2.as_of) FROM AccountCheckpoints c2 WHERE c2.account_id = c.account_id)`).bind(authUserId).all()).results || [];
+        const out = rows.map(r => ({ ...r, system: r.system || 0, diff: Math.round(((r.bank || 0) - (r.system || 0)) * 100) / 100 }));
+        return new Response(JSON.stringify({ checkpoints: out }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       /* 🏷️ จำหมวดจากรายการเดิม (2026-10-15): ข้อความธนาคาร/ร้านเดียวกัน → หมวด·คู่ค้า·Company ที่เคยยืนยัน (ล่าสุดชนะ)

@@ -100,6 +100,7 @@ echo "▶ สมุดจด ระยะ 2: นำเข้า statement + ก�
 # บรรทัดของ statement เก็บเป็น JSON ในแถวเดียว — D1 แผนฟรีจำกัดจำนวนคำสั่งต่อคำขอ เขียนทีละบรรทัดไม่ไหว
 step "CREATE TABLE IF NOT EXISTS LedgerStatements (stmt_id TEXT PRIMARY KEY, family_id TEXT NOT NULL, account_id TEXT NOT NULL, period_from TEXT, period_to TEXT, opening_balance REAL, closing_balance REAL, line_count INTEGER DEFAULT 0, lines TEXT, file_name TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME);" "ตาราง LedgerStatements"
 step "CREATE INDEX IF NOT EXISTS idx_ledgerstatements_account ON LedgerStatements(account_id, period_to);" "ดัชนี idx_ledgerstatements_account"
+step "CREATE TABLE IF NOT EXISTS AccountCheckpoints (account_id TEXT NOT NULL, as_of TEXT NOT NULL, balance REAL NOT NULL, source TEXT, created_by TEXT, created_at TEXT, PRIMARY KEY (account_id, as_of));" "ตาราง AccountCheckpoints (ยอดตามธนาคาร)"
 
 echo
 echo "▶ ดัชนีลดการอ่าน D1 (2026-10-11 — rows_read เกินโควตา: ยอดบัญชีอ่านทั้งตารางทุกบัญชี)"

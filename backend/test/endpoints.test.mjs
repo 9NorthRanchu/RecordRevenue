@@ -186,5 +186,14 @@ r = await call('/api/accounts/balance-at?account_id=A09&date=2026-09-01', { user
 check('balance-at: ยืนยัน 1000 + รอตรวจนำเข้าเก่า (จ่าย 300 เก็บเป็นบวก) = 700 · ไม่รวมวันที่ 1 ก.ย.', r.j?.balance === 700 && r.j.count === 2, r.j);
 r = await call('/api/accounts/balance-at?account_id=X99&date=2026-09-01', { user: '9North' });
 check('balance-at: บัญชีคนอื่น → 403', r.s === 403, r);
+/* ── ยอดตามธนาคาร (checkpoint) ── */
+r = await call('/api/accounts/checkpoint', { user: '9North', method: 'POST', body: { account_id: 'A09', as_of: '2026-08-31', balance: 700, source: 'STATEMENT' } });
+check('checkpoint: บันทึกได้', r.s === 200 && r.j?.success, r);
+r = await call('/api/accounts/checkpoint', { user: '9North', method: 'POST', body: { account_id: 'X99', as_of: '2026-08-31', balance: 1 } });
+check('checkpoint: บัญชีคนอื่น → 403', r.s === 403, r);
+await call('/api/accounts/checkpoint', { user: '9North', method: 'POST', body: { account_id: 'A09', as_of: '2026-09-01', balance: 800 } });
+r = await call('/api/accounts/checkpoints', { user: '9North' });
+const cpA = (r.j?.checkpoints || []).find(c => c.account_id === 'A09');
+check('checkpoints: เอาล่าสุด (1 ก.ย.) · ระบบ ณ สิ้นวัน = 750 · ต่าง 50', cpA && cpA.as_of === '2026-09-01' && cpA.system === 750 && cpA.diff === 50 && (r.j.checkpoints || []).length === 1, r.j);
 console.log(`${bad ? '❌' : '✅'} ผ่าน ${ok} · ไม่ผ่าน ${bad}`);
 if (bad) process.exit(1);

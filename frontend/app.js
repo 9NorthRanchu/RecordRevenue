@@ -3524,11 +3524,16 @@ async function renderSharedStatusSummary() {
     const confirmedGroups = {};
 
     // Populate confirmedGroups from AppState.accounts (calculated dynamically on backend)
+    /* ยอดยืนยันแล้วต้องสด (2026-10-15): เดิมใช้ยอดที่โหลดตอนเปิดแอป → สร้างยอดยกมา/ยืนยันรายการแล้วตัวเลขไม่ขยับ */
+    try { const ar = await fetch(`${API_BASE}/api/accounts`, { headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) } }); if (ar.ok) { const fresh = await ar.json(); if (Array.isArray(fresh) && fresh.length) AppState.accounts = fresh; } } catch { /* ใช้ของเดิม */ }
     if (AppState.accounts) {
         AppState.accounts.forEach(acc => {
             confirmedGroups[acc.account_id] = acc.balance || 0;
         });
     }
+    /* 📄 ยอดตามธนาคาร (2026-10-30): ยอดยกไปของ statement ล่าสุด/ที่ใส่เอง เทียบกับยอดในระบบ ณ วันเดียวกัน */
+    const checkpoints = {};
+    try { const cr = await fetch(`${API_BASE}/api/accounts/checkpoints`); if (cr.ok) ((await cr.json()).checkpoints || []).forEach(c => { checkpoints[c.account_id] = c; }); } catch { /* ยังไม่มีก็ได้ */ }
 
     try {
         const fresh = AppState._pendingAt && Date.now() - AppState._pendingAt < 15000 && Array.isArray(AppState.pendingTransactions);
@@ -3546,7 +3551,8 @@ async function renderSharedStatusSummary() {
                 const am = tx.auto_match || {};
                 const dType = am.type || tx.details?.[0]?.type || 'INCOME';
                 const isExpense = (dType === 'EXPENSE' || dType === 'CREDIT_AR');
-                const stmtAmountVal = isExpense ? -Math.abs(tx.total_amount) : Math.abs(tx.total_amount);
+                /* ยอดที่เก็บติดลบอยู่แล้ว = เงินออก (รุ่นใหม่ · ประเภทอาจเป็น TRANSFER/ลูกหนี้ จากการจำหมวด) · ยอดบวกรุ่นเก่า → ดูประเภท */
+                const stmtAmountVal = Number(tx.total_amount) < 0 ? Number(tx.total_amount) : (isExpense ? -Math.abs(tx.total_amount) : Math.abs(tx.total_amount));
 
                 savedPendingGroups[tx.account_id] += stmtAmountVal;
             });
@@ -3566,9 +3572,15 @@ async function renderSharedStatusSummary() {
         });
     }
 
-    const allAccIds = new Set([...Object.keys(gridGroups), ...Object.keys(savedPendingGroups)]);
+    const allAccIds = new Set([...Object.keys(gridGroups), ...Object.keys(savedPendingGroups), ...Object.keys(checkpoints)]);
+    const totalAccs = (AppState.accounts || []).length;
+    if (AppState._sumAll) (AppState.accounts || []).forEach(a => allAccIds.add(a.account_id));
+    const hiddenN = Math.max(0, totalAccs - allAccIds.size);
     
     let html = `
+        <div class="sum-head"><b>⚖️ ตรวจยอดคงเหลือ</b><span>ยืนยันแล้ว + รอตรวจ เทียบกับยอดธนาคาร</span>
+          ${AppState._sumAll ? `<button type="button" class="sum-all" onclick="AppState._sumAll=false;renderSharedStatusSummary()">แสดงเฉพาะที่มีรายการ</button>`
+            : hiddenN ? `<button type="button" class="sum-all" onclick="AppState._sumAll=true;renderSharedStatusSummary()">➕ ทุกบัญชี (${hiddenN})</button>` : ''}</div>
         <div class="pending-status-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 10px;">
     `;
     
@@ -3594,18 +3606,19 @@ async function renderSharedStatusSummary() {
                     </div>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #F1F5F9; padding-top: 8px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between;" title="ยอดยกมา (Confirmed)">
-                        <span style="font-size: 1rem;">🏦</span>
+                    <div style="display: flex; align-items: center; justify-content: space-between;" title="ยืนยันแล้ว (รวมยอดยกมา)">
+                        <span style="font-size: .78rem;color:#5C5872">🏦 ยืนยันแล้ว</span>
                         <span style="font-weight: 700; font-size: 0.9rem; color: ${isConfirmedNeg ? '#DC2626' : '#1E293B'};">${formatCurrency(confirmedSum)}</span>
                     </div>
                     <div style="display: flex; align-items: center; justify-content: space-between;" title="รายการรอตรวจสอบ (Pending)">
-                        <span style="font-size: 1rem;">⏳</span>
+                        <span style="font-size: .78rem;color:#5C5872">⏳ รอตรวจ</span>
                         <span style="font-weight: 700; font-size: 0.9rem; color: ${isPendingNeg ? '#DC2626' : '#10B981'};">${formatCurrency(pendingSum)}</span>
                     </div>
                     <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px dashed #E2E8F0; padding-top: 4px;" title="รวม (Total)">
-                        <span style="font-size: 1rem;">💰</span>
+                        <span style="font-size: .78rem;color:#5C5872">💰 รวมตอนนี้</span>
                         <span style="font-weight: 700; font-size: 0.9rem; color: ${isTotalNeg ? '#DC2626' : '#4F46E5'};">${formatCurrency(totalSum)}</span>
                     </div>
+                    ${bankCheckHtml(accId, checkpoints[accId], acc)}
                 </div>
             </div>
         `;
@@ -3613,7 +3626,7 @@ async function renderSharedStatusSummary() {
     
     html += `</div>`;
     
-    if (allAccIds.size === 0) {
+    if (allAccIds.size === 0 && !totalAccs) {
         if (gridContainer) { gridContainer.innerHTML = ''; gridContainer.style.display = 'none'; }
         if (pendingContainer) { pendingContainer.innerHTML = ''; pendingContainer.style.display = 'none'; }
     } else {
@@ -7110,7 +7123,11 @@ async function statementPrecheck(accId, info) {
         showDenyButton: !!other, denyButtonText: other ? `นำเข้าเข้า ${other.name}` : '', denyButtonColor: '#087F5B',
         confirmButtonText: state === 'bad' ? `ยืนยัน นำเข้าเข้า ${me?.name || ''}` : 'นำเข้า', confirmButtonColor: state === 'bad' ? '#C92A2A' : '#5F3DC4',
         focusConfirm: state !== 'bad', focusCancel: state === 'bad', preConfirm: () => ({ open: !!document.getElementById('pc-open')?.checked }) });
-    if (r.isDenied && other) { const sel = document.getElementById('import-account-selector'); if (sel) sel.value = other.account_id; return other.account_id; }
+    const closeVal = info.closing != null && info.closing !== '' && !isNaN(+info.closing) ? +info.closing : null;
+    const setCp = id => { const a = accs.find(x => x.account_id === id); window._rrCheckpoint = closeVal == null || !dates.length ? null
+        : { account_id: id, as_of: dates[dates.length - 1], balance: a?.account_type === 'CREDIT' ? -Math.abs(closeVal) : closeVal }; };
+    if (r.isDenied && other) { const sel = document.getElementById('import-account-selector'); if (sel) sel.value = other.account_id; setCp(other.account_id); return other.account_id; }
+    if (r.isConfirmed) setCp(accId);
     if (r.isConfirmed && r.value?.open && bal?.count === 0) {
         try {
             const res = await fetch(`${API_BASE}/api/inbox/opening`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
@@ -7122,6 +7139,97 @@ async function statementPrecheck(accId, info) {
         } catch (e) { alert('สร้างยอดยกมาไม่สำเร็จ: ' + e.message); }
     }
     return r.isConfirmed ? accId : null;
+}
+
+/* 📄 แถว "ยอดธนาคาร" ในการ์ดตรวจยอด (2026-10-30)
+   มียอดธนาคาร → แสดงวันที่ + ✅ ตรง / ⚠️ ต่าง + ปุ่มปรับ · ยังไม่มี → ปุ่มใส่ยอดธนาคาร */
+function bankCheckHtml(accId, cp, acc) {
+    const isCredit = acc?.account_type === 'CREDIT';
+    if (!cp) return `<button type="button" class="acc-recon" onclick="recordBankBalance('${accId}')" title="ใส่ยอดคงเหลือตามธนาคาร เพื่อตรวจว่าข้อมูลครบไหม">📝 ใส่ยอดธนาคาร</button>`;
+    const d = String(cp.as_of || '').split('-'), dd = d.length === 3 ? `${d[2]}/${d[1]}/${d[0].slice(2)}` : cp.as_of;
+    const ok = Math.abs(cp.diff || 0) < 0.005;
+    const shown = cp.bank;
+    return `<div class="bank-chk">
+        <div class="bc-row"><span>📄 ธนาคาร ณ ${dd}${cp.source === 'STATEMENT' ? '' : ' ✍️'}</span><b>${formatCurrency(shown)}</b>
+          <button type="button" class="bc-edit" title="ใส่ยอดธนาคารใหม่" onclick="recordBankBalance('${accId}')">✏️</button></div>
+        <div class="bc-row"><span>🧮 ระบบ ณ ${dd}</span><b>${formatCurrency(cp.system)}</b><span class="bc-sp"></span></div>
+        ${ok ? `<div class="bc-ok">✅ ตรงกับธนาคาร</div>`
+             : `<div class="bc-bad">⚠️ ต่าง ${formatCurrency(Math.abs(cp.diff))} · ${Math.abs(cp.bank) > Math.abs(cp.system) ? 'ธนาคารมากกว่า' : 'ระบบมากกว่า'}<small>ขาดรายการ / ยอดยกมาไม่ครบ / นำเข้าซ้ำ</small></div>
+                <button type="button" class="acc-recon" onclick="reconcileAccount('${accId}', ${Number(cp.system) || 0}, ${Number(cp.bank) || 0})" title="ปรับยอดยกมาให้ยอดในระบบเท่าธนาคาร">⚖️ ปรับยอดยกมาให้ตรง</button>`}
+    </div>`;
+}
+
+/* 📝 ใส่ยอดธนาคารเอง (วันที่ + ยอด) → บันทึกเป็นจุดตรวจ · บัตรเครดิตใส่ยอดค้างเป็นบวก */
+async function recordBankBalance(accId) {
+    const acc = (AppState.accounts || []).find(a => a.account_id === accId) || { name: accId };
+    const isCredit = acc.account_type === 'CREDIT', today = new Date().toISOString().slice(0, 10);
+    let asOf, raw;
+    if (window.Swal) {
+        const r = await Swal.fire({ title: `📝 ยอดธนาคาร · ${acc.name}`, width: 420, showCancelButton: true, cancelButtonText: 'ยกเลิก', confirmButtonText: 'บันทึก', confirmButtonColor: '#5F3DC4',
+            html: `<div style="text-align:left;display:grid;gap:10px">
+                <label>📅 ณ วันที่<input id="bb-date" type="date" class="swal2-input" style="margin:6px 0 0;width:100%" value="${today}"></label>
+                <label>💰 ยอดคงเหลือ${isCredit ? ' (ยอดค้างชำระ ใส่เป็นบวก)' : ''}<input id="bb-amt" inputmode="decimal" class="swal2-input" style="margin:6px 0 0;width:100%" placeholder="0.00"></label>
+                <small style="color:#5C5872">ดูจากแอปธนาคาร หรือยอดยกไปใน statement · ระบบจะเทียบกับยอดที่บันทึกไว้ถึงสิ้นวันนั้น</small></div>`,
+            preConfirm: () => ({ d: document.getElementById('bb-date').value, a: document.getElementById('bb-amt').value }) });
+        if (!r.isConfirmed) return;
+        asOf = r.value.d; raw = r.value.a;
+    } else {
+        asOf = prompt('ณ วันที่ (YYYY-MM-DD)', today); if (!asOf) return;
+        raw = prompt(`ยอดคงเหลือตามธนาคาร${isCredit ? ' (ยอดค้างชำระ ใส่เป็นบวก)' : ''}`); if (raw == null) return;
+    }
+    let bal = Number(String(raw || '').replace(/[,\s฿]/g, '').replace(/^\((.*)\)$/, '-$1'));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf || '') || !isFinite(bal) || String(raw).trim() === '') { alert('วันที่หรือตัวเลขไม่ถูกต้อง'); return; }
+    if (isCredit) bal = -Math.abs(bal);
+    const res = await fetch(`${API_BASE}/api/accounts/checkpoint`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accId, as_of: asOf, balance: bal, source: 'MANUAL' }) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || j.error) { alert('บันทึกไม่สำเร็จ: ' + (j.error || res.status)); return; }
+    renderSharedStatusSummary();
+}
+
+/* หลังนำเข้า statement: เก็บยอดยกไปเป็นจุดตรวจของบัญชี (ตั้งค่าใน statementPrecheck · ส่งใน importStatementRows) */
+async function saveStatementCheckpoint(accId) {
+    const cp = window._rrCheckpoint; window._rrCheckpoint = null;
+    if (!cp || cp.account_id !== accId || !isFinite(cp.balance) || !cp.as_of) return;
+    try { await fetch(`${API_BASE}/api/accounts/checkpoint`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...cp, source: 'STATEMENT' }) }); } catch { /* ไม่เป็นไร */ }
+}
+
+/* ⚖️ ปรับให้ตรงธนาคาร (2026-10-15 · North: "ยอดยังไม่ตรงกับยอดยกมา")
+   ใส่ยอดคงเหลือจริงตามธนาคาร (ณ วันล่าสุดที่นำเข้า) → ส่วนต่างจากยอดในระบบ (ยืนยัน + รอตรวจ) ไปปรับที่ "ยอดยกมา" ของบัญชีนั้น
+   มีชุดยอดยกมาที่มีบัญชีนี้อยู่แล้ว → แก้ยอดบรรทัดนั้น · ยังไม่มี → สร้างชุดใหม่ ณ วันที่รายการแรกของบัญชี */
+async function reconcileAccount(accId, systemTotal, bankKnown) {
+    const acc = (AppState.accounts || []).find(a => a.account_id === accId) || { name: accId };
+    const f = n => { const v = Number(n || 0), t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const isCredit = acc.account_type === 'CREDIT';
+    const raw = bankKnown != null ? String(isCredit ? Math.abs(bankKnown) : bankKnown) : prompt(`⚖️ ${acc.name}\nยอดในระบบตอนนี้ (ยืนยัน + รอตรวจ) = ${f(systemTotal)}\n\nใส่ยอดคงเหลือจริงตามธนาคาร ณ วันล่าสุดที่นำเข้า${isCredit ? '\n(บัตรเครดิต: ใส่ยอดค้างชำระเป็นบวก)' : ''}:`);
+    if (raw == null) return;
+    let target = Number(String(raw).replace(/[,\s฿]/g, '').replace(/^\((.*)\)$/, '-$1'));
+    if (!isFinite(target)) { alert('ตัวเลขไม่ถูกต้อง'); return; }
+    if (isCredit) target = -Math.abs(target);
+    const diff = Math.round((target - systemTotal) * 100) / 100;
+    if (Math.abs(diff) < 0.005) { try { showToast('✅ ยอดตรงกับธนาคารแล้ว'); } catch { /* */ } return; }
+    try {
+        const ob = await (await fetch(`${API_BASE}/api/inbox/opening`)).json();
+        const set = (ob.sets || []).find(s => (s.lines || []).some(l => l.kind === 'ACC' && l.account_id === accId));
+        let body;
+        if (set) {
+            const lines = set.lines.map(l => ({ kind: l.kind, account_id: l.account_id || undefined, category_id: l.category_id || undefined, contact_id: l.contact_id || null, debt_id: l.debt_id || undefined, side: l.side, amount: Math.abs(Number(l.amount) || 0), note: l.note || '' }));
+            const line = lines.find(l => l.kind === 'ACC' && l.account_id === accId);
+            const cur = line.side === 'CR' ? -line.amount : line.amount, nxt = Math.round((cur + diff) * 100) / 100;
+            line.side = nxt >= 0 ? 'DR' : 'CR'; line.amount = Math.abs(nxt);
+            if (!confirm(`ยอดยกมาของ "${acc.name}" ในชุด "${set.name}" (ณ ${set.date})\nจาก ${f(cur)} → ${f(nxt)} (ปรับ ${f(diff)})\n\nบัญชีพักยอดยกมาจะเปลี่ยนตาม — ปรับเลยไหม?`)) return;
+            body = { set_id: set.set_id, name: set.name, date: set.date, entity_id: set.entity_id || null, anchor_account_id: set.anchor_account_id || null, lines: lines.filter(l => l.amount) };
+        } else {
+            const ba = await (await fetch(`${API_BASE}/api/accounts/balance-at?account_id=${encodeURIComponent(accId)}&date=9999-12-31`)).json();
+            const date = ba.first_date || new Date().toISOString().slice(0, 10);
+            if (!confirm(`"${acc.name}" ยังไม่มียอดยกมา\nสร้างยอดยกมา ${f(diff)} ณ ${date} (วันที่รายการแรก)?\n\nอีกฝั่ง (ทุน ฯลฯ) ไปใส่ต่อที่ ตั้งค่า → ยอดยกมา`)) return;
+            body = { set_id: null, name: `ยอดยกมา ${acc.name}`, date, entity_id: acc.entity_id || null, anchor_account_id: null, lines: [{ kind: 'ACC', account_id: accId, side: diff >= 0 ? 'DR' : 'CR', amount: Math.abs(diff) }] };
+        }
+        const r = await fetch(`${API_BASE}/api/inbox/opening`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) { alert('ปรับไม่สำเร็จ: ' + (j.error || r.status)); return; }
+        try { showToast(`⚖️ ปรับยอดยกมาแล้ว · ${acc.name} ตรงธนาคาร`); } catch { /* */ }
+        fetchMasterData(); loadPending();
+    } catch (e) { alert('ปรับไม่สำเร็จ: ' + e.message); }
 }
 
 /* 🗑️ ลบทั้งชุดที่นำเข้า (2026-10-15): รายการรอตรวจที่มาจาก statement เดียวกัน = บัญชีเดียวกัน + เวลานำเข้าใกล้กัน (≤15 นาที)
@@ -7233,6 +7341,7 @@ async function importStatementRows(accId, transactions, onProgress) {
         }
     };
     await Promise.all(Array.from({ length: Math.min(6, transactions.length) }, worker));
+    await saveStatementCheckpoint(accId);
     try { localStorage.setItem('rr_last_import', JSON.stringify({ imported: importedCount, skipped: skippedCount, merged: mergedCount, errors: errorCount, at: new Date().toISOString() })); } catch { /* */ }
     rematchWaitingDocs();
     return { importedCount, skippedCount, errorCount, mergedCount, autoCatCount, skippedDetails };
