@@ -3212,7 +3212,8 @@ async function loadPending() {
             }
         }
 
-        await DupPairs.load();   // 🔁 บรรทัด statement ที่ซ้ำกับรายการเดิมที่ยืนยันแล้ว (2026-10-30)
+        /* ⚡ 2026-10-30: ไม่รอเช็กรายการซ้ำก่อนวาด — วาดการ์ดก่อน เช็กเสร็จค่อยวาดใหม่ถ้ามีคู่ซ้ำ */
+        DupPairs.load().then(() => { if (DupPairs.count && DupPairs.count()) renderPendingTransactions(); }).catch(() => {});
         renderPendingTransactions();
         renderPendingHero();
         LineSlips.load();   // 📲 สลิป LINE ที่ต้องเลือกก่อน (2026-10-15)
@@ -3268,7 +3269,10 @@ function renderPendingTransactions() {
         return;
     }
 
-    displayList.forEach((tx, idx) => {
+    /* ⚡ 2026-10-30 (North: "ระบบช้า"): การ์ดรอตรวจมีหลายร้อยใบ แต่ละใบมีช่องเลือกหมวด/คู่ค้าเต็ม → วาดทีเดียวทั้งหมดหน้าค้าง
+       วาด 30 ใบแรกทันที ที่เหลือทยอยวาดทีละ 40 ใบเบื้องหลัง (ยังได้ครบทุกใบ ปุ่มใส่หมวด/บันทึกทั้งหมดทำงานเหมือนเดิม) */
+    const _renderToken = (AppState._pendingRenderToken = (AppState._pendingRenderToken || 0) + 1);
+    const renderOne = (tx, idx) => {
         const accountObj = AppState.accounts.find(acc => String(acc.account_id) === String(tx.account_id));
         const accountName = accountObj ? accountObj.name : 'Unknown Account';
         
@@ -3452,9 +3456,9 @@ function renderPendingTransactions() {
                     if (confirmRes.ok) {
                         const _doc = slipDocIdOf(cardEl);   // สลิปจาก LINE/อัปโหลด → ให้ระบบจำหมวดของร้านนี้ไว้ครั้งหน้า
                         if (_doc) fetch(`${API_BASE}/api/inbox/${_doc}/learn`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
-                        alert("✅ ยืนยันรายการบัญชีสำเร็จ!");
-                        fetchMasterData();
-                        loadPending();
+                        /* ⚡ 2026-10-30: เอาการ์ดออกเลย ไม่โหลดรอตรวจทั้งหมดใหม่ (เดิมยืนยัน 1 ใบ = โหลด+วาดใหม่ทุกใบ) */
+                        if (window.showToast) showToast('✅ ยืนยันแล้ว'); else alert("✅ ยืนยันรายการบัญชีสำเร็จ!");
+                        removePendingCardLocal(cardEl, tx.transaction_id);
                     } else {
                         alert("เกิดข้อผิดพลาดในการยืนยันรายการ");
                         btn.innerHTML = originalHTML;
@@ -3481,10 +3485,7 @@ function renderPendingTransactions() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ transaction_id: tx.transaction_id })
                 });
-                if (res.ok) {
-                    fetchMasterData();
-                    loadPending();
-                }
+                if (res.ok) removePendingCardLocal(cardEl, tx.transaction_id);   // ⚡ 2026-10-30 ไม่โหลดทั้งหมดใหม่
             }
         });
         
@@ -3506,13 +3507,33 @@ function renderPendingTransactions() {
 
         updateCardStyle(cardEl);
         updateCardSum(cardEl);
-    });
+    };
+    const FIRST = 30, STEP = 40;
+    displayList.slice(0, FIRST).forEach((tx, i) => renderOne(tx, i));
+    let _next = FIRST;
+    const more = () => {
+        if (_renderToken !== AppState._pendingRenderToken || _next >= displayList.length) return;
+        const end = Math.min(displayList.length, _next + STEP);
+        for (let i = _next; i < end; i++) renderOne(displayList[i], i);
+        _next = end;
+        RevenueChart.decorate(container);
+        if (_next < displayList.length) setTimeout(more, 16);
+    };
+    if (displayList.length > FIRST) setTimeout(more, 50);
 
     // Re-insert unsaved draft cards at the top (legacy safety — should be empty now)
     unsavedCards.forEach(c => container.insertBefore(c, container.firstChild));
 
     updatePendingStatusSummary();
     RevenueChart.decorate(container);   // 👥 เงินเข้าที่ตรงกับผังรายได้ → แถบ "ใช้" (2026-10-30)
+}
+
+/* ⚡ ลบการ์ดที่ยืนยัน/ลบแล้วออกจากหน้าและรายการในเครื่อง แล้วอัปเดตตัวเลขสรุป (2026-10-30) */
+function removePendingCardLocal(cardEl, txId) {
+    try { cardEl?.remove(); } catch { /* */ }
+    AppState.pendingTransactions = (AppState.pendingTransactions || []).filter(t => t.transaction_id !== txId);
+    AppState._pendingAt = Date.now();
+    try { updatePendingBadge(); renderPendingHero(); updatePendingStatusSummary(); } catch (e) { console.warn(e); }
 }
 
 async function updatePendingStatusSummary() {

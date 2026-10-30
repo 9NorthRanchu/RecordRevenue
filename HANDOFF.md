@@ -3803,3 +3803,10 @@ frontend
 - แก้: OPEN_RE + Beginning/Opening Balance · CLOSE_RE + Ending/Closing Balance · แถวแรกไม่มียอดยกมา → ดูคำ (Deposit/รับ/ฝาก = เข้า)
 - /api/statements/sync: ลบบรรทัดรอตรวจจาก statement ที่เหมือนกันทุกช่องแต่เครื่องหมายกลับด้าน (ไฟล์ไม่มีแบบนั้น) · เทสต์ stmt-report 37
 - app.js?v=210
+
+## 2026-10-30 · ทำให้ทั้งแอปเร็วขึ้น (North: "เครื่องช้าระบบช้า")
+- index.html: ตัด xlsx-latest (~900KB · xlsx-js-style ประกาศ XLSX ทับอยู่แล้ว) · pdf-lib/pdf.js ย้ายจาก <head> ไปท้ายหน้า · ทุกสคริปต์ defer (workerSrc ตั้งใน onload)
+- รอตรวจ: วาด 30 การ์ดแรกทันที ที่เหลือทยอยทีละ 40 (ได้ครบทุกใบ) · ไม่รอ DupPairs ก่อนวาด
+- ยืนยัน/ลบการ์ด: เอาการ์ดออกในเครื่อง (removePendingCardLocal) + toast — ไม่โหลด/วาดรอตรวจทั้งหมดใหม่
+- ทดสอบเปิด index.html จริง (Playwright + API จำลอง 400 การ์ด): 30 ใบแรก ~0.1 วิ · ครบ 400 ~0.6 วิ · ไม่มี error · XLSX = xlsx-js-style 1.2.0
+- app.js?v=211
