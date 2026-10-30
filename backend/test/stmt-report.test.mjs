@@ -179,4 +179,13 @@ db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,time,total_amo
 INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('dw','WRONG',-2134,'T01','EXPENSE');`);
 r = await call('/api/statements/sync', { user: '9North', method: 'POST', body: { account_id: 'A09', period_from: '2026-01-01', period_to: '2026-01-31', keys: [{ date: '2026-01-01', time: '04:15:00', amount: 2134, desc: 'Transfer Deposit', count: 1 }] } });
 check('sync ลบบรรทัดที่เครื่องหมายผิด', r.j.removed === 1 && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='WRONG'`).get(), r.j);
+/* ลบ statement ที่นำเข้าผิด พร้อมรายการรอตรวจ */
+r = await call('/api/statements/header', { user: '9North', method: 'POST', body: { account_id: 'A10', period_from: '2025-11-18', period_to: '2025-11-18', opening: 57770.73, closing: 4080, line_count: 1 } });
+const badS = r.j.stmt_id;
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,stmt_id) VALUES ('BADX','A10','2025-11-18',-51000,'PENDING_REVIEW','PDF_IMPORT','9North','${badS}');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id) VALUES ('dbx','BADX',-51000,'T01');`);
+r = await call('/api/statements/delete', { user: '9North', method: 'POST', body: { stmt_id: badS } }); check('ลบหัวที่ยังมีรายการ (ไม่ส่ง with_rows) → ไม่ได้', !!r.j.error, r.j);
+r = await call('/api/statements/delete', { user: 'Other', method: 'POST', body: { stmt_id: badS, with_rows: true } }); check('ครอบครัวอื่นลบไม่ได้', r.s === 404, r);
+r = await call('/api/statements/delete', { user: '9North', method: 'POST', body: { stmt_id: badS, with_rows: true } });
+check('with_rows → ลบรายการรอตรวจ + หัว', r.j.removed_rows === 1 && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='BADX'`).get() && !db.prepare(`SELECT 1 FROM StatementImports WHERE stmt_id=?`).get(badS), r.j);
 console.log(`stmt-report: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);

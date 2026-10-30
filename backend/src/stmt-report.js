@@ -155,9 +155,23 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
     const b = await request.json().catch(() => ({}));
     const h = await env.DB.prepare(`SELECT account_id FROM StatementImports WHERE stmt_id = ?`).bind(String(b.stmt_id || '')).first();
     if (!h || !(await canUseAccount(h.account_id))) return json({ error: 'ไม่พบ statement นี้' }, cors, 404);
+    /* 2026-10-30 (North: "นำเข้าข้อมูลไม่ถูกต้อง"): with_rows = ลบรายการรอตรวจที่นำเข้าจาก statement นี้ด้วย (นำเข้าผิดแบบ/ผิดบัญชี แล้วจะนำเข้าใหม่)
+       ไม่แตะรายการที่ยืนยันแล้ว — ถ้ายังเหลือ ไม่ลบหัว แจ้งจำนวนกลับไป */
+    let removedRows = 0;
+    if (b.with_rows) {
+      const ids = ((await env.DB.prepare(`SELECT transaction_id FROM Transactions WHERE stmt_id = ? AND status = 'PENDING_REVIEW' AND source = 'PDF_IMPORT'`).bind(String(b.stmt_id)).all()).results || []).map(r => r.transaction_id);
+      for (let i = 0; i < ids.length; i += 90) {
+        const c = ids.slice(i, i + 90), m = c.map(() => '?').join(',');
+        await env.DB.batch([env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id IN (${m})`).bind(...c),
+          env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE transaction_id IN (${m})`).bind(...c),
+          env.DB.prepare(`DELETE FROM Transactions WHERE transaction_id IN (${m}) AND status = 'PENDING_REVIEW'`).bind(...c)]);
+      }
+      removedRows = ids.length;
+    }
     const n = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM Transactions WHERE stmt_id = ?`).bind(String(b.stmt_id)).first())?.n || 0;
+    if (n && b.with_rows) return json({ success: true, removed_rows: removedRows, kept_confirmed: n, removed: 0 }, cors);
     if (n) return json({ error: `ยังมีรายการจาก statement นี้ ${n} รายการ — ลบรายการก่อน (หน้ารอตรวจสอบ → ลบทั้งชุดที่นำเข้า)` }, cors, 409);
-    return json({ success: true, removed: await cleanupStatementHeaders(env, [String(b.stmt_id)]) }, cors);
+    return json({ success: true, removed_rows: removedRows, removed: await cleanupStatementHeaders(env, [String(b.stmt_id)]) }, cors);
   }
 
   /* 🔁 รายการซ้ำ (2026-10-30 · North: "ทำไมมีข้อมูลซ้ำ") — บรรทัด statement ที่รอตรวจ ซ้ำกับรายการเดิมที่ยืนยันแล้ว

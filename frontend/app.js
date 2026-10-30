@@ -7579,7 +7579,10 @@ async function batchImportStatements(files, btn) {
       const opened = await openStatementPdf(buf, document.getElementById('import-account-selector')?.value || '');
       if (opened.needPassword) { skipped.push({ name: file.name, why: '🔒 รหัส PDF ไม่ตรงกับบัญชีใด — ตั้งรหัสที่ ตั้งค่า→บัญชี' }); continue; }
       if (!opened.pdf) { skipped.push({ name: file.name, why: '⚠️ เปิดไฟล์ไม่ได้' }); continue; }
-      const bank = await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
+      /* 2026-10-30: ลองอ่านแบบใบแจ้งยอดบัตรก่อน — ตัวอ่าน statement ธนาคารเคยอ่านบรรทัดสรุปของบัตร CardX
+         ("18/11/25 51,000.00 4,080.00") เป็นรายการเดียว แล้วใช้ยอดขั้นต่ำเป็นยอดคงเหลือ */
+      const card0 = await parseCardStatement(opened.pdf).catch(() => ({ ok: false }));
+      const bank = card0.ok ? { ok: false } : await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
       if (bank.ok) {
         const txs = bank.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00', type: l.amount > 0 ? 'INCOME' : 'EXPENSE',
           amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null }));
@@ -7588,7 +7591,7 @@ async function batchImportStatements(files, btn) {
           walk: bank.opening != null && bank.closing != null ? Math.abs(r2(bank.opening + sum) - r2(bank.closing)) < 0.01 : null, sign: 1 });
         continue;
       }
-      const card = await parseCardStatement(opened.pdf).catch(() => ({ ok: false }));
+      const card = card0;
       if (card.ok) {
         for (const c of card.cards) items.push({ file: file.name, kind: 'CARD', read: c.masked, label: c.type, acc: findAcc(c.masked, c.last4, true), txs: c.txs, opening: c.opening, closing: c.closing,
           walk: c.agree, sign: -1, asOf: card.statementDate });
@@ -7758,6 +7761,9 @@ function bindPDFUpload() {
                 }
                 foundPassword = opened.password;
                 if (opened.pdf) {
+                    /* 2026-10-30: ใบแจ้งยอดบัตรก่อน แล้วค่อย statement ธนาคาร (ดูเหตุผลที่ batchImportStatements) */
+                    const card0 = await parseCardStatement(opened.pdf).catch(() => ({ ok: false }));
+                    if (card0.ok) { await importCardStatement(card0, selectedAccId, file.name, triggerUploadBtn); resetUploadBtn(); return; }
                     const parsed = await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
                     if (parsed.ok) {
                         const txs = parsed.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00',
@@ -14682,9 +14688,22 @@ const StmtReport = (() => {
                 <span>ยกมา ${fmH(g.openSys)}${g.openBank != null ? ` / ธ. ${fmH(g.openBank)}` : ''}</span>
                 <span>ยกไป ${fmH(g.closeSys)}${g.closeBank != null ? ` / ธ. ${fmH(g.closeBank)}` : ''}</span><em>${esc(g.status)}${g.missingLines ? ` · ขาด ${g.missingLines} บรรทัด` : ''}</em>
                 ${g.empty && g.header ? `<button type="button" class="btn btn-sm btn-outline-danger sr-delhdr" data-stmt="${esc(g.header.stmt_id)}" title="นำเข้าผิดบัญชีแล้วลบรายการไปแล้ว → ลบหัว statement + ยอดธนาคารที่ค้าง">🗑️ ลบหัว statement นี้</button>` : ''}</summary>
+                ${!g.empty && g.header && g.pending ? `<button type="button" class="btn btn-sm btn-outline-danger sr-delstmt" data-stmt="${esc(g.header.stmt_id)}" data-n="${g.pending}" title="นำเข้าผิด (ผิดแบบ/ผิดบัญชี) → ลบรายการรอตรวจของ statement นี้ แล้วนำเข้าไฟล์ใหม่">🗑️ ลบ statement นี้ (รอตรวจ ${g.pending})</button>` : ''}
                 <div class="table-responsive"><table class="sr-tbl"><thead><tr>${COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
                 ${g.rows.map((r, i) => { const c = rowCells(r, i); return `<tr class="${r._flag ? 'sr-' + r._flag : ''}">${c.map((v, k) => `<td class="${k >= 5 && k <= 9 ? 'r' : ''}">${k >= 5 && k <= 9 ? fmH(v) : esc(v)}</td>`).join('')}</tr>`; }).join('')}
                 </tbody></table></div></details>`).join('')}</div>`).join('');
+        /* 🗑️ ลบ statement ที่นำเข้าผิด พร้อมรายการรอตรวจของมัน (2026-10-30) — รายการที่ยืนยันแล้วไม่ถูกลบ */
+        box.querySelectorAll('.sr-delstmt').forEach(b => b.onclick = async e => {
+            e.preventDefault(); e.stopPropagation();
+            if (!confirm(`ลบ statement นี้ และรายการรอตรวจที่นำเข้าจากมัน ${b.dataset.n} รายการ?\n\nใช้เมื่อนำเข้าผิด แล้วจะนำเข้าไฟล์ใหม่ · รายการที่ยืนยันแล้วจะไม่ถูกลบ`)) return;
+            b.disabled = true;
+            try { const r = await fetch(`${API_BASE}/api/statements/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stmt_id: b.dataset.stmt, with_rows: true }) });
+                const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || r.status);
+                if (j.kept_confirmed) alert(`ลบรายการรอตรวจ ${j.removed_rows} รายการแล้ว\nยังมีรายการที่ยืนยันแล้ว ${j.kept_confirmed} รายการ — หัว statement จึงยังอยู่`);
+                else showToast?.(`🗑️ ลบแล้ว ${j.removed_rows} รายการ`);
+                document.getElementById('sr-run')?.click(); updatePendingBadge?.(); }
+            catch (err) { alert('ลบไม่สำเร็จ: ' + err.message); b.disabled = false; }
+        });
         box.querySelectorAll('.sr-delhdr').forEach(b => b.onclick = async e => {
             e.preventDefault(); e.stopPropagation();
             if (!confirm('ลบหัว statement นี้ (และยอดตามธนาคารที่มากับมัน) ออกจากบัญชีนี้?\nใช้เมื่อนำเข้าผิดบัญชี/บริษัท แล้วลบรายการไปแล้ว')) return;
