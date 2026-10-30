@@ -7030,6 +7030,11 @@ async function parseTextStatement(pdf) {
     const tc = await page.getTextContent();
     const items = tc.items.filter(it => it.str && it.str.trim() && !/^[lI|]{1,4}$/.test(it.str.trim())).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim(), w: it.width || 0 }));   // ตัดขีดขอบกระดาษ "l"/"ll" (2026-10-30)
     textChars += items.reduce((n, it) => n + it.s.length, 0);
+    /* 2026-10-30 · SCB: วันที่กับเวลาอยู่ช่องเดียว "05/01/26 22:02" → แยกเป็น 2 ช่อง (เดิมไม่เจอวันที่ → "ไม่พบตารางรายการ") */
+    for (let k = items.length - 1; k >= 0; k--) {
+      const m = items[k].s.match(/^(\d{1,2}[-/.]\d{1,2}[-/.](?:\d{2}|\d{4}))\s+(\d{1,2}:\d{2}(?::\d{2})?)$/);
+      if (m) items.splice(k, 1, { ...items[k], s: m[1] }, { ...items[k], x: items[k].x + 0.5, s: m[2] });
+    }
     if (!accountNumber) { const a = items.find(it => /^[\dXx*]{3}-[\dXx*]-[\dXx*]{5}-[\dXx*]$|^[\dXx*]{3}-[\dXx*]{6}-[\dXx*]$/.test(it.s)); if (a) accountNumber = a.s; }
     // จัดเป็นบรรทัด (y ใกล้กัน ≤ 2.5)
     items.sort((a, b) => b.y - a.y || a.x - b.x);
@@ -7040,6 +7045,12 @@ async function parseTextStatement(pdf) {
     for (const L of lines) {
       L.items.sort((a, b) => a.x - b.x);
       const first = L.items[0], dm = first.s.match(DATE);
+      /* 2026-10-30 · SCB: บรรทัด "ยอดเงินคงเหลือยกมา (BALANCE BROUGHT FORWARD)" ไม่มีวันที่ → เดิมถูกข้าม ไม่มียอดยกมา */
+      if (!dm) {
+        const lt = L.items.filter(it => !MONEY.test(it.s)).map(it => it.s).join(' '), lm = L.items.filter(it => MONEY.test(it.s));
+        if (lm.length === 1 && OPEN_RE.test(lt) && opening == null) { opening = num(lm[0].s); prevRow = null; continue; }
+        if (lm.length === 1 && CLOSE_RE.test(lt)) { closing = num(lm[0].s); prevRow = null; continue; }
+      }
       if (dm) {
         const date = isoDate(dm[1], dm[2], dm[3]);
         const rest = L.items.slice(1);
