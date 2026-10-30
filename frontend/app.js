@@ -1352,6 +1352,7 @@ function switchView(viewName) {
     // Update Header Title
     const titleMap = {
         'dashboard': 'ภาพรวมระบบการเงิน',
+        'account': 'รายละเอียดบัญชี',
         'pending': 'รายการรอตรวจสอบ',
         'history': 'ประวัติธุรกรรมที่ยืนยันแล้ว',
 
@@ -2539,6 +2540,7 @@ function dv2Render() {
     if (!root || !DashState.data) return;
     root.innerHTML = `${dv2TopBar()}
       ${dv2Kpis()}
+      <div class="dv2-sec" id="acc-home"><div class="av-mute" style="padding:14px">กำลังโหลดบัญชี…</div></div>
       <div class="dv2-sec dv2-g3">${dv2Stmt()}${dv2Credit()}${dv2Invest()}</div>
       <div class="dv2-sec dv2-g3">${dv2Donut('income')}${dv2Donut('expense')}${dv2Top5()}</div>
       <div class="dv2-sec dv2-g1">${dv2Budget()}</div>
@@ -2551,6 +2553,7 @@ async function loadDashboard() {
     try {
         await Promise.all([loadDashboardV2Data(), dv2LoadPendingCount()]);
         dv2Render();
+        AccView.home(DashState.period === 'month' && DashState.month ? `${DashState.year}-${DashState.month}` : null);   // 🏦 การ์ดบัญชี (แนวคิด ข · 2026-10-30)
     } catch (err) {
         console.error('Dashboard Load Error:', err);
         const root = document.getElementById('dv2-root');
@@ -15078,3 +15081,179 @@ const DupPairs = (() => {
     return { load, decorate, mergeAll, of: id => byPending[id], count: () => pairs.length };
 })();
 window.DupPairs = DupPairs;
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🏦 แนวคิด ข "ตามบัญชี" (2026-10-30 · North เลือกจาก mockup 008-ข / 009-1 / 010)
+//  · หน้าแรก: การ์ดบัญชีของฉัน — ยอด · % ตรวจครบ · ไม่ตรงธนาคาร/ขาดบรรทัด · กราฟแท่งรายวัน · 3 รายการล่าสุด
+//  · หน้ารายละเอียดบัญชี (view-account): เลือกเดือน · ยกมา/รับ/จ่าย/ยกไป (ระบบ เทียบ ธนาคาร)
+//    โดนัทรับ-จ่าย · สรุปความตรงกัน · รายการเดินบัญชีพร้อมยอดคงเหลือรายบรรทัด · ส่งออก Excel/PDF (ใช้ตัวเดียวกับรายงานยอดสะสม)
+//  ข้อมูล: GET /api/accounts/overview (acc-overview.js) · GET /api/reports/statement-running
+// ═══════════════════════════════════════════════════════════════════════
+const AccView = (() => {
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+    const fm = n => { if (n == null || n === '' || !isFinite(n)) return '–'; const v = r2(n), t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const fmS = n => fm(n);   // North 2026-10-30: ไม่ใส่ + หน้าตัวเลข
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const MTH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const mLabel = ym => { const [y, m] = String(ym || '').split('-').map(Number); return y ? `${MTH[m - 1]} ${y + 543}` : ''; };
+    const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${+m[3]} ${MTH[+m[2] - 1]} ${(+m[1] + 543) % 100}` : ''; };
+    const shift = (ym, k) => { const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + k, 1)); return d.toISOString().slice(0, 7); };
+    const accName = a => String(a?.name || a?.account_id || '').replace(/^\s*\[[^\]]+\]\s*/, '');
+    const KIND = {
+        BANK: { ico: 'fa-building-columns', cls: 'av-k-bank', lbl: 'บัญชีธนาคาร' },
+        CREDIT: { ico: 'fa-credit-card', cls: 'av-k-card', lbl: 'บัตรเครดิต' },
+        CASH: { ico: 'fa-wallet', cls: 'av-k-cash', lbl: 'เงินสด' },
+        WALLET: { ico: 'fa-mobile-screen', cls: 'av-k-wallet', lbl: 'กระเป๋าเงินอิเล็กทรอนิกส์' }
+    };
+    const kindOf = a => a.account_type === 'CREDIT' ? KIND.CREDIT : a.account_type === 'CASH' ? KIND.CASH
+        : /wallet|truemoney|เป๋าตัง|paotang|shopee ?pay|linepay|rabbit/i.test((a.bank_name || '') + ' ' + (a.name || '')) ? KIND.WALLET : KIND.BANK;
+    const hdr = () => ({ 'x-user-id': encodeURIComponent(getUserIdHeader()) });
+    const S = { month: null, data: null, acc: null, detail: null };
+
+    /* บัตร: ระบบเก็บยอดค้างเป็นลบ → แสดงเป็นบวก "ยอดค้าง" (เหมือนใบแจ้งยอด) */
+    const disp = (a, v) => v == null ? null : (a.account_type === 'CREDIT' ? r2(-v) : r2(v));
+    const ring = (pct, cls) => { const r = 22, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct));
+        return `<svg class="av-ring ${cls || ''}" viewBox="0 0 56 56" aria-label="ตรวจครบ ${p}%"><circle cx="28" cy="28" r="${r}" class="av-ring-bg"/>
+        <circle cx="28" cy="28" r="${r}" class="av-ring-fg" stroke-dasharray="${(c * p / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 28 28)"/>
+        <text x="28" y="32" text-anchor="middle">${p}%</text></svg>`; };
+    const bars = (a, from, to) => {
+        const days = (Date.parse(to) - Date.parse(from)) / 864e5 + 1, by = Object.fromEntries((a.daily || []).map(x => [x.d, x.vol]));
+        const vals = Array.from({ length: days }, (_, i) => by[new Date(Date.parse(from) + i * 864e5).toISOString().slice(0, 10)] || 0), mx = Math.max(...vals, 1);
+        return `<div class="av-bars">${vals.map(v => `<i style="height:${v ? Math.max(12, Math.round(v / mx * 100)) : 6}%" class="${v ? '' : 'z'}"></i>`).join('')}</div>
+          <div class="av-bars-lbl"><span>${dTh(from)}</span><span>${dTh(to)}</span></div>`;
+    };
+    function status(a) {
+        const out = [];
+        if (a.diff != null && Math.abs(a.diff) >= 0.01) out.push(`<span class="av-warn">⚠️ ไม่ตรงธนาคาร ต่าง ${fm(Math.abs(a.diff))}</span>`);
+        if (a.missing_lines) out.push(`<span class="av-warn">⚠️ ขาด ${a.missing_lines} บรรทัดจาก statement</span>`);
+        if (a.n_pending) out.push(`<span class="av-pend">⏳ รอตรวจ ${a.n_pending} รายการ</span>`);
+        if (!out.length) out.push(a.bank ? `<span class="av-ok">✅ ตรงธนาคาร</span>` : a.n ? `<span class="av-ok">✅ ตรวจครบ</span>` : `<span class="av-mute">ไม่มีรายการเดือนนี้</span>`);
+        return out.join('');
+    }
+    function card(a, d) {
+        const k = kindOf(a), pct = a.n ? Math.round((a.n - a.n_pending) / a.n * 100) : 100, bal = disp(a, a.close_sys);
+        const sub = [a.bank_name, a.account_number].filter(Boolean).join(' · ') || k.lbl;
+        const credit = a.account_type === 'CREDIT' && a.credit_limit ? `<div class="av-sub">วงเงินคงเหลือ ${fm(r2(a.credit_limit - bal))}</div>` : '';
+        const recent = (a.recent || []).map(x => `<div class="av-rc"><div class="av-rc-t"><b>${esc(x.note || x.statement_desc || x.category || '-')}</b><small>${dTh(x.date)}${x.status === 'PENDING_REVIEW' ? ' · รอตรวจ' : ''}</small></div>
+            <span class="${x.amount < 0 ? 'av-neg' : 'av-pos'}">${fmS(a.account_type === 'CREDIT' ? x.amount : x.amount)}</span></div>`).join('');
+        return `<div class="av-card" tabindex="0" role="button" onclick="AccView.open('${esc(a.account_id)}')" onkeydown="if(event.key==='Enter')AccView.open('${esc(a.account_id)}')">
+          <div class="av-top"><span class="av-ico ${k.cls}"><i class="fa-solid ${k.ico}"></i></span>
+            <div class="av-name"><b>${esc(accName(a))}</b><small>${esc(sub)}</small></div>${ring(pct, k.cls)}</div>
+          <div class="av-bal"><small>${a.account_type === 'CREDIT' ? 'ยอดค้างชำระ' : 'คงเหลือ'} ณ ${dTh(d.to)}</small><b>${fm(bal)}</b>${credit}</div>
+          <div class="av-st">${status(a)}</div>
+          ${bars(a, d.from, d.to)}
+          ${recent ? `<div class="av-rch"><span>รายการล่าสุด</span><span class="av-link">ดูทั้งหมด ›</span></div>${recent}` : ''}
+        </div>`;
+    }
+    async function home(month) {
+        const el = document.getElementById('acc-home'); if (!el) return;
+        if (month) S.month = month;
+        try {
+            const r = await fetch(`${API_BASE}/api/accounts/overview${S.month ? '?month=' + S.month : ''}`, { headers: hdr() });
+            const d = await r.json(); if (!r.ok || d.error) throw new Error(d.error || r.status);
+            S.data = d; S.month = d.month;
+            const accs = d.accounts.filter(a => a.n || a.close_sys || a.bank);
+            const tot = { pend: accs.reduce((s, a) => s + a.n_pending, 0), bad: accs.filter(a => (a.diff != null && Math.abs(a.diff) >= 0.01) || a.missing_lines).length };
+            el.innerHTML = `<div class="av-head"><h3>บัญชีของฉัน <small>${mLabel(d.month)} · ${accs.length} บัญชี${tot.pend ? ` · รอตรวจ ${tot.pend}` : ''}${tot.bad ? ` · <span class="av-neg">ต้องตรวจ ${tot.bad} บัญชี</span>` : ''}</small></h3>
+                <div class="av-mnav"><button onclick="AccView.home(AccView._shift(-1))" aria-label="เดือนก่อน"><i class="fa-solid fa-chevron-left"></i></button><span>${mLabel(d.month)}</span>
+                <button onclick="AccView.home(AccView._shift(1))" aria-label="เดือนถัดไป"><i class="fa-solid fa-chevron-right"></i></button></div></div>
+              <div class="av-grid">${accs.map(a => card(a, d)).join('') || '<div class="av-mute" style="padding:20px">ยังไม่มีบัญชีที่มีรายการ</div>'}</div>`;
+        } catch (e) { el.innerHTML = `<div class="av-mute" style="padding:14px">โหลดบัญชีไม่สำเร็จ: ${esc(e.message)}</div>`; }
+    }
+
+    /* ── หน้ารายละเอียดบัญชี ── */
+    function donut(inV, outV) {
+        const t = inV + outV || 1, r = 52, c = 2 * Math.PI * r, pi = inV / t;
+        return `<svg viewBox="0 0 140 140" class="av-donut"><circle cx="70" cy="70" r="${r}" class="av-d-out"/>
+          <circle cx="70" cy="70" r="${r}" class="av-d-in" stroke-dasharray="${(c * pi).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 70 70)"/></svg>`;
+    }
+    async function open(accId, month) {
+        const a = (S.data?.accounts || []).find(x => x.account_id === accId) || (AppState.accounts || []).find(x => x.account_id === accId) || { account_id: accId };
+        S.acc = a; if (month) S.month = month;
+        if (!S.month) S.month = S.data?.month || new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
+        switchView('account');
+        const el = document.getElementById('av-detail'); if (!el) return;
+        el.innerHTML = '<div class="av-mute" style="padding:30px;text-align:center"><i class="fa-solid fa-spinner fa-spin"></i> กำลังโหลด…</div>';
+        const from = S.month + '-01', [y, m] = S.month.split('-').map(Number), to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+        try {
+            const [rr, ro] = await Promise.all([
+                fetch(`${API_BASE}/api/reports/statement-running?account_id=${encodeURIComponent(accId)}&from=${from}&to=${to}`, { headers: hdr() }),
+                fetch(`${API_BASE}/api/accounts/overview?month=${S.month}`, { headers: hdr() })]);
+            const data = await rr.json(), ov = await ro.json();
+            if (!rr.ok || data.error) throw new Error(data.error || rr.status);
+            const o = (ov.accounts || []).find(x => x.account_id === accId) || a;
+            const res = StmtReport.build(data); S.detail = { res, o, from, to };
+            render(el, res, o, data, from, to);
+        } catch (e) { el.innerHTML = `<div class="av-mute" style="padding:20px">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
+    }
+    function render(el, res, o, data, from, to) {
+        const isCard = res.isCredit, rows = data.rows || [], k = kindOf(o);
+        const sumIn = r2(rows.filter(r => r.amount > 0).reduce((s, r) => s + Number(r.amount), 0)), sumOut = r2(rows.filter(r => r.amount < 0).reduce((s, r) => s + Number(r.amount), 0));
+        const nIn = rows.filter(r => r.amount > 0).length, nOut = rows.filter(r => r.amount < 0).length;
+        const openSys = res.opening, closeSys = rows.length ? rows[rows.length - 1]._run : openSys;
+        /* ยอดธนาคาร: ยกมา = หัว statement ที่เริ่มวันที่ 1 ของเดือน · ยกไป = หัว statement/จุดยอด ล่าสุดในเดือน (อาจไม่ใช่สิ้นเดือน เช่น บัตรตัดรอบ) */
+        const hStart = (data.headers || []).find(h => h.period_from === from && h.opening != null);
+        const openBank = hStart ? r2(hStart.opening) : null;
+        const bankEnd = o.bank ? disp(o, o.bank.balance) : null;
+        /* ยอดในระบบ ณ วันที่ธนาคาร: สิ้นเดือน = ยอดท้ายตาราง · ระหว่างเดือน (บัตรตัดรอบ) = ยอดของบรรทัดสุดท้ายถึงวันนั้น */
+        const sysAtBank = !o.bank ? null : o.bank.as_of >= to ? closeSys : (rows.filter(r => r.date <= o.bank.as_of).pop()?._run ?? openSys);
+        const dOpen = openBank == null ? null : r2(openSys - openBank), dClose = bankEnd == null ? null : r2(sysAtBank - bankEnd);
+        const bad = v => v != null && Math.abs(v) >= 0.01;
+        const net = r2(sumIn + sumOut), inV = isCard ? -sumOut : sumIn, outV = isCard ? sumIn : -sumOut;
+        const cell = (lbl, v) => `<div><small>${lbl}</small><b>${fm(v)}</b></div>`;
+        const months = [-2, -1, 0, 1, 2].map(k2 => shift(S.month, k2));
+        const sign = isCard ? -1 : 1;   // บัตร: ใช้จ่าย = ยอดค้างเพิ่ม
+        el.innerHTML = `
+          <div class="av-dhead"><button class="av-back" onclick="switchView('dashboard')" aria-label="กลับ"><i class="fa-solid fa-arrow-left"></i></button>
+            <div><h2>${esc(accName(o))}</h2><small>${esc([k.lbl, o.bank_name, o.account_number].filter(Boolean).join(' · '))}</small></div></div>
+          <div class="av-months"><button onclick="AccView.open('${esc(o.account_id)}','${shift(S.month, -1)}')" aria-label="เดือนก่อน"><i class="fa-solid fa-chevron-left"></i></button>
+            ${months.map(x => `<button class="${x === S.month ? 'on' : ''}" onclick="AccView.open('${esc(o.account_id)}','${x}')">${mLabel(x)}</button>`).join('')}
+            <button onclick="AccView.open('${esc(o.account_id)}','${shift(S.month, 1)}')" aria-label="เดือนถัดไป"><i class="fa-solid fa-chevron-right"></i></button></div>
+          <div class="av-sum">
+            <div class="av-s av-s-open"><h4><i class="fa-solid fa-wallet"></i> ยอดยกมา <small>${dTh(from)}</small></h4><div class="av-pair">${cell('ในระบบ', openSys)}${cell('ธนาคาร', openBank)}</div></div>
+            <div class="av-s av-s-in"><h4><i class="fa-solid fa-arrow-down"></i> ${isCard ? 'ชำระ/คืนเงิน' : 'รายรับ'} <small>${nIn} รายการ</small></h4><b class="av-pos">${fm(sumIn)}</b></div>
+            <div class="av-s av-s-out"><h4><i class="fa-solid fa-arrow-up"></i> ${isCard ? 'ใช้จ่าย' : 'รายจ่าย'} <small>${nOut} รายการ</small></h4><b class="av-neg">${fm(sumOut)}</b></div>
+            <div class="av-s av-s-close"><h4><i class="fa-solid fa-flag-checkered"></i> ยอดยกไป <small>${o.bank ? 'ธนาคาร ณ ' + dTh(o.bank.as_of) : dTh(to)}</small></h4><div class="av-pair">${cell('ในระบบ', o.bank ? sysAtBank : closeSys)}${cell('ธนาคาร', bankEnd)}</div></div>
+          </div>
+          <div class="av-mid">
+            <div class="av-box av-dn">${donut(inV, outV)}<div class="av-dn-c"><small>${isCard ? 'ยอดค้างเปลี่ยน' : 'รายรับ - รายจ่าย'}</small><b class="${net * sign < 0 ? 'av-neg' : 'av-pos'}">${fm(sign * net)}</b></div>
+              <div class="av-dn-l"><div><i class="av-dot in"></i>${isCard ? 'ชำระ/คืนเงิน' : 'รายรับ'} <b>${fm(isCard ? sumIn : inV)}</b></div><div><i class="av-dot out"></i>${isCard ? 'ใช้จ่าย' : 'รายจ่าย'} <b>${fm(isCard ? -sumOut : outV)}</b></div></div></div>
+            <div class="av-box av-rec ${bad(dOpen) || bad(dClose) || o.missing_lines ? 'bad' : ''}"><h4>สรุปความตรงกัน ${bad(dOpen) || bad(dClose) || o.missing_lines ? '<span class="av-tag bad">ไม่ตรงกัน</span>' : bankEnd != null ? '<span class="av-tag ok">ตรงกัน</span>' : '<span class="av-tag">ยังไม่มียอดธนาคาร</span>'}</h4>
+              <table><thead><tr><th></th><th>ในระบบ</th><th>ธนาคาร</th><th></th></tr></thead><tbody>
+                <tr><td>ยอดยกมา</td><td>${fm(openSys)}</td><td>${fm(openBank)}</td><td>${openBank == null ? '–' : bad(dOpen) ? `<span class="av-neg">ต่าง ${fm(Math.abs(dOpen))}</span>` : '<span class="av-pos">ตรงกัน</span>'}</td></tr>
+                <tr><td>ยอดยกไป${o.bank ? ` <small>(${dTh(o.bank.as_of)})</small>` : ''}</td><td>${fm(o.bank ? sysAtBank : closeSys)}</td><td>${fm(bankEnd)}</td><td>${bankEnd == null ? '–' : bad(dClose) ? `<span class="av-neg">ต่าง ${fm(Math.abs(dClose))}</span>` : '<span class="av-pos">ตรงกัน</span>'}</td></tr>
+              </tbody></table>
+              ${o.missing_lines ? `<p class="av-neg">⚠️ statement มีบรรทัดที่ยังไม่อยู่ในระบบ ${o.missing_lines} บรรทัด — ลองนำเข้าไฟล์เดิมอีกครั้ง ระบบจะเติมเฉพาะที่ขาด</p>` : ''}
+              ${o.n_pending ? `<p>⏳ รอตรวจ ${o.n_pending} รายการ · <a href="#" onclick="switchView('pending');return false">ไปหน้ารอตรวจ ›</a></p>` : ''}</div>
+          </div>
+          <div class="av-txh"><h3>รายการเดินบัญชี <small>${rows.length} รายการ</small></h3>
+            <div class="av-btns"><button class="av-xl" onclick="AccView.excel()"><i class="fa-solid fa-file-excel"></i> ส่งออก Excel</button>
+              <button class="av-pdf" onclick="AccView.pdf()"><i class="fa-solid fa-file-pdf"></i> ส่งออก PDF</button></div></div>
+          <div class="av-tw"><table class="av-tx"><thead><tr><th>วันที่</th><th>รายละเอียด</th><th>หมวดหมู่</th><th class="r">${isCard ? 'ชำระ/คืน' : 'รายรับ'}</th><th class="r">${isCard ? 'ใช้จ่าย' : 'รายจ่าย'}</th>
+              <th class="r">${isCard ? 'ยอดค้าง' : 'คงเหลือ'}<br><small>ในระบบ</small></th><th class="r">${isCard ? 'ยอดค้าง' : 'คงเหลือ'}<br><small>ธนาคาร</small></th><th class="r">ต่าง</th><th>หลักฐาน</th></tr></thead><tbody>
+            <tr class="av-ob"><td>${dTh(from)}</td><td colspan="4"><b>ยอดยกมา</b></td><td class="r">${fm(openSys)}</td><td class="r">${fm(openBank)}</td><td class="r">${dOpen == null ? '' : fm(dOpen)}</td><td></td></tr>
+            ${rows.map(r => `<tr class="${r._flag === 'start' ? 'av-bad' : r._flag ? 'av-warnrow' : ''}${r.status === 'PENDING_REVIEW' ? ' av-pendrow' : ''}" title="${esc((r._notes || []).join(' · '))}">
+              <td>${dTh(r.date)}${r.time && r.time !== '00:00:00' ? `<br><small>${String(r.time).slice(0, 5)}</small>` : ''}</td>
+              <td><b>${esc(r.notes || r.statement_desc || '-')}</b>${r.notes && r.statement_desc ? `<br><small>${esc(r.statement_desc)}</small>` : ''}${r.status === 'PENDING_REVIEW' ? ' <span class="av-chip">รอตรวจ</span>' : ''}${(r._notes || []).filter(n => n.startsWith('⚠️') || n.startsWith('🔁')).map(n => `<br><small class="av-neg">${esc(n)}</small>`).join('')}</td>
+              <td>${esc(String(r.categories || '').replace(/^\s*\[[^\]]+\]\s*/, '') || '–')}</td>
+              <td class="r av-pos">${r.amount > 0 ? fm(r.amount) : ''}</td><td class="r av-neg">${r.amount < 0 ? fm(r.amount) : ''}</td>
+              <td class="r">${fm(r._run)}</td><td class="r">${r._bank == null ? '' : fm(r._bank)}</td><td class="r ${bad(r._diff) ? 'av-neg' : ''}">${r._diff == null ? '' : fm(r._diff)}${r._flag === 'start' ? ' ⚠️' : ''}</td>
+              <td>${r.has_slip ? '<span class="av-slip" title="มีสลิป/หลักฐาน"><i class="fa-solid fa-receipt"></i></span>' : ''}</td></tr>`).join('')}
+            <tr class="av-ob"><td>${dTh(to)}</td><td colspan="2"><b>ยอดยกไป</b></td><td class="r av-pos">${fm(sumIn)}</td><td class="r av-neg">${fm(sumOut)}</td><td class="r">${fm(closeSys)}</td><td class="r">${o.bank && o.bank.as_of === to ? fm(bankEnd) : ''}</td><td class="r">${o.bank && o.bank.as_of === to && dClose != null ? fm(dClose) : ''}</td><td></td></tr>
+          </tbody></table></div>
+          <div class="av-list">${rows.map(r => `<div class="av-li ${r._flag === 'start' ? 'av-bad' : r._flag ? 'av-warnrow' : ''}">
+              <div class="av-li-d">${dTh(r.date)}</div>
+              <div class="av-li-t"><b>${esc(r.notes || r.statement_desc || '-')}</b><small>${esc(String(r.categories || '').replace(/^\s*\[[^\]]+\]\s*/, '') || '')}${r.status === 'PENDING_REVIEW' ? ' · รอตรวจ' : ''}${r.has_slip ? ' · 🧾' : ''}</small>
+                ${(r._notes || []).filter(n => n.startsWith('⚠️') || n.startsWith('🔁')).map(n => `<small class="av-neg">${esc(n)}</small>`).join('')}</div>
+              <div class="av-li-a"><b class="${r.amount < 0 ? 'av-neg' : 'av-pos'}">${fm(r.amount)}</b><small>${fm(r._run)}${r._bank != null && bad(r._diff) ? ` · ธ. ${fm(r._bank)}` : ''}</small></div></div>`).join('')}</div>
+          ${rows.length ? '' : '<div class="av-mute" style="padding:16px;text-align:center">ไม่มีรายการในเดือนนี้</div>'}`;
+    }
+    const pack = () => S.detail ? { reports: [S.detail.res], from: S.detail.from, to: S.detail.to } : null;
+    return {
+        home, open,
+        excel: () => { const p = pack(); if (p) StmtReport.excel(p); },
+        pdf: () => { const p = pack(); if (p) StmtReport.pdf(p); },
+        _shift: k => shift(S.month || new Date().toISOString().slice(0, 7), k),
+        _state: S
+    };
+})();

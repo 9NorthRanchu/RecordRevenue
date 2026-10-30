@@ -8,6 +8,7 @@ import { verifyPassword, upgradeStoredPassword, hashPassword, isHashed } from '.
 import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSessions } from './session.js';
 import { handleStmtReport, ensureStmtCols, stmtFields, cleanupStatementHeaders } from './stmt-report.js';
 import { handleRevenueChart } from './revenue-chart.js';
+import { handleAccOverview } from './acc-overview.js';
 // backend/src/index.js
 
 export default {
@@ -136,6 +137,7 @@ export default {
       { const sr = await handleStmtReport({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny }); if (sr) return sr; }
       /* 👥 ผังเก็บรายได้ BKP → จับเงินเข้า (2026-10-30 · revenue-chart.js) */
       { const rc = await handleRevenueChart({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny }); if (rc) return rc; }
+      { const ao = await handleAccOverview({ url, request, env, cors: corsHeaders, authUserId }); if (ao) return ao; }   // 🏦 ภาพรวมตามบัญชี (2026-10-30)
 
       // 2. OCR Test Endpoint (Direct Web Upload)
       if (url.pathname === '/api/slip-ocr' && request.method === 'POST') {
