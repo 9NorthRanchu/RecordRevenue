@@ -165,4 +165,13 @@ r = await call('/api/statements/sync', { user: 'Other', method: 'POST', body: { 
 /* หัว statement: ช่วงวันที่เปลี่ยน (รอบบัตร) แต่ยกไปเท่าเดิม → ใช้หัวเดิม */
 r = await H('C01', '2026-04-20', '2026-05-18', 0, 268);
 check('หัวเดิมช่วงวันที่ทับกัน + ยกไปเท่ากัน → ใช้ id เดิม', r.j.stmt_id === cs && r.j.reused, r.j);
+/* ซื้อ 1,139 กับคืนเงิน -1,139 วันเดียวกัน ร้านเดียวกัน (2026-10-30 ไฟล์ 260620) → ต้องได้ทั้ง 2 แถว · นำเข้าซ้ำด้วยรหัสเดิม → ข้าม ไม่ทับ */
+const pair = (id, amt) => call('/api/transactions', { user: '9North', method: 'POST', body: { transaction_id: id, account_id: 'C01', date: '2026-05-20', time: '00:00:00', statement_desc: '(FOR SHOPEE) BANGKOK', total_amount: amt,
+  status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true, stmt_id: cs, dup_idx: 0, details: [{ amount: amt, category_id: null, type: amt < 0 ? 'EXPENSE' : 'INCOME' }] } });
+const n1139 = () => db.prepare(`SELECT COUNT(*) n FROM Transactions WHERE account_id='C01' AND ABS(total_amount)=1139`).get().n;
+r = await pair('BUY1139', -1139); const rr = await pair('REF1139', 1139);
+check('ซื้อ/คืนเงินยอดเท่ากันวันเดียวกัน → ได้ทั้ง 2 แถว', !r.j.skipped && !rr.j.skipped && n1139() === 2, [r.j, rr.j]);
+db.prepare(`UPDATE TransactionDetails SET category_id='T01' WHERE transaction_id='BUY1139'`).run();
+r = await pair('BUY1139', -1139);
+check('นำเข้าซ้ำรหัสเดิม → ข้าม ไม่ล้างหมวดที่ตั้งไว้', r.j.skipped && n1139() === 2 && db.prepare(`SELECT category_id c FROM TransactionDetails WHERE transaction_id='BUY1139'`).get().c === 'T01', r.j);
 console.log(`stmt-report: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);

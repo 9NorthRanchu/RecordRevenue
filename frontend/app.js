@@ -7477,7 +7477,8 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
         while (queue.length) {
             const tx = queue.shift();
             const payload = {
-                transaction_id: generateTxId(tx.date, accId, tx.amount, 'PDF', { refCode: tx.ref_code, statementDesc: tx.statement_desc, time: tx.time }),
+                /* 2026-10-30: รหัสต้องแยก ซื้อ/คืนเงิน (ยอดเท่ากัน วันเดียวกัน) และบรรทัดที่เหมือนกันทุกช่อง (ลำดับ _1,_2) — เดิมรหัสชนกันแล้วบันทึกทับ (1,139 / -1,139 หายไป 1 แถว) */
+                transaction_id: generateTxId(tx.date, accId, tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), 'PDF', { refCode: tx.ref_code, statementDesc: tx.statement_desc, time: tx.time }) + ((dupIdx.get(tx) || 0) ? '_' + dupIdx.get(tx) : ''),
                 // ยอดติดเครื่องหมายตามจริง (จ่าย = ลบ) ให้ตรงกับรายการจาก LINE/ที่บันทึกแล้ว · match_existing = จับคู่สลิปที่บันทึกไว้ก่อน (2026-10-15)
                 account_id: accId, date: tx.date, time: tx.time, statement_desc: tx.statement_desc, total_amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), ref_code: tx.ref_code,
                 status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true,
