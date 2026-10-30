@@ -5349,6 +5349,7 @@ async function loadDebtor() {
 // 📊 LOAD VIEW: FINANCIAL REPORTS
 // ==========================================
 function loadReports() {
+    try { RepHome.load(); } catch (e) { console.warn(e); }   // 📊 รายงานแบบ B (2026-10-30)
     // Populate entities select
     const tbEntitySelect = document.getElementById("report-tb-entity");
     tbEntitySelect.innerHTML = '';
@@ -15334,7 +15335,7 @@ const AccView = (() => {
     const show = () => {
         if (document.getElementById('app-ver')) return;
         const el = document.createElement('div'); el.id = 'app-ver'; el.textContent = 'v' + mine;
-        el.style.cssText = 'position:fixed;left:8px;bottom:6px;z-index:9999;font-size:11px;padding:2px 7px;border-radius:8px;background:rgba(95,61,196,.12);color:#5F3DC4;font-family:sans-serif;pointer-events:auto;cursor:default';
+        el.style.cssText = 'position:fixed;right:8px;bottom:6px;z-index:9999;font-size:11px;padding:2px 7px;border-radius:8px;background:rgba(95,61,196,.12);color:#5F3DC4;font-family:sans-serif;pointer-events:auto;cursor:default';
         if (innerWidth <= 768) el.style.bottom = '74px';   // มือถือ: อยู่เหนือแถบเมนูล่าง
         document.body.appendChild(el);
         check(); setInterval(check, 5 * 60 * 1000);   // แท็บที่เปิดค้างไว้นาน ๆ ก็รู้ว่ามีเวอร์ชันใหม่
@@ -15350,4 +15351,133 @@ const AccView = (() => {
         }).catch(() => {});
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+})();
+
+// ═══════════════════════════════════════════════════════════════════════
+// 📊 หน้ารายงานแบบ B (2026-10-30 · North เลือก "B. โดนัท + ตาราง" · mockup 010-รายงาน-B / 010-4 iPad)
+//  ส่วนบน: รายจ่ายตามหมวด + รายรับตามหมวด (โดนัท + ตาราง จำนวนเงิน/สัดส่วน) · เลือก เดือน/ปี/ทั้งหมด
+//  การ์ดรายงาน 4 ใบ (Excel / PDF): ยอดสะสม statement · ภาษีหัก ณ ที่จ่าย · งบทดลอง · รายรับ-รายจ่าย
+//  ข้อมูล: /api/dashboard/summary (ชุดเดียวกับหน้าภาพรวม) · รายงานเดิมใช้ปุ่ม/ตารางเดิมของแต่ละแท็บ
+// ═══════════════════════════════════════════════════════════════════════
+const RepHome = (() => {
+    const S = { period: 'month', month: null, data: null };
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+    const fm = n => { const v = r2(n), t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const MTH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const OUT = ['#FA5252', '#FF922B', '#FCC419', '#7950F2', '#339AF0', '#40C057', '#ADB5BD'], INC = ['#40C057', '#339AF0', '#FCC419', '#ADB5BD', '#CED4DA', '#7950F2', '#E9ECEF'];
+    const clean = n => String(n || '-').replace(/^\s*\[[^\]]+\]\s*/, '');
+    const label = () => { if (S.period === 'all') return 'ทั้งหมด'; const [y, m] = (S.month || '').split('-').map(Number); return S.period === 'year' ? `ปี ${y + 543}` : `${MTH[m - 1]} ${y + 543}`; };
+    const shift = k => { const [y, m] = S.month.split('-').map(Number); const d = S.period === 'year' ? new Date(Date.UTC(y + k, m - 1, 1)) : new Date(Date.UTC(y, m - 1 + k, 1)); S.month = d.toISOString().slice(0, 7); load(); };
+    function groups(rows, sign) {
+        const m = new Map();
+        for (const x of rows || []) { const k = x.category_id || x.category_name || '-'; const g = m.get(k) || { name: clean(x.category_name || x.category_id), sum: 0, n: 0 }; g.sum += Math.abs(Number(x.amount) || 0); g.n++; m.set(k, g); }
+        let list = [...m.values()].sort((a, b) => b.sum - a.sum);
+        if (list.length > 7) { const rest = list.slice(6); list = list.slice(0, 6).concat({ name: 'อื่น ๆ', sum: rest.reduce((t, g) => t + g.sum, 0), n: rest.reduce((t, g) => t + g.n, 0) }); }
+        const tot = list.reduce((t, g) => t + g.sum, 0);
+        return { list: list.map(g => ({ ...g, sum: r2(g.sum) * sign, pct: tot ? g.sum / tot * 100 : 0 })), tot: r2(tot) * sign };
+    }
+    function donut(list, colors, center, cls) {
+        const R = 52, C = 2 * Math.PI * R; let off = 0;
+        const segs = list.map((g, i) => { const len = C * g.pct / 100; const s = `<circle cx="70" cy="70" r="${R}" fill="none" stroke="${colors[i % colors.length]}" stroke-width="20" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 70 70)"/>`; off += len; return s; }).join('');
+        return `<div class="rb-donut"><svg viewBox="0 0 140 140">${list.length ? segs : `<circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--rb-soft)" stroke-width="20"/>`}</svg>
+          <div class="rb-dc"><small>${center[0]}</small><b class="${cls}">${center[1]}</b><small>บาท</small></div></div>`;
+    }
+    function panel(title, ico, cls, g, colors) {
+        return `<div class="rb-panel"><h3><span class="rb-hi ${cls}"><i class="fa-solid ${ico}"></i></span>${title}</h3>
+          <div class="rb-body">${donut(g.list, colors, [cls === 'out' ? 'รวมรายจ่าย' : 'รวมรายรับ', fm(g.tot)], cls === 'out' ? 'rb-neg' : 'rb-pos')}
+            <table class="rb-tbl"><thead><tr><th>หมวดหมู่</th><th class="r">จำนวนเงิน (บาท)</th><th class="r">สัดส่วน</th></tr></thead><tbody>
+            ${g.list.map((x, i) => `<tr><td><i class="rb-dot" style="background:${colors[i % colors.length]}"></i>${esc(x.name)}</td><td class="r ${cls === 'out' ? 'rb-neg' : 'rb-pos'}">${fm(x.sum)}</td><td class="r">${x.pct.toFixed(2)}%</td></tr>`).join('')
+              || '<tr><td colspan="3" class="rb-mute">ไม่มีรายการ</td></tr>'}</tbody></table></div></div>`;
+    }
+    const CARDS = [
+        { k: 'stmt', ico: 'fa-book', cls: 'c1', t: 'ยอดสะสม statement', d: 'ยอดคงเหลือรายบรรทัด เทียบธนาคาร หารายการที่ขาด' },
+        { k: 'wht', ico: 'fa-percent', cls: 'c2', t: 'ภาษีหัก ณ ที่จ่าย', d: 'สรุปรายการภาษีหัก ณ ที่จ่ายรายเดือน' },
+        { k: 'tb', ico: 'fa-scale-balanced', cls: 'c3', t: 'งบทดลอง', d: 'ยอดคงเหลือทุกบัญชีแยกประเภท' },
+        { k: 'ie', ico: 'fa-chart-column', cls: 'c4', t: 'รายรับ-รายจ่าย', d: 'สรุปรายรับและรายจ่ายตามหมวด ช่วงที่เลือก' }];
+    function render() {
+        const el = document.getElementById('rep-home'); if (!el) return;
+        const d = S.data || {}, out = groups(d.expense, -1), inc = groups(d.income, 1);
+        const chip = (k, t) => `<button class="${S.period === k ? 'on' : ''}" onclick="RepHome.period('${k}')">${t}</button>`;
+        el.innerHTML = `<div class="rb-top"><h2>รายงาน</h2><div class="rb-per">${chip('month', 'รายเดือน')}${chip('year', 'รายปี')}${chip('all', 'ทั้งหมด')}
+            ${S.period === 'all' ? '' : `<span class="rb-nav"><button onclick="RepHome.shift(-1)" aria-label="ก่อนหน้า"><i class="fa-solid fa-chevron-left"></i></button><b>${label()}</b><button onclick="RepHome.shift(1)" aria-label="ถัดไป"><i class="fa-solid fa-chevron-right"></i></button></span>`}</div></div>
+          <div class="rb-two">${panel('รายจ่ายตามหมวดหมู่', 'fa-arrow-up', 'out', out, OUT)}${panel('รายรับตามหมวดหมู่', 'fa-arrow-down', 'in', inc, INC)}</div>
+          <div class="rb-cards">${CARDS.map(c => `<div class="rb-card"><div class="rb-ch"><span class="rb-ci ${c.cls}"><i class="fa-solid ${c.ico}"></i></span><b>${c.t}</b></div>
+            <p>${c.d}</p><div class="rb-btns"><button class="rb-x" onclick="RepHome.exp('${c.k}','xlsx')"><i class="fa-solid fa-file-excel"></i> Excel</button>
+            <button class="rb-p" onclick="RepHome.exp('${c.k}','pdf')"><i class="fa-solid fa-file-pdf"></i> PDF</button></div>
+            <a href="#" class="rb-open" onclick="RepHome.open('${c.k}');return false">ดูในหน้า ›</a></div>`).join('')}</div>`;
+    }
+    async function load() {
+        const el = document.getElementById('rep-home'); if (!el) return;
+        if (!S.month) S.month = DashState?.year && DashState?.month ? `${DashState.year}-${DashState.month}` : new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
+        if (!S.data) el.innerHTML = '<div class="rb-mute" style="padding:20px">กำลังโหลด…</div>';
+        try {
+            const r = await fetch(`${API_BASE}/api/dashboard/summary?month=${S.month}&period=${S.period}&member=ALL`, { headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) } });
+            const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status);
+            S.data = j; if (j.month && /^\d{4}-\d{2}$/.test(j.month)) S.month = j.month;
+            render();
+        } catch (e) { el.innerHTML = `<div class="rb-mute" style="padding:20px">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
+    }
+    /* เปิดแท็บรายงานเดิมข้างล่าง */
+    function open(k) {
+        if (k === 'ie') { document.getElementById('rep-home')?.scrollIntoView({ behavior: 'smooth' }); return; }
+        document.querySelector(`.report-tab[data-report="${k}"]`)?.click();
+        document.querySelector('.reports-tabs')?.scrollIntoView({ behavior: 'smooth' });
+    }
+    /* ── ส่งออกตาราง HTML เป็น Excel / PDF ── */
+    function tableRows(tbl) { return [...tbl.querySelectorAll('tr')].map(tr => [...tr.children].map(td => td.innerText.replace(/\s+/g, ' ').trim())); }
+    function toXlsx(sheets, file) {
+        const XL = (typeof XLSXStyle !== 'undefined') ? XLSXStyle : (typeof XLSX !== 'undefined' ? XLSX : null);
+        if (!XL) { alert('ไม่พบไลบรารีส่งออกไฟล์ กรุณารีเฟรชหน้าเว็บ'); return; }
+        const wb = XL.utils.book_new();
+        for (const [name, rows] of sheets) {
+            const data = rows.map(r => r.map(v => { const s = String(v ?? ''), m = /^\(?-?[\d,]+\.\d{2}\)?$/.test(s) ? s : null; if (!m) return s; const n = Number(s.replace(/[(),]/g, '')); return /^\(/.test(s) ? -n : n; }));
+            const ws = XL.utils.aoa_to_sheet(data);
+            ws['!cols'] = (data[0] || []).map((_, i) => ({ wch: Math.min(48, Math.max(10, ...data.map(r => String(r[i] ?? '').length + 2))) }));
+            for (const k of Object.keys(ws)) if (k[0] !== '!' && typeof ws[k].v === 'number') ws[k].z = '#,##0.00_);[Red](#,##0.00)';
+            XL.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+        }
+        XL.writeFile(wb, file);
+    }
+    function toPdf(w, title, sub, tables) {
+        if (!w) return;
+        const body = tables.map(([h, rows]) => `<h2>${esc(h)}</h2><table>${rows.map((r, i) => `<tr>${r.map(v => i === 0 ? `<th>${esc(v)}</th>` : `<td class="${/^\(?-?[\d,]+\.\d{2}\)?%?$|^[\d.]+%$/.test(v) ? 'r' : ''}${/^\(/.test(v) ? ' neg' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</table>`).join('');
+        w.document.open();
+        w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet"><style>
+@page{size:A4;margin:12mm}body{font-family:'Sarabun',sans-serif;color:#1d1b2e;margin:0;padding:16px;font-size:12px}h1{font-size:18px;color:#5F3DC4;margin:0 0 4px}h2{font-size:14px;color:#5F3DC4;margin:14px 0 6px}
+.sub{color:#5C5872;margin:0 0 10px}table{width:100%;border-collapse:collapse}th{background:#5F3DC4;color:#fff;padding:6px;border:1px solid #D9D2F5;font-weight:600}td{padding:5px 6px;border:1px solid #E5E0F7}
+td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.neg{color:#E03131}.bar{text-align:right;margin-bottom:8px}.bar button{font-family:inherit;padding:8px 16px;border:0;border-radius:8px;background:#5F3DC4;color:#fff}
+@media print{.bar{display:none}body{padding:0}}</style></head><body><div class="bar"><button onclick="window.print()">🖨️ พิมพ์ / บันทึกเป็น PDF</button></div>
+<h1>${esc(title)}</h1><p class="sub">${esc(sub)}</p>${body}</body></html>`);
+        w.document.close();
+    }
+    const ieTables = () => { const d = S.data || {}, o = groups(d.expense, -1), i = groups(d.income, 1);
+        const t = (g) => [['หมวดหมู่', 'จำนวนเงิน (บาท)', 'สัดส่วน'], ...g.list.map(x => [x.name, fm(x.sum), x.pct.toFixed(2) + '%']), ['รวม', fm(g.tot), '100.00%']];
+        return [['รายรับตามหมวดหมู่', t(i)], ['รายจ่ายตามหมวดหมู่', t(o)], ['สรุป', [['รายการ', 'จำนวนเงิน (บาท)'], ['รายรับรวม', fm(i.tot)], ['รายจ่ายรวม', fm(o.tot)], ['รายรับ - รายจ่าย', fm(i.tot + o.tot)]]]]; };
+    async function exp(k, kind) {
+        const w = kind === 'pdf' ? window.open('', '_blank') : null;   // iPhone: เปิดหน้าต่างทันทีตอนกด
+        if (kind === 'pdf' && !w) { alert('เบราว์เซอร์บล็อกป๊อปอัป — กรุณาอนุญาตแล้วลองใหม่'); return; }
+        if (w) w.document.write('<p style="font-family:sans-serif;padding:20px">⏳ กำลังสร้างรายงาน…</p>');
+        try {
+            if (k === 'ie') {
+                if (kind === 'xlsx') toXlsx(ieTables(), `income-expense_${S.period === 'all' ? 'all' : S.period === 'year' ? S.month.slice(0, 4) : S.month}.xlsx`); else toPdf(w, 'รายงานรายรับ-รายจ่าย', label(), ieTables());
+            } else if (k === 'stmt') {
+                if (w) w.close();
+                open('stmt'); StmtReport.init();
+                document.getElementById(kind === 'xlsx' ? 'sr-xlsx' : 'sr-pdf')?.click();
+            } else if (k === 'wht') {
+                document.querySelector('.report-tab[data-report="wht"]')?.click(); await runWhtReport();
+                const tbl = document.getElementById('wht-report-body')?.closest('table'), month = document.getElementById('report-wht-month')?.value || '';
+                const rows = tbl ? tableRows(tbl) : [];
+                if (kind === 'xlsx') toXlsx([['ภาษีหัก ณ ที่จ่าย', rows]], `WHT_${month || 'report'}.xlsx`); else toPdf(w, 'รายงานภาษีหัก ณ ที่จ่าย', 'เดือน ' + month, [['รายการ', rows]]);
+            } else if (k === 'tb') {
+                document.querySelector('.report-tab[data-report="tb"]')?.click(); await runTrialBalanceReport();
+                const tbl = document.getElementById('tb-report-body')?.closest('table'), ent = document.getElementById('report-tb-entity');
+                const rows = tbl ? tableRows(tbl) : [], who = ent?.selectedOptions?.[0]?.text || '';
+                if (kind === 'xlsx') toXlsx([['งบทดลอง', rows]], `trial-balance_${new Date().toISOString().slice(0, 10)}.xlsx`); else toPdf(w, 'งบทดลอง', who, [['งบทดลอง', rows]]);
+            }
+        } catch (e) { if (w) w.close(); alert('ส่งออกไม่สำเร็จ: ' + e.message); }
+    }
+    return { load, render, exp, open, shift, period: p => { S.period = p; load(); } };
 })();

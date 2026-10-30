@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=129">
-    <link rel="stylesheet" href="ui-a.css?v=17">
+    <link rel="stylesheet" href="ui-a.css?v=18">
     <!-- ⚡ 2026-10-30: ไลบรารีทั้งหมดย้ายไปท้ายหน้า + defer → หน้าขึ้นก่อน ไม่ต้องรอดาวน์โหลด ~2MB -->
 </head>
 <body>
@@ -79,15 +79,17 @@
                 <nav class="sidebar-nav">
                     <!-- 2026-10-12 (North): กลับไปใช้แอปเดิมเป็นหลักทั้งหมด — ยกเครื่องโดยปรับปรุงหน้าเดิม ไม่สร้างหน้าใหม่
                          เมนูชุดนี้ = แบบก่อนมีหน้า ledger/* (commit 6e15ef6^) -->
-                    <a href="#" class="nav-item active" data-target="dashboard"><i class="fa-solid fa-chart-line"></i> <span>ภาพรวมแผงควบคุม</span></a>
-                    <a href="#" class="nav-item" data-target="pending"><i class="fa-solid fa-clock-rotate-left"></i> <span>รอตรวจสอบ</span> <span id="badge-pending" class="badge">0</span></a>
-                    <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-file-invoice-dollar"></i> <span>ประวัติธุรกรรม</span></a>
-                    <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i> <span>ทะเบียนลูกหนี้/เจ้าหนี้</span></a>
-                    <a href="#" class="nav-item" data-target="cards"><i class="fa-solid fa-credit-card"></i> <span>บัตร & เงินกู้</span></a>
-                    <a href="#" class="nav-item" data-target="assets"><i class="fa-solid fa-box-archive"></i> <span>ทรัพย์สิน</span></a>
-                    <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link"><i class="fa-solid fa-wand-sparkles"></i> <span>Enjoy Life Trip</span><small>ข้อมูลจริง</small></a>
-                    <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-pie"></i> <span>รายงานทางการเงิน</span></a>
-                    <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gears"></i> <span>ตั้งค่าระบบ</span></a>
+                    <!-- 2026-10-30 · แนวคิด ข: เมนูหลัก 6 หน้า (ภาพรวม · รอตรวจ · ประวัติ · ลูกหนี้/เจ้าหนี้ · รายงาน · ตั้งค่า) + "อื่น ๆ" ด้านล่าง -->
+                    <a href="#" class="nav-item active" data-target="dashboard"><i class="fa-solid fa-house"></i> <span>ภาพรวม</span></a>
+                    <a href="#" class="nav-item" data-target="pending"><i class="fa-solid fa-clipboard-check"></i> <span>รอตรวจ</span> <span id="badge-pending" class="badge">0</span></a>
+                    <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-clock-rotate-left"></i> <span>ประวัติ</span></a>
+                    <a href="#" class="nav-item" data-target="debtor"><i class="fa-solid fa-user-group"></i> <span>ลูกหนี้/เจ้าหนี้</span></a>
+                    <a href="#" class="nav-item" data-target="reports"><i class="fa-solid fa-chart-column"></i> <span>รายงาน</span></a>
+                    <a href="#" class="nav-item" data-target="settings"><i class="fa-solid fa-gear"></i> <span>ตั้งค่า</span></a>
+                    <div class="nav-sep"><span>อื่น ๆ</span></div>
+                    <a href="#" class="nav-item nav-minor" data-target="cards"><i class="fa-solid fa-credit-card"></i> <span>บัตร & เงินกู้</span></a>
+                    <a href="#" class="nav-item nav-minor" data-target="assets"><i class="fa-solid fa-box-archive"></i> <span>ทรัพย์สิน</span></a>
+                    <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link nav-minor"><i class="fa-solid fa-plane"></i> <span>ทริป</span></a>
                 </nav>
                 <!-- QR Code Box in Sidebar -->
                 <div class="sidebar-qr-box admin-only hidden" style="margin: 20px 15px; padding: 12px; background: rgba(255, 255, 255, 0.4); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.5); text-align: center; font-size: 0.85rem;">
@@ -528,6 +530,7 @@
 
                 <!-- 6. Reports View -->
                 <section id="view-reports" class="content-view hidden">
+                    <div id="rep-home"></div>   <!-- 📊 รายงานแบบ B: โดนัท + ตาราง + การ์ดรายงาน 4 ใบ (2026-10-30) -->
                     <div class="reports-tabs">
                         <button class="report-tab active" data-report="wht"><span class="rt-ic" style="background:rgba(240,82,82,.12);color:#E03131">%</span><span class="rt-tx"><b>ภาษีหัก ณ ที่จ่าย</b><small>สรุปรายการภาษี (WHT)</small></span></button>
                         <button class="report-tab" data-report="tb"><span class="rt-ic" style="background:rgba(121,80,242,.13);color:#6D4AE0"><i class="fa-solid fa-scale-balanced"></i></span><span class="rt-tx"><b>งบทดลอง</b><small>ยอดคงเหลือทุกบัญชี (Trial Balance)</small></span></button>
@@ -1737,7 +1740,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script defer src="travel.js?v=105"></script>
-    <script defer src="app.js?v=219"></script>
+    <script defer src="app.js?v=220"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">
