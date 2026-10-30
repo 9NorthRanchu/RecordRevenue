@@ -397,7 +397,10 @@ export default {
                   AND ABS(ABS(total_amount) - ABS(?)) < 0.01
                   AND (statement_desc = ? OR (statement_desc IS NULL AND ? IS NULL))
                   AND transaction_id != ?
-              `).bind(account_id, date, time||null, time||null, total_amount, statement_desc||null, statement_desc||null, selfId).first();
+                  /* 2026-10-30: บรรทัดอื่นใน statement เดียวกัน (ลำดับต่างกัน) ไม่ใช่รายการซ้ำ — ใบแจ้งยอดบัตรไม่มีเวลา
+                     ซื้อร้านเดิม ยอดเท่ากัน วันเดียวกัน 2 ครั้ง เคยถูกข้ามเป็น "ซ้ำ" */
+                  AND NOT (? IS NOT NULL AND stmt_id = ? AND stmt_seq IS NOT NULL AND stmt_seq != ?)
+              `).bind(account_id, date, time||null, time||null, total_amount, statement_desc||null, statement_desc||null, selfId, stmt.stmt_id, stmt.stmt_id, stmt.stmt_seq ?? -1).first();
             }
             /* จับคู่กับสลิป/รายการที่บันทึกไว้ก่อน (2026-10-15 · North: "สลิป รอ match กับ statement")
                บรรทัด statement ที่ยอด+บัญชีตรงกับรายการจาก LINE/พิมพ์เอง ภายใน ±3 วัน → ไม่สร้างใหม่ (กันซ้ำ)

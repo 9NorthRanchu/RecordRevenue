@@ -146,4 +146,13 @@ check('ลบทั้งชุด → หัว statement หาย', r.j.delet
 check('จุดตรวจยอดจาก statement หาย (ที่ใส่เองยังอยู่)', !db.prepare(`SELECT 1 FROM AccountCheckpoints WHERE account_id='A09' AND as_of='2025-12-20'`).get() && db.prepare(`SELECT 1 FROM AccountCheckpoints WHERE account_id='A09' AND as_of='2026-01-31'`).get());
 r = await H('A09', '2025-10-01', '2025-10-31', 1, 2);
 r = await call('/api/statements/delete', { user: '9North', method: 'POST', body: { stmt_id: r.j.stmt_id } }); check('ลบหัวว่างเอง', r.s === 200 && r.j.removed === 1, r);
+
+/* ใบแจ้งยอดบัตร: ร้านเดิม ยอดเท่ากัน วันเดียวกัน 2 บรรทัด (ไม่มีเวลา) → ต้องได้ทั้ง 2 · นำเข้าไฟล์เดิมซ้ำ → ไม่เพิ่ม */
+r = await H('C01', '2026-04-21', '2026-05-20', 0, 268); const cs = r.j.stmt_id;
+const cardLine = (id, seq) => call('/api/transactions', { user: '9North', method: 'POST', body: { transaction_id: id, account_id: 'C01', date: '2026-05-13', time: '00:00:00', statement_desc: '(FOR SHOPEE) BANGKOK', total_amount: -134,
+  status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true, stmt_id: cs, stmt_seq: seq, details: [{ amount: -134, category_id: null, type: 'EXPENSE' }] } });
+r = await cardLine('CA1', 5); r = await cardLine('CA2', 6);
+check('บรรทัดเหมือนกัน 2 บรรทัดใน statement เดียวกัน → ได้ทั้งคู่', !r.j.skipped && db.prepare(`SELECT COUNT(*) n FROM Transactions WHERE account_id='C01' AND total_amount=-134`).get().n === 2, r.j);
+r = await cardLine('CA3', 5);
+check('นำเข้าไฟล์เดิมซ้ำ → บรรทัดเดิมถูกข้าม', r.j.skipped && db.prepare(`SELECT COUNT(*) n FROM Transactions WHERE account_id='C01' AND total_amount=-134`).get().n === 2, r.j);
 console.log(`stmt-report: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);
