@@ -7116,12 +7116,12 @@ async function parseCardStatement(pdf) {
   const r2 = n => Math.round(n * 100) / 100;
   /* ปี 2 หลัก: < 60 = ค.ศ. (25 → 2025) · ≥ 60 = พ.ศ. (68 → 2025) · ปี 4 หลัก พ.ศ. → ลบ 543 */
   const iso = (d, m, y) => { let yy = +y; if (yy < 100) yy = yy >= 60 ? 2500 + yy - 543 : 2000 + yy; if (yy > 2400) yy -= 543; return `${yy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
-  const cards = [], byKey = {}, loose = []; let cur = null, stmtDate = null, allText = '', wantStmtDate = false;
+  const cards = [], byKey = {}, loose = []; let cur = null, stmtDate = null, allText = '', wantStmtDate = false, postFirst = false;
   const cardOf = m => { const key = m[3], masked = `${m[1]} ${m[2]}XX XXXX ${m[3]}`; if (!byKey[key]) { byKey[key] = { masked, last4: key, type: '', opening: null, closing: null, rows: [] }; cards.push(byKey[key]); } return byKey[key]; };
   for (let p = 1; p <= pdf.numPages; p++) {
     const tc = await (await pdf.getPage(p)).getTextContent();
     /* ขีดดำขอบกระดาษ (เครื่องหมายเครื่องพิมพ์) ถูกเก็บเป็นตัวอักษร "l"/"ll" อยู่บรรทัดเดียวกับรายการ → ตัดทิ้ง ไม่งั้นบรรทัดไม่ขึ้นต้นด้วยวันที่แล้วถูกข้าม (2026-10-30 · 13/05/26 134.00 หาย) */
-    const items = tc.items.filter(it => it.str && it.str.trim() && !/^[lI|]{1,4}$/.test(it.str.trim())).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim() }));
+    const items = tc.items.filter(it => it.str && it.str.trim() && !/^[lI|]{1,4}$/.test(it.str.trim())).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim(), r: it.transform[4] + (it.width || 0) }));
     items.sort((a, b) => b.y - a.y || a.x - b.x);
     const lines = [];
     for (const it of items) { const L = lines.find(l => Math.abs(l.y - it.y) <= 2.5); if (L) L.items.push(it); else lines.push({ y: it.y, items: [it] }); }
@@ -7129,6 +7129,8 @@ async function parseCardStatement(pdf) {
     for (const L of lines) {
       L.items.sort((a, b) => a.x - b.x);
       const text = L.items.map(i => i.s).join(' '); allText += text + '\n';
+      /* 2026-10-30 · CardX: คอลัมน์แรก = วันที่บันทึก (POSTING) คอลัมน์สอง = วันที่เกิดรายการ → ใช้คอลัมน์สอง (KBank กลับกัน) */
+      { const pi = L.items.find(i => /^POSTING/i.test(i.s)), ti = L.items.find(i => /^TRANS(ACTION)?$|^TRANS\b/i.test(i.s)); if (pi && ti) postFirst = pi.x < ti.x; }
       const money = L.items.filter(i => MONEY.test(i.s)), dates = L.items.filter(i => DATE.test(i.s));
       if (!stmtDate && /STATEMENT DATE|วันที่สรุปยอด/i.test(text) && dates.length) { const d = dates[dates.length - 1].s.match(DATE); stmtDate = iso(d[1], d[2], d[3]); }
       /* CardX: หัวข้อ "CLOSING DATE / วันสรุปยอดบัญชี" อยู่บรรทัดหนึ่ง วันที่อยู่บรรทัดถัดไป (วันแรกในบรรทัด) */
@@ -7146,7 +7148,7 @@ async function parseCardStatement(pdf) {
         const desc = L.items.slice(2).filter(i => i.x < amtIt.x && !MONEY.test(i.s)).map(i => i.s).join(' ').replace(/\s+/g, ' ').trim();
         if (!/[A-Za-zก-๙]/.test(desc) || /x\s*\d+%|ดอกเบี้ย.*=/.test(desc)) continue;
         /* CardX: บรรทัดรับชำระไม่มีเครื่องหมายลบ ("Payment received from Easy App 57,770.73") → เป็นเงินเข้า */
-        const row = { d0: f0, d1: f1, desc, value: r2(v > 0 && /PAYMENT RECEIVED|รับชำระ/i.test(desc) ? -v : v) };
+        const row = { d0: postFirst ? f1 : f0, d1: postFirst ? f0 : f1, desc, value: r2(v > 0 && /PAYMENT RECEIVED|รับชำระ/i.test(desc) ? -v : v), right: amtIt.r, raw: v };
         /* รับแถวเฉพาะในหัวบัตรที่ยังไม่ปิด (หลัง TOTAL BALANCE = ส่วนตัวอย่างคิดดอกเบี้ย/ใบนำฝาก) · ก่อนเจอหัวบัตรแรก = ส่วนรายการชำระ (กรุงศรี) */
         if (cur && cur.closing == null) cur.rows.push(row); else if (!cur && !cards.length) loose.push(row);
       }
@@ -7163,10 +7165,18 @@ async function parseCardStatement(pdf) {
   for (const c of used) {
     c.sum = r2(c.rows.reduce((t, r) => t + r.value, 0));
     c.agree = c.opening != null && c.closing != null ? Math.abs(r2(c.opening + c.sum) - c.closing) < 0.01 : null;
+    /* 2026-10-30 · CardX: เครื่องหมายลบไม่อยู่ในตัวหนังสือ (วาดแยก) แต่ตัวเลขติดลบชิดขวาน้อยกว่าตัวอื่น ~3.4 จุด
+       → ยอดเดินไม่ตรง: ลองกลับเครื่องหมายแถวที่ขอบขวาสั้นกว่าคอลัมน์ · ใช้เฉพาะเมื่อกลับแล้วยอดเดินตรง */
+    if (c.agree === false) {
+      const maxR = Math.max(...c.rows.map(r => r.right || 0));
+      const cand = c.rows.filter(r => r.raw > 0 && r.right && maxR - r.right > 1.5 && maxR - r.right < 8);
+      const trial = c.rows.map(r => cand.includes(r) ? -Math.abs(r.raw) : r.value), sum2 = r2(trial.reduce((t, v) => t + v, 0));
+      if (cand.length && Math.abs(r2(c.opening + sum2) - c.closing) < 0.01) { c.rows.forEach((r, i) => { r.value = r2(trial[i]); }); c.sum = sum2; c.agree = true; }
+    }
     c.txs = c.rows.map(r => {
       const pay = r.value < 0 && /PAYMENT|ชำระ|ขอบคุณ|THANK YOU/i.test(r.desc);
       return { date: r.date, time: '00:00:00', type: r.value > 0 ? 'EXPENSE' : 'INCOME', amount: Math.abs(r.value), ref_code: null,
-        statement_desc: r.desc, note: r.value < 0 ? (pay ? 'ชำระบัตร' : 'คืนเงิน/ยกเลิกรายการ') : null, balance: null };
+        statement_desc: r.desc, note: r.value < 0 ? (pay ? 'ชำระบัตร' : /IPP|INSTAL/i.test(r.desc) ? 'แปลงเป็นผ่อนชำระ (IPP)' : 'คืนเงิน/ยกเลิกรายการ') : null, balance: null };
     });
   }
   return { ok: true, cards: used, statementDate: stmtDate };
