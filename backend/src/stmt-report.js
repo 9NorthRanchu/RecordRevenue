@@ -42,7 +42,7 @@ export function stmtFields(body) {
 
 export async function handleStmtReport({ url, request, env, cors, authUserId, canUseAccount, deny }) {
   const p = url.pathname;
-  if (p !== '/api/statements/header' && p !== '/api/reports/statement-running') return null;
+  if (!['/api/statements/header', '/api/reports/statement-running', '/api/transactions/duplicates', '/api/transactions/merge'].includes(p)) return null;
   await ensureStmtCols(env);
 
   /* หัว statement: ส่งก่อนนำเข้ารายการ → ได้ stmt_id กลับไปใส่ทุกบรรทัด
@@ -86,6 +86,62 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
         .bind(acc, from, to).all()).results) || [];
     } catch { /* ยังไม่มีตาราง */ }
     return json({ account, from, to, opening: before?.bal || 0, opening_count: before?.n || 0, rows, headers, checkpoints, truncated: rows.length >= 6000 }, cors);
+  }
+
+  /* 🔁 รายการซ้ำ (2026-10-30 · North: "ทำไมมีข้อมูลซ้ำ") — บรรทัด statement ที่รอตรวจ ซ้ำกับรายการเดิมที่ยืนยันแล้ว
+     (ข้อมูลเก่าที่จด/นำเข้าจาก Excel ไว้ก่อน ไม่มีเวลา ไม่ได้มาจาก statement) ยอดเท่ากัน เครื่องหมายเดียวกัน ห่าง ≤ 3 วัน
+     จับคู่ 1:1 (ใกล้วันที่สุดก่อน) · คืนเฉพาะคู่ ไม่แก้ข้อมูล */
+  if (p === '/api/transactions/duplicates' && request.method === 'GET') {
+    const acc = url.searchParams.get('account_id');
+    if (acc && !(await canUseAccount(acc))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
+    const sg = SIGNED_AMOUNT_SQL;
+    const rows = ((await env.DB.prepare(`SELECT p.transaction_id AS pending_id, k.transaction_id AS keep_id, p.account_id,
+          substr(p.date,1,10) AS p_date, p.time AS p_time, p.statement_desc AS p_desc, ROUND(${sg.replace(/\bt\./g, 'p.')}, 2) AS amount,
+          substr(k.date,1,10) AS k_date, k.statement_desc AS k_desc, k.status AS k_status, k.source AS k_source,
+          (SELECT GROUP_CONCAT(DISTINCT c.name) FROM TransactionDetails d LEFT JOIN Categories c ON c.category_id = d.category_id WHERE d.transaction_id = k.transaction_id) AS k_categories,
+          (SELECT GROUP_CONCAT(DISTINCT d.note) FROM TransactionDetails d WHERE d.transaction_id = k.transaction_id AND d.note IS NOT NULL AND d.note != '') AS k_notes,
+          ABS(julianday(substr(p.date,1,10)) - julianday(substr(k.date,1,10))) AS gap
+        FROM Transactions p
+        JOIN Accounts a ON a.account_id = p.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id AND up.user_id = ?
+        JOIN Transactions k ON k.account_id = p.account_id AND k.transaction_id != p.transaction_id AND k.status = 'CONFIRMED'
+          AND k.date >= date(substr(p.date,1,10), '-3 day') AND k.date < date(substr(p.date,1,10), '+4 day')
+          AND ABS(ABS(k.total_amount) - ABS(p.total_amount)) < 0.005 AND (k.stmt_id IS NULL OR k.stmt_id = '') AND (k.time IS NULL OR k.time = '')
+        WHERE p.status = 'PENDING_REVIEW' AND p.source = 'PDF_IMPORT' ${acc ? 'AND p.account_id = ?' : ''}
+          AND ((${sg.replace(/\bt\./g, 'p.')}) < 0) = ((${sg.replace(/\bt\./g, 'k.')}) < 0)
+        ORDER BY gap, p.date LIMIT 3000`).bind(...(acc ? [authUserId, acc] : [authUserId])).all()).results) || [];
+    const usedP = new Set(), usedK = new Set(), pairs = [];
+    for (const r of rows) { if (usedP.has(r.pending_id) || usedK.has(r.keep_id)) continue; usedP.add(r.pending_id); usedK.add(r.keep_id); pairs.push(r); }
+    return json({ pairs }, cors);
+  }
+
+  /* รวมคู่ซ้ำ: เก็บรายการเดิม (หมวด/บริษัท/คู่ค้าที่ยืนยันไว้) + เติมข้อมูลธนาคารจากบรรทัด statement (เวลา ข้อความ เลขอ้างอิง ยอดคงเหลือรายบรรทัด สลิป)
+     ข้อความเดิมของรายการเก่าย้ายไปเป็นหมายเหตุ (ถ้ายังว่าง) · ลบบรรทัด statement ที่รอตรวจ · สลิป/ผังรายได้ที่ผูกอยู่ย้ายตาม · ทำได้ทีละ ≤ 100 คู่ */
+  if (p === '/api/transactions/merge' && request.method === 'POST') {
+    const b = await request.json().catch(() => ({}));
+    const list = (Array.isArray(b.pairs) ? b.pairs : [{ pending_id: b.pending_id, keep_id: b.keep_id }]).slice(0, 100);
+    let merged = 0; const errors = [];
+    for (const { pending_id, keep_id } of list) {
+      const pt = await env.DB.prepare(`SELECT * FROM Transactions WHERE transaction_id = ?`).bind(String(pending_id || '')).first();
+      const kt = await env.DB.prepare(`SELECT * FROM Transactions WHERE transaction_id = ?`).bind(String(keep_id || '')).first();
+      if (!pt || !kt || pt.account_id !== kt.account_id || !(await canUseAccount(pt.account_id))) { errors.push(`${pending_id}: ไม่พบ/ไม่มีสิทธิ์`); continue; }
+      if (pt.status !== 'PENDING_REVIEW') { errors.push(`${pending_id}: ยืนยันไปแล้ว`); continue; }
+      if (Math.abs(Math.abs(pt.total_amount) - Math.abs(kt.total_amount)) >= 0.005) { errors.push(`${pending_id}: ยอดไม่เท่ากัน`); continue; }
+      const ops = [
+        env.DB.prepare(`UPDATE TransactionDetails SET note = ? WHERE transaction_id = ? AND (note IS NULL OR note = '') AND ? IS NOT NULL
+            AND (SELECT COUNT(*) FROM TransactionDetails x WHERE x.transaction_id = ?) = 1`).bind(kt.statement_desc, kt.transaction_id, kt.statement_desc, kt.transaction_id),
+        env.DB.prepare(`UPDATE Transactions SET date = ?, time = COALESCE(?, time), statement_desc = COALESCE(?, statement_desc), ref_code = COALESCE(ref_code, ?),
+            slip_image_url = COALESCE(NULLIF(slip_image_url, ''), ?), stmt_id = COALESCE(?, stmt_id), stmt_seq = COALESCE(?, stmt_seq), stmt_balance = COALESCE(?, stmt_balance)
+            WHERE transaction_id = ?`).bind(pt.date, pt.time || null, pt.statement_desc || null, pt.ref_code || null, pt.slip_image_url || null,
+            pt.stmt_id || null, pt.stmt_seq ?? null, pt.stmt_balance ?? null, kt.transaction_id),
+        env.DB.prepare(`UPDATE OR IGNORE LedgerDocLinks SET transaction_id = ? WHERE transaction_id = ?`).bind(kt.transaction_id, pt.transaction_id),
+        env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE transaction_id = ?`).bind(pt.transaction_id),
+        env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id = ?`).bind(pt.transaction_id),
+        env.DB.prepare(`DELETE FROM Transactions WHERE transaction_id = ? AND status = 'PENDING_REVIEW'`).bind(pt.transaction_id),
+      ];
+      try { await env.DB.prepare(`SELECT 1 FROM RevenueChart LIMIT 1`).first(); ops.push(env.DB.prepare(`UPDATE RevenueChart SET matched_tx = NULL WHERE matched_tx = ?`).bind(pt.transaction_id)); } catch { /* ไม่มีตาราง */ }
+      try { await env.DB.batch(ops); merged++; } catch (e) { errors.push(`${pending_id}: ${e.message}`); }
+    }
+    return json({ success: true, merged, errors }, cors);
   }
   return null;
 }

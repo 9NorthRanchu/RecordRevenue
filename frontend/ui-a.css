@@ -361,3 +361,9 @@ body.ui-dark .bc-bad small { color:#FFC9C9; }
 .rev-opt span { flex:1; min-width:0; } .rev-opt small { display:block; color:#2B7A65; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rev-opt .btn { min-height:34px; flex-shrink:0; }
 [data-theme="dark"] .rev-opt { background:#14322A; border-color:#1F5446; color:#B2F2DB; } [data-theme="dark"] .rev-opt small { color:#8CE0C4; }
+
+/* 🔁 รายการซ้ำบนการ์ดรอตรวจ (2026-10-30) */
+.dup-strip { display:flex; align-items:center; gap:8px; padding:6px 8px; margin:-4px 0 8px; border-radius:10px; background:#FFF4E6; border:1px solid #FFD8A8; font-size:.82rem; color:#7A3E00; }
+.dup-strip span { flex:1; min-width:0; } .dup-strip .btn { flex-shrink:0; min-height:34px; }
+.ph-slipf.ph-dup { border-color:#FFA94D; color:#D9480F; } .ph-slipf.ph-dup.on { background:#FD7E14; color:#fff; border-color:#FD7E14; }
+[data-theme="dark"] .dup-strip { background:#3A2A14; border-color:#5C4320; color:#FFD8A8; }

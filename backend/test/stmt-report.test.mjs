@@ -101,4 +101,30 @@ check('report rows order', ids.indexOf('TX-L1') < ids.indexOf('TX-SLIP') && ids.
 check('report has legacy pending sign fix', true);
 r = await call('/api/reports/statement-running?account_id=X99&from=2026-10-01&to=2026-10-31', { user: '9North' }); check('report deny', r.s === 403, r);
 r = await call('/api/reports/statement-running?account_id=A02&from=bad&to=2026-10-31', { user: '9North' }); check('report bad date', r.s === 400, r);
+
+/* 🔁 รายการซ้ำ: ข้อมูลเก่าที่ยืนยันแล้ว (ไม่มีเวลา) vs บรรทัด statement ที่รอตรวจ */
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES
+  ('OLD1','A06','2025-11-01',-158,'CONFIRMED','PDF_IMPORT','9North','Ppuy 1.11.25'),('OLD2','A06','2025-11-01',-999,'CONFIRMED','WEB_GRID','9North','ปุ่ม ดูดวง'),
+  ('NEW1','A06','2025-11-01',-158,'PENDING_REVIEW','PDF_IMPORT','9North','K PLUS โอนไป SCB X7949'),('NEW2','A06','2025-11-01',-999,'PENDING_REVIEW','PDF_IMPORT','9North','K PLUS โอนไป X3776'),
+  ('NEW3','A06','2025-11-01',158,'PENDING_REVIEW','PDF_IMPORT','9North','รับโอน 158');
+UPDATE Transactions SET time='16:04:00' WHERE transaction_id IN ('NEW1','NEW2','NEW3');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('DO1','OLD1',-158,'T01','EXPENSE'),('DO2','OLD2',-999,'T05','EXPENSE'),
+  ('DN1','NEW1',-158,'Cat_Uncategorized','EXPENSE'),('DN2','NEW2',-999,'Cat_Uncategorized','EXPENSE'),('DN3','NEW3',158,'Cat_Uncategorized','INCOME');`);
+r = await call('/api/transactions/duplicates?account_id=A06', { user: '9North' });
+const prs = (r.j?.pairs || []).map(x => x.pending_id + '>' + x.keep_id).sort().join();
+check('dup pairs (ไม่จับเงินเข้ากับเงินออก)', r.s === 200 && prs === 'NEW1>OLD1,NEW2>OLD2', r.j);
+r = await call('/api/transactions/merge', { user: '9North', method: 'POST', body: { pairs: [{ pending_id: 'NEW1', keep_id: 'OLD1' }] } });
+let k = db.prepare(`SELECT * FROM Transactions WHERE transaction_id='OLD1'`).get(), kd = db.prepare(`SELECT * FROM TransactionDetails WHERE transaction_id='OLD1'`).get();
+check('merge: เก็บรายการเดิม + เวลา/ข้อความธนาคาร + โน้ตเดิม', r.j.merged === 1 && k.time === '16:04:00' && k.statement_desc.includes('K PLUS') && kd.note === 'Ppuy 1.11.25' && kd.category_id === 'T01' && k.status === 'CONFIRMED', { k, kd });
+check('merge: ลบบรรทัด statement ที่ซ้ำ', !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='NEW1'`).get() && !db.prepare(`SELECT 1 FROM TransactionDetails WHERE transaction_id='NEW1'`).get());
+r = await call('/api/transactions/merge', { user: 'Other', method: 'POST', body: { pending_id: 'NEW2', keep_id: 'OLD2' } });
+check('merge ครอบครัวอื่นไม่ได้', r.j.merged === 0 && db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='NEW2'`).get(), r.j);
+/* นำเข้าใหม่: จับคู่กับข้อมูลเก่าที่ยืนยันแล้วเลย ไม่สร้างซ้ำ */
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES ('OLD3','A06','2025-11-02',-4080,'CONFIRMED','PDF_IMPORT','9North','Pna 16.10.25');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('DO3','OLD3',-4080,'T05','EXPENSE');`);
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: { transaction_id: 'IMP4080', account_id: 'A06', date: '2025-11-02', time: '11:49:00', statement_desc: 'K PLUS โอนไป X7859', total_amount: -4080,
+  status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true, details: [{ amount: -4080, category_id: null, type: 'EXPENSE' }] } });
+k = db.prepare(`SELECT * FROM Transactions WHERE transaction_id='OLD3'`).get();
+check('นำเข้า: จับคู่ข้อมูลเก่า ไม่สร้างซ้ำ + โน้ตเดิม', r.j.merged && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='IMP4080'`).get() && k.time === '11:49:00'
+  && db.prepare(`SELECT note FROM TransactionDetails WHERE transaction_id='OLD3'`).get().note === 'Pna 16.10.25', { r: r.j, k });
 console.log(`stmt-report: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);

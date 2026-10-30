@@ -2306,6 +2306,7 @@ function renderPendingHero() {
       <div class="ph-tools">${list.length ? `<button type="button" id="ph-bulkcat" class="pt-ok">🏷️ ใส่หมวดหลายรายการ</button><button type="button" id="ph-saveall" class="pt-ok">💾 บันทึกทั้งหมดที่พร้อม</button>` : ''}
         ${(() => { const all = AppState.pendingTransactions || [], n = all.filter(t => t.slip_image_url).length, f = AppState.pendingSlipFilter || 'ALL';
             return `<button type="button" class="ph-slipf${f === 'SLIP' ? ' on' : ''}" data-f="SLIP">📎 มีสลิป ${n.toLocaleString('en-US')}</button><button type="button" class="ph-slipf${f === 'NOSLIP' ? ' on' : ''}" data-f="NOSLIP">ไม่มีสลิป ${(all.length - n).toLocaleString('en-US')}</button>`; })()}
+        ${DupPairs.count() ? `<button type="button" class="ph-slipf ph-dup${(AppState.pendingSlipFilter || '') === 'DUP' ? ' on' : ''}" data-f="DUP">🔁 อาจซ้ำ ${DupPairs.count().toLocaleString('en-US')}</button><button type="button" id="ph-dupall" class="pt-ok">🔁 รวมรายการซ้ำทั้งหมด</button>` : ''}
         <button type="button" id="ph-slipreview" class="pt-ok">🧾 สลิปที่ยังไม่จับคู่</button>
         <button type="button" id="ph-revchart" class="pt-ok">👥 ผังรายได้</button>
         ${pendingImportBatches().length ? `<button type="button" id="ph-delbatch">🗑️ ลบทั้งชุดที่นำเข้า</button>` : ''}</div>
@@ -2347,6 +2348,7 @@ function renderPendingHero() {
     box.querySelector('#ph-delbatch')?.addEventListener('click', deleteImportBatch);
     box.querySelector('#ph-slipreview')?.addEventListener('click', () => SlipReview.open());
     box.querySelector('#ph-revchart')?.addEventListener('click', () => RevenueChart.open());
+    box.querySelector('#ph-dupall')?.addEventListener('click', () => DupPairs.mergeAll());
     box.querySelectorAll('.ph-slipf').forEach(b => b.onclick = () => { AppState.pendingSlipFilter = AppState.pendingSlipFilter === b.dataset.f ? 'ALL' : b.dataset.f; renderPendingTransactions(); renderPendingHero(); });
     box.querySelector('#ph-bulkcat')?.addEventListener('click', bulkCategorize);
     box.querySelector('#ph-saveall')?.addEventListener('click', bulkSaveReady);
@@ -3153,7 +3155,8 @@ async function createNewPendingCard() {
 
 async function loadPending() {
     try {
-        const res = await fetch(`${API_BASE}/api/transactions?status=PENDING_REVIEW`, {
+        /* limit=0 (2026-10-30): เดิมได้แค่ 500 รายการล่าสุด → รายการเก่า (นำเข้าย้อนหลัง) หาไม่เจอ */
+        const res = await fetch(`${API_BASE}/api/transactions?status=PENDING_REVIEW&limit=0`, {
             headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) }
         });
         AppState.pendingTransactions = await res.json();
@@ -3207,6 +3210,7 @@ async function loadPending() {
             }
         }
 
+        await DupPairs.load();   // 🔁 บรรทัด statement ที่ซ้ำกับรายการเดิมที่ยืนยันแล้ว (2026-10-30)
         renderPendingTransactions();
         renderPendingHero();
         LineSlips.load();   // 📲 สลิป LINE ที่ต้องเลือกก่อน (2026-10-15)
@@ -3246,6 +3250,7 @@ function renderPendingTransactions() {
     /* 📎 ตัวกรองสลิป (2026-10-30 · statement เป็นตัวตั้ง): มีสลิปแนบ / ยังไม่มีสลิป */
     if (AppState.pendingSlipFilter === 'SLIP') displayList = displayList.filter(tx => tx.slip_image_url);
     else if (AppState.pendingSlipFilter === 'NOSLIP') displayList = displayList.filter(tx => !tx.slip_image_url);
+    else if (AppState.pendingSlipFilter === 'DUP') displayList = displayList.filter(tx => DupPairs.of(tx.transaction_id));
     
     const sortSel = document.getElementById("pending-sort-filter");
     const sortVal = sortSel ? sortSel.value : 'desc';
@@ -3339,6 +3344,7 @@ function renderPendingTransactions() {
         
         container.appendChild(cardEl);
         const strip = cardEl.querySelector('.slip-strip'); if (strip) { strip.onclick = () => showSlip(strip.dataset.slip); SlipThumbs.watch(strip); }
+        DupPairs.decorate(cardEl);
         
         const detailsToRender = tx.details && tx.details.length > 0 ? tx.details : [{}];
         detailsToRender.forEach((detail, subIdx) => {
@@ -3552,7 +3558,7 @@ async function renderSharedStatusSummary() {
     try {
         const fresh = AppState._pendingAt && Date.now() - AppState._pendingAt < 15000 && Array.isArray(AppState.pendingTransactions);
         const pendingRes = fresh ? { ok: true, json: async () => AppState.pendingTransactions }
-            : await fetch(`${API_BASE}/api/transactions?status=PENDING_REVIEW`, { headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) } });
+            : await fetch(`${API_BASE}/api/transactions?status=PENDING_REVIEW&limit=0`, { headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) } });
 
         if (pendingRes.ok) {
             const pending = await pendingRes.json();
@@ -14308,6 +14314,16 @@ const StmtReport = (() => {
                 }
                 if (r._outside) { r._flag = r._flag || 'outside'; r._notes.push('⚠️ ไม่มีใน statement (อาจซ้ำ / ผิดบัญชี / สลิปยังไม่จับคู่)'); g.flags++; }
             });
+            /* 🔁 อาจซ้ำ (2026-10-30): บรรทัด statement ที่รอตรวจ กับรายการเดิมที่ยืนยันแล้ว (ไม่มีเวลา ไม่ได้มาจาก statement) ยอดเท่ากัน ±3 วัน */
+            const usedK = new Set();
+            rows.forEach((r, i) => {
+                if (r.status !== 'PENDING_REVIEW' || r.source !== 'PDF_IMPORT') return;
+                const t = Date.parse(r.date), j = rows.findIndex((x, xi) => !usedK.has(xi) && x.status === 'CONFIRMED' && !x.stmt_id && !x.time && Math.abs(Math.abs(x.amount) - Math.abs(r.amount)) < 0.01
+                    && Math.sign(x.amount) === Math.sign(r.amount) && Math.abs(Date.parse(x.date) - t) <= 3 * 864e5);
+                if (j < 0) return; usedK.add(j);
+                r._notes.push(`🔁 อาจซ้ำกับบรรทัด ${j + 1} (รวมได้ที่หน้ารอตรวจสอบ)`); rows[j]._notes.push(`🔁 อาจซ้ำกับบรรทัด ${i + 1}`);
+                r._flag = r._flag || 'outside'; rows[j]._flag = rows[j]._flag || 'outside'; g.flags++; g.dups = (g.dups || 0) + 1;
+            });
             /* อาจซ้ำ: รายการนอก statement ที่ยอดเท่ากับบรรทัดใน statement ภายใน ±3 วัน */
             rows.filter(r => !r.stmt_id).forEach(r => {
                 const t = Date.parse(r.date), j = rows.findIndex(x => x.stmt_id && Math.abs(Math.abs(x.amount) - Math.abs(r.amount)) < 0.01 && Math.sign(x.amount) === Math.sign(r.amount) && Math.abs(Date.parse(x.date) - t) <= 3 * 864e5);
@@ -14736,3 +14752,51 @@ const RevenueChart = (() => {
     return { open, decorate, _toISO: toISO };
 })();
 window.RevenueChart = RevenueChart;
+
+
+// dup_pairs.js
+/* 🔁 รายการซ้ำ (2026-10-30 · North: "ทำไมมีข้อมูลซ้ำ แต่หาประวัติและรอตรวจสอบไม่เจอ")
+   บรรทัด statement ที่รอตรวจ ซ้ำกับรายการเดิมที่ยืนยันแล้ว (ข้อมูลเก่าที่จด/นำเข้าจาก Excel · ไม่มีเวลา) ยอดเท่ากัน ห่าง ≤ 3 วัน
+   "รวมเป็นรายการเดียว" = เก็บรายการเดิม (หมวดที่ยืนยันไว้) + เติมเวลา/ข้อความธนาคาร/ยอดรายบรรทัด แล้วลบบรรทัด statement ที่ซ้ำ
+   API (stmt-report.js): GET /api/transactions/duplicates · POST /api/transactions/merge */
+const DupPairs = (() => {
+    let pairs = [], byPending = {};
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${m[3]}/${m[2]}/${(+m[1] + 543) % 100}` : (d || ''); };
+    async function load() {
+        try { const r = await fetch(`${API_BASE}/api/transactions/duplicates`); pairs = r.ok ? ((await r.json()).pairs || []) : []; }
+        catch { pairs = []; }
+        byPending = Object.fromEntries(pairs.map(p => [p.pending_id, p]));
+        if (!pairs.length && AppState.pendingSlipFilter === 'DUP') AppState.pendingSlipFilter = 'ALL';
+    }
+    async function merge(list) {
+        let merged = 0, errors = [];
+        for (let i = 0; i < list.length; i += 100) {
+            const r = await fetch(`${API_BASE}/api/transactions/merge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pairs: list.slice(i, i + 100).map(p => ({ pending_id: p.pending_id, keep_id: p.keep_id })) }) });
+            const j = await r.json().catch(() => ({})); merged += j.merged || 0; errors = errors.concat(j.errors || (r.ok ? [] : [j.error || r.status]));
+        }
+        return { merged, errors };
+    }
+    function decorate(card) {
+        const p = byPending[card.dataset.txid]; if (!p || card.querySelector('.dup-strip')) return;
+        const el = document.createElement('div'); el.className = 'dup-strip';
+        el.innerHTML = `<span>🔁 <b>ซ้ำกับรายการเดิม</b> ${dTh(p.k_date)} · ${esc(p.k_categories || '')} · ${esc([p.k_desc, p.k_notes].filter(Boolean).join(' · ').slice(0, 80))} <small>(ยืนยันแล้ว)</small></span>
+            <button type="button" class="btn btn-sm btn-warning">รวมเป็นรายการเดียว</button>`;
+        el.querySelector('button').onclick = async e => {
+            e.target.disabled = true;
+            const r = await merge([p]);
+            if (r.merged) { try { showToast('🔁 รวมแล้ว — เก็บรายการเดิม + ข้อมูลธนาคาร'); } catch { /* */ } loadPending(); }
+            else { alert('รวมไม่สำเร็จ: ' + (r.errors[0] || '')); e.target.disabled = false; }
+        };
+        card.querySelector('.tx-card-body')?.prepend(el);
+    }
+    async function mergeAll() {
+        if (!pairs.length) return;
+        if (!confirm(`รวมรายการซ้ำ ${pairs.length.toLocaleString('en-US')} คู่?\n\nแต่ละคู่: เก็บรายการเดิมที่ยืนยันแล้ว (หมวด/บริษัท/คู่ค้าเดิม) + เติมเวลา ข้อความธนาคาร ยอดรายบรรทัดจาก statement\nแล้วลบบรรทัด statement ที่ซ้ำออกจากรอตรวจ\n\n(แนะนำ: กด "🔁 อาจซ้ำ" ดูรายการก่อน)`)) return;
+        const r = await merge(pairs);
+        alert(`🔁 รวมแล้ว ${r.merged.toLocaleString('en-US')} คู่` + (r.errors.length ? `\n⚠️ ไม่สำเร็จ ${r.errors.length}: ${r.errors.slice(0, 3).join(' / ')}` : ''));
+        loadPending();
+    }
+    return { load, decorate, mergeAll, of: id => byPending[id], count: () => pairs.length };
+})();
+window.DupPairs = DupPairs;

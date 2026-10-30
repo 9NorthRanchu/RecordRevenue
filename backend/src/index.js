@@ -406,7 +406,10 @@ export default {
               const day = 864e5, base = Date.parse(String(date).slice(0, 10));
               const from = new Date(base - 3 * day).toISOString().slice(0, 10), to = new Date(base + 3 * day).toISOString().slice(0, 10);
               const cands = (await env.DB.prepare(`SELECT transaction_id, date, total_amount, status, statement_desc, source FROM Transactions
-                  WHERE account_id = ? AND source IN ('LINE_SLIP','LINE_TEXT','WEB_GRID') AND date >= ? AND date <= ?
+                  WHERE account_id = ? AND (source IN ('LINE_SLIP','LINE_TEXT','WEB_GRID')
+                    /* 2026-10-30: ข้อมูลเก่าที่ยืนยันแล้ว (นำเข้า Excel/จดไว้ก่อน · ไม่มีเวลา · ไม่ได้มาจาก statement) ก็จับคู่ได้ ไม่สร้างซ้ำ */
+                    OR (status = 'CONFIRMED' AND (time IS NULL OR time = '') AND (stmt_id IS NULL OR stmt_id = '')))
+                    AND date >= ? AND date <= ?
                     AND ABS(ABS(total_amount) - ABS(?)) < 0.01 AND ((total_amount < 0) = (? < 0)) AND transaction_id != ?`)
                 .bind(account_id, from, to + ' 23:59:59', total_amount, total_amount, selfId).all()).results || [];
               const dist = c => Math.abs(Date.parse(String(c.date).slice(0, 10)) - base);
@@ -414,6 +417,9 @@ export default {
               if (cands.length && (cands.length === 1 || dist(cands[0]) < dist(cands[1]))) {
                 const c = cands[0];
                 if (!(await isMonthClosed(env, account_id, c.date))) {
+                  /* รายการเดิมที่ยืนยันแล้ว: ข้อความเดิม (ที่คนจดไว้) ย้ายไปหมายเหตุถ้ายังว่าง ก่อนใช้ข้อความธนาคาร */
+                  if (c.status === 'CONFIRMED' && c.statement_desc) await env.DB.prepare(`UPDATE TransactionDetails SET note = ? WHERE transaction_id = ? AND (note IS NULL OR note = '')
+                      AND (SELECT COUNT(*) FROM TransactionDetails x WHERE x.transaction_id = ?) = 1`).bind(c.statement_desc, c.transaction_id, c.transaction_id).run();
                   await env.DB.prepare(`UPDATE Transactions SET date = ?, time = COALESCE(?, time), statement_desc = ?, source = 'PDF_IMPORT', ref_code = COALESCE(ref_code, ?) WHERE transaction_id = ?`)
                     .bind(date, time || null, statement_desc || c.statement_desc || null, ref_code || null, c.transaction_id).run();
                   await fillStmt(c.transaction_id);
