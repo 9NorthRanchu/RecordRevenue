@@ -7076,6 +7076,104 @@ function statementPdfPasswords(accId) {
         ...accs.map(a => a.pdf_password)].filter(Boolean).map(String))];
 }
 /* เปิด PDF ด้วย pdf.js โดยลองรหัสตามลำดับ · คืน { pdf, password } หรือ { needPassword: true } */
+/* 💳 อ่านใบแจ้งยอดบัตรเครดิตจากตัวหนังสือใน PDF (2026-10-30 · North: "ในชุดเอกสารเดียวกันมีบัตร 2 ใบ · ยอดติดลบ = ชำระหรือยกเลิก")
+   · แยกรายการตามหัว "เลขที่บัตร" (เช่น KBank: "/ ACCOUNT DETAILS KBANK-SHOPEE 4221 82XX XXXX 3000") · แต่ละบัตร: PREVIOUS BALANCE = ยกมา · TOTAL BALANCE = ยกไป
+   · แถวรายการ = วันที่ใช้บัตร วันที่บันทึก รายละเอียด ยอด · ยอดบวก = ใช้จ่าย · ติดลบ = เงินเข้าบัตร (ชำระ = "PAYMENT/ชำระ/ขอบคุณ" · ที่เหลือ = คืนเงิน/ยกเลิก)
+   · กรุงศรี: ส่วน "รายการชำระเงิน" มาก่อนหัวบัตร → ใส่บัตรแรก · ตรวจ ยกมา + ใช้จ่าย − เงินเข้า = ยกไป ต่อบัตร
+   · ไม่ใช่ใบแจ้งยอดบัตร / อ่านไม่ได้ → ok:false (ไปใช้ AI ตามเดิม) */
+async function parseCardStatement(pdf) {
+  const MONEY = /^-?\(?[\d,]+\.\d{2}\)?-?$/, DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/;
+  const CARD = /(\d{4})\s?(\d{2})[Xx*]{2}\s?[Xx*]{4}\s?(\d{4})/;
+  const num = s => { const neg = /^\(.*\)$|^-|-$/.test(s); const v = Number(String(s).replace(/[(),-]/g, '')); return neg ? -v : v; };
+  const r2 = n => Math.round(n * 100) / 100;
+  /* ปี 2 หลัก: < 60 = ค.ศ. (25 → 2025) · ≥ 60 = พ.ศ. (68 → 2025) · ปี 4 หลัก พ.ศ. → ลบ 543 */
+  const iso = (d, m, y) => { let yy = +y; if (yy < 100) yy = yy >= 60 ? 2500 + yy - 543 : 2000 + yy; if (yy > 2400) yy -= 543; return `${yy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
+  const cards = [], byKey = {}, loose = []; let cur = null, stmtDate = null, allText = '';
+  const cardOf = m => { const key = m[3], masked = `${m[1]} ${m[2]}XX XXXX ${m[3]}`; if (!byKey[key]) { byKey[key] = { masked, last4: key, type: '', opening: null, closing: null, rows: [] }; cards.push(byKey[key]); } return byKey[key]; };
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    const items = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim() }));
+    items.sort((a, b) => b.y - a.y || a.x - b.x);
+    const lines = [];
+    for (const it of items) { const L = lines.find(l => Math.abs(l.y - it.y) <= 2.5); if (L) L.items.push(it); else lines.push({ y: it.y, items: [it] }); }
+    lines.sort((a, b) => b.y - a.y);
+    for (const L of lines) {
+      L.items.sort((a, b) => a.x - b.x);
+      const text = L.items.map(i => i.s).join(' '); allText += text + '\n';
+      const money = L.items.filter(i => MONEY.test(i.s)), dates = L.items.filter(i => DATE.test(i.s));
+      if (!stmtDate && /STATEMENT DATE|วันที่สรุปยอด/i.test(text) && dates.length) { const d = dates[dates.length - 1].s.match(DATE); stmtDate = iso(d[1], d[2], d[3]); }
+      const cm = text.match(CARD);
+      /* หัวบัตร: มีเลขบัตร ไม่มีตัวเงิน ไม่มีวันที่ (ไม่ใช่แถวสรุปวงเงิน/ใบนำฝาก) */
+      if (cm && !money.length && !dates.length) { cur = cardOf(cm); const t = text.match(/ACCOUNT DETAILS\s+(.+?)\s+\d{4}\s?\d{2}[Xx*]/i); if (t) cur.type = t[1].trim(); continue; }
+      if (/PREVIOUS BALANCE|ยอดเรียกเก็บของรอบบัญชีที่แล้ว|ยอดยกมา/i.test(text) && money.length) { const v = num(money[money.length - 1].s); if (cur) { if (cur.opening == null) cur.opening = v; } else loose.opening = v; continue; }
+      if (/TOTAL BALANCE/i.test(text) && money.length) { if (cur && cur.closing == null && cur.rows.length) cur.closing = num(money[money.length - 1].s); cur = null; continue; }
+      const f0 = L.items[0]?.s.match(DATE), f1 = L.items[1]?.s.match(DATE);
+      if (f0 && f1 && money.length) {
+        const amtIt = money[money.length - 1], v = num(amtIt.s);
+        const desc = L.items.slice(2).filter(i => i.x < amtIt.x && !MONEY.test(i.s)).map(i => i.s).join(' ').replace(/\s+/g, ' ').trim();
+        if (!/[A-Za-zก-๙]/.test(desc) || /x\s*\d+%|ดอกเบี้ย.*=/.test(desc)) continue;
+        const row = { date: iso(f0[1], f0[2], f0[3]), post: iso(f1[1], f1[2], f1[3]), desc, value: r2(v) };
+        /* รับแถวเฉพาะในหัวบัตรที่ยังไม่ปิด (หลัง TOTAL BALANCE = ส่วนตัวอย่างคิดดอกเบี้ย/ใบนำฝาก) · ก่อนเจอหัวบัตรแรก = ส่วนรายการชำระ (กรุงศรี) */
+        if (cur && cur.closing == null) cur.rows.push(row); else if (!cur && !cards.length) loose.push(row);
+      }
+    }
+  }
+  if (!cards.length || !/CREDIT CARD|บัตรเครดิต|Billing Statement/i.test(allText)) return { ok: false, reason: 'ไม่ใช่ใบแจ้งยอดบัตรเครดิต' };
+  if (loose.length) { cards[0].rows.unshift(...loose); if (cards[0].opening == null && loose.opening != null) cards[0].opening = loose.opening; }
+  const used = cards.filter(c => c.rows.length || c.closing);
+  if (!used.some(c => c.rows.length)) return { ok: false, reason: 'ไม่พบรายการในใบแจ้งยอด' };
+  for (const c of used) {
+    c.sum = r2(c.rows.reduce((t, r) => t + r.value, 0));
+    c.agree = c.opening != null && c.closing != null ? Math.abs(r2(c.opening + c.sum) - c.closing) < 0.01 : null;
+    c.txs = c.rows.map(r => {
+      const pay = r.value < 0 && /PAYMENT|ชำระ|ขอบคุณ|THANK YOU/i.test(r.desc);
+      return { date: r.date, time: '00:00:00', type: r.value > 0 ? 'EXPENSE' : 'INCOME', amount: Math.abs(r.value), ref_code: null,
+        statement_desc: r.desc, note: r.value < 0 ? (pay ? 'ชำระบัตร' : 'คืนเงิน/ยกเลิกรายการ') : null, balance: null };
+    });
+  }
+  return { ok: true, cards: used, statementDate: stmtDate };
+}
+
+/* นำเข้าใบแจ้งยอดบัตรที่อ่านแล้ว: บัตรละ 1 บัญชี (หาบัญชีบัตรจากเลขบัตรในตั้งค่า · ไม่เจอ = ให้เลือก) แล้วผ่านด่านตรวจเดิม (statementPrecheck) ทีละบัตร */
+async function importCardStatement(card, selectedAccId, fileName, btn) {
+  const accs = AppState.accounts || [], f = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const guess = c => {
+    const hit = accs.filter(a => statementAccountMatches(c.masked, a.account_number) === true);
+    if (hit.length === 1) return hit[0].account_id;
+    const tail = accs.filter(a => a.account_type === 'CREDIT' && String(a.account_number || '').replace(/[^0-9]/g, '').endsWith(c.last4));   // ใส่เลขบัตรไว้แค่ 4 ตัวท้าย
+    if (tail.length === 1) return tail[0].account_id;
+    return card.cards.length === 1 ? selectedAccId : ''; };
+  const plan = card.cards.map(c => ({ c, acc: guess(c) }));
+  const opts = sel => `<option value="">— ไม่นำเข้าบัตรนี้ —</option>` + accs.map(a => `<option value="${esc(a.account_id)}"${a.account_id === sel ? ' selected' : ''}>${a.account_type === 'CREDIT' ? '💳' : '🏦'} ${esc(a.name)}</option>`).join('');
+  const html = `<div style="text-align:left;font-size:.9rem">ในไฟล์นี้มีบัตร <b>${plan.length}</b> ใบ — แต่ละบัตรนำเข้าเป็นคนละบัญชี${plan.map((p, i) => `
+    <div style="border:1px solid #E9E3FA;border-radius:12px;padding:10px 12px;margin-top:10px">
+      <div><b>💳 ${esc(p.c.masked)}</b> ${esc(p.c.type)}</div>
+      <div style="color:#5C5872;font-size:.82rem">${p.c.rows.length} รายการ · ยกมา ${f(p.c.opening)} · ใช้จ่าย ${f(p.c.rows.filter(r => r.value > 0).reduce((t, r) => t + r.value, 0))} · เงินเข้า (ชำระ/คืนเงิน) ${f(-p.c.rows.filter(r => r.value < 0).reduce((t, r) => t + r.value, 0))} · ยกไป ${f(p.c.closing)}
+        ${p.c.agree === true ? '<span style="color:#087F5B">✅ ยอดเดินตรง</span>' : p.c.agree === false ? '<span style="color:#C92A2A">⚠️ ยอดเดินไม่ตรง</span>' : ''}</div>
+      <select data-i="${i}" style="width:100%;margin-top:6px;min-height:40px;border-radius:10px">${opts(p.acc)}</select>
+      ${p.acc ? '' : '<div style="color:#E67700;font-size:.8rem;margin-top:4px">ยังไม่รู้ว่าเป็นบัตรไหน — เลือกบัญชีบัตร (ใส่เลขบัตรใน ตั้งค่า→บัญชี ครั้งหน้าระบบเลือกให้เอง)</div>'}
+    </div>`).join('')}</div>`;
+  const ok = window.Swal ? (await Swal.fire({ title: '💳 ใบแจ้งยอดบัตรเครดิต', html, width: 620, showCancelButton: true, confirmButtonText: 'นำเข้า', cancelButtonText: 'ยกเลิก',
+      preConfirm: () => { document.querySelectorAll('.swal2-html-container select[data-i]').forEach(s => { plan[+s.dataset.i].acc = s.value; }); } })).isConfirmed
+    : confirm(`ในไฟล์มีบัตร ${plan.length} ใบ — นำเข้าแยกบัญชีตามเลขบัตร?`);
+  if (!ok) return null;
+  const done = [];
+  for (const p of plan) {
+    if (!p.acc) continue;
+    const useAcc = await statementPrecheck(p.acc, { account_number: p.c.masked, rows: p.c.txs, opening: p.c.opening, closing: p.c.closing });
+    if (!useAcc) continue;
+    /* จุดตรวจยอด: ยอดค้างตามใบแจ้งยอด ณ วันสรุปยอด (ระบบเก็บบัตรเป็นลบ) */
+    if (p.c.closing != null) window._rrCheckpoint = { account_id: useAcc, as_of: card.statementDate || p.c.txs.map(t => t.date).sort().pop(), balance: -Math.abs(p.c.closing) };
+    const res = await importStatementRows(useAcc, p.c.txs, (d, n) => { if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 💳 ${p.c.last4} ${d}/${n}`; },
+      { opening: p.c.opening, closing: p.c.closing, source_kind: 'CREDIT_CARD', file_name: `${fileName} · ${p.c.masked}` });
+    done.push(`💳 ${p.c.masked} → ${(accs.find(a => a.account_id === useAcc) || {}).name || useAcc}: นำเข้า ${res.importedCount}` + (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · ข้ามซ้ำ ${res.skippedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : ''));
+  }
+  alert('อ่านใบแจ้งยอดบัตรจากตัวหนังสือในไฟล์ (ไม่ใช้ AI)\n\n' + (done.join('\n') || 'ไม่ได้นำเข้าบัตรใด'));
+  loadPending();
+  return done.length;
+}
+
 async function openStatementPdf(fileBytes, accId) {
     if (typeof pdfjsLib === 'undefined') return {};
     for (const pw of ['', ...statementPdfPasswords(accId)]) {
@@ -7365,6 +7463,8 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
                 details: [(() => { const k = statementKey(tx.statement_desc), h = k && hints[(tx.type === 'EXPENSE' ? 'OUT' : 'IN') + '|' + k];
                     const d = { amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), fee: 0, wht: 0, category_id: null, entity_id: entityId, note: tx.note, type: tx.type };
                     if (h) { d.category_id = h.category_id; d.contact_id = h.contact_id; d.entity_id = h.entity_id || entityId; if (h.type) d.type = h.type; d._hint = 1; }
+                    /* 💳 ชำระบัตร (ใบแจ้งยอดบัตร) = โอนระหว่างบัญชี ไม่ใช่รายรับ (2026-10-30) */
+                    else if (tx.note === 'ชำระบัตร' && (AppState.categories || []).some(c => c.category_id === 'Bank_Transfer')) { d.category_id = 'Bank_Transfer'; d.type = 'TRANSFER'; d._hint = 1; }
                     return d; })()]
             };
             try {
@@ -7483,6 +7583,9 @@ function bindPDFUpload() {
                         loadPending();
                         resetUploadBtn(); return;
                     }
+                    /* 💳 ใบแจ้งยอดบัตรเครดิต (ไม่มียอดคงเหลือรายบรรทัด) · หลายบัตรในไฟล์เดียว → แยกบัญชีตามเลขบัตร (2026-10-30) */
+                    const card = await parseCardStatement(opened.pdf).catch(() => ({ ok: false }));
+                    if (card.ok) { await importCardStatement(card, selectedAccId, file.name, triggerUploadBtn); resetUploadBtn(); return; }
                 }
             } catch (err) { console.warn('อ่านตัวหนังสือใน PDF ไม่ได้ → ใช้ AI', err); }
 
