@@ -311,3 +311,46 @@ body.ui-dark .bc-ok { background:rgba(12,166,120,.15); color:#63E6BE; }
 body.ui-dark .bc-bad { background:rgba(224,49,49,.15); color:#FFA8A8; }
 body.ui-dark .bc-bad small { color:#FFC9C9; }
 @media (max-width:600px){ .sum-head > span { display:none; } .sum-head b { flex:1; } }
+
+/* 📒 ยอดสะสมต่อ statement (2026-10-30) */
+.sr-filter { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.sr-filter select, .sr-filter input { min-height:44px; padding:8px 12px; border-radius:12px; border:1px solid var(--border-color); background:var(--ui-input,#fff); color:var(--text-primary); }
+.sr-filter select { min-width:200px; } .sr-filter .btn { min-height:44px; }
+.sr-legend { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; font-size:.78rem; color:var(--text-secondary); margin:10px 0; }
+.sr-k { display:inline-block; width:14px; height:14px; border-radius:4px; vertical-align:middle; }
+.sr-k.start, .sr-tbl tr.sr-start td { background:#FFE3E3; } .sr-k.outside, .sr-tbl tr.sr-outside td { background:#FFF3BF; } .sr-k.cont, .sr-tbl tr.sr-cont td { background:#FFF5F5; }
+.sr-acc { margin-top:14px; } .sr-acc h4 { margin:6px 0 8px; color:var(--text-primary); } .sr-acc h4 small { color:var(--text-secondary); font-weight:400; }
+.sr-warn { padding:8px 12px; border-radius:10px; background:#FFF5F5; color:#C92A2A; margin:6px 0; font-size:.85rem; }
+.sr-empty { padding:24px; text-align:center; color:var(--text-secondary); }
+.sr-grp { border:1px solid var(--border-color); border-radius:14px; margin:8px 0; background:var(--card-bg); overflow:hidden; }
+.sr-grp.bad { border-color:#FFA8A8; }
+.sr-grp summary { cursor:pointer; display:flex; flex-wrap:wrap; gap:4px 14px; align-items:center; padding:12px 14px; font-size:.86rem; color:var(--text-primary); }
+.sr-grp summary em { font-style:normal; font-weight:600; margin-left:auto; }
+.sr-grp.bad summary em { color:#C92A2A; }
+.sr-tbl { width:100%; border-collapse:collapse; font-size:.8rem; }
+.sr-tbl th { background:var(--primary-color); color:#fff; padding:7px 6px; white-space:nowrap; font-weight:600; }
+.sr-tbl td { padding:6px; border-bottom:1px solid var(--border-color); vertical-align:top; color:var(--text-primary); }
+.sr-tbl td.r { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.sr-neg { color:var(--danger-color); }
+[data-theme="dark"] .sr-tbl tr.sr-start td, [data-theme="dark"] .sr-k.start { background:#4A1F24; }
+[data-theme="dark"] .sr-tbl tr.sr-outside td, [data-theme="dark"] .sr-k.outside { background:#463A12; }
+[data-theme="dark"] .sr-tbl tr.sr-cont td, [data-theme="dark"] .sr-k.cont { background:#2E2024; }
+[data-theme="dark"] .sr-warn { background:#2E2024; color:#FF8787; }
+#report-stmt-section .sr-filter { flex-direction:row !important; align-items:center !important; }
+#report-stmt-section .sr-filter > * { margin:0 !important; }
+.sr-grp .table-responsive { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.sr-tbl { min-width:980px; } .sr-tbl td:last-child { min-width:220px; } .sr-tbl td:nth-child(4) { min-width:160px; }
+@media (max-width:768px) {
+  #report-stmt-section .sr-filter select { flex:1 1 100%; width:100%; }
+  #report-stmt-section .sr-filter input[type=date] { flex:1 1 40%; min-width:0; width:auto; }
+  #report-stmt-section .sr-filter .btn { flex:1 1 28%; justify-content:center; }
+  .sr-grp summary em { margin-left:0; } }
+
+/* 📎 สลิปบนการ์ดรอตรวจ + ตัวกรอง (2026-10-30) */
+.slip-strip { display:flex; align-items:center; gap:10px; padding:6px 8px; margin:-4px 0 8px; border-radius:10px; background:#FFF9DB; border:1px solid #FFE8A1; cursor:pointer; font-size:.82rem; color:#5C4400; }
+.slip-strip .slip-thumb { width:44px; height:56px; flex:0 0 44px; border-radius:6px; background:#fff; display:grid; place-items:center; overflow:hidden; border:1px solid #F1E3B0; font-size:1.1rem; }
+.slip-strip .slip-thumb img { width:100%; height:100%; object-fit:cover; object-position:top; }
+.slip-strip .slip-txt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ph-slipf { min-height:36px; padding:4px 12px; border-radius:999px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-primary); font-size:.82rem; cursor:pointer; }
+.ph-slipf.on { background:var(--primary-color); color:#fff; border-color:var(--primary-color); }
+[data-theme="dark"] .slip-strip { background:#2E2A1A; border-color:#4A4220; color:#F5E6A8; }

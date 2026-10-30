@@ -6,6 +6,7 @@ import { isMonthClosed, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-
 import { IS_ASSET_SQL, assetCategorySet } from './assets.js';
 import { verifyPassword, upgradeStoredPassword, hashPassword, isHashed } from './auth.js';
 import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSessions } from './session.js';
+import { handleStmtReport, ensureStmtCols, stmtFields } from './stmt-report.js';
 // backend/src/index.js
 
 export default {
@@ -130,6 +131,8 @@ export default {
       };
       const familyOf = async () => (await env.DB.prepare(`SELECT family_id FROM Users WHERE user_id = ?`).bind(authUserId).first())?.family_id || null;
       const deny = (msg, status = 403) => new Response(JSON.stringify({ error: msg }), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      /* 📒 หัว statement + รายงานยอดสะสมต่อ statement (2026-10-30 · stmt-report.js) */
+      { const sr = await handleStmtReport({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny }); if (sr) return sr; }
 
       // 2. OCR Test Endpoint (Direct Web Upload)
       if (url.pathname === '/api/slip-ocr' && request.method === 'POST') {
@@ -321,6 +324,12 @@ export default {
         if (request.method === 'POST') {
           const body = await request.json();
           const { transaction_id, account_id, ref_code, date, time, statement_desc, total_amount, status, source, slip_image_url, details, check_only } = body;
+          /* 📒 มาจาก statement ไหน · ลำดับบรรทัด · ยอดคงเหลือที่ธนาคารพิมพ์ (2026-10-30) */
+          await ensureStmtCols(env);
+          const stmt = stmtFields(body);
+          const fillStmt = id => stmt.stmt_id ? env.DB.prepare(`UPDATE Transactions SET stmt_id = COALESCE(stmt_id, ?), stmt_seq = CASE WHEN stmt_id IS NULL OR stmt_id = ? THEN ? ELSE stmt_seq END,
+              stmt_balance = CASE WHEN stmt_id IS NULL OR stmt_id = ? THEN COALESCE(?, stmt_balance) ELSE stmt_balance END WHERE transaction_id = ?`)
+            .bind(stmt.stmt_id, stmt.stmt_id, stmt.stmt_seq, stmt.stmt_id, stmt.stmt_balance, id).run() : null;
           
           // Map invalid sources to allowed values under DB constraints
           let mappedSource = source || 'WEB_GRID';
@@ -404,12 +413,14 @@ export default {
                 if (!(await isMonthClosed(env, account_id, c.date))) {
                   await env.DB.prepare(`UPDATE Transactions SET date = ?, time = COALESCE(?, time), statement_desc = ?, source = 'PDF_IMPORT', ref_code = COALESCE(ref_code, ?) WHERE transaction_id = ?`)
                     .bind(date, time || null, statement_desc || c.statement_desc || null, ref_code || null, c.transaction_id).run();
+                  await fillStmt(c.transaction_id);
                   return new Response(JSON.stringify({ success: true, skipped: true, merged: true, existingId: c.transaction_id,
                     message: `จับคู่กับรายการเดิม: ${String(c.date).slice(0, 10)} | ${fmtAmt(c.total_amount)} | ${c.statement_desc || '-'} (${c.status})` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
                 }
               }
             }
             if (dupTx) {
+              await fillStmt(dupTx.transaction_id);   // นำเข้า statement เดิมซ้ำ → เติมยอดรายบรรทัดให้รายการเดิม
               return new Response(JSON.stringify({
                 success: true, skipped: true,
                 duplicate: true,
@@ -444,13 +455,16 @@ export default {
 
           const txId = transaction_id || 'TX-' + Date.now();
           const txStatus = status || 'PENDING_REVIEW';
+          /* แก้รายการเดิม (INSERT OR REPLACE ลบแถวเก่า) → คง stmt_* เดิมไว้ถ้าไม่ได้ส่งมา */
+          const prevStmt = stmt.stmt_id ? null : await env.DB.prepare(`SELECT stmt_id, stmt_seq, stmt_balance FROM Transactions WHERE transaction_id = ?`).bind(txId).first();
+          const keepStmt = stmt.stmt_id ? stmt : { stmt_id: prevStmt?.stmt_id ?? null, stmt_seq: prevStmt?.stmt_seq ?? null, stmt_balance: prevStmt?.stmt_balance ?? null };
           
           // Transaction Block using D1 Batch
           const statements = [
             env.DB.prepare(`
-              INSERT OR REPLACE INTO Transactions (transaction_id, account_id, ref_code, date, time, total_amount, statement_desc, status, source, slip_image_url, created_by_user_id)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `).bind(txId, account_id, ref_code || null, date, time || null, total_amount, statement_desc || null, txStatus, mappedSource, slip_image_url || null, userId),
+              INSERT OR REPLACE INTO Transactions (transaction_id, account_id, ref_code, date, time, total_amount, statement_desc, status, source, slip_image_url, created_by_user_id, stmt_id, stmt_seq, stmt_balance)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(txId, account_id, ref_code || null, date, time || null, total_amount, statement_desc || null, txStatus, mappedSource, slip_image_url || null, userId, keepStmt.stmt_id, keepStmt.stmt_seq, keepStmt.stmt_balance),
             
             env.DB.prepare(`DELETE FROM TransactionDetails WHERE transaction_id = ?`).bind(txId)
           ];
@@ -2478,10 +2492,11 @@ It may be a PDF file or several page images/screenshots of the same account. Ext
   5. ref_code: reference / order number / transaction id if shown, else null.
   6. statement_desc: merchant / counterparty / description as printed (e.g. "Shopee", "7-Eleven", "เติมเงินจาก KBank", "TR to 123456").
   7. note: product name(s) for shop orders or other short memo, else null.
+  8. balance: the running balance printed on that same row (ยอดคงเหลือ / Balance) exactly as printed, positive number; null if the row has no balance column (most credit cards, shop orders).
 Ignore rows that are opening balance, closing balance, totals, minimum payment, credit limit, or cancelled/failed orders.
 
 Output ONLY a valid JSON object:
-{"account_number":"...","source_kind":"BANK","opening_balance":null,"closing_balance":null,"transactions":[{"date":"YYYY-MM-DD","time":"HH:MM:SS","type":"INCOME","amount":123.45,"ref_code":null,"statement_desc":"...","note":null}]}
+{"account_number":"...","source_kind":"BANK","opening_balance":null,"closing_balance":null,"transactions":[{"date":"YYYY-MM-DD","time":"HH:MM:SS","type":"INCOME","amount":123.45,"ref_code":null,"statement_desc":"...","note":null,"balance":null}]}
 Do not wrap the JSON in markdown code blocks.`;
 
   let parts = [{ text: prompt }];

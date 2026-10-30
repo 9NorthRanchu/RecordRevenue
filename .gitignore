@@ -31,3 +31,4 @@ Claude outputs/
 # พื้นที่ทำงานร่วมกับ ChatGPT (ภาพร่าง ยังไม่ใช้จริง) — ภาพที่เลือกแล้ว Claude คัดลอกเข้า frontend/assets เอง
 ภาพและไอคอน (ChatGPT)/
 _t_*.mjs
+_to_delete/

@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=129">
-    <link rel="stylesheet" href="ui-a.css?v=12">
+    <link rel="stylesheet" href="ui-a.css?v=14">
     <!-- pdf-lib -->
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <!-- pdf.js (Mozilla) for AES-256 fallback -->
@@ -535,6 +535,7 @@
                         <button class="report-tab active" data-report="wht"><span class="rt-ic" style="background:rgba(240,82,82,.12);color:#E03131">%</span><span class="rt-tx"><b>ภาษีหัก ณ ที่จ่าย</b><small>สรุปรายการภาษี (WHT)</small></span></button>
                         <button class="report-tab" data-report="tb"><span class="rt-ic" style="background:rgba(121,80,242,.13);color:#6D4AE0"><i class="fa-solid fa-scale-balanced"></i></span><span class="rt-tx"><b>งบทดลอง</b><small>ยอดคงเหลือทุกบัญชี (Trial Balance)</small></span></button>
                         <button class="report-tab" data-report="project"><span class="rt-ic" style="background:rgba(245,159,0,.15);color:#E67700"><i class="fa-solid fa-suitcase"></i></span><span class="rt-tx"><b>ทริป / โปรเจกต์</b><small>สรุปรับ-จ่ายแต่ละทริป</small></span></button>
+                        <button class="report-tab" data-report="stmt"><span class="rt-ic" style="background:rgba(12,166,120,.13);color:#087F5B"><i class="fa-solid fa-file-invoice-dollar"></i></span><span class="rt-tx"><b>ยอดสะสม statement</b><small>หารายการขาด · ยอดคงเหลือรายบรรทัด</small></span></button>
                     </div>
 
                     <!-- WHT Report -->
@@ -605,6 +606,21 @@
                     </div>
 
                     <!-- Project / Trip Report -->
+                    <!-- 📒 ยอดสะสมต่อ statement (2026-10-30) — โค้ดอยู่ app.js ส่วน "StmtReport" -->
+                    <div id="report-stmt-section" class="report-section hidden card glass">
+                        <div class="card-body">
+                            <div class="filter-row sr-filter">
+                                <select id="sr-acc" title="บัญชี"></select>
+                                <input type="date" id="sr-from" title="ตั้งแต่"><span>–</span><input type="date" id="sr-to" title="ถึง">
+                                <button id="sr-run" class="btn btn-primary" type="button"><i class="fa-solid fa-magnifying-glass"></i> ดู</button>
+                                <button id="sr-xlsx" class="btn btn-outline-primary" type="button"><i class="fa-solid fa-file-excel"></i> Excel</button>
+                                <button id="sr-pdf" class="btn btn-outline-primary" type="button"><i class="fa-solid fa-file-pdf"></i> PDF</button>
+                            </div>
+                            <div class="sr-legend"><span class="sr-k start"></span>เริ่มต่างจากธนาคาร <span class="sr-k outside"></span>ไม่มีใน statement <span class="sr-k cont"></span>ต่างต่อเนื่อง</div>
+                            <div id="sr-result"></div>
+                        </div>
+                    </div>
+
                     <div id="report-project-section" class="report-section hidden card glass">
                         <div class="card-body">
                             <div class="filter-row">
@@ -1721,7 +1737,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script src="travel.js?v=105"></script>
-    <script src="app.js?v=195"></script>
+    <script src="app.js?v=198"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">

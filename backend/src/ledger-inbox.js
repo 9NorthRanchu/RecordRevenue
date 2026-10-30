@@ -43,7 +43,7 @@ import { handleCardsLoans } from './cards-loans.js';
 import { handleAssets, IS_ASSET_SQL, assetCategorySet } from './assets.js';
 import { handleOpening } from './opening.js';
 import {
-  round2, bankKey, last4, accountHintKey, partyKey, parseCashText, slipDirection,
+  round2, bankKey, last4, accountHintKey, maskedAccountMatch, partyKey, parseCashText, slipDirection,
   scoreCandidate, decideMatch, balanceGap, proposeLines, templateFromDetails,
   fixStatementSigns, statementPartyKey, matchStatementLines, walkStatement, accountNumberCheck,
 } from './ledger-match.js';
@@ -179,7 +179,7 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
       return json(out, cors, out.error ? (out.status || 400) : 200);
     }
 
-    const act = path.match(/^\/api\/inbox\/([\w-]+)\/(accept|link|account|dismiss|rematch|learn)$/);
+    const act = path.match(/^\/api\/inbox\/([\w-]+)\/(accept|link|account|dismiss|rematch|learn|fields|unmatch|pick|review)$/);
     if (act && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
       const out = await runAction(env, user, act[1], act[2], body);
@@ -239,9 +239,16 @@ function resolveSideAccount(side, accounts, accountRules) {
     if (accounts.some(a => a.account_id === id)) return id;
   }
   const b = bankKey(side.bank), l = last4(side.account);
-  if (!b || !l) return null;
-  const hits = accounts.filter(a => last4(a.account_number) === l && bankKey(a.bank_name) === b);
-  return hits.length === 1 ? hits[0].account_id : null;
+  if (!l) return null;
+  const hits = b ? accounts.filter(a => last4(a.account_number) === l && bankKey(a.bank_name) === b) : [];
+  if (hits.length === 1) return hits[0].account_id;
+  if (hits.length > 1) return null;
+  /* 2026-10-30: เลขที่ปิดหลักสุดท้าย (xxx-x-x2210-x) เทียบทีละตำแหน่งกับเลขเต็ม · ธนาคารตรงก่อน
+     ชื่อธนาคารในระบบไม่ตรงกับบนสลิป (เช่น บัตร CardX ตั้งชื่อธนาคารว่า SCB) → เลขตรงบัญชีเดียวพอ */
+  const byMask = accounts.filter(a => maskedAccountMatch(side.account, a.account_number));
+  const sameBank = b ? byMask.filter(a => bankKey(a.bank_name) === b) : [];
+  if (sameBank.length === 1) return sameBank[0].account_id;
+  return byMask.length === 1 ? byMask[0].account_id : null;
 }
 
 // ───────────────────────── รับไฟล์ ─────────────────────────
@@ -320,7 +327,13 @@ Return ONLY JSON:
 For SLIP keep masked account numbers exactly as printed (e.g. "xxx-x-x1234-x"). amount is positive.
 E-wallet (TrueMoney, ShopeePay, Rabbit LINE Pay) payment/transfer receipts are "SLIP" (sender = the wallet owner when paying out).
 A single Shopee/Lazada order screenshot = "ORDER" with amount = total paid.
-If the image shows a LIST of many transactions or orders (wallet history, order list, statement page), set doc_type to "LIST" and amount to null.`;
+If the image shows a LIST of many transactions or orders (wallet history, order list, statement page), set doc_type to "LIST" and amount to null.
+amount = the money that actually left/entered the account ("จำนวนเงินที่ชำระ", "Amount"), NOT the price before a government co-payment or discount
+(ไทยช่วยไทย, คนละครึ่ง, coupons). Put the breakdown in "subsidy_note", e.g. "ค่าสินค้า 200 · สิทธิไทยช่วยไทยพลัส -120".
+Paying a credit card bill: receiver.name = card issuer, receiver.bank = issuer (e.g. "CardX", "KTC", "Krungsri Card"),
+receiver.account = the CARD number as printed (หมายเลขบัตร / CARD NUMBER), not the biller account.
+เป๋าตัง / G-Wallet: bank = "เป๋าตัง", account = the wallet ID as printed. memo = the user's note (บันทึกช่วยจำ / Memo / Note) exactly as printed.
+"shop_category" = the shop's category line under the receiver name if printed (e.g. "อาหาร ของหวาน เครื่องดื่ม"), else null.`;
 
 /* เรียก Gemini แบบทนทาน (2026-10-12): รุ่นหลักไม่ว่าง (429/500/503/504) → ลองซ้ำ แล้วสลับไปรุ่นสำรองอัตโนมัติ
    รุ่นที่ไม่มีให้ใช้ (400/404) → ข้ามไปรุ่นถัดไป · ตั้งรุ่นสำรองเองได้ที่ secret GEMINI_FALLBACK_MODELS (คั่นด้วย ,) */
@@ -461,6 +474,10 @@ async function processSlip(env, user, doc, ex, forced) {
   if (forced?.account_id && accounts.some(a => a.account_id === forced.account_id)) {
     if (forced.side === 'IN') toId = forced.account_id; else fromId = forced.account_id;
   }
+  /* หน้าตรวจสลิป (2026-10-30): เลือกบัญชีทั้งสองฝั่งเองได้ · '' = ไม่ใช่บัญชีของเรา */
+  if (forced && 'out_account_id' in forced) fromId = accounts.some(a => a.account_id === forced.out_account_id) ? forced.out_account_id : null;
+  if (forced && 'in_account_id' in forced) toId = accounts.some(a => a.account_id === forced.in_account_id) ? forced.in_account_id : null;
+  const exclude = new Set(forced?.exclude || []);
   const direction = slipDirection(fromId, toId);
   const date = ex.date || bangkokNow().slice(0, 10);
 
@@ -478,9 +495,10 @@ async function processSlip(env, user, doc, ex, forced) {
   const results = [];
   for (const leg of legs) {
     const ev = { signedAmount: leg.signedAmount, date, time: ex.time, ref: ex.ref_code || null };
-    const decision = decideMatch(await findCandidates(env, [leg.account_id], ev));
+    const decision = forced?.create_new ? { kind: 'none' } : decideMatch((await findCandidates(env, [leg.account_id], ev)).filter(c => !exclude.has(c.transaction_id)));
     if (decision.kind === 'auto') {
       await linkDoc(env, doc.doc_id, decision.best.transaction_id, 'MATCHED');
+      await attachSlip(env, decision.best.transaction_id, doc, ex, user, leg.side);
       results.push({ side: leg.side, account_id: leg.account_id, kind: 'MATCHED', transaction_id: decision.best.transaction_id });
     } else if (decision.kind === 'choose') {
       results.push({ side: leg.side, account_id: leg.account_id, kind: 'CHOOSE',
@@ -492,7 +510,8 @@ async function processSlip(env, user, doc, ex, forced) {
       const lines = await suggestLines(env, user, { total: leg.signedAmount, fee: leg.side === 'OUT' ? ex.fee || 0 : 0,
         party, direction, counterAccount: leg.counter, entity: account?.entity_id });
       // บันทึกช่วยจำบนสลิป = รายละเอียดของรายการ (North ขอ 2026-10-10) · ไม่มีก็ใช้ชื่อคู่ค้า
-      if (ex.memo && lines.lines[0]) lines.lines[0].note = String(ex.memo).slice(0, 200);
+      const memoNote = [ex.memo, ex.subsidy_note].filter(Boolean).join(' · ');
+      if (memoNote && lines.lines[0]) lines.lines[0].note = memoNote.slice(0, 200);
       const txId = await createTransaction(env, user, {
         account_id: leg.account_id, date, time: ex.time || null, total_amount: leg.signedAmount, ref_code: ex.ref_code || null,
         statement_desc: slipDesc(ex, leg.side), source: 'LINE_SLIP', status: 'PENDING_REVIEW',
@@ -504,9 +523,33 @@ async function processSlip(env, user, doc, ex, forced) {
   }
   const status = results.some(r => r.kind === 'CHOOSE') ? 'NEEDS_CHOICE'
     : results.some(r => r.kind === 'CREATED') ? 'SUGGESTED' : 'DONE';
-  await setDoc(env, doc.doc_id, { status, suggestion: JSON.stringify({ direction, legs: results }),
+  await setDoc(env, doc.doc_id, { status, suggestion: JSON.stringify({ direction, legs: results, ...(exclude.size ? { exclude: [...exclude] } : {}) }),
     transaction_id: results.find(r => r.transaction_id)?.transaction_id || null });
   return { doc: publicDoc(await getDoc(env, user, doc.doc_id)), outcome: status === 'DONE' ? 'MATCHED' : status, legs: results };
+}
+
+/* สลิปจับคู่กับรายการจาก statement ได้ → แนบรูปสลิป + บันทึกช่วยจำให้รายการนั้น (2026-10-30 · North: note บนสลิปใช้บันทึก)
+   ไม่ทับของเดิม: รูปใส่เมื่อยังไม่มี · note ใส่ในบรรทัดเดียวที่ยังว่าง */
+async function attachSlip(env, txId, doc, ex, user = null, side = null) {
+  const url = doc.file_key ? `/api/inbox/file/${doc.doc_id}` : null;
+  const note = [ex.memo, ex.subsidy_note].filter(Boolean).join(' · ').slice(0, 200);
+  const ops = [];
+  /* statement เป็นตัวตั้ง (North เลือก ก · 2026-10-30): บรรทัด statement ที่ยังไม่มีหมวด + เคยยืนยันคู่ค้านี้แล้ว (แบบบรรทัดเดียว)
+     → ใส่หมวด/บริษัท/คู่ค้าให้เลย (ยังรอตรวจ ต้องกดยืนยันเอง) */
+  if (user && side && doc.doc_type === 'SLIP') {
+    const party = side === 'OUT' ? ex.receiver?.name : ex.sender?.name;
+    const rule = await getRule(env, user.family_id, 'PARTY', partyKey(party));
+    const one = rule?.value?.lines?.length === 1 ? rule.value.lines[0] : null;
+    if (one?.category_id && one.category_id !== UNCATEGORIZED)
+      ops.push(env.DB.prepare(`UPDATE TransactionDetails SET category_id = ?, entity_id = COALESCE(entity_id, ?), contact_id = COALESCE(contact_id, ?), type = COALESCE(?, type)
+          WHERE transaction_id = ? AND category_id = ? AND (SELECT COUNT(*) FROM TransactionDetails x WHERE x.transaction_id = ?) = 1
+          AND transaction_id IN (SELECT transaction_id FROM Transactions WHERE transaction_id = ? AND status = 'PENDING_REVIEW')`)
+        .bind(one.category_id, one.entity_id || null, one.contact_id || null, ['INCOME', 'EXPENSE'].includes(one.type) ? one.type : null, txId, UNCATEGORIZED, txId, txId));
+  }
+  if (url) ops.push(env.DB.prepare(`UPDATE Transactions SET slip_image_url = ? WHERE transaction_id = ? AND (slip_image_url IS NULL OR slip_image_url = '')`).bind(url, txId));
+  if (note) ops.push(env.DB.prepare(`UPDATE TransactionDetails SET note = ? WHERE transaction_id = ? AND (note IS NULL OR note = '')
+      AND (SELECT COUNT(*) FROM TransactionDetails x WHERE x.transaction_id = ?) = 1`).bind(note, txId, txId));
+  if (ops.length) await env.DB.batch(ops);
 }
 
 function slipDesc(ex, side) {
@@ -712,7 +755,108 @@ export async function runAction(env, user, docId, action, body = {}) {
     await setDoc(env, docId, { status: 'DONE' });
     return { ok: true, status: 'DONE' };
   }
+  const rv = await reviewAction(env, user, doc, links, createdPending, action, body);
+  if (rv) return rv;
   return { error: 'ไม่รู้จักคำสั่งนี้' };
+}
+
+/* ═══ 🧾 หน้าตรวจสลิปก่อนยืนยัน (2026-10-30 · North: "matching จากภาพ แสดงข้อมูลก่อนยืนยันและแก้ไข") ═══
+   fields  = แก้ข้อมูลที่ AI อ่าน (วันที่ เวลา ยอด ค่าธรรมเนียม บันทึกช่วยจำ บัญชีฝั่งออก/เข้า) แล้วจับคู่ใหม่
+   unmatch = "ไม่ใช่รายการนี้" → ตัดคู่ ไม่จับรายการนั้นอีก (create_new = สร้างรายการใหม่เลย)
+   pick    = เลือกรายการที่ตรงกันเอง (ขาใดขาหนึ่ง · โอนระหว่างบัญชีมี 2 ขา)
+   review  = ยืนยัน: ใส่หมวด/บันทึกให้ทุกขาที่ยังรอตรวจ (แก้บรรทัดเดียวในที่ · แตกหลายหมวดแล้วไม่แตะ) → ยืนยัน + จำ */
+async function reviewAction(env, user, doc, links, createdPending, action, body) {
+  if (!['fields', 'unmatch', 'pick', 'review'].includes(action)) return null;
+  const confirmedLink = links.some(l => ['CREATED', 'MATCHED'].includes(l.role) && l.status === 'CONFIRMED');
+  const slipUrl = doc.file_key ? `/api/inbox/file/${doc.doc_id}` : null;
+  const resetLinks = async keepTx => {
+    for (const l of createdPending) await deleteTx(env, l.transaction_id);
+    for (const l of links.filter(l => l.role === 'MATCHED' && l.status === 'PENDING_REVIEW' && l.transaction_id !== keepTx))
+      if (slipUrl) await env.DB.prepare(`UPDATE Transactions SET slip_image_url = NULL WHERE transaction_id = ? AND slip_image_url = ?`).bind(l.transaction_id, slipUrl).run();
+    await env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE doc_id=?`).bind(doc.doc_id).run();
+  };
+
+  if (action === 'fields') {
+    if (confirmedLink) return { error: 'สลิปนี้ยืนยันแล้ว — แก้ที่หน้าประวัติ', status: 409 };
+    const ex = parse(doc.extracted, {}) || {}, f = body.fields || {};
+    if (/^\d{4}-\d{2}-\d{2}$/.test(f.date || '')) ex.date = f.date;
+    if (/^\d{2}:\d{2}(:\d{2})?$/.test(f.time || '')) ex.time = f.time.length === 5 ? f.time + ':00' : f.time;
+    if (f.amount != null && f.amount !== '') { const a = round2(Math.abs(Number(f.amount))); if (!a) return { error: 'ยอดต้องมากกว่า 0', status: 400 }; ex.amount = a; }
+    if (f.fee != null && f.fee !== '') ex.fee = round2(Math.abs(Number(f.fee) || 0));
+    if (typeof f.memo === 'string') ex.memo = f.memo.slice(0, 200);
+    const accounts = await permittedAccounts(env, user), forced = {};
+    for (const [k, side] of [['out_account_id', ex.sender], ['in_account_id', ex.receiver]]) {
+      if (!(k in body)) continue;
+      const id = String(body[k] || '');
+      if (id && !accounts.some(a => a.account_id === id)) return { error: 'ไม่มีสิทธิ์ใช้บัญชีนี้', status: 403 };
+      forced[k] = id;
+      if (id) await saveRule(env, user.family_id, 'ACCOUNT', accountHintKey(side?.bank, side?.account), id);
+    }
+    if (!ex.doc_type) ex.doc_type = doc.doc_type;
+    await resetLinks(null);
+    await setDoc(env, doc.doc_id, { extracted: JSON.stringify(ex) });
+    return processDoc(env, user, doc.doc_id, { forced: Object.keys(forced).length ? forced : undefined });
+  }
+
+  if (action === 'unmatch') {
+    const l = links.find(x => x.transaction_id === body.transaction_id && ['MATCHED', 'SUPPORT'].includes(x.role));
+    if (!l) return { error: 'ไม่พบรายการที่จับคู่ไว้', status: 404 };
+    if (l.status === 'CONFIRMED') return { error: 'รายการนั้นยืนยันแล้ว', status: 409 };
+    const sug = parse(doc.suggestion, {}) || {};
+    const exclude = [...new Set([...(sug.exclude || []), body.transaction_id])];
+    await resetLinks(null);
+    return processDoc(env, user, doc.doc_id, { forced: { exclude, create_new: !!body.create_new } });
+  }
+
+  if (action === 'pick') {
+    const tx = await env.DB.prepare(`SELECT t.transaction_id, t.account_id FROM Transactions t JOIN Accounts a ON a.account_id=t.account_id
+      JOIN UserPermissions up ON up.entity_id=a.entity_id WHERE t.transaction_id=? AND up.user_id=?`).bind(body.transaction_id, user.user_id).first();
+    if (!tx) return { error: 'ไม่พบรายการที่เลือก', status: 404 };
+    const sug = parse(doc.suggestion, {}) || {};
+    const leg = (sug.legs || []).find(g => (g.choices || []).some(c => c.transaction_id === tx.transaction_id)) || (sug.legs || []).find(g => g.account_id === tx.account_id);
+    if (leg?.kind === 'CREATED' && leg.transaction_id) await deleteTx(env, leg.transaction_id);
+    await linkDoc(env, doc.doc_id, tx.transaction_id, ['SLIP', 'CASH'].includes(doc.doc_type) ? 'MATCHED' : 'SUPPORT');
+    await attachSlip(env, tx.transaction_id, doc, parse(doc.extracted, {}) || {}, user, leg?.side || null);
+    if (leg) Object.assign(leg, { kind: 'MATCHED', transaction_id: tx.transaction_id, choices: undefined });
+    else sug.legs = [...(sug.legs || []), { side: null, account_id: tx.account_id, kind: 'MATCHED', transaction_id: tx.transaction_id }];
+    const status = (sug.legs || []).some(g => g.kind === 'CHOOSE') ? 'NEEDS_CHOICE' : (sug.legs || []).some(g => g.kind === 'CREATED') ? 'SUGGESTED' : 'DONE';
+    await setDoc(env, doc.doc_id, { status, suggestion: JSON.stringify(sug), transaction_id: tx.transaction_id });
+    return { ok: true, status };
+  }
+
+  /* review */
+  if (['NEEDS_ACCOUNT', 'NEEDS_CHOICE', 'READING', 'ERROR'].includes(doc.status)) return { error: 'ต้องเลือกบัญชี/รายการที่ตรงกันก่อน', status: 409 };
+  const sug = parse(doc.suggestion, {}) || {}, transfer = sug.direction === 'TRANSFER';
+  const targets = links.filter(l => ['CREATED', 'MATCHED', 'SUPPORT'].includes(l.role) && l.status === 'PENDING_REVIEW');
+  const cats = new Map(((await env.DB.prepare(`SELECT category_id, default_type FROM Categories WHERE family_id=? OR family_id IS NULL`)
+    .bind(user.family_id).all()).results || []).map(c => [c.category_id, c.default_type]));
+  const entIds = new Set((await permittedEntities(env, user)).map(x => x.entity_id));
+  const want = Array.isArray(body.legs) ? body.legs : [];
+  const ops = [];
+  for (const t of targets) {
+    const w = want.find(x => x.transaction_id === t.transaction_id) || (want.length === 1 ? want[0] : {}) || {};
+    const rows = (await env.DB.prepare(`SELECT detail_id, category_id, type FROM TransactionDetails WHERE transaction_id=?`).bind(t.transaction_id).all()).results || [];
+    const other = (sug.legs || []).find(g => g.transaction_id && g.transaction_id !== t.transaction_id)?.account_id || null;
+    const cat = transfer ? TRANSFER_CATEGORY : (w.category_id || null);
+    if (cat && cat !== TRANSFER_CATEGORY && !cats.has(cat)) return { error: `ไม่พบหมวด ${cat}`, status: 400 };
+    if (w.entity_id && !entIds.has(w.entity_id)) return { error: 'ไม่มีสิทธิ์ใช้บริษัทนี้', status: 403 };
+    if (rows.length === 1) {
+      if (!cat && rows[0].category_id === UNCATEGORIZED) return { error: 'เลือกหมวดก่อนยืนยัน', status: 400 };
+      const dt = cat ? (transfer ? 'TRANSFER' : cats.get(cat)) : null;
+      ops.push(env.DB.prepare(`UPDATE TransactionDetails SET category_id = COALESCE(?, category_id), type = COALESCE(?, type),
+          note = CASE WHEN ? IS NULL THEN note ELSE ? END, entity_id = COALESCE(?, entity_id), contact_id = COALESCE(?, contact_id),
+          head_owner = CASE WHEN ? = 1 THEN COALESCE(?, head_owner) ELSE head_owner END WHERE detail_id = ?`)
+        .bind(cat, ['INCOME', 'EXPENSE', 'TRANSFER'].includes(dt) ? dt : null, w.note == null ? null : 1, String(w.note ?? '').slice(0, 200),
+          w.entity_id || null, w.contact_id || null, transfer ? 1 : 0, other, rows[0].detail_id));
+    } else if (!rows.length) return { error: 'รายการนี้ไม่มีบรรทัดย่อย — เปิดแก้ในหน้ารอตรวจสอบ', status: 400 };
+    else if (rows.some(r => r.category_id === UNCATEGORIZED)) return { error: 'รายการแตกหลายหมวดยังมีบรรทัดที่ไม่ระบุหมวด', status: 400 };
+    ops.push(env.DB.prepare(`UPDATE Transactions SET status='CONFIRMED', slip_image_url = COALESCE(NULLIF(slip_image_url, ''), ?) WHERE transaction_id=?`)
+      .bind(doc.doc_type === 'SLIP' ? slipUrl : null, t.transaction_id));
+  }
+  if (ops.length) await env.DB.batch(ops);
+  if (targets.length) await learnFromDoc(env, user, doc, targets.map(t => t.transaction_id));
+  await setDoc(env, doc.doc_id, { status: 'DONE' });
+  return { ok: true, status: 'DONE', confirmed: targets.length };
 }
 
 async function deleteTx(env, txId) {

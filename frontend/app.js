@@ -2304,6 +2304,9 @@ function renderPendingHero() {
           <input type="file" id="ph-slip-in" accept="image/*,application/pdf" multiple hidden></label>
       </div>
       <div class="ph-tools">${list.length ? `<button type="button" id="ph-bulkcat" class="pt-ok">🏷️ ใส่หมวดหลายรายการ</button><button type="button" id="ph-saveall" class="pt-ok">💾 บันทึกทั้งหมดที่พร้อม</button>` : ''}
+        ${(() => { const all = AppState.pendingTransactions || [], n = all.filter(t => t.slip_image_url).length, f = AppState.pendingSlipFilter || 'ALL';
+            return `<button type="button" class="ph-slipf${f === 'SLIP' ? ' on' : ''}" data-f="SLIP">📎 มีสลิป ${n.toLocaleString('en-US')}</button><button type="button" class="ph-slipf${f === 'NOSLIP' ? ' on' : ''}" data-f="NOSLIP">ไม่มีสลิป ${(all.length - n).toLocaleString('en-US')}</button>`; })()}
+        <button type="button" id="ph-slipreview" class="pt-ok">🧾 สลิปที่ยังไม่จับคู่</button>
         ${pendingImportBatches().length ? `<button type="button" id="ph-delbatch">🗑️ ลบทั้งชุดที่นำเข้า</button>` : ''}</div>
       <div id="ph-status"></div>
       <div class="dv2-kpis">
@@ -2341,6 +2344,8 @@ function renderPendingHero() {
     box.querySelector('#ph-add').onclick = () => document.getElementById('btn-pending-add-row')?.click();
     const sin = box.querySelector('#ph-slip-in'); sin.onchange = () => { const fs = [...sin.files]; sin.value = ''; uploadSlipFiles(fs); };
     box.querySelector('#ph-delbatch')?.addEventListener('click', deleteImportBatch);
+    box.querySelector('#ph-slipreview')?.addEventListener('click', () => SlipReview.open());
+    box.querySelectorAll('.ph-slipf').forEach(b => b.onclick = () => { AppState.pendingSlipFilter = AppState.pendingSlipFilter === b.dataset.f ? 'ALL' : b.dataset.f; renderPendingTransactions(); renderPendingHero(); });
     box.querySelector('#ph-bulkcat')?.addEventListener('click', bulkCategorize);
     box.querySelector('#ph-saveall')?.addEventListener('click', bulkSaveReady);
 }
@@ -3236,6 +3241,9 @@ function renderPendingTransactions() {
     if (filterVal && filterVal !== 'ALL') {
         displayList = displayList.filter(tx => String(tx.account_id) === String(filterVal));
     }
+    /* 📎 ตัวกรองสลิป (2026-10-30 · statement เป็นตัวตั้ง): มีสลิปแนบ / ยังไม่มีสลิป */
+    if (AppState.pendingSlipFilter === 'SLIP') displayList = displayList.filter(tx => tx.slip_image_url);
+    else if (AppState.pendingSlipFilter === 'NOSLIP') displayList = displayList.filter(tx => !tx.slip_image_url);
     
     const sortSel = document.getElementById("pending-sort-filter");
     const sortVal = sortSel ? sortSel.value : 'desc';
@@ -3306,6 +3314,8 @@ function renderPendingTransactions() {
                 </div>
             </div>
             <div class="tx-card-body" style="padding: 12px 14px; background: #ffffff;">
+                ${tx.slip_image_url ? `<div class="slip-strip" data-slip="${String(tx.slip_image_url).replace(/[^\w/.:-]/g, '')}" title="เปิดสลิป"><span class="slip-thumb">📎</span>
+                    <span class="slip-txt"><b>สลิปแนบแล้ว</b>${stmtNote ? ` · 📝 ${String(stmtNote).replace(/[&<>"]/g, '')}` : ''}</span></div>` : ''}
                 <div class="sub-rows-container" style="display: flex; flex-direction: column; gap: 4px;">
                     <!-- Sub-rows populated here -->
                 </div>
@@ -3326,6 +3336,7 @@ function renderPendingTransactions() {
         `;
         
         container.appendChild(cardEl);
+        const strip = cardEl.querySelector('.slip-strip'); if (strip) { strip.onclick = () => showSlip(strip.dataset.slip); SlipThumbs.watch(strip); }
         
         const detailsToRender = tx.details && tx.details.length > 0 ? tx.details : [{}];
         detailsToRender.forEach((detail, subIdx) => {
@@ -5469,6 +5480,7 @@ reportTabs.forEach(tab => {
         if (target === 'wht') runWhtReport();
         else if (target === 'tb') runTrialBalanceReport();
         else if (target === 'project') runProjectReport();
+        else if (target === 'stmt') StmtReport.init();
     });
 });
 
@@ -7278,19 +7290,23 @@ async function deleteImportBatch() {
 async function uploadSlipFiles(files) {
     files = [...(files || [])]; if (!files.length) return;
     const go = document.getElementById('ph-slip-go'); const orig = go ? go.innerHTML : '';
-    let done = 0, matched = 0, created = 0, waiting = 0, failed = 0, dup = 0;
+    let done = 0, matched = 0, created = 0, waiting = 0, failed = 0, dup = 0; const ids = [];
     const q = files.slice();
     const worker = async () => { while (q.length) { const f = q.shift();
         const fd = new FormData(); fd.append('file', f, f.name);
         try { const r = await fetch(`${API_BASE}/api/inbox/upload`, { method: 'POST', body: fd }); const j = await r.json().catch(() => ({}));
             const o = j.results?.[0] || {};
+            if (o.doc?.doc_id) ids.push(o.doc.doc_id);
             if (!r.ok || o.error) failed++; else if (o.duplicate) dup++; else if (o.outcome === 'MATCHED' || o.outcome === 'ATTACHED') matched++; else if (o.outcome === 'SUGGESTED') created++; else waiting++;
         } catch { failed++; }
         done++; if (go) go.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${done}/${files.length}`; } };
     await Promise.all([worker(), worker()]);
     if (go) go.innerHTML = orig;
-    alert(`อ่านแล้ว ${files.length} ไฟล์\n🔗 จับคู่กับรายการที่มีอยู่ ${matched}\n🆕 สร้างเป็นรายการรอตรวจ ${created}\n⏳ รอเลือก/รอจับคู่ ${waiting} (ดูกล่องสีส้มด้านบน)` + (dup ? `\n♻️ เคยส่งแล้ว ${dup}` : '') + (failed ? `\n⚠️ ไม่สำเร็จ ${failed}` : ''));
-    loadPending();
+    const msg = `อ่านแล้ว ${files.length} ไฟล์\n🔗 จับคู่กับรายการที่มีอยู่ ${matched}\n🆕 สร้างเป็นรายการรอตรวจ ${created}\n⏳ รอเลือก/รอจับคู่ ${waiting}` + (dup ? `\n♻️ เคยส่งแล้ว ${dup}` : '') + (failed ? `\n⚠️ ไม่สำเร็จ ${failed}` : '');
+    /* 🧾 2026-10-30: อ่านเสร็จ → เปิดหน้าตรวจสลิปทีละใบ (ดูรูป + ข้อมูลที่อ่าน + รายการที่จับคู่ ก่อนยืนยัน) */
+    const left = created + waiting;
+    if (ids.length && left && confirm(msg + `\n\nมีสลิปที่ยังไม่เจอใน statement / ต้องเลือก ${left} ใบ — เปิดดูทีละใบเลยไหม?\n(ที่จับคู่แล้ว ตรวจต่อในหน้ารอตรวจสอบ ตัวกรอง 📎 มีสลิป)`)) SlipReview.open(ids);
+    else { alert(msg + (matched ? '\n\nที่จับคู่แล้ว: ดูในหน้ารอตรวจสอบ ตัวกรอง 📎 มีสลิป' : '')); loadPending(); }
 }
 /* หลังนำเข้า statement: ใบเสร็จ/สลิปที่รอจับคู่ ลองจับคู่ใหม่อีกรอบ (ไม่ต้องรอ) */
 async function rematchWaitingDocs() {
@@ -7307,8 +7323,21 @@ function statementKey(desc) {
     const k = String(desc || '').toLowerCase().replace(/[x*]{2,}/g, ' ').replace(/[0-9]+/g, ' ').replace(/[^a-z\u0e00-\u0e7f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
     return k.length >= 3 ? k : null;
 }
-async function importStatementRows(accId, transactions, onProgress) {
+async function importStatementRows(accId, transactions, onProgress, meta = null) {
     const entityId = AppState.allowedEntities[0] || null;
+    /* 📒 หัว statement (2026-10-30): ช่วงวันที่ · ยอดยกมา/ยกไป · ไฟล์ → stmt_id ใส่ทุกบรรทัด พร้อมลำดับ + ยอดคงเหลือที่ธนาคารพิมพ์
+       (ใช้ในรายงานยอดสะสมต่อ statement · ถ้าบันทึกหัวไม่ได้ก็นำเข้าต่อตามเดิม) */
+    let stmtId = null;
+    const seqOf = new Map(transactions.map((t, i) => [t, i]));
+    if (meta) {
+        const dates = transactions.map(t => String(t.date || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+        if (dates.length) try {
+            const hr = await fetch(`${API_BASE}/api/statements/header`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accId,
+                period_from: dates[0], period_to: dates[dates.length - 1], opening: meta.opening ?? null, closing: meta.closing ?? null, line_count: transactions.length,
+                file_name: meta.file_name || null, source_kind: meta.source_kind || null }) });
+            if (hr.ok) stmtId = (await hr.json()).stmt_id || null;
+        } catch { /* ไม่มีหัวก็นำเข้าได้ */ }
+    }
     let importedCount = 0, skippedCount = 0, errorCount = 0, mergedCount = 0, autoCatCount = 0, done = 0;
     /* 🏷️ จำหมวดจากรายการเดิม (2026-10-15): ร้าน/ผู้รับโอนเดิม → เติมหมวด คู่ค้า Company ให้เลย (ยังต้องกดตรวจ/บันทึกเหมือนเดิม) */
     let hints = {};
@@ -7323,6 +7352,7 @@ async function importStatementRows(accId, transactions, onProgress) {
                 // ยอดติดเครื่องหมายตามจริง (จ่าย = ลบ) ให้ตรงกับรายการจาก LINE/ที่บันทึกแล้ว · match_existing = จับคู่สลิปที่บันทึกไว้ก่อน (2026-10-15)
                 account_id: accId, date: tx.date, time: tx.time, statement_desc: tx.statement_desc, total_amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), ref_code: tx.ref_code,
                 status: 'PENDING_REVIEW', source: 'PDF_IMPORT', match_existing: true,
+                ...(stmtId ? { stmt_id: stmtId, stmt_seq: seqOf.get(tx), stmt_balance: (tx.balance == null || tx.balance === '' || !isFinite(tx.balance)) ? null : Number(tx.balance) } : {}),
                 details: [(() => { const k = statementKey(tx.statement_desc), h = k && hints[(tx.type === 'EXPENSE' ? 'OUT' : 'IN') + '|' + k];
                     const d = { amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), fee: 0, wht: 0, category_id: null, entity_id: entityId, note: tx.note, type: tx.type };
                     if (h) { d.category_id = h.category_id; d.contact_id = h.contact_id; d.entity_id = h.entity_id || entityId; if (h.type) d.type = h.type; d._hint = 1; }
@@ -7399,7 +7429,8 @@ function bindPDFUpload() {
                     if (!data.transactions?.length) { alert('ไม่พบรายการเงินในภาพ'); done(); return; }
                     const useAcc = await statementPrecheck(selectedAccId, { account_number: data.account_number, rows: data.transactions, opening: data.opening_balance, closing: data.closing_balance });
                     if (!useAcc) { done(); return; }
-                    const res = await importStatementRows(useAcc, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; });
+                    const res = await importStatementRows(useAcc, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; },
+                        { opening: data.opening_balance, closing: data.closing_balance, source_kind: data.source_kind, file_name: allFiles.map(f => f.name).join(', ').slice(0, 200) });
                     alert(`อ่านจากภาพด้วย AI ${data.transactions.length} รายการ\nนำเข้า ${res.importedCount} รายการ` + (res.mergedCount ? `\n🔗 จับคู่กับสลิป/รายการที่บันทึกไว้แล้ว ${res.mergedCount}` : '') + (res.autoCatCount ? `\n🏷️ ใส่หมวดอัตโนมัติ ${res.autoCatCount}` : '')
                         + (res.skippedCount ? `\nข้ามรายการซ้ำ ${res.skippedCount}` : '') + (res.errorCount ? `\n⚠️ ไม่สำเร็จ ${res.errorCount}` : '')
                         + `\n\n⚠️ ภาพแคปอาจตกหล่นบางแถว — ตรวจกับยอดในแอปอีกครั้ง`);
@@ -7426,11 +7457,12 @@ function bindPDFUpload() {
                     const parsed = await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
                     if (parsed.ok) {
                         const txs = parsed.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00',
-                            type: l.amount > 0 ? 'INCOME' : 'EXPENSE', amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null }));
+                            type: l.amount > 0 ? 'INCOME' : 'EXPENSE', amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null }));
                         const useAcc = await statementPrecheck(selectedAccId, { account_number: parsed.account_number, rows: txs, opening: parsed.opening, closing: parsed.closing });
                         if (!useAcc) { resetUploadBtn(); return; }
                         selectedAccId = useAcc;
-                        const res = await importStatementRows(selectedAccId, txs, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; });
+                        const res = await importStatementRows(selectedAccId, txs, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; },
+                            { opening: parsed.opening, closing: parsed.closing, source_kind: 'BANK', file_name: file.name });
                         const sumIn = parsed.lines.filter(l => l.amount > 0).reduce((t, l) => t + l.amount, 0), sumOut = -parsed.lines.filter(l => l.amount < 0).reduce((t, l) => t + l.amount, 0);
                         let msg = `อ่านจากตัวหนังสือในไฟล์ (ไม่ใช้ AI) ${parsed.lines.length} รายการ\n` +
                             `ยอดยกมา ${Number(parsed.opening ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} · ยอดยกไป ${Number(parsed.closing ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +
@@ -7544,7 +7576,8 @@ function bindPDFUpload() {
                             const useAcc = await statementPrecheck(selectedAccId, { account_number: data.account_number, rows: data.transactions, opening: data.opening_balance, closing: data.closing_balance });
                             if (!useAcc) { if(btnIcon) btnIcon.className = originalIconClass; triggerUploadBtn.disabled = false; triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เริ่มนำเข้าข้อมูล`; pdfInput.value = ''; return; }
                             selectedAccId = useAcc;
-                            const res = await importStatementRows(selectedAccId, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; });
+                            const res = await importStatementRows(selectedAccId, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; },
+                                { opening: data.opening_balance, closing: data.closing_balance, source_kind: data.source_kind, file_name: file?.name || null });
                             let msg = `อ่านด้วย AI · นำเข้า ${res.importedCount} รายการ` + (res.mergedCount ? `\n🔗 จับคู่กับสลิป/รายการที่บันทึกไว้แล้ว ${res.mergedCount} รายการ (ไม่สร้างซ้ำ)` : '') + (res.autoCatCount ? `\n🏷️ ใส่หมวดให้อัตโนมัติจากรายการเดิม ${res.autoCatCount} รายการ (ตรวจแล้วกดบันทึก)` : '');
                             if (res.skippedCount > 0) {
                                 msg += `\n\nข้ามรายการซ้ำ ${res.skippedCount} รายการ:\n` + res.skippedDetails.slice(0, 10).join('\n');
@@ -14203,3 +14236,399 @@ window.renderTripDetailModal = function renderTripWorkspaceDetail() {
     }
     container.innerHTML = `<div class="trip-screen">${hero}${content}</div>`;
 };
+
+// stmt_running_report.js
+/* 📒 รายงานยอดสะสมต่อ statement (2026-10-30 · North: "หาความไม่สมบูรณ์หรือรายการที่ขาดหายไปของแต่ละ statement
+   แสดงรายการเคลื่อนไหว + ยอดคงเหลือรายบรรทัด" · Excel + PDF)
+   ข้อมูลจาก GET /api/reports/statement-running (ยืนยัน + รอตรวจ) · ตัวเลขแสดงแบบมุมธนาคาร: บัตรเครดิต = ยอดค้างเป็นบวก
+   จุดที่ตรวจให้:
+   ① ยอดสะสมของระบบ เทียบยอดคงเหลือที่ธนาคารพิมพ์ทุกบรรทัด → บรรทัดแรกที่ "เริ่มต่าง" = มีรายการขาด/เกินก่อนหน้านั้น
+   ② ยอดยกมา/ยกไปของ statement เทียบยอดระบบ ③ รายการในช่วง statement ที่ไม่มีใน statement (อาจซ้ำ/ผิดบัญชี/สลิปยังไม่จับคู่)
+   ④ จำนวนบรรทัดในระบบน้อยกว่าในไฟล์ (มีรายการถูกลบ) ⑤ ช่วงวันที่ที่ไม่มี statement */
+const StmtReport = (() => {
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+    const fm = n => { if (n == null || n === '' || !isFinite(n)) return ''; const v = r2(n), t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const fmH = n => { const s = fm(n); return s.startsWith('(') ? `<span class="sr-neg">${s}</span>` : s; };
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${m[3]}/${m[2]}/${(+m[1] + 543) % 100}` : (d || ''); };
+    const addDay = (d, k) => new Date(Date.parse(d + 'T00:00:00Z') + k * 864e5).toISOString().slice(0, 10);
+    const accName = a => String(a?.name || a?.account_id || '').replace(/^\s*\[[^\]]+\]\s*/, '');
+
+    /* แยกกลุ่ม statement + คิดยอดสะสม + หาจุดผิด (ฟังก์ชันล้วน ไม่แตะหน้าเว็บ) */
+    function build(data) {
+        const acc = data.account || {}, isCredit = acc.account_type === 'CREDIT', sg = isCredit ? -1 : 1;
+        const headers = (data.headers || []).slice(), hById = Object.fromEntries(headers.map(h => [h.stmt_id, h]));
+        const groups = [], gByKey = {};
+        const groupOf = row => {
+            let key, h = null;
+            if (row.stmt_id) { key = row.stmt_id; h = hById[key] || null; }
+            else { h = headers.find(x => x.period_from <= row.date && row.date <= x.period_to) || null; if (h) { key = h.stmt_id; row._outside = true; } else key = 'M:' + row.date.slice(0, 7); }
+            if (!gByKey[key]) { gByKey[key] = { key, header: h, rows: [] }; groups.push(gByKey[key]); }
+            return gByKey[key];
+        };
+        let run = r2(data.opening);
+        for (const row of (data.rows || [])) {
+            const g = groupOf(row);
+            if (!g.rows.length) g.openSys = r2(sg * run);
+            run = r2(run + Number(row.amount || 0));
+            row._run = r2(sg * run);
+            row._bank = row.stmt_balance == null ? null : r2(row.stmt_balance);
+            row._diff = row._bank == null ? null : r2(row._run - row._bank);
+            g.rows.push(row); g.closeSys = row._run;
+        }
+        /* หัว statement ที่ไม่มีรายการเลยในช่วง → แสดงว่า "ไม่มีรายการในระบบ" */
+        for (const h of headers) if (!gByKey[h.stmt_id]) { const g = { key: h.stmt_id, header: h, rows: [], openSys: null, closeSys: null, empty: true }; gByKey[h.stmt_id] = g; groups.push(g); }
+        const cps = (data.checkpoints || []).map(c => ({ ...c, bank: r2(sg * c.balance) }));
+        for (const g of groups) {
+            const h = g.header, rows = g.rows;
+            g.from = h?.period_from || rows[0]?.date || ''; g.to = h?.period_to || rows[rows.length - 1]?.date || '';
+            g.label = h ? `${dTh(g.from)} – ${dTh(g.to)}` : `${g.key.slice(2)} (ไม่ได้นำเข้าเป็น statement)`;
+            g.openBank = h?.opening == null ? null : r2(h.opening);
+            const cp = cps.filter(c => c.as_of === g.to).pop();
+            g.closeBank = h?.closing != null ? r2(h.closing) : (cp ? cp.bank : null);
+            g.openDiff = g.openBank == null || g.openSys == null ? null : r2(g.openSys - g.openBank);
+            g.closeDiff = g.closeBank == null || g.closeSys == null ? null : r2(g.closeSys - g.closeBank);
+            g.sumIn = r2(rows.filter(r => r.amount > 0).reduce((t, r) => t + Number(r.amount), 0));
+            g.sumOut = r2(rows.filter(r => r.amount < 0).reduce((t, r) => t + Number(r.amount), 0));
+            g.pending = rows.filter(r => r.status === 'PENDING_REVIEW').length;
+            g.inStmt = rows.filter(r => r.stmt_id && r.stmt_id === g.key).length;
+            g.lineCount = h ? Number(h.line_count) || 0 : null;
+            let prev = g.openDiff ?? 0; g.flags = 0; g.firstBad = null;
+            rows.forEach((r, i) => {
+                r._notes = [];
+                if (String(r.transaction_id || '').startsWith('TX-OB-')) r._notes.push('ยอดยกมาตั้งต้น');
+                if (r._diff != null) {
+                    if (Math.abs(r._diff) >= 0.01 && Math.abs(r._diff - prev) >= 0.01) { r._flag = 'start'; r._notes.push(`⚠️ เริ่มต่าง ${fm(r._diff)} — มีรายการขาด/เกินก่อนบรรทัดนี้`); g.flags++; if (g.firstBad == null) g.firstBad = i + 1; }
+                    else if (Math.abs(r._diff) >= 0.01) { r._flag = 'cont'; r._notes.push(`ต่าง ${fm(r._diff)} (ต่อเนื่อง)`); }
+                    else if (Math.abs(prev) >= 0.01) r._notes.push('✅ กลับมาตรง');
+                    prev = r._diff;
+                }
+                if (r._outside) { r._flag = r._flag || 'outside'; r._notes.push('⚠️ ไม่มีใน statement (อาจซ้ำ / ผิดบัญชี / สลิปยังไม่จับคู่)'); g.flags++; }
+            });
+            /* อาจซ้ำ: รายการนอก statement ที่ยอดเท่ากับบรรทัดใน statement ภายใน ±3 วัน */
+            rows.filter(r => !r.stmt_id).forEach(r => {
+                const t = Date.parse(r.date), j = rows.findIndex(x => x.stmt_id && Math.abs(Math.abs(x.amount) - Math.abs(r.amount)) < 0.01 && Math.sign(x.amount) === Math.sign(r.amount) && Math.abs(Date.parse(x.date) - t) <= 3 * 864e5);
+                if (j >= 0) r._notes.push(`อาจซ้ำกับบรรทัด ${j + 1}`);
+            });
+            if (g.lineCount && g.inStmt < g.lineCount) { g.missingLines = g.lineCount - g.inStmt; g.flags++; }
+            if (g.openDiff != null && Math.abs(g.openDiff) >= 0.01) g.flags++;
+            if (g.closeDiff != null && Math.abs(g.closeDiff) >= 0.01) g.flags++;
+            const canCheck = g.closeBank != null || rows.some(r => r._bank != null);
+            g.status = g.empty ? '⚠️ ไม่มีรายการในระบบ' : g.flags ? `⚠️ ต้องตรวจ ${g.flags} จุด` : canCheck ? '✅ ครบ ตรงธนาคาร' : '❔ ไม่มียอดธนาคารให้เทียบ';
+        }
+        /* ช่วงที่ไม่มี statement (ระหว่าง statement ที่นำเข้า) */
+        const hs = groups.filter(g => g.header).sort((a, b) => a.from.localeCompare(b.from)), gaps = [];
+        for (let i = 1; i < hs.length; i++) if (hs[i].from > addDay(hs[i - 1].to, 1)) gaps.push({ from: addDay(hs[i - 1].to, 1), to: addDay(hs[i].from, -1) });
+        groups.sort((a, b) => a.from.localeCompare(b.from) || (a.header ? -1 : 1));
+        return { account: acc, isCredit, groups, gaps, from: data.from, to: data.to, opening: r2(sg * data.opening), truncated: !!data.truncated };
+    }
+
+    async function fetchOne(accId, from, to) {
+        const r = await fetch(`${API_BASE}/api/reports/statement-running?account_id=${encodeURIComponent(accId)}&from=${from}&to=${to}`);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || `โหลดรายงานไม่สำเร็จ (${r.status})`);
+        return build(j);
+    }
+    const accountsFor = sel => sel === '*' ? (AppState.accounts || []).filter(a => a.account_type !== 'TRIP' && !a.is_archived) : (AppState.accounts || []).filter(a => a.account_id === sel);
+    async function load() {
+        const sel = document.getElementById('sr-acc')?.value || '*', from = document.getElementById('sr-from').value, to = document.getElementById('sr-to').value;
+        if (!from || !to || from > to) throw new Error('เลือกช่วงวันที่ให้ถูกต้อง');
+        const out = [];
+        for (const a of accountsFor(sel)) { const rep = await fetchOne(a.account_id, from, to); if (sel !== '*' || rep.groups.length) out.push(rep); }
+        return { reports: out, from, to };
+    }
+
+    const COLS = ['#', 'วันที่', 'เวลา', 'รายละเอียด', 'หมวด', 'เข้า', 'ออก', 'ยอดสะสม (ระบบ)', 'ยอดตามธนาคาร', 'ต่าง', 'สถานะ', 'หมายเหตุ'];
+    const stTxt = r => r.status === 'CONFIRMED' ? '✅ ยืนยัน' : '⏳ รอตรวจ';
+    const rowCells = (r, i) => [i + 1, dTh(r.date), String(r.time || '').slice(0, 5) === '00:00' ? '' : String(r.time || '').slice(0, 5),
+        [r.statement_desc, r.notes].filter(Boolean).join(' · '), r.categories || '', r.amount > 0 ? r.amount : null, r.amount < 0 ? -r.amount : null,
+        r._run, r._bank, r._diff, stTxt(r), (r._notes || []).join(' · ')];
+    const summaryRows = reports => reports.flatMap(rep => rep.groups.map(g => [accName(rep.account), g.label, g.header?.file_name || '', g.rows.length,
+        g.openBank, g.openSys, g.sumIn, -g.sumOut, g.closeSys, g.closeBank, g.closeDiff, g.pending, g.missingLines ? `ขาด ${g.missingLines} บรรทัด` : '', g.status]));
+    const SUM_COLS = ['บัญชี', 'Statement', 'ไฟล์', 'รายการ', 'ยกมา (ธนาคาร)', 'ยกมา (ระบบ)', 'เข้า', 'ออก', 'ยกไป (ระบบ)', 'ยกไป (ธนาคาร)', 'ต่าง', 'รอตรวจ', 'บรรทัดหาย', 'ผลตรวจ'];
+
+    /* ── แสดงบนหน้า ── */
+    function render(res) {
+        const box = document.getElementById('sr-result'); if (!box) return;
+        if (!res.reports.length) { box.innerHTML = '<div class="sr-empty">ไม่มีรายการในช่วงนี้</div>'; return; }
+        box.innerHTML = res.reports.map(rep => `<div class="sr-acc"><h4>${rep.isCredit ? '💳' : '🏦'} ${esc(accName(rep.account))} <small>${esc(rep.account.account_number || '')}</small></h4>
+            ${rep.truncated ? '<div class="sr-warn">⚠️ รายการเกิน 6,000 — แสดงไม่ครบ กรุณาเลือกช่วงสั้นลง</div>' : ''}
+            ${rep.gaps.map(x => `<div class="sr-warn">⚠️ ไม่มี statement ช่วง ${dTh(x.from)} – ${dTh(x.to)}</div>`).join('')}
+            ${rep.groups.map(g => `<details class="sr-grp ${g.flags || g.empty ? 'bad' : ''}"${g.flags ? ' open' : ''}><summary>
+                <b>📄 ${esc(g.label)}</b><span>${g.rows.length} รายการ${g.pending ? ` · ⏳ ${g.pending}` : ''}</span>
+                <span>ยกมา ${fmH(g.openSys)}${g.openBank != null ? ` / ธ. ${fmH(g.openBank)}` : ''}</span>
+                <span>ยกไป ${fmH(g.closeSys)}${g.closeBank != null ? ` / ธ. ${fmH(g.closeBank)}` : ''}</span><em>${esc(g.status)}${g.missingLines ? ` · ขาด ${g.missingLines} บรรทัด` : ''}</em></summary>
+                <div class="table-responsive"><table class="sr-tbl"><thead><tr>${COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
+                ${g.rows.map((r, i) => { const c = rowCells(r, i); return `<tr class="${r._flag ? 'sr-' + r._flag : ''}">${c.map((v, k) => `<td class="${k >= 5 && k <= 9 ? 'r' : ''}">${k >= 5 && k <= 9 ? fmH(v) : esc(v)}</td>`).join('')}</tr>`; }).join('')}
+                </tbody></table></div></details>`).join('')}</div>`).join('');
+    }
+
+    /* ── Excel: แผ่น "สรุป" + 1 แผ่นต่อ statement ── */
+    function excel(res) {
+        const XL = (typeof XLSXStyle !== 'undefined') ? XLSXStyle : XLSX;
+        if (typeof XL === 'undefined') { alert('ไม่พบไลบรารีส่งออกไฟล์ กรุณารีเฟรชหน้าเว็บ'); return; }
+        const NF = '#,##0.00_);[Red](#,##0.00)', bd = { style: 'thin', color: { rgb: 'D9D2F5' } }, border = { top: bd, bottom: bd, left: bd, right: bd };
+        const HD = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { patternType: 'solid', fgColor: { rgb: '5F3DC4' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border };
+        const FILL = { start: 'FFE3E3', outside: 'FFF3BF', cont: 'FFF5F5', total: 'F3F0FF' };
+        const wb = XL.utils.book_new(), used = new Set();
+        const sheetName = s => { let n = String(s).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31).trim() || 'Sheet', k = 2; while (used.has(n)) n = n.slice(0, 27) + ' ' + k++; used.add(n); return n; };
+        const put = (name, title, cols, rows, numCols, fills, widths) => {
+            const aoa = [...title.map(t => [t]), [], cols, ...rows], ws = XL.utils.aoa_to_sheet(aoa), h0 = title.length + 1;
+            title.forEach((_, i) => { const c = ws[XL.utils.encode_cell({ r: i, c: 0 })]; if (c) c.s = { font: { bold: i === 0, sz: i === 0 ? 14 : 11, color: { rgb: i === 0 ? '5F3DC4' : '333333' } } }; });
+            cols.forEach((_, c) => { const x = ws[XL.utils.encode_cell({ r: h0, c })]; if (x) x.s = HD; });
+            rows.forEach((row, i) => cols.forEach((_, c) => {
+                const ref = XL.utils.encode_cell({ r: h0 + 1 + i, c }); if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+                const s = { border, alignment: { vertical: 'top', wrapText: c === 3 || c === cols.length - 1 } };
+                if (fills[i]) s.fill = { patternType: 'solid', fgColor: { rgb: fills[i] } };
+                if (fills[i] === FILL.total) s.font = { bold: true };
+                if (numCols.includes(c)) ws[ref].z = NF;
+                ws[ref].s = s;
+            }));
+            ws['!cols'] = widths.map(w => ({ wch: w })); ws['!freeze'] = { xSplit: 0, ySplit: h0 + 1 };
+            XL.utils.book_append_sheet(wb, ws, sheetName(name));
+        };
+        put('สรุป', [`📒 รายงานยอดสะสมต่อ statement · ${dTh(res.from)} – ${dTh(res.to)}`, `รวมรายการยืนยันแล้วและรอตรวจ · บัตรเครดิตแสดงยอดค้างเป็นบวก · ออกเมื่อ ${new Date().toLocaleString('th-TH')}`],
+            SUM_COLS, summaryRows(res.reports), [4, 5, 6, 7, 8, 9, 10], summaryRows(res.reports).map(r => String(r[13]).startsWith('⚠️') ? FILL.start : null),
+            [22, 24, 22, 8, 14, 14, 14, 14, 14, 14, 12, 8, 14, 24]);
+        for (const rep of res.reports) for (const g of rep.groups) {
+            const rows = [['', '', '', 'ยอดยกมา', '', null, null, g.openSys, g.openBank, g.openDiff, '', ''], ...g.rows.map(rowCells),
+                ['', '', '', 'ยอดยกไป', '', g.sumIn, -g.sumOut, g.closeSys, g.closeBank, g.closeDiff, '', g.missingLines ? `⚠️ ในระบบมี ${g.inStmt} จาก ${g.lineCount} บรรทัด` : '']];
+            const fills = [FILL.total, ...g.rows.map(r => FILL[r._flag] || null), FILL.total];
+            put(`${accName(rep.account).slice(0, 14)} ${g.from.slice(2, 7)}`, [`${accName(rep.account)} ${rep.account.account_number || ''} · Statement ${g.label}`, `${g.header?.file_name || ''}   ${g.status}`],
+                COLS, rows, [5, 6, 7, 8, 9], fills, [5, 10, 7, 40, 18, 13, 13, 15, 15, 11, 10, 40]);
+        }
+        XL.writeFile(wb, `ยอดสะสม-statement_${res.from}_${res.to}.xlsx`);
+    }
+
+    /* ── PDF: หน้าต่างพิมพ์ (A4 แนวนอน) ── */
+    function pdf(res, w) {
+        w = w || window.open('', '_blank'); if (!w) { alert('เบราว์เซอร์บล็อกป๊อปอัป — กรุณาอนุญาตแล้วลองใหม่'); return; }
+        w.document.open();
+        const num = v => `<td class="r">${fmH(v)}</td>`;
+        const body = `<section><h1>📒 รายงานยอดสะสมต่อ statement</h1><p class="sub">${dTh(res.from)} – ${dTh(res.to)} · รวมรายการยืนยันแล้วและรอตรวจ · บัตรเครดิตแสดงยอดค้างเป็นบวก</p>
+            <table><thead><tr>${SUM_COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${summaryRows(res.reports).map(r => `<tr class="${String(r[13]).startsWith('⚠️') ? 'start' : ''}">${r.map((v, k) => k >= 4 && k <= 10 ? num(v) : `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+            ${res.reports.flatMap(rep => rep.gaps.map(x => `<p class="warn">⚠️ ${esc(accName(rep.account))}: ไม่มี statement ช่วง ${dTh(x.from)} – ${dTh(x.to)}</p>`)).join('')}</section>` +
+            res.reports.map(rep => rep.groups.map(g => `<section class="pb"><h2>${rep.isCredit ? '💳' : '🏦'} ${esc(accName(rep.account))} ${esc(rep.account.account_number || '')} · ${esc(g.label)}</h2>
+            <p class="sub">${esc(g.header?.file_name || '')} · ${esc(g.status)}${g.missingLines ? ` · ในระบบมี ${g.inStmt} จาก ${g.lineCount} บรรทัด` : ''}</p>
+            <table><thead><tr>${COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
+            <tr class="total"><td></td><td></td><td></td><td>ยอดยกมา</td><td></td><td></td><td></td>${num(g.openSys)}${num(g.openBank)}${num(g.openDiff)}<td></td><td></td></tr>
+            ${g.rows.map((r, i) => `<tr class="${r._flag || ''}">${rowCells(r, i).map((v, k) => k >= 5 && k <= 9 ? num(v) : `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}
+            <tr class="total"><td></td><td></td><td></td><td>ยอดยกไป</td><td></td>${num(g.sumIn)}${num(-g.sumOut)}${num(g.closeSys)}${num(g.closeBank)}${num(g.closeDiff)}<td></td><td></td></tr></tbody></table></section>`).join('')).join('');
+        w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ยอดสะสม statement ${res.from} – ${res.to}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet"><style>
+@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:'Sarabun',sans-serif;color:#1d1b2e;margin:0;padding:16px;font-size:10.5px}
+h1{font-size:17px;color:#5F3DC4;margin:0 0 4px}h2{font-size:13px;color:#5F3DC4;margin:0 0 3px}.sub{color:#5C5872;margin:0 0 8px}.warn{color:#C92A2A;margin:4px 0}
+table{width:100%;border-collapse:collapse;margin-bottom:10px}th{background:#5F3DC4;color:#fff;font-weight:600;padding:5px 4px;border:1px solid #D9D2F5}
+td{padding:4px;border:1px solid #E5E0F7;vertical-align:top}td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.neg,.sr-neg{color:#E03131}
+tr.start td{background:#FFE3E3}tr.outside td{background:#FFF3BF}tr.cont td{background:#FFF5F5}tr.total td{background:#F3F0FF;font-weight:700}
+.pb{page-break-before:always}.bar{position:sticky;top:0;background:#fff;padding:6px 0 10px;text-align:right}.bar button{font-family:inherit;padding:8px 16px;border:0;border-radius:8px;background:#5F3DC4;color:#fff;font-weight:600;cursor:pointer}
+@media print{.bar{display:none}body{padding:0}}</style></head><body><div class="bar"><button onclick="window.print()">🖨️ พิมพ์ / บันทึกเป็น PDF</button></div>${body}</body></html>`);
+        w.document.close();
+    }
+
+    function init() {
+        const sel = document.getElementById('sr-acc'); if (!sel || sel.dataset.ready) return;
+        sel.dataset.ready = '1';
+        sel.innerHTML = '<option value="*">🗂️ ทุกบัญชี</option>' + (AppState.accounts || []).filter(a => a.account_type !== 'TRIP').map(a =>
+            `<option value="${esc(a.account_id)}">${a.account_type === 'CREDIT' ? '💳' : '🏦'} ${esc(accName(a))}</option>`).join('');
+        const t = new Date(Date.now() + 7 * 3600e3), to = t.toISOString().slice(0, 10), f = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() - 3, 1)).toISOString().slice(0, 10);
+        document.getElementById('sr-from').value = f; document.getElementById('sr-to').value = to;
+        const run = async (btn, after, onFail) => {
+            const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try { const res = await load(); render(res); if (after) after(res); }
+            catch (e) { if (onFail) onFail(); alert('⚠️ ' + e.message); } finally { btn.disabled = false; btn.innerHTML = old; }
+        };
+        document.getElementById('sr-run').onclick = e => run(e.currentTarget);
+        document.getElementById('sr-xlsx').onclick = e => run(e.currentTarget, excel);
+        /* PDF: เปิดหน้าต่างทันทีตอนกด (iPhone/Safari บล็อกป๊อปอัปที่เปิดหลังรอโหลด) แล้วค่อยเติมรายงาน */
+        document.getElementById('sr-pdf').onclick = e => { const w = window.open('', '_blank'); if (w) w.document.write('<p style="font-family:sans-serif;padding:20px">⏳ กำลังสร้างรายงาน…</p>'); run(e.currentTarget, res => pdf(res, w), () => w && w.close()); };
+    }
+    return { build, init, render, excel, pdf, _fm: fm };
+})();
+
+// slip_review.js
+/* 🧾 ตรวจสลิปทีละใบก่อนยืนยัน (2026-10-30 · North: "matching จากภาพ แสดงข้อมูลก่อนยืนยันและแก้ไข · ไม่ต้องแยกราย statement")
+   ซ้าย = รูปสลิป/ภาพแคป · ขวา = ข้อมูลที่ AI อ่าน (แก้ได้) + รายการที่จับคู่ได้ในทุกบัญชี + หมวด → ✓ ยืนยัน แล้วไปใบถัดไป
+   โอนระหว่างบัญชีของเรา = 2 ขา ไม่ต้องเลือกหมวด · จ่ายบัตรเครดิต = ขาเข้าเป็นบัตร
+   API (ledger-inbox.js): GET /api/inbox?status=all · POST /api/inbox/{id}/(fields|unmatch|pick|review|account|dismiss) */
+const SlipReview = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fm = n => { if (n == null || n === '' || !isFinite(n)) return '-'; const v = Math.round(Number(n) * 100) / 100, t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `<span class="srv-neg">(${t})</span>` : t; };
+    const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${m[3]}/${m[2]}/${(+m[1] + 543) % 100}` : (d || '-'); };
+    const accName = id => String((AppState.accounts || []).find(a => a.account_id === id)?.name || id || '').replace(/^\s*\[[^\]]+\]\s*/, '');
+    const TYPES = ['SLIP', 'RECEIPT', 'ORDER'], WAIT = ['READING', 'NEEDS_ACCOUNT', 'NEEDS_CHOICE', 'SUGGESTED', 'STORED', 'ERROR'];
+    const S = { docs: [], i: 0, url: null, only: null };
+    const toast = (t, type) => { try { window.showToast(t, type || 'success'); } catch { alert(t); } };
+    async function post(path, body) {
+        const r = await fetch(API_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+        const d = await r.json().catch(() => ({})); if (!r.ok || d.error) throw new Error(d.error || `ผิดพลาด (${r.status})`); return d;
+    }
+    /* statement เป็นตัวตั้ง (North เลือก ก · 2026-10-30): ที่นี่เหลือเฉพาะสลิปที่ "ยังไม่จับคู่กับ statement"
+       (ไม่รู้บัญชี · ต้องเลือก · ยังไม่เจอใน statement/สร้างรอตรวจ · เป๋าตัง/เงินสด · อ่านไม่ได้) — ที่จับคู่แล้วตรวจในหน้ารอตรวจสอบ */
+    const needsWork = d => TYPES.includes(d.doc_type) && WAIT.includes(d.status);
+    async function fetchDocs() {
+        const r = await fetch(`${API_BASE}/api/inbox?status=all&adopt=0&limit=200`); const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || `โหลดสลิปไม่ได้ (${r.status})`);
+        const all = j.docs || [];
+        return all.filter(d => needsWork(d) && (!S.only || S.only.includes(d.doc_id)));
+    }
+    async function open(onlyIds) {
+        S.only = onlyIds && onlyIds.length ? onlyIds : null;
+        css(); shell();
+        body().innerHTML = '<div class="srv-empty">⏳ กำลังโหลดสลิป…</div>';
+        try { S.docs = await fetchDocs(); S.i = 0; draw(); } catch (e) { body().innerHTML = `<div class="srv-empty">⚠️ ${esc(e.message)}</div>`; }
+    }
+    async function reload(keepId) {
+        S.docs = await fetchDocs();
+        const k = S.docs.findIndex(d => d.doc_id === keepId);
+        S.i = k >= 0 ? k : Math.min(S.i, Math.max(0, S.docs.length - 1)); draw();
+    }
+    function close() { document.getElementById('srv-root')?.remove(); if (S.url) URL.revokeObjectURL(S.url); S.url = null; try { loadPending(); } catch { /* */ } }
+    const body = () => document.getElementById('srv-body');
+    function shell() {
+        document.getElementById('srv-root')?.remove();
+        const el = document.createElement('div'); el.id = 'srv-root';
+        el.innerHTML = `<div class="srv-top"><b>🧾 สลิปที่ยังไม่จับคู่</b><span id="srv-count"></span><button type="button" class="srv-x" title="ปิด">✕</button></div><div id="srv-body"></div>`;
+        document.body.appendChild(el); el.querySelector('.srv-x').onclick = close;
+        document.addEventListener('keydown', function k(e) { if (!document.getElementById('srv-root')) return document.removeEventListener('keydown', k); if (e.key === 'Escape') close(); });
+    }
+    function legBlock(d, leg) {
+        const t = (d.transactions || []).find(x => x.transaction_id === leg.transaction_id);
+        const side = leg.side === 'IN' ? '⬇️ เข้า' : leg.side === 'OUT' ? '⬆️ ออก' : '🔗';
+        const badge = leg.kind === 'MATCHED' ? '<span class="srv-b ok">✅ ตรงกับ statement</span>' : leg.kind === 'CREATED' ? '<span class="srv-b new">🆕 ยังไม่เจอใน statement · สร้างรอตรวจ</span>' : '<span class="srv-b ask">❓ เลือกรายการที่ตรงกัน</span>';
+        let h = `<div class="srv-leg"><div><b>${side} · ${esc(accName(leg.account_id))}</b> ${badge}</div>`;
+        if (t) h += `<div class="srv-tx">${dTh(t.date)} ${esc(String(t.time || '').slice(0, 5))} · <b>${fm(t.total_amount)}</b> · ${esc(t.statement_desc || '')} · ${t.status === 'CONFIRMED' ? '✅ ยืนยันแล้ว' : '⏳ รอตรวจ'}</div>`;
+        if (leg.kind === 'MATCHED' && t?.status !== 'CONFIRMED') h += `<div class="srv-acts"><button type="button" class="btn btn-sm btn-outline-danger" data-unmatch="${esc(leg.transaction_id)}">✕ ไม่ใช่รายการนี้</button></div>`;
+        if (leg.kind === 'CHOOSE') h += `<div class="srv-acts">${(leg.choices || []).map(c => `<button type="button" class="btn btn-sm btn-outline-primary" data-pick="${esc(c.transaction_id)}">🔗 ${dTh(c.date)} · ${fm(c.total_amount)} · ${esc(String(c.statement_desc || '').slice(0, 28))}</button>`).join('')}</div>`;
+        return h + '</div>';
+    }
+    function draw() {
+        const cnt = document.getElementById('srv-count'); if (!body()) return;
+        if (!S.docs.length) { cnt.textContent = ''; body().innerHTML = '<div class="srv-empty">🎉 สลิปจับคู่กับ statement ครบแล้ว<br><small>ตรวจ/ใส่หมวดต่อที่หน้ารอตรวจสอบ (ตัวกรอง 📎 มีสลิป)</small></div>'; return; }
+        const d = S.docs[S.i], ex = d.extracted || {}, sug = d.suggestion || {}, legs = sug.legs || [];
+        cnt.textContent = `${S.i + 1} / ${S.docs.length}`;
+        const transfer = sug.direction === 'TRANSFER';
+        const pend = (d.transactions || []).filter(t => t.status === 'PENDING_REVIEW');
+        const first = pend[0] || (d.transactions || [])[0];
+        const dets = first?.details || [];
+        const curCat = dets.length === 1 && dets[0].category_id !== 'Cat_Uncategorized' ? dets[0].category_id : '';
+        const curNote = dets.length === 1 ? (dets[0].note || '') : '';
+        const outAcc = legs.find(l => l.side === 'OUT')?.account_id || '', inAcc = legs.find(l => l.side === 'IN')?.account_id || '';
+        const accOpts = sel => `<option value="">— ไม่ใช่บัญชีของเรา —</option>` + (AppState.accounts || []).map(a => `<option value="${esc(a.account_id)}"${a.account_id === sel ? ' selected' : ''}>${esc(accName(a.account_id))}</option>`).join('');
+        const cats = (AppState.categories || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'th'));
+        const STATUS = { READING: '⏳ กำลังอ่าน', ERROR: '⚠️ อ่านไม่สำเร็จ', NEEDS_ACCOUNT: '❓ ไม่รู้ว่าเป็นบัญชีไหนของเรา — เลือกบัญชีด้านล่าง', NEEDS_CHOICE: '❓ เจอหลายรายการยอดตรงกัน — เลือก 1 รายการ', STORED: '🧾 ยังไม่เจอรายการจ่ายที่ยอดตรง', SUGGESTED: '🆕 สร้างเป็นรายการรอตรวจแล้ว', DONE: '✅ จับคู่แล้ว' };
+        const done = (d.transactions || []).length && !pend.length;
+        const editOpen = ['NEEDS_ACCOUNT', 'ERROR', 'STORED'].includes(d.status) || !legs.length;
+        body().innerHTML = `<div class="srv-grid">
+          <div class="srv-img" id="srv-img">${d.has_file ? '⏳' : '<div class="srv-empty">ไม่มีรูป</div>'}</div>
+          <div class="srv-side">
+            <div class="srv-st">${esc(STATUS[d.status] || d.status)}${transfer ? ' · 🔁 โอนระหว่างบัญชีของเรา' : ''}${d.error ? `<br><small>${esc(String(d.error).slice(0, 160))}</small>` : ''}</div>
+            <div class="srv-card srv-sum"><div class="srv-amt">${d.doc_type === 'SLIP' ? (outAcc && !inAcc ? '⬆️' : inAcc && !outAcc ? '⬇️' : '🔁') : '🛒'} ${fm(ex.amount)} <small>บาท</small></div>
+              <div>📅 ${dTh(ex.date)} ${esc(String(ex.time || '').slice(0, 5))}${Number(ex.fee) ? ` · ค่าธรรมเนียม ${fm(ex.fee)}` : ''}</div>
+              <div>${esc(ex.sender?.name || '-')} <span class="srv-arr">→</span> ${esc(ex.receiver?.name || ex.merchant || '-')}${ex.shop_category ? ` <small>(${esc(ex.shop_category)})</small>` : ''}</div>
+              ${ex.memo ? `<div>📝 <b>${esc(ex.memo)}</b></div>` : ''}${ex.subsidy_note ? `<div class="srv-sub">🎟️ ${esc(ex.subsidy_note)}</div>` : ''}</div>
+            <div class="srv-card"><h5>🔗 จับคู่กับรายการ</h5>
+              ${legs.length ? legs.map(l => legBlock(d, l)).join('') : (d.transactions || []).map(t => legBlock(d, { kind: 'MATCHED', transaction_id: t.transaction_id, account_id: t.account_id })).join('') || '<div class="srv-sub">ยังไม่มีรายการ</div>'}
+              ${d.status === 'NEEDS_ACCOUNT' ? `<div class="srv-acts">${(sug.options || []).map(o => `<button type="button" class="btn btn-sm btn-outline-primary" data-acc="${esc(o.account_id)}" data-side="${esc(o.side)}">${o.side === 'IN' ? '⬇️ เข้า' : '⬆️ ออก'} · ${esc(accName(o.account_id))}</button>`).join('')}</div>` : ''}</div>
+            ${pend.length && !transfer ? `<div class="srv-card"><h5>🏷️ หมวด</h5>${dets.length > 1 ? '<div class="srv-sub">แตกหลายหมวดแล้ว — แก้ในหน้ารอตรวจสอบ</div>' :
+              `<select id="srv-cat"><option value="">— เลือกหมวด —</option>${cats.map(c => `<option value="${esc(c.category_id)}"${c.category_id === curCat ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+               <input type="text" id="srv-note" placeholder="รายละเอียด" value="${esc(curNote || [ex.memo, ex.subsidy_note].filter(Boolean).join(' · '))}">`}</div>` : ''}
+            <details class="srv-card srv-edit"${editOpen ? ' open' : ''}><summary><h5>✏️ แก้ข้อมูลที่อ่านจากภาพ</h5></summary>
+              <div class="srv-f2"><label>📅 วันที่<input type="date" id="srv-date" value="${esc(ex.date || '')}"></label><label>⏰ เวลา<input type="time" id="srv-time" value="${esc(String(ex.time || '').slice(0, 5))}"></label></div>
+              <div class="srv-f2"><label>💰 ยอด<input type="number" step="0.01" inputmode="decimal" id="srv-amt" value="${ex.amount ?? ''}"></label><label>🏦 ค่าธรรมเนียม<input type="number" step="0.01" inputmode="decimal" id="srv-fee" value="${ex.fee || 0}"></label></div>
+              ${d.doc_type === 'SLIP' ? `<label>⬆️ จาก: <b>${esc(ex.sender?.name || '-')}</b> <small>${esc([ex.sender?.bank, ex.sender?.account].filter(Boolean).join(' · '))}</small><select id="srv-out">${accOpts(outAcc)}</select></label>
+              <label>⬇️ ถึง: <b>${esc(ex.receiver?.name || '-')}</b> <small>${esc([ex.receiver?.bank, ex.receiver?.account, ex.shop_category].filter(Boolean).join(' · '))}</small><select id="srv-in">${accOpts(inAcc)}</select></label>`
+              : `<div>🛒 <b>${esc(ex.merchant || ex.receiver?.name || '-')}</b>${(ex.items || []).length ? `<small> · ${esc(ex.items.map(x => x.name).filter(Boolean).join(', ').slice(0, 160))}</small>` : ''}</div>`}
+              <label>📝 บันทึกช่วยจำ<input type="text" id="srv-memo" value="${esc(ex.memo || '')}"></label>
+              ${ex.subsidy_note ? `<div class="srv-sub">🎟️ ${esc(ex.subsidy_note)}</div>` : ''}
+              ${ex.ref_code ? `<div class="srv-sub">#️⃣ ${esc(ex.ref_code)}</div>` : ''}
+              ${done ? '' : '<button type="button" class="btn btn-sm btn-outline-primary" id="srv-refit">💾 แก้แล้วจับคู่ใหม่</button>'}</details>
+          </div></div>
+          <div class="srv-foot">
+            <button type="button" class="btn btn-outline-primary" id="srv-prev"${S.i ? '' : ' disabled'}>‹</button>
+            <button type="button" class="btn btn-outline-danger" id="srv-dis">✕ ไม่บันทึก</button>
+            <button type="button" class="btn btn-primary" id="srv-ok"${pend.length && !['NEEDS_ACCOUNT', 'NEEDS_CHOICE', 'READING', 'ERROR'].includes(d.status) ? '' : ' disabled'}>✓ ยืนยัน</button>
+            <button type="button" class="btn btn-outline-primary" id="srv-next"${S.i < S.docs.length - 1 ? '' : ' disabled'}>›</button></div>`;
+        loadImg(d);
+        const B = body(), $ = s => B.querySelector(s);
+        const run = async (btn, fn, msg) => { if (btn) btn.disabled = true; try { await fn(); if (msg) toast(msg); await reload(d.doc_id); } catch (e) { toast('⚠️ ' + e.message, 'error'); if (btn) btn.disabled = false; } };
+        $('#srv-prev').onclick = () => { S.i--; draw(); };
+        $('#srv-next').onclick = () => { S.i++; draw(); };
+        $('#srv-dis').onclick = e => { if (confirm('ไม่ต้องบันทึกสลิปนี้? (รายการที่สลิปนี้สร้างไว้จะถูกลบ · รายการจาก statement ไม่ถูกแตะ)')) run(e.currentTarget, () => post(`/api/inbox/${d.doc_id}/dismiss`), 'ลบออกแล้ว'); };
+        $('#srv-refit') && ($('#srv-refit').onclick = e => {
+            const b = { fields: { date: $('#srv-date').value, time: $('#srv-time').value, amount: $('#srv-amt').value, fee: $('#srv-fee').value, memo: $('#srv-memo').value } };
+            if ($('#srv-out') && $('#srv-out').value !== outAcc) b.out_account_id = $('#srv-out').value;
+            if ($('#srv-in') && $('#srv-in').value !== inAcc) b.in_account_id = $('#srv-in').value;
+            run(e.currentTarget, () => post(`/api/inbox/${d.doc_id}/fields`, b), '💾 แก้แล้ว จับคู่ใหม่');
+        });
+        B.querySelectorAll('[data-unmatch]').forEach(b => b.onclick = () => run(b, () => post(`/api/inbox/${d.doc_id}/unmatch`, { transaction_id: b.dataset.unmatch }), 'ตัดคู่แล้ว'));
+        B.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => run(b, () => post(`/api/inbox/${d.doc_id}/pick`, { transaction_id: b.dataset.pick }), '🔗 จับคู่แล้ว'));
+        B.querySelectorAll('[data-acc]').forEach(b => b.onclick = () => run(b, () => post(`/api/inbox/${d.doc_id}/account`, { account_id: b.dataset.acc, side: b.dataset.side }), '✅ ระบบจำบัญชีนี้แล้ว'));
+        $('#srv-ok').onclick = e => {
+            const cat = $('#srv-cat')?.value || null, note = $('#srv-note') ? $('#srv-note').value : null;
+            if (!transfer && $('#srv-cat') && !cat) return toast('เลือกหมวดก่อน', 'error');
+            const b = { legs: pend.map(t => ({ transaction_id: t.transaction_id, category_id: cat, note })) };
+            run(e.currentTarget, async () => { await post(`/api/inbox/${d.doc_id}/review`, b); }, '✓ ยืนยันแล้ว');
+        };
+    }
+    async function loadImg(d) {
+        const box = document.getElementById('srv-img'); if (!box || !d.has_file) return;
+        try {
+            const r = await fetch(`${API_BASE}/api/inbox/file/${d.doc_id}`); if (!r.ok) throw new Error(r.status === 404 ? 'ไฟล์ถูกลบแล้ว (เก็บ 30 วัน)' : `เปิดรูปไม่ได้ (${r.status})`);
+            if (S.url) URL.revokeObjectURL(S.url); S.url = URL.createObjectURL(await r.blob());
+            if (S.docs[S.i]?.doc_id !== d.doc_id) return;
+            box.innerHTML = /pdf/i.test(r.headers.get('Content-Type') || d.mime || '') ? `<iframe src="${S.url}"></iframe>` : `<img src="${S.url}" alt="สลิป">`;
+            const img = box.querySelector('img'); if (img) img.onclick = () => img.classList.toggle('zoom');
+        } catch (e) { box.innerHTML = `<div class="srv-empty">${esc(e.message)}</div>`; }
+    }
+    function css() {
+        if (document.getElementById('srv-css')) return;
+        const st = document.createElement('style'); st.id = 'srv-css';
+        st.textContent = `#srv-root{position:fixed;inset:0;z-index:3000;background:var(--background-color,#F4F1FC);display:flex;flex-direction:column;color:var(--text-primary,#1E1B2E)}
+.srv-top{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--primary-color,#5F3DC4);color:#fff;font-size:1.05rem}
+.srv-top .srv-x{margin-left:auto;background:rgba(255,255,255,.18);border:0;color:#fff;width:44px;height:44px;border-radius:12px;font-size:1.1rem;cursor:pointer}
+#srv-body{flex:1;overflow:auto;padding:14px 16px 0}.srv-empty{padding:40px 10px;text-align:center;color:var(--text-secondary,#5C5872)}
+.srv-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:14px;max-width:1200px;margin:0 auto}
+.srv-img{background:var(--card-bg,#fff);border:1px solid var(--border-color,#E9E3FA);border-radius:16px;min-height:300px;display:grid;place-items:center;overflow:auto;max-height:calc(100vh - 170px);position:sticky;top:0}
+.srv-img img{max-width:100%;max-height:calc(100vh - 190px);object-fit:contain;cursor:zoom-in}.srv-img img.zoom{max-height:none;cursor:zoom-out}
+.srv-img iframe{width:100%;height:calc(100vh - 190px);border:0}
+.srv-side{display:flex;flex-direction:column;gap:10px;padding-bottom:12px}.srv-st{font-weight:600}
+.srv-card{background:var(--card-bg,#fff);border:1px solid var(--border-color,#E9E3FA);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.srv-card h5{margin:0;font-size:.95rem}.srv-card h5 small{font-weight:400;color:var(--text-secondary)}
+.srv-card label{display:flex;flex-direction:column;gap:4px;font-size:.82rem;color:var(--text-secondary)}.srv-card label b{color:var(--text-primary)}
+.srv-card input,.srv-card select{min-height:44px;padding:8px 10px;border-radius:12px;border:1px solid var(--border-color,#E9E3FA);background:var(--ui-input,#fff);color:var(--text-primary);font-size:.95rem;width:100%}
+.srv-f2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.srv-sub{font-size:.82rem;color:var(--text-secondary)}
+.srv-leg{border-top:1px dashed var(--border-color,#E9E3FA);padding-top:8px;display:flex;flex-direction:column;gap:5px;font-size:.88rem}.srv-leg:first-of-type{border-top:0;padding-top:0}
+.srv-tx{color:var(--text-secondary)}.srv-acts{display:flex;flex-wrap:wrap;gap:6px}.srv-acts .btn{min-height:36px}
+.srv-b{display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:999px;margin-left:4px}.srv-b.ok{background:#E6FCF5;color:#087F5B}.srv-b.new{background:#FFF3BF;color:#8a5a00}.srv-b.ask{background:#FFE3E3;color:#C92A2A}
+.srv-neg{color:var(--danger-color,#C92A2A)}
+.srv-sum{gap:4px;font-size:.92rem}.srv-amt{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums}.srv-amt small{font-size:.8rem;font-weight:400;color:var(--text-secondary)}.srv-arr{color:var(--primary-color)}
+.srv-edit summary{cursor:pointer;list-style:none}.srv-edit summary::-webkit-details-marker{display:none}.srv-edit[open] summary{margin-bottom:6px}
+.srv-card select#srv-cat{font-weight:600}
+.srv-foot{position:sticky;bottom:0;display:grid;grid-template-columns:56px 1fr 1.4fr 56px;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--card-bg,#fff);border-top:1px solid var(--border-color,#E9E3FA);margin:12px -16px 0}
+.srv-foot .btn{min-height:48px;font-size:1rem;font-weight:600}.srv-foot .btn{white-space:nowrap;padding:0 8px}
+@media (max-width:820px){.srv-grid{grid-template-columns:1fr}.srv-img{position:static;max-height:46vh;min-height:200px}.srv-img img{max-height:44vh}.srv-img iframe{height:44vh}}`;
+        document.head.appendChild(st);
+    }
+    return { open };
+})();
+window.SlipReview = SlipReview;
+
+
+// slip_thumbs.js
+/* 📎 รูปย่อสลิปบนการ์ดหน้ารอตรวจสอบ (2026-10-30) — โหลดเฉพาะการ์ดที่เลื่อนมาเห็น (ไฟล์ต้องแนบ token → ดึงเป็น blob) · จำไว้ไม่โหลดซ้ำ */
+const SlipThumbs = (() => {
+    const cache = new Map();
+    const io = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { io.unobserve(e.target); load(e.target); } }), { rootMargin: '200px' }) : null;
+    async function load(el) {
+        const path = el.dataset.slip; if (!path) return;
+        try {
+            if (!cache.has(path)) cache.set(path, fetch(/^https?:/.test(path) ? path : API_BASE + path).then(async r => {
+                if (!r.ok) return null; const t = r.headers.get('Content-Type') || ''; return /pdf/i.test(t) ? 'PDF' : URL.createObjectURL(await r.blob()); }).catch(() => null));
+            const url = await cache.get(path), box = el.querySelector('.slip-thumb'); if (!box) return;
+            if (url === 'PDF') box.textContent = '📄'; else if (url) box.innerHTML = `<img src="${url}" alt="สลิป">`; else box.textContent = '⚠️';
+        } catch { /* ไม่มีรูปก็ไม่เป็นไร */ }
+    }
+    return { watch: el => io ? io.observe(el) : load(el) };
+})();
+window.SlipThumbs = SlipThumbs;

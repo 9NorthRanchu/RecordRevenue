@@ -12,6 +12,10 @@ export const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 /* ชื่อธนาคารบนสลิปมีได้หลายแบบ (ไทย/อังกฤษ/ย่อ) → รหัสเดียว */
 const BANK_ALIASES = [
+  /* บัตรเครดิต/กระเป๋าเงินที่ชื่อซ้อนกับธนาคาร ต้องมาก่อน (2026-10-30: สลิปจ่ายบัตร CardX/SCB · KRUNGTHAI CARD · เป๋าตัง G-Wallet) */
+  ['CARDX', ['cardx', 'card x']],
+  ['KTC', ['ktc', 'krungthai card', 'krung thai card', 'กรุงไทยคาร์ด', 'บัตรกรุงไทย']],
+  ['PAOTANG', ['เป๋าตัง', 'paotang', 'g-wallet', 'gwallet', 'g wallet']],
   ['KBANK', ['kbank', 'kasikorn', 'กสิกร', 'k plus', 'k+', 'kplus']],
   ['SCB', ['scb', 'ไทยพาณิชย์', 'siam commercial']],
   ['KTB', ['ktb', 'กรุงไทย', 'krungthai', 'krung thai']],
@@ -35,6 +39,20 @@ export function bankKey(text) {
 export function last4(text) {
   const digits = String(text || '').replace(/[^0-9]/g, '');
   return digits.length >= 3 ? digits.slice(-4) : '';
+}
+
+/* เลขบัญชีบนสลิปที่ปิดบางหลัก ตรงกับเลขเต็มในระบบไหม (2026-10-30)
+   KBank "xxx-x-x2210-x" · กรุงศรี "XXX-1-71696-X" ปิดหลักสุดท้าย → 4 ตัวท้ายที่เห็นไม่ใช่ 4 ตัวท้ายจริง
+   ① ความยาวเท่ากัน → เทียบทีละตำแหน่ง (x = อะไรก็ได้) ② ลงท้ายด้วยตัวเลข ≥3 หลัก → เลขเต็มต้องลงท้ายแบบเดียวกัน
+   ③ ไม่งั้น ตัวเลขช่วงยาวสุด (≥4 หลัก) ต้องอยู่ในเลขเต็ม */
+export function maskedAccountMatch(masked, full) {
+  const m = String(masked || '').replace(/[^0-9xX*•]/g, '').replace(/[xX*•]/g, '?'), f = String(full || '').replace(/[^0-9]/g, '');
+  if (!f || (m.match(/\d/g) || []).length < 3) return false;
+  if (m.length === f.length) return [...m].every((c, i) => c === '?' || c === f[i]);
+  const tail = (m.match(/(\d{3,})$/) || [])[1];
+  if (tail) return f.endsWith(tail);
+  const runs = (m.match(/\d+/g) || []).sort((x, y) => y.length - x.length);
+  return !!runs[0] && runs[0].length >= 4 && f.includes(runs[0]);
 }
 
 export const accountHintKey = (bank, account) => {
