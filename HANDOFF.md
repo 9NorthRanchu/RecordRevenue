@@ -3835,3 +3835,9 @@ frontend
 - แก้: ทั้งนำเข้าไฟล์เดียวและหลายไฟล์ ลอง parseCardStatement ก่อน ไม่ใช่บัตรค่อยใช้ parseTextStatement · ตรวจแล้ว SCB ออมทรัพย์ยังไปตัวอ่านธนาคาร · Krungsri ผลเหมือนเดิม
 - /api/statements/delete + with_rows: ลบรายการรอตรวจ (PDF_IMPORT) ของ statement นั้น + หัว · ไม่แตะที่ยืนยันแล้ว · ปุ่ม "🗑️ ลบ statement นี้ (รอตรวจ N)" ในรายงานยอดสะสม · เทสต์ stmt-report 40
 - app.js?v=215
+
+## 2026-10-30 · นำเข้าหลายไฟล์ CardX "หาบัญชีจากเลขในไฟล์ไม่เจอ"
+- สาเหตุ: เลข 3565 18XX XXXX 9607 อยู่ทั้ง C06 (บัตร SCB JCB) และ A23 Planet SCB (บัญชีธนาคาร) → เจอ 2 บัญชี = ให้เลือกเอง · และ /api/accounts ไม่ส่ง account_type ทำให้ทางสำรองหาบัตรจากเลข 4 ตัวท้ายใช้ไม่ได้
+- แก้: findAcc เจอหลายบัญชี → ไฟล์บัตรเลือกบัญชีประเภทบัตร / statement ธนาคารเลือกที่ไม่ใช่บัตร · /api/accounts ส่ง account_type, credit_limit
+- แจ้ง North: A23 น่าจะใส่เลขบัตรผิด
+- app.js?v=216

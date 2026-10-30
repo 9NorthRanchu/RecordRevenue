@@ -792,6 +792,7 @@ export default {
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const accounts = await env.DB.prepare(`
           SELECT a.account_id, a.entity_id, a.name, a.bank_name, a.account_number, a.pdf_password, e.name as entity_name,
+                 IFNULL(a.account_type,'BANK') AS account_type, IFNULL(a.credit_limit,0) AS credit_limit,   /* 2026-10-30: หน้าเว็บใช้แยกบัตร/ธนาคารตอนจับคู่เลขบัญชี */
                  ROUND(COALESCE(b.bal, 0), 2) as balance
           FROM Accounts a
           JOIN Entities e ON a.entity_id = e.entity_id

@@ -7562,7 +7562,9 @@ async function batchImportStatements(files, btn) {
   const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
   const setBtn = t => { if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${t}`; };
   const findAcc = (read, last4, credit) => {
-    const hit = accs.filter(a => statementAccountMatches(read, a.account_number) === true);
+    let hit = accs.filter(a => statementAccountMatches(read, a.account_number) === true);
+    /* 2026-10-30: เลขเดียวกันอยู่หลายบัญชี (เช่น เลขบัตรใส่ไว้ทั้งบัญชีบัตรและบัญชีธนาคาร) → บัตรเลือกบัญชีบัตร · statement ธนาคารเลือกบัญชีที่ไม่ใช่บัตร */
+    if (hit.length > 1) { const t = hit.filter(a => (a.account_type === 'CREDIT') === !!credit); if (t.length) hit = t; }
     if (hit.length === 1) return hit[0].account_id;
     if (credit && last4) { const t = accs.filter(a => a.account_type === 'CREDIT' && String(a.account_number || '').replace(/[^0-9]/g, '').endsWith(last4)); if (t.length === 1) return t[0].account_id; }
     return '';
