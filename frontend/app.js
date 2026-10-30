@@ -5891,21 +5891,18 @@ document.querySelectorAll(".close-settlement-modal, .close-settlement-btn").forE
 async function loadSettings() {
     try {
         const headers = { 'x-user-id': encodeURIComponent(getUserIdHeader()) };
-        const res = await fetch(`${API_BASE}/api/settings`, { headers });
+        /* ⚡ 2026-10-30: ดึงรายชื่อสมาชิกพร้อมกับตั้งค่า (เดิมรอตั้งค่าเสร็จก่อนค่อยดึง) */
+        const [res, usersRes] = await Promise.all([
+            fetch(`${API_BASE}/api/settings`, { headers }),
+            AppState.userRole === 'admin' ? fetch(`${API_BASE}/api/users`, { headers }).catch(() => null) : Promise.resolve(null)
+        ]);
         if (!res.ok) {
             console.error("Failed to load settings data");
             return;
         }
         const data = await res.json();
         AppState.settings = data;
-
-        // Also fetch family members (if user is admin)
-        if (AppState.userRole === 'admin') {
-            const usersRes = await fetch(`${API_BASE}/api/users`, { headers });
-            if (usersRes.ok) {
-                AppState.settings.users = await usersRes.json();
-            }
-        }
+        if (usersRes && usersRes.ok) AppState.settings.users = await usersRes.json();
 
         renderSettingsTabs();
         setupSettingsEvents();
@@ -6637,10 +6634,12 @@ async function saveSettingItem(e) {
         });
 
         if (res.ok) {
-            alert("✅ บันทึกรายการตั้งค่าสำเร็จ!");
+            /* ⚡ 2026-10-30 (North: "แก้ตั้งค่าช้า"): ปิดหน้าต่างทันที + แจ้งแบบไม่ต้องกด OK
+               โหลดตั้งค่ากับข้อมูลหลักพร้อมกัน (เดิมรอทีละอย่าง) · ล้างแคชข้อมูลหลัก ไม่งั้นชื่อที่เพิ่งแก้ยังเป็นของเก่า 10 นาที */
             document.getElementById("setting-modal").classList.add("hidden");
-            await loadSettings();
-            await fetchMasterData();
+            if (window.showToast) window.showToast('✅ บันทึกแล้ว', 'success'); else alert("✅ บันทึกรายการตั้งค่าสำเร็จ!");
+            try { Object.keys(sessionStorage).filter(k => k.startsWith('mdcache:')).forEach(k => sessionStorage.removeItem(k)); } catch { /* */ }
+            await Promise.all([loadSettings(), fetchMasterData()]);
         } else {
             const err = await res.json();
             alert(`ล้มเหลว: ${err.error}`);
@@ -6848,6 +6847,9 @@ function initTableSorting() {
                 th.appendChild(iconSpan);
             }
 
+            /* ⚡ 2026-10-30: เดิมผูกซ้ำทุกครั้งที่บันทึกตั้งค่า → กดหัวคอลัมน์แล้วเรียงซ้ำหลายรอบ (ช้าลงเรื่อย ๆ) */
+            if (th.dataset.sortBound) return;
+            th.dataset.sortBound = '1';
             th.addEventListener('click', (e) => {
                 // Don't sort if clicking on resizer
                 if (e.target.classList.contains('resizer')) return;
@@ -7006,7 +7008,8 @@ async function parseTextStatement(pdf) {
   const MONEY = /^-?\(?[\d,]+\.\d{2}\)?$/;
   const DATE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/;
   const TIME = /^\d{1,2}:\d{2}(:\d{2})?$/;
-  const OPEN_RE = /ยอดยกมา|ยกมา|BROUGHT\s*FORWARD|Balance\s*Forward/i, CLOSE_RE = /ยอดยกไป|CARRIED\s*FORWARD/i;
+  /* 2026-10-30: KBank ภาษาอังกฤษใช้ "Beginning Balance" — เดิมไม่รู้จัก → ไม่มียอดยกมา → แถวแรกเดาเป็นเงินออก (Transfer Deposit 2,134 กลายเป็นจ่าย) */
+  const OPEN_RE = /ยอดยกมา|ยกมา|BROUGHT\s*FORWARD|Balance\s*Forward|Beginning\s*Balance|Opening\s*Balance/i, CLOSE_RE = /ยอดยกไป|CARRIED\s*FORWARD|Ending\s*Balance|Closing\s*Balance/i;
   const num = s => { const neg = /^\(.*\)$|^-/.test(s); const v = Number(String(s).replace(/[(),-]/g, '')); return neg ? -v : v; };
   const r2 = n => Math.round(n * 100) / 100;
   const isoDate = (d, m, y) => { let yy = +y; if (yy < 100) yy = yy >= 40 ? yy + 2500 - 543 : yy + 2000; if (yy > 2400) yy -= 543;
@@ -7056,7 +7059,8 @@ async function parseTextStatement(pdf) {
   let agree = 0, firstUnknown = opening == null;
   const out = rows.map((r, i) => {
     let amount;
-    if (i === 0 && firstUnknown) amount = -r.amountAbs;   // เดาไว้ก่อน · ด่านเดินยอดตรวจไม่ได้แถวแรก
+    /* ไม่มียอดยกมา: แถวแรกดูจากคำ (ฝาก/รับ/Deposit = เข้า) แทนการเดาว่าออกเสมอ */
+    if (i === 0 && firstUnknown) amount = /deposit|รับโอน|รับเงิน|ฝาก|เงินเข้า|transfer\s*in|interest|ดอกเบี้ย/i.test([r.desc, ...r.tail].join(' ')) && !/withdraw|ถอน|โอนไป|จ่าย/i.test(r.desc) ? r.amountAbs : -r.amountAbs;
     else {
       const diff = r2(r.balance - prev);
       if (Math.abs(Math.abs(diff) - r.amountAbs) < 0.005) { amount = diff; agree++; } else amount = -r.amountAbs;

@@ -29,6 +29,9 @@ export async function ensureStmtCols(env) {
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS StatementImports (stmt_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, period_from TEXT, period_to TEXT,
     opening REAL, closing REAL, line_count INTEGER, file_name TEXT, source_kind TEXT, created_by TEXT, created_at TEXT)`).run();
   try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_stmtimports_acc ON StatementImports(account_id, period_to)`).run(); } catch { /* */ }
+  /* ⚡ 2026-10-30: นับบรรทัดต่อ statement / ค้นรายการเดิมตอนนำเข้า เร็วขึ้น */
+  try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_tx_stmt ON Transactions(stmt_id)`).run(); } catch { /* */ }
+  try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_tx_acc_date ON Transactions(account_id, date)`).run(); } catch { /* */ }
   ready = true;
 }
 export function _resetStmtReady() { ready = false; }   // ใช้ในเทส
@@ -127,8 +130,13 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
         t.status, t.source, t.created_at FROM Transactions t WHERE t.account_id = ? AND t.date >= ? AND t.date < date(?, '+1 day') ORDER BY t.created_at, t.transaction_id`)
       .bind(acc, b.period_from, b.period_to).all()).results) || [];
     const groups = new Map();
-    for (const r of rows) { const k = [r.d, r.tm, r2(Math.abs(r.a)), r.a < 0 ? '-' : '+', r.ds].join('|'); if (want.has(k)) (groups.get(k) || groups.set(k, []).get(k)).push(r); }
     const del = [];
+    for (const r of rows) {
+      const k = [r.d, r.tm, r2(Math.abs(r.a)), r.a < 0 ? '-' : '+', r.ds].join('|');
+      if (want.has(k)) (groups.get(k) || groups.set(k, []).get(k)).push(r);
+      /* 2026-10-30: บรรทัดเดียวกันแต่เครื่องหมายกลับด้าน (อ่านทิศทางผิดตอนนำเข้ารอบก่อน เช่น เงินเข้าเป็นเงินออก) และในไฟล์ไม่มีแบบนั้น → ลบ (เฉพาะรอตรวจจาก statement) */
+      else if (r.status === 'PENDING_REVIEW' && r.source === 'PDF_IMPORT' && want.has([r.d, r.tm, r2(Math.abs(r.a)), r.a < 0 ? '+' : '-', r.ds].join('|'))) del.push(r.transaction_id);
+    }
     for (const [k, list] of groups) {
       let extra = list.length - want.get(k);
       for (const r of [...list].reverse()) { if (extra <= 0) break; if (r.status === 'PENDING_REVIEW' && r.source === 'PDF_IMPORT') { del.push(r.transaction_id); extra--; } }

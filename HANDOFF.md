@@ -3790,3 +3790,16 @@ frontend
 - ui-a.css: .av-* (รองรับธีมม่วง/มืด · iPad · มือถือ) · app.js?v=207 · ui-a.css?v=17
 - ต่อไป (Phase 2+): เมนูใหม่ 6 หน้า · หน้ารายงานแบบ B · iPad เมนูไอคอน · แก้รายการจากแถวในหน้าบัญชี
 - North 2026-10-30: หน้าบัญชีไม่ใส่ ฿ และไม่ใส่ + หน้าตัวเลข (v=208)
+
+## 2026-10-30 · ทำให้หน้าตั้งค่าเร็วขึ้น (North: "ระบบช้า ตอนแก้ตั้งค่า เพิ่มเลข statement รหัส")
+- GET /api/settings: 7 คำสั่งยิงพร้อมกัน (Promise.all) · ยอดบัญชีคิดครั้งเดียว GROUP BY (เดิมไล่ทีละบัญชี) · /api/accounts ใช้แบบเดียวกัน
+- saveSetting: ปิดหน้าต่างทันที + toast แทน alert · ล้างแคช mdcache · loadSettings กับ fetchMasterData พร้อมกัน · loadSettings ดึง /api/users พร้อมกัน
+- initTableSorting: กันผูก event หัวคอลัมน์ซ้ำทุกครั้งที่บันทึก
+- index ใหม่ (สร้างอัตโนมัติใน ensureStmtCols): Transactions(stmt_id), Transactions(account_id, date)
+- app.js?v=209
+
+## 2026-10-30 · statement KBank อังกฤษ: แถวแรกเงินเข้ากลายเป็นเงินออก (ยอดสะสมต่าง 4,268 = 2×2,134)
+- สาเหตุ: parseTextStatement ไม่รู้จัก "Beginning Balance" → ไม่มียอดยกมา → แถวแรกเดาเป็นออกเสมอ
+- แก้: OPEN_RE + Beginning/Opening Balance · CLOSE_RE + Ending/Closing Balance · แถวแรกไม่มียอดยกมา → ดูคำ (Deposit/รับ/ฝาก = เข้า)
+- /api/statements/sync: ลบบรรทัดรอตรวจจาก statement ที่เหมือนกันทุกช่องแต่เครื่องหมายกลับด้าน (ไฟล์ไม่มีแบบนั้น) · เทสต์ stmt-report 37
+- app.js?v=210

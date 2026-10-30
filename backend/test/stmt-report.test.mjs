@@ -174,4 +174,9 @@ check('ซื้อ/คืนเงินยอดเท่ากันวัน
 db.prepare(`UPDATE TransactionDetails SET category_id='T01' WHERE transaction_id='BUY1139'`).run();
 r = await pair('BUY1139', -1139);
 check('นำเข้าซ้ำรหัสเดิม → ข้าม ไม่ล้างหมวดที่ตั้งไว้', r.j.skipped && n1139() === 2 && db.prepare(`SELECT category_id c FROM TransactionDetails WHERE transaction_id='BUY1139'`).get().c === 'T01', r.j);
+/* sync: บรรทัดเดิมที่เคยอ่านทิศทางผิด (เงินเข้า 2,134 ถูกเก็บเป็นออก) → ไฟล์ใหม่มีแต่เงินเข้า → ลบตัวผิด */
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,time,total_amount,status,source,created_by_user_id,statement_desc) VALUES ('WRONG','A09','2026-01-01','04:15:00',-2134,'PENDING_REVIEW','PDF_IMPORT','9North','Transfer Deposit');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('dw','WRONG',-2134,'T01','EXPENSE');`);
+r = await call('/api/statements/sync', { user: '9North', method: 'POST', body: { account_id: 'A09', period_from: '2026-01-01', period_to: '2026-01-31', keys: [{ date: '2026-01-01', time: '04:15:00', amount: 2134, desc: 'Transfer Deposit', count: 1 }] } });
+check('sync ลบบรรทัดที่เครื่องหมายผิด', r.j.removed === 1 && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='WRONG'`).get(), r.j);
 console.log(`stmt-report: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);

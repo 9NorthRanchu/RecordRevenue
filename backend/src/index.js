@@ -792,10 +792,11 @@ export default {
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         const accounts = await env.DB.prepare(`
           SELECT a.account_id, a.entity_id, a.name, a.bank_name, a.account_number, a.pdf_password, e.name as entity_name,
-                 ROUND(COALESCE((SELECT SUM(t.total_amount) FROM Transactions t WHERE t.account_id = a.account_id AND t.status = 'CONFIRMED'), 0), 2) as balance
+                 ROUND(COALESCE(b.bal, 0), 2) as balance
           FROM Accounts a
           JOIN Entities e ON a.entity_id = e.entity_id
           JOIN UserPermissions up ON e.entity_id = up.entity_id
+          LEFT JOIN (SELECT account_id, SUM(total_amount) AS bal FROM Transactions WHERE status = 'CONFIRMED' GROUP BY account_id) b ON b.account_id = a.account_id   /* ⚡ 2026-10-30 คิดยอดครั้งเดียว */
           WHERE up.user_id = ? AND IFNULL(a.account_type,'BANK') != 'TRIP_HOLDING'
           ORDER BY e.name, a.name
         `).bind(userId).all();
@@ -948,47 +949,48 @@ export default {
 
         const familyId = userCheck.family_id;
 
-        const entities = await env.DB.prepare(`SELECT * FROM Entities WHERE family_id = ? ORDER BY name`).bind(familyId).all();
-        // admin sees all contacts; member sees shared + contacts where they are in members
-        const allContactsForSettings = await env.DB.prepare(`SELECT * FROM Contacts WHERE family_id = ? ORDER BY name`).bind(familyId).all();
-        const contacts = { results: userCheck.role === 'admin' ? allContactsForSettings.results : allContactsForSettings.results.filter(c => {
-          if (!c.members) return true;
-          try { const m = JSON.parse(c.members); return !Array.isArray(m) || m.length === 0 || m.includes(userId); } catch { return true; }
-        })};
-        const captions = await env.DB.prepare(`SELECT * FROM Captions WHERE family_id = ? ORDER BY behavior, name`).bind(familyId).all();
-        const categories = await env.DB.prepare(`
+        /* ⚡ 2026-10-30 (North: "ระบบช้า ตอนแก้ตั้งค่า"): เดิมยิงทีละคำสั่ง 7 รอบต่อกัน + คิดยอดทุกบัญชีแบบไล่ทีละบัญชี
+           → ยิงพร้อมกันทั้งหมด และคิดยอดบัญชีครั้งเดียวแบบ GROUP BY */
+        const [entities, allContactsForSettings, captions, categories, allProjectsForSettings, accounts, entityUsers] = await Promise.all([
+          env.DB.prepare(`SELECT * FROM Entities WHERE family_id = ? ORDER BY name`).bind(familyId).all(),
+          env.DB.prepare(`SELECT * FROM Contacts WHERE family_id = ? ORDER BY name`).bind(familyId).all(),
+          env.DB.prepare(`SELECT * FROM Captions WHERE family_id = ? ORDER BY behavior, name`).bind(familyId).all(),
+          env.DB.prepare(`
           SELECT c.*, at.name as caption_name 
           FROM Categories c
           JOIN Captions at ON c.caption_id = at.type_id
           WHERE c.family_id = ? ORDER BY at.name, c.name
-        `).bind(familyId).all();
-        const allProjectsForSettings = await env.DB.prepare(`SELECT * FROM Projects WHERE family_id = ? ORDER BY name`).bind(familyId).all();
+        `).bind(familyId).all(),
+          env.DB.prepare(`SELECT * FROM Projects WHERE family_id = ? ORDER BY name`).bind(familyId).all(),
+          env.DB.prepare(`
+          SELECT a.account_id, a.entity_id, a.name, a.bank_name, a.account_number, a.pdf_password, e.name as entity_name,
+                 IFNULL(a.account_type,'BANK') AS account_type,
+                 IFNULL(a.credit_limit,0)      AS credit_limit,
+                 a.statement_day, a.due_day,
+                 ROUND(COALESCE(b.bal, 0), 2) as balance
+          FROM Accounts a
+          JOIN Entities e ON a.entity_id = e.entity_id
+          LEFT JOIN (SELECT account_id, SUM(total_amount) AS bal FROM Transactions WHERE status = 'CONFIRMED' GROUP BY account_id) b ON b.account_id = a.account_id
+          WHERE e.family_id = ? AND IFNULL(a.account_type,'BANK') != 'TRIP_HOLDING'
+          ORDER BY e.name, a.name
+        `).bind(familyId).all(),
+          env.DB.prepare(`
+          SELECT up.entity_id, u.name as user_name, u.user_id
+          FROM UserPermissions up
+          JOIN Users u ON up.user_id = u.user_id
+          WHERE u.family_id = ?
+        `).bind(familyId).all()
+        ]);
+        // admin sees all contacts; member sees shared + contacts where they are in members
+        const contacts = { results: userCheck.role === 'admin' ? allContactsForSettings.results : allContactsForSettings.results.filter(c => {
+          if (!c.members) return true;
+          try { const m = JSON.parse(c.members); return !Array.isArray(m) || m.length === 0 || m.includes(userId); } catch { return true; }
+        })};
         // admin sees all; member sees shared + trips they're a member of
         const projects = { results: userCheck.role === 'admin' ? allProjectsForSettings.results : allProjectsForSettings.results.filter(p => {
           if (!p.members) return true;
           try { const m = JSON.parse(p.members); return !Array.isArray(m) || m.length === 0 || m.includes(userId); } catch { return true; }
         })};
-        
-        // For accounts, join with Entities to filter by family_id
-        const accounts = await env.DB.prepare(`
-          SELECT a.account_id, a.entity_id, a.name, a.bank_name, a.account_number, a.pdf_password, e.name as entity_name,
-                 IFNULL(a.account_type,'BANK') AS account_type,
-                 IFNULL(a.credit_limit,0)      AS credit_limit,
-                 a.statement_day, a.due_day,
-                 ROUND(COALESCE((SELECT SUM(t.total_amount) FROM Transactions t WHERE t.account_id = a.account_id AND t.status = 'CONFIRMED'), 0), 2) as balance
-          FROM Accounts a
-          JOIN Entities e ON a.entity_id = e.entity_id
-          WHERE e.family_id = ? AND IFNULL(a.account_type,'BANK') != 'TRIP_HOLDING'
-          ORDER BY e.name, a.name
-        `).bind(familyId).all();
-
-        // Get user permissions mappings to show in Owner tab
-        const entityUsers = await env.DB.prepare(`
-          SELECT up.entity_id, u.name as user_name, u.user_id
-          FROM UserPermissions up
-          JOIN Users u ON up.user_id = u.user_id
-          WHERE u.family_id = ?
-        `).bind(familyId).all();
 
         return new Response(JSON.stringify({
           entities: entities.results,
