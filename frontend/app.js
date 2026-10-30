@@ -15321,3 +15321,28 @@ const AccView = (() => {
         _state: S
     };
 })();
+
+/* 🏷️ ป้ายเวอร์ชันมุมจอ (2026-10-30 · North นำเข้าด้วยแอปเวอร์ชันเก่าที่เบราว์เซอร์จำไว้โดยไม่รู้ตัว)
+   แสดงเลข v ของ app.js ที่รันอยู่ · ถ้าเซิร์ฟเวอร์มีเวอร์ชันใหม่กว่า → ป้ายเป็นสีแดง "มีเวอร์ชันใหม่ กดเพื่อโหลด" */
+(function appVersionBadge() {
+    const mine = (document.querySelector('script[src*="app.js"]')?.src.match(/v=(\d+)/) || [])[1] || '?';
+    const show = () => {
+        if (document.getElementById('app-ver')) return;
+        const el = document.createElement('div'); el.id = 'app-ver'; el.textContent = 'v' + mine;
+        el.style.cssText = 'position:fixed;left:8px;bottom:6px;z-index:9999;font-size:11px;padding:2px 7px;border-radius:8px;background:rgba(95,61,196,.12);color:#5F3DC4;font-family:sans-serif;pointer-events:auto;cursor:default';
+        if (innerWidth <= 768) el.style.bottom = '74px';   // มือถือ: อยู่เหนือแถบเมนูล่าง
+        document.body.appendChild(el);
+        check(); setInterval(check, 5 * 60 * 1000);   // แท็บที่เปิดค้างไว้นาน ๆ ก็รู้ว่ามีเวอร์ชันใหม่
+    };
+    const check = () => {
+        const el = document.getElementById('app-ver'); if (!el) return;
+        fetch('/index.html?ver=' + Date.now(), { cache: 'no-store' }).then(r => r.text()).then(t => {
+            const live = (t.match(/app\.js\?v=(\d+)/) || [])[1];
+            if (live && live !== mine) {
+                el.textContent = `v${mine} → มีเวอร์ชันใหม่ v${live} กดเพื่อโหลด`; el.style.background = '#C92A2A'; el.style.color = '#fff'; el.style.cursor = 'pointer';
+                el.onclick = () => location.reload();
+            }
+        }).catch(() => {});
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+})();
