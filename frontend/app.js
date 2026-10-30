@@ -2386,7 +2386,7 @@ async function bulkCategorize() {
         if (cap && catObj?.caption_id) { cap.value = catObj.caption_id; cap.dispatchEvent(new Event('change')); }
         if (cat) { cat.value = v.cat; cat.dispatchEvent(new Event('change')); }
         if (v.ent) { const e = row.querySelector('.select-entity'); if (e) { e.value = v.ent; e.dispatchEvent(new Event('change')); } }
-        if (v.con) { const e = row.querySelector('.select-contact'); if (e) { e.value = v.con; e.dispatchEvent(new Event('change')); } }
+        if (v.con) { const e = row.querySelector('.select-contact'); if (e) { fillContactSelect(e); e.value = v.con; e.dispatchEvent(new Event('change')); } }
         c.style.outline = '2px solid #20C997';
     }
     try { showToast(`🏷️ ใส่หมวดแล้ว ${cards.length} การ์ด — ตรวจแล้วกด "บันทึกทั้งหมดที่พร้อม"`); } catch { /* */ }
@@ -2801,6 +2801,15 @@ function refreshSubRowLabels(cardEl) {
     });
 }
 
+/* เติมรายชื่อคู่ค้าเต็มในช่องที่ยังว่าง (ครั้งแรกที่กด/ก่อนตั้งค่าด้วยโค้ด) · คงค่าที่เลือกไว้ */
+function fillContactSelect(sel) {
+    if (!sel || sel.dataset.lazy !== '1') return;
+    sel.dataset.lazy = '0';
+    const cur = sel.value, esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    sel.innerHTML = '<option value="">Customer</option>' + (AppState.contacts || []).map(c => `<option value="${esc(c.contact_id)}">${esc(c.name)}</option>`).join('');
+    sel.value = cur;
+}
+
 function addInlineSubRow(cardEl, detailData = {}) {
     const container = cardEl.querySelector(".sub-rows-container");
     if (!container) return;
@@ -2813,9 +2822,10 @@ function addInlineSubRow(cardEl, detailData = {}) {
         `<option value="${ent.entity_id}" ${detailData.entity_id === ent.entity_id ? 'selected' : ''}>${ent.name}</option>`
     ).join('');
     
-    const contactOptions = AppState.contacts.map(cont => 
-        `<option value="${cont.contact_id}" ${detailData.contact_id === cont.contact_id ? 'selected' : ''}>${cont.name}</option>`
-    ).join('');
+    /* ⚡ 2026-10-30 (North: "ระบบช้า"): คู่ค้ามีหลายร้อยราย × การ์ดรอตรวจหลายร้อยใบ = ตัวเลือกหลายแสนชิ้นในหน้า
+       → ใส่เฉพาะคู่ค้าที่เลือกไว้ รายชื่อเต็มเติมตอนกดเปิดช่อง (fillContactSelect) */
+    const _selCon = detailData.contact_id ? (AppState.contacts || []).find(c => c.contact_id === detailData.contact_id) : null;
+    const contactOptions = _selCon ? `<option value="${_selCon.contact_id}" selected>${_selCon.name}</option>` : '';
     
     let categoryOptions = '<option value="">-- เลือกหมวดหมู่ --</option>';
     
@@ -2851,7 +2861,7 @@ function addInlineSubRow(cardEl, detailData = {}) {
             </select>
         </div>
         <div class="sub-row-col">
-            <select class="form-select select-contact" style="${subRowInputStyle} color: ${detailData.contact_id ? '#1E293B' : '#9CA3AF'};" onchange="this.style.color = this.value ? '#1E293B' : '#9CA3AF'">
+            <select class="form-select select-contact" data-lazy="1" onfocus="fillContactSelect(this)" onmousedown="fillContactSelect(this)" ontouchstart="fillContactSelect(this)" style="${subRowInputStyle} color: ${detailData.contact_id ? '#1E293B' : '#9CA3AF'};" onchange="this.style.color = this.value ? '#1E293B' : '#9CA3AF'">
                 <option value="">Customer</option>
                 ${contactOptions}
             </select>
@@ -2923,6 +2933,7 @@ function addInlineSubRow(cardEl, detailData = {}) {
                 rowEl.querySelector('.select-entity').value = captionObj.default_entity_id;
             }
             if (captionObj.default_contact_id) {
+                fillContactSelect(rowEl.querySelector('.select-contact'));
                 rowEl.querySelector('.select-contact').value = captionObj.default_contact_id;
             }
         }
@@ -5341,25 +5352,19 @@ function loadReports() {
     // Populate entities select
     const tbEntitySelect = document.getElementById("report-tb-entity");
     tbEntitySelect.innerHTML = '';
-    AppState.entities.forEach(ent => {
-        tbEntitySelect.innerHTML += `<option value="${ent.entity_id}">${ent.name}</option>`;
-    });
+    tbEntitySelect.innerHTML += AppState.entities.map(ent => `<option value="${ent.entity_id}">${ent.name}</option>`).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
 
     // Populate entities select for WHT (with All option)
     const whtEntitySelect = document.getElementById("report-wht-entity");
     if (whtEntitySelect) {
         whtEntitySelect.innerHTML = '<option value="">-- แสดงทั้งหมด (All Company) --</option>';
-        AppState.entities.forEach(ent => {
-            whtEntitySelect.innerHTML += `<option value="${ent.entity_id}">${ent.name}</option>`;
-        });
+        whtEntitySelect.innerHTML += AppState.entities.map(ent => `<option value="${ent.entity_id}">${ent.name}</option>`).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
     }
 
     // Populate projects select
     const projSelect = document.getElementById("report-project-select");
     projSelect.innerHTML = '';
-    AppState.projects.forEach(p => {
-        projSelect.innerHTML += `<option value="${p.project_id}">${p.name}</option>`;
-    });
+    projSelect.innerHTML += AppState.projects.map(p => `<option value="${p.project_id}">${p.name}</option>`).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
 
     // Default load WHT
     runWhtReport();
@@ -5536,9 +5541,7 @@ function openTransactionModal(txId = null, list = []) {
     // Clear and populate dropdowns in form
     const accSelect = document.getElementById("tx-account");
     accSelect.innerHTML = '';
-    AppState.accounts.forEach(acc => {
-        accSelect.innerHTML += `<option value="${acc.account_id}">${acc.name}</option>`;
-    });
+    accSelect.innerHTML += AppState.accounts.map(acc => `<option value="${acc.account_id}">${acc.name}</option>`).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
 
     const body = document.getElementById("split-lines-container");
     if(body) body.innerHTML = '';
@@ -5851,11 +5854,12 @@ async function openSettlementModal(parentDetailId, outstandingAmount) {
         const select = document.getElementById("settle-transaction-select");
         select.innerHTML = '';
 
+        let _opts = '';   // ⚡ 2026-10-30 ต่อข้อความก่อน แล้วใส่ครั้งเดียว
         list.forEach(tx => {
             tx.details.forEach(d => {
                 // Look for positive credit items or transfers that received money
                 if ((d.behavior === 'ASSET') || (d.behavior === 'REVENUE' || d.behavior === 'ASSET')) {
-                    select.innerHTML += `
+                    _opts += `
                         <option value="${d.detail_id}">
                             ${tx.date.split(' ')[0]} - [${tx.account_name}] - ${formatCurrency(Math.abs(d.amount))} (${d.note || 'รับเงิน'})
                         </option>
@@ -5863,6 +5867,7 @@ async function openSettlementModal(parentDetailId, outstandingAmount) {
                 }
             });
         });
+        select.innerHTML = _opts;
     } catch (e) {}
 }
 
@@ -6400,17 +6405,13 @@ function openSettingModal(type, oldId = '', extraData = {}) {
     const defaultEntitySelect = document.getElementById("setting-default-entity-id");
     if (defaultEntitySelect) {
         defaultEntitySelect.innerHTML = '<option value="">-- ไม่กำหนด --</option>';
-        (AppState.settings.entities || []).forEach(ent => {
-            defaultEntitySelect.innerHTML += `<option value="${ent.entity_id}">${ent.name}</option>`;
-        });
+        defaultEntitySelect.innerHTML += (AppState.settings.entities || []).map(ent => `<option value="${ent.entity_id}">${ent.name}</option>`).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
     }
 
     const defaultContactSelect = document.getElementById("setting-default-contact-id");
     if (defaultContactSelect) {
         defaultContactSelect.innerHTML = '<option value="">-- ไม่กำหนด --</option>';
-        (AppState.settings.contacts || []).forEach(c => {
-            defaultContactSelect.innerHTML += `<option value="${c.contact_id}">${c.name}</option>`;
-        });
+        defaultContactSelect.innerHTML += (AppState.settings.contacts || []).map(c => `<option value="${c.contact_id}">${c.name}</option>`).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
     }
 
     if (type === 'entity') {
@@ -6422,14 +6423,12 @@ function openSettingModal(type, oldId = '', extraData = {}) {
         const entMembersContainer = document.getElementById("setting-members-checkboxes");
         if (entMembersContainer) {
             entMembersContainer.innerHTML = '';
-            (AppState.settings.users || []).forEach(u => {
-                entMembersContainer.innerHTML += `
+            entMembersContainer.innerHTML += (AppState.settings.users || []).map(u => `
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; color: rgba(255,255,255,0.9);">
                         <input type="checkbox" class="setting-member-checkbox" value="${u.user_id}" style="width:15px;height:15px;cursor:pointer;">
                         ${u.name}
                     </label>
-                `;
-            });
+                `).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
         }
         if (oldId) {
             const ent = AppState.settings.entities.find(e => e.entity_id === oldId);
@@ -6456,14 +6455,12 @@ function openSettingModal(type, oldId = '', extraData = {}) {
         const membersContainer = document.getElementById("setting-members-checkboxes");
         if (membersContainer) {
             membersContainer.innerHTML = '';
-            (AppState.settings.users || []).forEach(u => {
-                membersContainer.innerHTML += `
+            membersContainer.innerHTML += (AppState.settings.users || []).map(u => `
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; color: rgba(255,255,255,0.9);">
                         <input type="checkbox" class="setting-member-checkbox" value="${u.user_id}" style="width:15px;height:15px;cursor:pointer;">
                         ${u.name}
                     </label>
-                `;
-            });
+                `).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
         }
 
         if (oldId) {
@@ -6503,9 +6500,7 @@ function openSettingModal(type, oldId = '', extraData = {}) {
     } else if (type === 'category') {
         const catTypeSelect = document.getElementById("setting-category-caption");
         catTypeSelect.innerHTML = '';
-        AppState.settings.captions.forEach(at => {
-            catTypeSelect.innerHTML += `<option value="${at.type_id}">${at.name}</option>`;
-        });
+        catTypeSelect.innerHTML += AppState.settings.captions.map(at => `<option value="${at.type_id}">${at.name}</option>`).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
         document.getElementById("group-setting-caption").classList.remove("hidden");
         document.getElementById("group-setting-defaults").classList.remove("hidden");
         if (oldId) {
@@ -6525,9 +6520,7 @@ function openSettingModal(type, oldId = '', extraData = {}) {
     } else if (type === 'account') {
         const entSelect = document.getElementById("setting-entity-id");
         entSelect.innerHTML = '';
-        AppState.settings.entities.forEach(ent => {
-            entSelect.innerHTML += `<option value="${ent.entity_id}">${ent.name}</option>`;
-        });
+        entSelect.innerHTML += AppState.settings.entities.map(ent => `<option value="${ent.entity_id}">${ent.name}</option>`).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
         const entLabel = document.querySelector('label[for="setting-entity-id"]');
         if (entLabel) entLabel.textContent = 'เจ้าของบัญชี (Company)';
 
@@ -6565,14 +6558,12 @@ function openSettingModal(type, oldId = '', extraData = {}) {
         const membersContainer = document.getElementById("setting-members-checkboxes");
         if (membersContainer) {
             membersContainer.innerHTML = '';
-            (AppState.settings.users || []).forEach(u => {
-                membersContainer.innerHTML += `
+            membersContainer.innerHTML += (AppState.settings.users || []).map(u => `
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; color: rgba(255,255,255,0.9);">
                         <input type="checkbox" class="setting-member-checkbox" value="${u.user_id}" style="width:15px;height:15px;cursor:pointer;">
                         ${u.name}
                     </label>
-                `;
-            });
+                `).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
         }
 
         if (oldId) {
@@ -6741,15 +6732,13 @@ function openUserModal(userId = '') {
     const permsContainer = document.getElementById("user-permissions-checkboxes");
     permsContainer.innerHTML = '';
     
-    AppState.settings.entities.forEach(ent => {
-        permsContainer.innerHTML += `
+    permsContainer.innerHTML += AppState.settings.entities.map(ent => `
             <div style="margin-bottom:6px;">
                 <label style="font-weight:normal; cursor:pointer;">
                     <input type="checkbox" class="user-perm-checkbox" value="${ent.entity_id}"> ${ent.name}
                 </label>
             </div>
-        `;
-    });
+        `).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
 
     if (userId) {
         title.innerText = `แก้ไขสิทธิ์สมาชิก: ${userId}`;
@@ -10066,14 +10055,12 @@ function showDebtModal(id = null) {
     const debtMembersContainer = document.getElementById('debt-members-checkboxes');
     if (debtMembersContainer) {
         debtMembersContainer.innerHTML = '';
-        (AppState.settings?.users || []).forEach(u => {
-            debtMembersContainer.innerHTML += `
+        debtMembersContainer.innerHTML += (AppState.settings?.users || []).map(u => `
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.85rem;color:#334155;">
                     <input type="checkbox" class="debt-member-checkbox" value="${u.user_id}" style="width:15px;height:15px;cursor:pointer;">
                     ${u.name}
                 </label>
-            `;
-        });
+            `).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
     }
 
     // Populate dropdowns
