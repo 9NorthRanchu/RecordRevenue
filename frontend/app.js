@@ -2340,6 +2340,7 @@ function renderPendingHero() {
         ${(() => { const all = AppState.pendingTransactions || [], n = all.filter(t => t.slip_image_url).length, f = AppState.pendingSlipFilter || 'ALL';
             return `<button type="button" class="ph-slipf${f === 'SLIP' ? ' on' : ''}" data-f="SLIP">📎 มีสลิป ${n.toLocaleString('en-US')}</button><button type="button" class="ph-slipf${f === 'NOSLIP' ? ' on' : ''}" data-f="NOSLIP">ไม่มีสลิป ${(all.length - n).toLocaleString('en-US')}</button>`; })()}
         ${DupPairs.count() ? `<button type="button" class="ph-slipf ph-dup${(AppState.pendingSlipFilter || '') === 'DUP' ? ' on' : ''}" data-f="DUP">🔁 อาจซ้ำ ${DupPairs.count().toLocaleString('en-US')}</button><button type="button" id="ph-dupall" class="pt-ok">🔁 รวมรายการซ้ำทั้งหมด</button>` : ''}
+        ${TransferPairs.count() ? `<button type="button" class="ph-slipf ph-trf${(AppState.pendingSlipFilter || '') === 'TRF' ? ' on' : ''}" data-f="TRF" title="รายการออกจากบัญชีหนึ่ง กับเข้าอีกบัญชีของเรา ยอดเท่ากัน ห่างไม่เกิน 2 วัน">⇄ น่าจะเป็นโอน ${TransferPairs.count().toLocaleString('en-US')} คู่</button><button type="button" id="ph-trfall" class="pt-ok">⇄ ยืนยันโอนทั้งหมด</button>` : ''}
         <button type="button" id="ph-slipreview" class="pt-ok">🧾 สลิปที่ยังไม่จับคู่</button>
         <button type="button" id="ph-revchart" class="pt-ok">👥 ผังรายได้</button>
         ${pendingImportBatches().length ? `<button type="button" id="ph-delbatch">🗑️ ลบทั้งชุดที่นำเข้า</button>` : ''}</div>
@@ -2381,6 +2382,7 @@ function renderPendingHero() {
     box.querySelector('#ph-slipreview')?.addEventListener('click', () => SlipReview.open());
     box.querySelector('#ph-revchart')?.addEventListener('click', () => RevenueChart.open());
     box.querySelector('#ph-dupall')?.addEventListener('click', () => DupPairs.mergeAll());
+    box.querySelector('#ph-trfall')?.addEventListener('click', () => TransferPairs.applyAll());
     box.querySelectorAll('.ph-slipf').forEach(b => b.onclick = () => { AppState.pendingSlipFilter = AppState.pendingSlipFilter === b.dataset.f ? 'ALL' : b.dataset.f; renderPendingTransactions(); renderPendingHero(); });
     box.querySelector('#ph-bulkcat')?.addEventListener('click', bulkCategorize);
     box.querySelector('#ph-autofill')?.addEventListener('click', autofillFromHistory);
@@ -3285,6 +3287,7 @@ async function loadPending() {
 
         /* ⚡ 2026-10-30: ไม่รอเช็กรายการซ้ำก่อนวาด — วาดการ์ดก่อน เช็กเสร็จค่อยวาดใหม่ถ้ามีคู่ซ้ำ */
         DupPairs.load().then(() => { if (DupPairs.count && DupPairs.count()) { renderPendingTransactions(); renderPendingHero(); } }).catch(() => {});
+        TransferPairs.load().then(() => { if (TransferPairs.count()) { renderPendingTransactions(); renderPendingHero(); } }).catch(() => {});   // ⇄ คู่โอน (2026-10-31)
         /* 📝 ครั้งแรกต่อการเปิดแอป: เติมเบอร์ใน detail รายการ wePAY ที่รอตรวจ (นำเข้าก่อน v243) → มีที่แก้ค่อยโหลดใหม่ */
         try { if (!sessionStorage.getItem('rr_wpfix')) { sessionStorage.setItem('rr_wpfix', '1');
             fetch(`${API_BASE}/api/wepay/fix-notes`, { method: 'POST' }).then(r => r.json()).then(j => { if (j.fixed > 0) { window.showToast?.(`📝 เติมเบอร์ใน detail รายการ wePAY ${j.fixed} รายการ`); loadPending(); } }).catch(() => {}); } } catch { /* */ }   // 2026-10-31: วาดหัว (ปุ่ม 🔁 อาจซ้ำ / รวมรายการซ้ำ) ใหม่ด้วย — เดิมปุ่มหาย
@@ -3328,6 +3331,7 @@ function renderPendingTransactions() {
     if (AppState.pendingSlipFilter === 'SLIP') displayList = displayList.filter(tx => tx.slip_image_url);
     else if (AppState.pendingSlipFilter === 'NOSLIP') displayList = displayList.filter(tx => !tx.slip_image_url);
     else if (AppState.pendingSlipFilter === 'DUP') displayList = displayList.filter(tx => DupPairs.of(tx.transaction_id));
+    else if (AppState.pendingSlipFilter === 'TRF') displayList = displayList.filter(tx => TransferPairs.of(tx.transaction_id));
     
     const sortSel = document.getElementById("pending-sort-filter");
     const sortVal = sortSel ? sortSel.value : 'desc';
@@ -3396,6 +3400,7 @@ function renderPendingTransactions() {
                 <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
                     ${tx.slip_image_url ? `<button class="btn" type="button" onclick="showSlip('${String(tx.slip_image_url).replace(/[^\w/.:-]/g, '')}')" style="width: 34px; height: 34px; padding: 0; font-size: 1rem; border-radius: 8px; background: #F59F00; color: #fff; border: none; cursor: pointer;" title="ดูสลิปจาก LINE">📎</button>` : ''}
                     <button class="btn btn-sim" type="button" title="🔎 รายการที่เคยบันทึก (ผู้รับ/ร้านเดียวกัน) — กดใช้รายละเอียดเดิม" onclick="Similar.forCard(this.closest('.tx-card'))" style="width: 34px; height: 34px; padding: 0; font-size: 1rem; border-radius: 8px; background: #7950F2; color: #fff; border: none; cursor: pointer;">🔎</button>
+                    <button class="btn btn-trf" type="button" title="⇄ โอนระหว่างบัญชีของเรา (ไม่ใช่รายรับ/รายจ่าย)" onclick="TransferPairs.openFor(this.closest('.tx-card'))" style="width: 34px; height: 34px; padding: 0; font-size: 1.05rem; font-weight: 800; border-radius: 8px; background: #0CA678; color: #fff; border: none; cursor: pointer;">⇄</button>
                     <button class="btn btn-add-subrow-header" style="width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; border-radius: 8px; background: #3B82F6; color: #ffffff; border: none; cursor: pointer; box-shadow: 0 2px 6px rgba(59,130,246,0.4); transition: all 0.2s;" title="เพิ่มรายการย่อย" onmouseover="this.style.background='#2563EB'" onmouseout="this.style.background='#3B82F6'"><i class="fa-solid fa-plus"></i></button>
                     <button class="btn btn-confirm-single-pending" style="width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; border-radius: 8px; background: #10B981; color: #ffffff; border: none; cursor: pointer; box-shadow: 0 2px 6px rgba(16,185,129,0.4); transition: all 0.2s;" title="บันทึกรายการ" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'"><i class="fa-solid fa-floppy-disk"></i></button>
                     <button class="btn btn-delete-pending" style="width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; border-radius: 8px; background: #EF4444; color: #ffffff; border: none; cursor: pointer; box-shadow: 0 2px 6px rgba(239,68,68,0.4); transition: all 0.2s;" title="ลบ" onmouseover="this.style.background='#DC2626'" onmouseout="this.style.background='#EF4444'"><i class="fa-solid fa-trash"></i></button>
@@ -3426,6 +3431,7 @@ function renderPendingTransactions() {
         container.appendChild(cardEl);
         const strip = cardEl.querySelector('.slip-strip'); if (strip) { strip.onclick = () => showSlip(strip.dataset.slip); SlipThumbs.watch(strip); }
         DupPairs.decorate(cardEl);
+        TransferPairs.decorate(cardEl);
         
         const detailsToRender = tx.details && tx.details.length > 0 ? tx.details : [{}];
         detailsToRender.forEach((detail, subIdx) => {
@@ -7122,6 +7128,10 @@ async function parseCardStatement(pdf) {
   /* ปี 2 หลัก: < 60 = ค.ศ. (25 → 2025) · ≥ 60 = พ.ศ. (68 → 2025) · ปี 4 หลัก พ.ศ. → ลบ 543 */
   const iso = (d, m, y) => { let yy = +y; if (yy < 100) yy = yy >= 60 ? 2500 + yy - 543 : 2000 + yy; if (yy > 2400) yy -= 543; return `${yy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
   const cards = [], byKey = {}, loose = []; let cur = null, stmtDate = null, allText = '', wantStmtDate = false, postFirst = false, anyCard = null;
+  /* 2026-10-31 · กรุงศรี HomePro: ฟอนต์ไทยฝังแบบเข้ารหัส → ชื่อรายการอ่านเป็น "Ñ¯Ï…" · เก็บแถวไว้ก่อน แล้วตั้งชื่อจากบรรทัดสรุปภาษาอังกฤษที่ตามมา
+     · ตาราง "สรุปรายการบัญชีทั้งหมด" (เลขบัตร · วันสรุปยอด · วงเงิน · ยอดใช้ไป) = ยอดยกไปของแต่ละบัตร */
+  const sumClose = {}; let gq = [];
+  const GARBLED = s => !/[A-Za-zก-๙]/.test(s) && /[\u00A0-\u024F]/.test(s);
   const cardOf = m => { const key = m[3], masked = `${m[1]} ${m[2]}XX XXXX ${m[3]}`; if (!byKey[key]) { byKey[key] = { masked, last4: key, type: '', opening: null, closing: null, rows: [] }; cards.push(byKey[key]); } return byKey[key]; };
   for (let p = 1; p <= pdf.numPages; p++) {
     const tc = await (await pdf.getPage(p)).getTextContent();
@@ -7149,17 +7159,22 @@ async function parseCardStatement(pdf) {
       if (cm && !money.length && !dates.length) { cur = cardOf(cm); const t = text.match(/ACCOUNT DETAILS\s+(.+?)\s+\d{4}\s?\d{2}[Xx*]/i) || text.match(/\d{4}\s?\d{2}[Xx*]{2}\s?[Xx*]{4}\s?\d{4}\s+([A-Za-z][A-Za-z ]+?)(?:\s+[\d,]+)*$/);
         if (t && !cur.type) cur.type = t[1].trim(); continue; }
       /* กรุงศรี: "ยอดรวมที่ต้องชำระสำหรับบัตรเครดิต / Total Payment Due For Credit Card" = ยอดยกไป (ใช้เมื่อยอดเดินตรงเท่านั้น ดูท้ายฟังก์ชัน) */
+      if (/Interest and Other Fees Amount/i.test(text) && money.length) { gq.forEach(r => { r.desc = r.value < 0 ? 'ยกเลิกดอกเบี้ย/ค่าธรรมเนียม' : 'ดอกเบี้ย/ค่าธรรมเนียม'; }); gq = []; continue; }
+      if (/Total Payments\b/i.test(text) && money.length) { gq.forEach(r => { if (r.value < 0) r.desc = 'ชำระบัตร (PAYMENT)'; }); gq = []; continue; }
+      if (cm && money.length && !dates.length && L.items.some(i => /^\d{1,2}$/.test(i.s)) && !/[A-Za-z]{3,}/.test(text.replace(CARD, ''))) { sumClose[cm[3]] = num(money[money.length - 1].s); continue; }
       if (/TOTAL PAYMENT DUE FOR CREDIT CARD/i.test(text) && money.length) { const t = cur || cards[cards.length - 1]; if (t && t.dueClose == null) t.dueClose = num(money[money.length - 1].s); continue; }
       if (/PREVIOUS BALANCE|ยอดเรียกเก็บของรอบบัญชีที่แล้ว|ยอดเรียกเก็บรอบที่แล้ว|ยอดยกมา/i.test(text + ' ' + textNS) && money.length) { const v = num(money[money.length - 1].s); if (cur) { if (cur.opening == null) cur.opening = v; } else loose.opening = v; continue; }
       if (/TOTAL BALANCE|สรุปยอดรอบนี้/i.test(text) && money.length) { if (cur && cur.closing == null && cur.rows.length) cur.closing = num(money[money.length - 1].s); else if (!cur && !cards.length && loose.length && loose.closing == null) loose.closing = num(money[money.length - 1].s); cur = null; continue; }
       const f0 = L.items[0]?.s.match(DATE) || L.items[0]?.s.match(DM), f1 = L.items[1]?.s.match(DATE) || L.items[1]?.s.match(DM);
       if (f0 && f1 && money.length) {
         const amtIt = money[money.length - 1], v = num(amtIt.s);
-        const desc = L.items.slice(2).filter(i => i.x < amtIt.x && !MONEY.test(i.s)).map(i => i.s).join(' ').replace(/\s+/g, ' ').trim();
+        let desc = L.items.slice(2).filter(i => i.x < amtIt.x && !MONEY.test(i.s)).map(i => i.s).join(' ').replace(/\s+/g, ' ').trim();
+        const garbled = GARBLED(desc); if (garbled) desc = 'รายการบัตร (ชื่อร้านอ่านจากไฟล์ไม่ได้)';
         if (!/[A-Za-zก-๙]/.test(desc) || /x\s*\d+%|ดอกเบี้ย.*=/.test(desc)) continue;
         /* CardX: บรรทัดรับชำระไม่มีเครื่องหมายลบ ("Payment received from Easy App 57,770.73") → เป็นเงินเข้า */
         const row = { d0: postFirst ? f1 : f0, d1: postFirst ? f0 : f1, desc, value: r2(v > 0 && /PAYMENT RECEIVED|รับชำระ/i.test(desc) ? -v : v), right: amtIt.r, raw: v };
         /* รับแถวเฉพาะในหัวบัตรที่ยังไม่ปิด (หลัง TOTAL BALANCE = ส่วนตัวอย่างคิดดอกเบี้ย/ใบนำฝาก) · ก่อนเจอหัวบัตรแรก = ส่วนรายการชำระ (กรุงศรี) */
+        if (garbled) gq.push(row);
         if (cur && cur.closing == null) cur.rows.push(row); else if (!cur && !cards.length) loose.push(row);
       }
     }
@@ -7178,6 +7193,8 @@ async function parseCardStatement(pdf) {
   if (!used.some(c => c.rows.length)) return { ok: false, reason: 'ไม่พบรายการในใบแจ้งยอด' };
   for (const c of used) {
     c.sum = r2(c.rows.reduce((t, r) => t + r.value, 0));
+    /* ยอดยกไปจากตารางสรุปบัญชี (ใช้เมื่อหายอดยกไปแบบอื่นไม่ได้) · ไม่มียอดยกมา (ป้ายเป็นฟอนต์อ่านไม่ได้) → ยกมา = ยกไป − รายการ */
+    if (c.closing == null && sumClose[c.last4] != null) { c.closing = sumClose[c.last4]; if (c.opening == null) { c.opening = r2(c.closing - c.sum); c.openDerived = true; } }
     /* ยอดยกไปจาก "Total Payment Due" (กรุงศรี) ใช้เมื่อ ยกมา + รายการ = ยอดนั้นพอดี (กันไปหยิบยอดขั้นต่ำของบัตรอื่น) */
     if (c.closing == null && c.dueClose != null && c.opening != null && Math.abs(r2(c.opening + c.sum) - c.dueClose) < 0.01) c.closing = c.dueClose;
     c.agree = c.opening != null && c.closing != null ? Math.abs(r2(c.opening + c.sum) - c.closing) < 0.01 : null;
@@ -9780,7 +9797,7 @@ const FamView = (() => {
             .map(([k, t]) => `<button type="button" class="${scope === k ? 'on' : ''}" onclick="FamView.scope('${k}')">${t}</button>`).join('');
         const T = data.totals || {}, mine = data.mine || {};
         const kp = scope === 'FAMILY' ? [['รับ', T.in, 'pos', `ส่วนตัว ${fm(T.personal_in)} · ธุรกิจ ${fm(T.business_in)}`], ['จ่าย', -T.out, 'neg', `ส่วนตัว ${fm(T.personal_out)} · ธุรกิจ ${fm(T.business_out)}`], ['สุทธิ', T.in - T.out, T.in - T.out < 0 ? 'neg' : 'pos', 'ทุกคน + ทุกธุรกิจ']]
-            : scope === 'MINE' ? [['รับ (ส่วนตัว)', mine.in, 'pos', esc(data.me.name)], ['จ่าย (ส่วนตัว)', -mine.out, 'neg', esc(data.me.name)], ['สุทธิ', mine.in - mine.out, mine.in - mine.out < 0 ? 'neg' : 'pos', 'ไม่รวมธุรกิจ']]
+            : scope === 'MINE' ? [['รับ (ส่วนตัว)', mine.in, 'pos', esc(data.me?.name)], ['จ่าย (ส่วนตัว)', -mine.out, 'neg', esc(data.me?.name)], ['สุทธิ', mine.in - mine.out, mine.in - mine.out < 0 ? 'neg' : 'pos', 'ไม่รวมธุรกิจ']]
             : [['รับ (ธุรกิจ)', T.business_in, 'pos', `${data.businesses.length} ธุรกิจ`], ['จ่าย (ธุรกิจ)', -T.business_out, 'neg', ''], ['กำไร', T.business_in - T.business_out, T.business_in - T.business_out < 0 ? 'neg' : 'pos', 'รวมทุกธุรกิจ']];
         const members = scope === 'FAMILY' ? data.members : scope === 'MINE' ? data.members.filter(m => m.is_me) : [];
         const bizs = scope === 'MINE' ? data.businesses.filter(b => b.users.some(u => u.user_id === data.me.user_id)) : data.businesses;
@@ -15480,6 +15497,99 @@ const DupPairs = (() => {
     return { load, decorate, mergeAll, of: id => byPending[id], count: () => pairs.length };
 })();
 window.DupPairs = DupPairs;
+
+/* ⇄ โอนระหว่างบัญชีของเรา (2026-10-31 · North: "ทำเลย" ก + ข + ค)
+   ก. ปุ่ม ⇄ บนการ์ดรอตรวจ → เลือกบัญชีอีกฝั่ง → ตั้ง Bank Transfer + ยืนยัน (ไม่ต้องเปลี่ยน Caption เป็น Asset เอง)
+   ข. ระบบหาคู่: ออกบัญชีหนึ่ง + เข้าอีกบัญชี ยอดเท่ากัน ห่าง ≤ 2 วัน → แถบบนการ์ด + ตัวกรอง + ยืนยันทั้งหมด
+   ค. อีกฝั่งเป็นบัญชีที่ไม่มี statement (เงินสด/กระเป๋าเงิน) → ติ๊ก "สร้างรายการฝั่งนั้นให้" (ถ้ามีรายการรอตรวจที่ตรงกันอยู่แล้ว = จับคู่แทน ไม่สร้างซ้ำ)
+   API: GET /api/transfers/suggest · POST /api/transfers/apply (transfers.js) */
+const TransferPairs = (() => {
+    let pairs = [], byTx = {};
+    const NO_KEY = 'rr_trf_no';
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${m[3]}/${m[2]}/${(+m[1] + 543) % 100}` : (d || ''); };
+    const fm = n => Math.abs(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const nm = s => String(s || '').replace(/^\s*\[[^\]]+\]\s*/, '');
+    const accOf = id => (AppState.accounts || []).find(a => a.account_id === id);
+    const noList = () => { try { return JSON.parse(localStorage.getItem(NO_KEY) || '[]'); } catch { return []; } };
+    const keyOf = p => p.out_id + '|' + p.in_id;
+    const post = body => fetch(`${API_BASE}/api/transfers/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) }, body: JSON.stringify(body) })
+        .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status)); return j; });
+    async function load() {
+        try { const r = await fetch(`${API_BASE}/api/transfers/suggest`); pairs = r.ok ? ((await r.json()).pairs || []) : []; } catch { pairs = []; }
+        const no = new Set(noList()); pairs = pairs.filter(p => !no.has(keyOf(p)));
+        byTx = {}; for (const p of pairs) { byTx[p.out_id] = p; byTx[p.in_id] = p; }
+        if (!pairs.length && AppState.pendingSlipFilter === 'TRF') AppState.pendingSlipFilter = 'ALL';
+    }
+    function decorate(card) {
+        const p = byTx[card.dataset.txid]; if (!p || card.querySelector('.trf-strip')) return;
+        const isOut = p.out_id === card.dataset.txid, other = isOut ? p.in : p.out;
+        const el = document.createElement('div'); el.className = 'trf-strip';
+        el.innerHTML = `<span>⇄ <b>น่าจะเป็นการโอน</b> ${isOut ? 'ไป' : 'จาก'} <b>${esc(nm(other.account_name))}</b> · ${fm(p.amount)} · ${dTh(other.date)}${other.time ? ' ' + esc(String(other.time).slice(0, 5)) : ''}${p.days ? ` <small>(ห่าง ${p.days} วัน)</small>` : ''}${p.ambiguous ? ' <small>· มียอดเท่ากันหลายรายการ ตรวจก่อน</small>' : ''}</span>
+            <button type="button" class="btn btn-sm btn-success trf-yes">✓ ยืนยันเป็นการโอน (2 ฝั่ง)</button><button type="button" class="btn btn-sm btn-light trf-no" title="ไม่ใช่การโอน — ไม่ต้องเสนออีก">ไม่ใช่</button>`;
+        el.querySelector('.trf-yes').onclick = async e => {
+            e.target.disabled = true;
+            try { const j = await post({ pairs: [{ out_id: p.out_id, in_id: p.in_id }] }); if (!j.paired) throw new Error(j.errors?.[0] || 'ไม่สำเร็จ');
+                window.showToast?.(`⇄ ยืนยันการโอน ${fm(p.amount)} ทั้ง 2 ฝั่งแล้ว`); loadPending(); }
+            catch (err) { alert('ยืนยันไม่สำเร็จ: ' + err.message); e.target.disabled = false; }
+        };
+        el.querySelector('.trf-no').onclick = () => { try { localStorage.setItem(NO_KEY, JSON.stringify([...noList(), keyOf(p)].slice(-500))); } catch { /* */ }
+            pairs = pairs.filter(x => x !== p); delete byTx[p.out_id]; delete byTx[p.in_id];
+            document.querySelectorAll('.tx-card').forEach(c => { if (c.dataset.txid === p.out_id || c.dataset.txid === p.in_id) c.querySelector('.trf-strip')?.remove(); });
+            renderPendingHero(); };
+        card.querySelector('.tx-card-body')?.prepend(el);
+    }
+    async function applyAll() {
+        if (!pairs.length) return;
+        const amb = pairs.filter(p => p.ambiguous).length;
+        if (!confirm(`ยืนยันเป็น "โอนระหว่างบัญชี" ${pairs.length.toLocaleString('en-US')} คู่ (${(pairs.length * 2).toLocaleString('en-US')} รายการ)?\n\nแต่ละคู่: ตั้งหมวด Bank Transfer ทั้งฝั่งออกและฝั่งเข้า แล้วยืนยัน (ไม่นับเป็นรายรับ/รายจ่าย)` + (amb ? `\n\n⚠️ ${amb} คู่มียอดเท่ากันหลายรายการ — แนะนำกด "⇄ น่าจะเป็นโอน" ดูก่อน` : ''))) return;
+        let n = 0, errs = [];
+        for (let i = 0; i < pairs.length; i += 100) {
+            try { const j = await post({ pairs: pairs.slice(i, i + 100).map(p => ({ out_id: p.out_id, in_id: p.in_id })) }); n += j.paired || 0; errs = errs.concat(j.errors || []); }
+            catch (e) { errs.push(e.message); }
+        }
+        alert(`⇄ ยืนยันการโอนแล้ว ${n.toLocaleString('en-US')} คู่` + (errs.length ? `\n⚠️ ไม่สำเร็จ ${errs.length}: ${errs.slice(0, 3).join(' / ')}` : ''));
+        loadPending();
+    }
+    /* ก + ค: ปุ่ม ⇄ บนการ์ด */
+    async function openFor(card) {
+        const id = card?.dataset.txid, tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === id);
+        if (!tx) return alert('ไม่พบรายการ');
+        if (String(id).startsWith('NEW') || !tx.account_id) return alert('บันทึกรายการนี้ก่อน แล้วค่อยตั้งเป็นการโอน');
+        let amt = Number(tx.total_amount) || 0;
+        if (amt > 0 && (tx.details || []).some(d => d.type === 'EXPENSE')) amt = -amt;   // รายการนำเข้ารุ่นเก่า: จ่ายเก็บเป็นบวก
+        const out = amt < 0, own = accOf(tx.account_id), sug = byTx[id], sugAcc = sug ? (out ? sug.in.account_id : sug.out.account_id) : '';
+        const noStmt = a => a && (a.account_type === 'CASH' || /wallet|truemoney|เป๋าตัง|paotang|shopee ?pay|linepay|rabbit|wepay/i.test((a.bank_name || '') + ' ' + (a.name || '')));
+        const opts = (AppState.accounts || []).filter(a => a.account_id !== tx.account_id)
+            .map(a => `<option value="${esc(a.account_id)}"${a.account_id === sugAcc ? ' selected' : ''}>${esc(a.name)}${noStmt(a) ? ' 💵' : ''}</option>`).join('');
+        const side = out ? 'เงินเข้า' : 'เงินออก';
+        const res = await Swal.fire({ title: '⇄ โอนระหว่างบัญชีของเรา', width: 560, showCancelButton: true, confirmButtonText: '✓ ยืนยันเป็นการโอน', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#0CA678', focusConfirm: false,
+            html: `<div class="trf-f">
+              <div class="trf-sum">${out ? '⬆️ ออกจาก' : '⬇️ เข้า'} <b>${esc(own?.name || tx.account_id)}</b> · <b>${fm(amt)}</b> บาท · ${dTh(tx.date)}</div>
+              <label>บัญชี${out ? 'ปลายทาง (เงินเข้า)' : 'ต้นทาง (เงินออก)'}<select id="trf-acc"><option value="">— ไม่ระบุ (ตั้งเป็นการโอนอย่างเดียว) —</option>${opts}</select></label>
+              <label class="trf-chk"><input type="checkbox" id="trf-mk"> สร้างรายการฝั่ง${side}ในบัญชีนี้ให้ด้วย</label>
+              <small id="trf-hint"></small>
+              ${sug ? `<div class="trf-sug">💡 เจอรายการที่น่าจะเป็นอีกฝั่ง: ${esc(nm((out ? sug.in : sug.out).account_name))} · ${dTh((out ? sug.in : sug.out).date)} — ระบบจะจับคู่ให้</div>` : ''}
+              <small>ทั้งสองฝั่งจะเป็นหมวด <b>Bank Transfer</b> และไม่นับเป็นรายรับ/รายจ่าย · หมวดเดิมในรายการนี้จะถูกแทนที่</small></div>`,
+            didOpen: () => {
+                const sel = document.getElementById('trf-acc'), mk = document.getElementById('trf-mk'), hint = document.getElementById('trf-hint');
+                const upd = (auto) => { const a = accOf(sel.value); mk.disabled = !a; if (auto) mk.checked = !!(a && noStmt(a));
+                    hint.innerHTML = !a ? '' : noStmt(a) ? `💵 บัญชีนี้ไม่มี statement → ติ๊กไว้ ระบบสร้างรายการฝั่ง${side}ให้ (ถ้ามีรายการรอตรวจที่ยอดตรงกันอยู่แล้ว จะจับคู่แทน ไม่สร้างซ้ำ)`
+                        : `🏦 บัญชีที่มี statement: ไม่ต้องติ๊ก — ถ้านำเข้า statement บัญชีนั้นแล้ว ระบบจับคู่ให้เอง · ยังไม่นำเข้า ให้นำเข้าแล้วกด ⇄ ที่รายการฝั่งนั้นอีกครั้ง`; };
+                sel.onchange = () => upd(true); upd(true);
+            },
+            preConfirm: () => ({ acc: document.getElementById('trf-acc').value, mk: document.getElementById('trf-mk').checked }) });
+        if (!res.isConfirmed) return;
+        try {
+            const j = await post({ transaction_id: id, counter_account_id: res.value.acc || undefined, create_counter: !!res.value.mk });
+            const otherName = res.value.acc ? nm(accOf(res.value.acc)?.name) : '';
+            window.showToast?.(j.mode === 'paired' ? `⇄ จับคู่กับรายการใน ${otherName} แล้ว (ยืนยันทั้ง 2 ฝั่ง)` : j.mode === 'created' ? `⇄ ยืนยันแล้ว + สร้างรายการฝั่ง${side}ใน ${otherName}` : '⇄ ตั้งเป็นการโอนแล้ว');
+            loadPending();
+        } catch (e) { alert('ไม่สำเร็จ: ' + e.message); }
+    }
+    return { load, decorate, applyAll, openFor, of: id => byTx[id], count: () => pairs.length };
+})();
+window.TransferPairs = TransferPairs;
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🏦 แนวคิด ข "ตามบัญชี" (2026-10-30 · North เลือกจาก mockup 008-ข / 009-1 / 010)

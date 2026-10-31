@@ -4012,3 +4012,18 @@ frontend
 - frontend DebtUI: แท็บแรก "💸 หนี้สินที่ติดตาม" ในหน้าลูกหนี้/เจ้าหนี้ (แท็บเดิมยังอยู่ · "สัญญาเงินกู้/ผ่อน" เปลี่ยนชื่อเป็น "ทะเบียนเดิม") · ฟอร์มเพิ่ม/แก้ (บ้าน/รถ/อื่น ๆ/ให้ยืม) · กดการ์ด = รายการจ่าย + ปิดหนี้
 - เทสต์ loans 14 ✅ · cards-loans/opening/endpoints/security/family/assets ✅ · Playwright debt.cjs ✅ · app.js?v=251 ui-a.css?v=37
 - ถัดไป: ทรัพย์สิน (ที่ตั้ง Chaiyapruk/Villaggio/Pattaya/Element/Condo) → ประกัน
+
+## v252 (2026-10-31)
+- ฟอร์ม "+ เพิ่มหนี้ที่ติดตาม" ล้นขวาบน iPad/Safari → `.dl-f` ใช้ minmax(0,1fr) · input/select width:100% box-sizing · ปุ่มประเภทห่อบรรทัดได้ (ui-a.css v38)
+- parseCardStatement: กรุงศรี HomePro (ฟอนต์ไทยเข้ารหัส อ่านเป็น "Ñ¯Ï…") → แถวที่ชื่ออ่านไม่ได้ไม่ถูกทิ้งแล้ว ตั้งชื่อจากบรรทัดสรุปอังกฤษ (Interest and Other Fees → ดอกเบี้ย/ยกเลิกดอกเบี้ย · Total Payments → ชำระบัตร)
+  · ยอดยกไปจากตาราง "สรุปรายการบัญชีทั้งหมด" (เลขบัตร · วัน · ยอด) เมื่อหาแบบอื่นไม่ได้ · ยกมา = ยกไป − รายการ (openDerived)
+  · ทดสอบ 2609_494351xxxxxx9239: ยกมา 16.63 · ยกเลิกดอกเบี้ย +16.63 · ยกไป 0.00 · ไฟล์บัตรเดิม 10 ไฟล์ผลเหมือนเดิม
+
+## v253 (2026-10-31) ⇄ โอนระหว่างบัญชีของเรา (North: ก + ข + ค)
+- backend/src/transfers.js (route ใน index.js หลัง handleLoans) · test/transfers.test.mjs 16 ผ่าน
+  · GET /api/transfers/suggest: รายการรอตรวจ ออก/เข้า ยอดเท่ากัน คนละบัญชี ห่าง ≤ 2 วัน · ใกล้สุด (วัน→เวลา) ก่อน · 1 รายการ = 1 คู่ · ambiguous ถ้ามีหลายตัวเลือก
+  · POST /api/transfers/apply {pairs} → ทั้งสองขา: ลบบรรทัดย่อยเดิม → 1 บรรทัด Bank_Transfer type TRANSFER (entity = Company ของบัญชี · note "โอนไป/รับโอนจาก <บัญชี>") + ยืนยัน
+  · {transaction_id, counter_account_id, create_counter} → หาขารอตรวจในบัญชีปลายทางก่อน (paired) · ไม่เจอ + create_counter → สร้าง TX-TRF-… ในบัญชีนั้น (created) · ไม่ระบุ = single
+- frontend TransferPairs: ปุ่ม ⇄ (เขียว) บนการ์ดรอตรวจ · แถบ .trf-strip "น่าจะเป็นการโอน" + ยืนยัน 2 ฝั่ง / ไม่ใช่ (localStorage rr_trf_no) · ตัวกรอง TRF + ปุ่ม "ยืนยันโอนทั้งหมด" ใน hero
+  · บัญชี CASH/กระเป๋าเงิน → ติ๊ก "สร้างรายการฝั่งนั้น" ให้อัตโนมัติ
+- FamView: data.me?.name (กัน error ตอน API ไม่ส่ง me)
