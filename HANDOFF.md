@@ -4066,3 +4066,11 @@ frontend
 - AssetsView: สรุป 4 ช่อง · ชิปที่ตั้ง + ✏️ จัดการที่ตั้ง · แถว 📍 ที่ตั้ง · 🔗 หนี้ · 🛡️ รับประกัน (หมดแล้วสีแดง) · 📎 ไฟล์ · ฟอร์ม: ที่ตั้ง/ห้อง/รับประกัน/แนบไฟล์ (Drive)
 - ฟอร์มหนี้: ช่องผูกกับทรัพย์สินแนะนำชื่อจากทะเบียน (datalist)
 - test/assets.test.mjs 52 ผ่าน
+
+## v259 (2026-11-01) 🛡️ ประกัน (หน้าใหม่ · mockup ins.png แบบ ก)
+- backend/src/insurance.js · ตาราง InsurancePolicies (kind PERSON/ASSET · insurer · policy_no · insured · asset_id · sum_insured · premium · pay_freq YEAR/HALF/QUARTER/MONTH/SINGLE
+  · first_due (งวดใดก็ได้) · pay_until · cover_start/end/note · tax_type LIFE/HEALTH/HEALTH_PARENT/PENSION/NONE · category_id + contact_id (จับคู่จ่าย) · entity_id · status)
+  · matchPayments: ยืนยันแล้ว หมวดเดียวกัน (+คู่ค้า) ยอด ±3% · 1 รายการ = 1 กรมธรรม์ · premiumStatus: งวดปัจจุบัน ±ครึ่งงวด (≤45 วัน) → PAID / DUE_SOON (≤30) / OVERDUE / UPCOMING / PAID_UP
+  · taxDeduction: สุขภาพ ≤25k · ชีวิต+สุขภาพ ≤100k · พ่อแม่ ≤15k · บำนาญ ≤200k · GET /api/insurance/overview · POST save / close (reopen) / delete
+  · test/insurance.test.mjs 15 ผ่าน
+- frontend InsView (#view-insurance · เมนู "ประกัน" ทั้งแถบข้างและเมนูมือถือ): สรุป 4 ช่อง · แท็บ ทั้งหมด/บุคคล/ทรัพย์สิน/ใกล้ครบกำหนด/หมดอายุ · การ์ด + แถบสถานะ · ปฏิทิน 12 เดือน · ฟอร์ม (เลือกทรัพย์สินจากทะเบียน)

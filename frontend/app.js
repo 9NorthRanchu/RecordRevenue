@@ -1393,6 +1393,7 @@ function switchView(viewName) {
         'settings': 'ตั้งค่าระบบข้อมูลหลัก',
         'cards': '💳 บัตร & เงินกู้',
         'assets': '🏷️ ทรัพย์สิน',
+        'insurance': '🛡️ ประกัน',
         'travel': '✈️ TRIPS',
         'puppup': '🗺️ Prototype Trip'
     };
@@ -1433,6 +1434,7 @@ function switchView(viewName) {
     if (viewName === 'dashboard') loadDashboard();
     if (viewName === 'cards') CardsView.open();
     if (viewName === 'assets') AssetsView.open();
+    if (viewName === 'insurance') InsView.load();   // 🛡️ v259
     else if (viewName === 'pending') loadPending();
     else if (viewName === 'history') loadHistory();
     // grid-input redirected to pending (no loadGridInput needed)
@@ -10447,6 +10449,134 @@ const AssetsView = (() => {
     return { open() { if (started) return; started = true; init(); } };
 })();
 window.AssetsView = AssetsView;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   🛡️ ประกัน (v259 · North เลือกแบบ ก จาก mockup ins.png) — backend/src/insurance.js
+   สรุป: เบี้ยต่อปี · ต้องจ่ายใน 60 วัน · หมดอายุใน 90 วัน · ลดหย่อนภาษีปีนี้ · การ์ดกรมธรรม์ + ปฏิทินเบี้ย 12 เดือน
+   ═══════════════════════════════════════════════════════════════════════ */
+const InsView = (() => {
+    const S = { data: null, tab: 'ALL', assets: null };
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fm = (n, d = 2) => (n == null || n === '' || !isFinite(n)) ? '–' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+    const M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${+m[3]} ${M[+m[2] - 1]} ${(+m[1] + 543) % 100}` : '–'; };
+    const mTh = d => { const m = /^(\d{4})-(\d{2})/.exec(d || ''); return m ? `${M[+m[2] - 1]} ${(+m[1] + 543) % 100}` : ''; };
+    const FREQ = { YEAR: 'ปี', HALF: 'ครึ่งปี', QUARTER: 'ไตรมาส', MONTH: 'เดือน', SINGLE: 'ครั้งเดียว' };
+    const TAX = { LIFE: 'ประกันชีวิต', HEALTH: 'ประกันสุขภาพ', HEALTH_PARENT: 'สุขภาพพ่อแม่', PENSION: 'ประกันบำนาญ', NONE: 'ไม่ลดหย่อน' };
+    const plain = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '');
+    const icon = p => p.kind === 'PERSON' ? '👤' : /รถ|car|honda|toyota|mazda|bmw|benz|ford|isuzu/i.test(p.name + ' ' + (p.asset_name || '')) ? '🚗' : '🏠';
+    const root = () => document.getElementById('ins-root');
+    async function load() {
+        const el = root(); if (!el) return;
+        if (!S.data) el.innerHTML = '<div class="ins-empty">⏳ กำลังโหลด…</div>';
+        try { const r = await fetch(`${API_BASE}/api/insurance/overview`); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status); S.data = j; render(); }
+        catch (e) { el.innerHTML = `<div class="ins-empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
+    }
+    const strip = p => {
+        if (p.status === 'closed') return `<div class="ins-st mute">⏹️ ยกเลิก/เลิกต่อแล้ว</div>`;
+        if (p.cover_status === 'EXPIRED') return `<div class="ins-st mute">⌛ หมดอายุ ${dTh(p.cover_end)}</div>`;
+        const out = [];
+        if (p.due_status === 'OVERDUE') out.push(`<div class="ins-st bad"><span>⚠️ เบี้ยเลยกำหนด ${dTh(p.due)}</span><b>ยังไม่พบการจ่าย</b></div>`);
+        else if (p.due_status === 'DUE_SOON') out.push(`<div class="ins-st warn"><span>⏰ เบี้ยครบกำหนด ${dTh(p.due)}</span><b>อีก ${p.days_left} วัน</b></div>`);
+        else if (p.due_status === 'PAID') out.push(`<div class="ins-st ok"><span>✅ จ่ายแล้ว ${dTh(p.paid_date)}</span><b>งวดถัดไป ${dTh(p.due)}</b></div>`);
+        else if (p.due_status === 'PAID_UP') out.push(`<div class="ins-st ok"><span>✅ ชำระเบี้ยครบแล้ว</span></div>`);
+        else if (p.due) out.push(`<div class="ins-st"><span>📅 งวดถัดไป ${dTh(p.due)}</span><b>อีก ${p.days_left} วัน</b></div>`);
+        if (p.cover_status === 'EXPIRING') out.push(`<div class="ins-st warn"><span>🔁 ต่ออายุก่อน ${dTh(p.cover_end)}</span><b>อีก ${p.cover_days_left} วัน</b></div>`);
+        return out.join('');
+    };
+    function card(p) {
+        const who = p.kind === 'PERSON' ? (p.insured ? `ผู้เอาประกัน: ${esc(p.insured)}` : '') : (p.asset_name || p.insured ? `ทรัพย์สิน: ${esc(p.asset_name || p.insured)}` : '');
+        const sub = [who, p.policy_no ? `กรมธรรม์ ${esc(p.policy_no)}` : '', p.sum_insured ? `ทุน ${fm(p.sum_insured, 0)}` : '', p.tax_type && p.tax_type !== 'NONE' ? `ลดหย่อน: ${TAX[p.tax_type]}` : ''].filter(Boolean).join(' · ');
+        const yearsLeft = p.pay_until ? Math.max(0, +p.pay_until.slice(0, 4) - new Date().getFullYear()) : null;
+        const cover = p.cover_start && p.cover_end ? `${dTh(p.cover_start)} – ${dTh(p.cover_end)}` : p.cover_end ? `ถึง ${dTh(p.cover_end)}` : p.cover_start ? `ตั้งแต่ ${dTh(p.cover_start)}${p.cover_note ? ' · ' + p.cover_note : ''}` : (p.cover_note || '');
+        return `<div class="ins-c${p.status === 'closed' || p.cover_status === 'EXPIRED' ? ' off' : ''}" tabindex="0" role="button" data-id="${esc(p.policy_id)}">
+          <div class="ins-h"><span>${icon(p)}</span><b>${esc(p.name)}</b>${p.insurer ? `<em>${esc(p.insurer)}</em>` : ''}</div>
+          ${sub ? `<div class="ins-sub">${sub}</div>` : ''}
+          <div class="ins-r"><span>เบี้ย</span><b>${fm(p.premium)} / ${FREQ[p.pay_freq] || 'ปี'}</b></div>
+          ${p.pay_until ? `<div class="ins-r"><span>จ่ายถึง</span><b>${dTh(p.pay_until)}${yearsLeft ? ` (อีก ${yearsLeft} ปี)` : ''}</b></div>` : ''}
+          ${cover ? `<div class="ins-r"><span>คุ้มครอง</span><b>${esc(cover)}</b></div>` : ''}
+          ${p.paid_year ? `<div class="ins-r"><span>จ่ายปีนี้</span><b>${fm(p.paid_year)}</b></div>` : ''}
+          ${strip(p)}</div>`;
+    }
+    function render() {
+        const el = root(), D = S.data; if (!el || !D) return;
+        const T = D.totals, P = D.policies;
+        const isSoon = p => p.status !== 'closed' && p.cover_status !== 'EXPIRED' && (['OVERDUE', 'DUE_SOON'].includes(p.due_status) || p.cover_status === 'EXPIRING');
+        const isOff = p => p.status === 'closed' || p.cover_status === 'EXPIRED';
+        const tabs = [['ALL', 'ทั้งหมด', P.filter(p => !isOff(p)).length], ['PERSON', '👤 ประกันบุคคล', P.filter(p => !isOff(p) && p.kind === 'PERSON').length], ['ASSET', '🏠 ประกันทรัพย์สิน', P.filter(p => !isOff(p) && p.kind !== 'PERSON').length],
+            ['SOON', '⏰ ใกล้ครบกำหนด', P.filter(isSoon).length], ['OFF', 'หมดอายุ/ยกเลิก', P.filter(isOff).length]];
+        const list = P.filter(p => S.tab === 'OFF' ? isOff(p) : S.tab === 'SOON' ? isSoon(p) : !isOff(p) && (S.tab === 'ALL' || (S.tab === 'PERSON' ? p.kind === 'PERSON' : p.kind !== 'PERSON')))
+            .sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+        const tx = T.tax || {}, te = T.tax_estimate || {};
+        const taxSub = [tx.life ? `ชีวิต ${fm(tx.life, 0)}` : '', tx.health ? `สุขภาพ ${fm(tx.health, 0)}` : '', tx.parent ? `พ่อแม่ ${fm(tx.parent, 0)}` : '', tx.pension ? `บำนาญ ${fm(tx.pension, 0)}` : ''].filter(Boolean).join(' · ') || 'จากเบี้ยที่จ่ายแล้วปีนี้';
+        el.innerHTML = `<div class="ins-top"><span class="ins-note">เบี้ยที่จ่ายแล้วจับคู่จากรายการที่ยืนยันใน "หมวดค่าเบี้ย" ของแต่ละกรมธรรม์ (ยอดตรง ±3%)</span><button type="button" class="ins-add" id="ins-add">＋ เพิ่มกรมธรรม์</button></div>
+          <div class="ins-k">
+            <div><small>เบี้ยต่อปีรวม</small><b>${fm(T.annual)}</b><em>${T.count} กรมธรรม์</em></div>
+            <div><small>ต้องจ่ายใน 60 วัน</small><b class="neg">${T.due60 ? '(' + fm(T.due60) + ')' : '0.00'}</b><em>${T.due60_n} กรมธรรม์</em></div>
+            <div><small>หมดอายุใน 90 วัน</small><b class="${T.expiring90 ? 'warn' : ''}">${T.expiring90}</b><em>ต้องต่ออายุ</em></div>
+            <div><small>ลดหย่อนภาษีปีนี้</small><b class="pos">${fm(tx.total)}</b><em>${esc(taxSub)}${te.total && te.total !== tx.total ? ` · ทั้งปีประมาณ ${fm(te.total, 0)}` : ''}</em></div></div>
+          <div class="ins-tabs">${tabs.map(([k, t, n]) => `<button type="button" data-t="${k}" class="${S.tab === k ? 'on' : ''}">${t} <small>${n}</small></button>`).join('')}</div>
+          <div class="ins-g"><div class="ins-list">${list.length ? list.map(card).join('') : `<div class="ins-empty">${P.length ? 'ไม่มีกรมธรรม์ในหมวดนี้' : '💡 ยังไม่มีกรมธรรม์ — กด "＋ เพิ่มกรมธรรม์" เช่น ประกันชีวิต สุขภาพ ประกันรถ อัคคีภัยบ้าน'}</div>`}</div>
+            <aside class="ins-cal"><h4>📅 ปฏิทินเบี้ยประกัน 12 เดือน</h4>
+              ${D.calendar.length ? D.calendar.map(c => `<div class="ins-cr"><span>${mTh(c.date)} · ${esc(c.name)}</span><b>${fm(c.amount, 0)}</b></div>`).join('') : '<div class="ins-mute">ยังไม่มีงวดเบี้ย</div>'}
+              ${D.calendar.length ? `<div class="ins-cr tot"><span>รวม 12 เดือน</span><b>${fm(D.calendar.reduce((t, c) => t + c.amount, 0), 0)}</b></div>` : ''}
+              <p class="ins-tip">💡 บันทึกการจ่ายเบี้ยในหมวดค่าเบี้ยที่กำหนดในกรมธรรม์ ระบบจับคู่และเลื่อนงวดถัดไปให้เอง</p></aside></div>`;
+        el.querySelector('#ins-add').onclick = () => form(null);
+        el.querySelectorAll('.ins-tabs button').forEach(b => b.onclick = () => { S.tab = b.dataset.t; render(); });
+        el.querySelectorAll('.ins-c').forEach(c => { const go = () => form(P.find(p => p.policy_id === c.dataset.id)); c.onclick = go; c.onkeydown = e => { if (e.key === 'Enter') go(); }; });
+    }
+    async function form(p) {
+        if (!S.assets) { try { const r = await fetch(`${API_BASE}/api/inbox/assets`); S.assets = ((await r.json()).items || []).filter(i => i.status === 'ACTIVE'); } catch { S.assets = []; } }
+        const cats = (AppState.categories || []).filter(c => !/uncategor/i.test(c.category_id || '')), caps = AppState.captions || [];
+        const catOpt = sel => caps.map(cp => { const g = cats.filter(c => c.caption_id === cp.type_id); return g.length ? `<optgroup label="${esc(cp.name)}">${g.map(c => `<option value="${esc(c.category_id)}"${c.category_id === sel ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</optgroup>` : ''; }).join('');
+        const guessCat = !p ? (cats.find(c => /เบี้ย|ประกัน|insur/i.test(c.name || ''))?.category_id || '') : p.category_id;
+        const opt = (list, sel, f) => list.map(x => { const [v, t] = f(x); return `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(t)}</option>`; }).join('');
+        const k0 = p?.kind || 'PERSON';
+        const res = await Swal.fire({ title: p ? 'แก้ไขกรมธรรม์' : '＋ เพิ่มกรมธรรม์', width: 640, showCancelButton: true, cancelButtonText: 'ปิด', confirmButtonText: 'บันทึก', confirmButtonColor: '#5F3DC4', focusConfirm: false,
+            showDenyButton: !!p, denyButtonText: p?.status === 'closed' ? '↩️ เปิดใช้อีกครั้ง' : '⏹️ ยกเลิก/เลิกต่อ', denyButtonColor: '#868E96',
+            html: `<div class="dl-f"><div class="dl-seg" id="ik">${[['PERSON', '👤 บุคคล'], ['ASSET', '🏠 ทรัพย์สิน']].map(([k, t]) => `<button type="button" data-k="${k}" class="${k === k0 ? 'on' : ''}">${t}</button>`).join('')}</div>
+              <label class="w2">ชื่อกรมธรรม์<input id="i-name" value="${esc(p?.name || '')}" placeholder="เช่น ชีวิต+สุขภาพ AIA · ชั้น 1 Honda CR-V · อัคคีภัยบ้าน Chaiyapruk"></label>
+              <label>บริษัทประกัน<input id="i-ins" value="${esc(p?.insurer || '')}" placeholder="AIA · เมืองไทย · วิริยะ · ทิพยฯ"></label>
+              <label>เลขกรมธรรม์<input id="i-no" value="${esc(p?.policy_no || '')}"></label>
+              <label id="i-who-l">ผู้เอาประกัน<input id="i-who" value="${esc(p?.insured || '')}" placeholder="เช่น North · น้องฟ้า"></label>
+              <label id="i-ast-l">ทรัพย์สินที่คุ้มครอง<select id="i-ast"><option value="">— เลือกจากทะเบียน —</option>${opt(S.assets, p?.asset_id, a => [a.asset_id, a.name + (a.location ? ' · ' + a.location : '')])}</select></label>
+              <label>ทุนประกัน<input id="i-sum" inputmode="decimal" value="${p?.sum_insured ?? ''}" placeholder="2,000,000"></label>
+              <label>เบี้ยต่องวด *<input id="i-prem" inputmode="decimal" value="${p?.premium ?? ''}" placeholder="32,400"></label>
+              <label>จ่ายทุก<select id="i-freq">${Object.entries(FREQ).map(([k, t]) => `<option value="${k}"${k === (p?.pay_freq || 'YEAR') ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+              <label>ครบกำหนดจ่าย (งวดใดก็ได้)<input id="i-due" type="date" value="${esc(p?.first_due || '')}"></label>
+              <label>จ่ายเบี้ยถึง (ถ้ามี)<input id="i-until" type="date" value="${esc(p?.pay_until || '')}"></label>
+              <label>คุ้มครองตั้งแต่<input id="i-cs" type="date" value="${esc(p?.cover_start || '')}"></label>
+              <label>คุ้มครองถึง / หมดอายุ<input id="i-ce" type="date" value="${esc(p?.cover_end || '')}"></label>
+              <label>คุ้มครองถึง (ข้อความ)<input id="i-cn" value="${esc(p?.cover_note || '')}" placeholder="เช่น อายุ 85 · ตลอดชีพ"></label>
+              <label>ลดหย่อนภาษี<select id="i-tax">${Object.entries(TAX).map(([k, t]) => `<option value="${k}"${k === (p?.tax_type || (k0 === 'PERSON' ? 'LIFE' : 'NONE')) ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+              <label>หมวดค่าเบี้ย (จับคู่การจ่าย)<select id="i-cat"><option value="">— ไม่จับคู่ —</option>${catOpt(guessCat)}</select></label>
+              <label>คู่ค้า (ไม่บังคับ)<select id="i-con"><option value="">— ไม่ระบุ —</option>${opt(AppState.contacts || [], p?.contact_id, c => [c.contact_id, c.name])}</select></label>
+              <label>Company<select id="i-ent"><option value="">— ไม่ระบุ —</option>${opt(AppState.entities || [], p?.entity_id, e => [e.entity_id, plain(e.name)])}</select></label>
+              <label class="w2">หมายเหตุ<input id="i-note" value="${esc(p?.note || '')}" placeholder="เช่น ผู้ป่วยใน 1,000,000/ปี · + พ.ร.บ."></label>
+              <small class="w2">ระบบจับคู่รายการจ่ายที่ยืนยันแล้วในหมวดค่าเบี้ย (และคู่ค้า ถ้าเลือก) ที่ยอดตรงกับเบี้ยต่องวด ±3% → แสดงจ่ายแล้ว และเลื่อนงวดถัดไปเอง</small></div>`,
+            didOpen: () => {
+                const seg = document.getElementById('ik'), sync = () => { const k = seg.querySelector('.on')?.dataset.k; document.getElementById('i-ast-l').style.display = k === 'ASSET' ? '' : 'none'; const wl = document.getElementById('i-who-l'); wl.firstChild.textContent = k === 'ASSET' ? 'ชื่อทรัพย์สิน (ถ้าไม่อยู่ในทะเบียน)' : 'ผู้เอาประกัน'; wl.querySelector('input').placeholder = k === 'ASSET' ? 'เช่น Honda CR-V กข 1234' : 'เช่น North · น้องฟ้า'; };
+                seg.onclick = e => { const b = e.target.closest('button'); if (!b) return; seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); const t = document.getElementById('i-tax'); if (!p) t.value = b.dataset.k === 'PERSON' ? 'LIFE' : 'NONE'; sync(); };
+                sync();
+            },
+            preConfirm: () => {
+                const v = id => document.getElementById(id).value.trim(), n = id => { const x = v(id).replace(/,/g, ''); return x === '' ? null : Number(x); };
+                const body = { policy_id: p?.policy_id, kind: document.querySelector('#ik .on')?.dataset.k || 'PERSON', name: v('i-name'), insurer: v('i-ins'), policy_no: v('i-no'), insured: v('i-who'), asset_id: v('i-ast'),
+                    sum_insured: n('i-sum'), premium: n('i-prem'), pay_freq: v('i-freq'), first_due: v('i-due'), pay_until: v('i-until'), cover_start: v('i-cs'), cover_end: v('i-ce'), cover_note: v('i-cn'),
+                    tax_type: v('i-tax'), category_id: v('i-cat'), contact_id: v('i-con'), entity_id: v('i-ent'), note: v('i-note') };
+                if (!body.name) { Swal.showValidationMessage('ใส่ชื่อกรมธรรม์'); return false; }
+                if (!(body.premium > 0)) { Swal.showValidationMessage('ใส่เบี้ยต่องวด'); return false; }
+                if (body.pay_freq !== 'SINGLE' && !body.first_due) { Swal.showValidationMessage('ใส่วันครบกำหนดจ่าย (งวดใดก็ได้ เช่น งวดล่าสุด)'); return false; }
+                return body;
+            } });
+        try {
+            if (res.isConfirmed) { const r = await fetch(`${API_BASE}/api/insurance/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(res.value) }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error); window.showToast?.('🛡️ บันทึกกรมธรรม์แล้ว'); load(); }
+            else if (res.isDenied && p) { const r = await fetch(`${API_BASE}/api/insurance/close`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ policy_id: p.policy_id, reopen: p.status === 'closed' }) }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error); load(); }
+        } catch (e) { alert('ไม่สำเร็จ: ' + e.message); }
+    }
+    return { load, form };
+})();
+window.InsView = InsView;
 /* v258: ช่อง "ผูกกับทรัพย์สิน" ในฟอร์มหนี้ → แนะนำชื่อจากทะเบียนทรัพย์สิน (ชื่อตรงกัน = หน้าทรัพย์สินแสดงหนี้ที่ผูก) */
 document.addEventListener('focusin', async e => {
     if (e.target?.id !== 'dl-asset') return;

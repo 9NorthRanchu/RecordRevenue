@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=129">
-    <link rel="stylesheet" href="ui-a.css?v=42">
+    <link rel="stylesheet" href="ui-a.css?v=43">
     <!-- ⚡ 2026-10-30: ไลบรารีทั้งหมดย้ายไปท้ายหน้า + defer → หน้าขึ้นก่อน ไม่ต้องรอดาวน์โหลด ~2MB -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Mali:wght@300;400;500;600;700&display=swap" rel="stylesheet">   <!-- ฟอนต์ Mali ทั้งแอป (2026-10-31) -->
@@ -92,6 +92,7 @@
                     <div class="nav-sep"><span>อื่น ๆ</span></div>
                     <a href="#" class="nav-item nav-minor" data-target="cards"><i class="fa-solid fa-credit-card"></i> <span>บัตร & เงินกู้</span></a>
                     <a href="#" class="nav-item nav-minor" data-target="assets"><i class="fa-solid fa-box-archive"></i> <span>ทรัพย์สิน</span></a>
+                    <a href="#" class="nav-item nav-minor" data-target="insurance"><i class="fa-solid fa-shield-halved"></i> <span>ประกัน</span></a>
                     <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link nav-minor"><i class="fa-solid fa-plane"></i> <span>ทริป</span></a>
                 </nav>
                 <!-- QR Code Box in Sidebar -->
@@ -790,6 +791,9 @@
 
                 </section>
 
+                <!-- 🛡️ ประกัน (v259) — โค้ดอยู่ app.js ส่วน "InsView" -->
+                <section id="view-insurance" class="content-view hidden"><div id="ins-root"></div></section>
+
                 <!-- 🏷️ ทรัพย์สิน (2026-10-15 ย้ายจาก ledger/assets.html) — โค้ดอยู่ app.js ส่วน "AssetsView" -->
                 <section id="view-assets" class="content-view hidden">
                     <style>
@@ -1442,6 +1446,7 @@
                     <a href="#" class="nav-item ms-item" data-target="debtor"><i class="fa-solid fa-hand-holding-dollar"></i>ลูกหนี้/เจ้าหนี้</a>
                     <a href="#" class="nav-item ms-item" data-target="cards"><i class="fa-solid fa-credit-card"></i>บัตร & เงินกู้</a>
                     <a href="#" class="nav-item ms-item" data-target="assets"><i class="fa-solid fa-box-archive"></i>ทรัพย์สิน</a>
+                    <a href="#" class="nav-item ms-item" data-target="insurance"><i class="fa-solid fa-shield-halved"></i>ประกัน</a>
                     <a href="trip-unified-prototype/trips.html" class="ms-item"><i class="fa-solid fa-plane"></i>ทริป</a>
                     <a href="#" class="nav-item ms-item" data-target="reports"><i class="fa-solid fa-chart-pie"></i>รายงาน</a>
                     <a href="#" class="nav-item ms-item" data-target="settings"><i class="fa-solid fa-gear"></i>ตั้งค่า</a>
@@ -1773,7 +1778,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script defer src="travel.js?v=105"></script>
-    <script defer src="app.js?v=258"></script>
+    <script defer src="app.js?v=259"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">

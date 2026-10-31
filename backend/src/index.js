@@ -16,6 +16,7 @@ import { handleTransfers } from './transfers.js';
 import { handleDetailNotes } from './detail-notes.js';
 import { handleAccountDefaults } from './account-defaults.js';
 import { handleRules } from './rules.js';
+import { handleInsurance } from './insurance.js';
 import { handleDrive } from './drive.js';
 import { handleSimilar } from './similar.js';
 import { handleWepay } from './wepay.js';
@@ -157,7 +158,8 @@ export default {
       { const tf = await handleTransfers({ url, request, env, cors: corsHeaders, authUserId }); if (tf) return tf; }
       { const dn = await handleDetailNotes({ url, request, env, cors: corsHeaders, authUserId }); if (dn) return dn; }
       { const ad = await handleAccountDefaults({ url, request, env, cors: corsHeaders, authUserId }); if (ad) return ad; }
-      { const rl = await handleRules({ url, request, env, cors: corsHeaders, authUserId }); if (rl) return rl; }   // ⚡ กฎอัตโนมัติ (v257)   // 🏢 Company เริ่มต้นต่อบัญชี (v256)   // 📝 Detail จาก statement (v255)   // ⇄ โอนระหว่างบัญชีของเรา (2026-10-31)   // 💸 หนี้สินที่ติดตาม (2026-10-31)   // 👨‍👩‍👧 ภาพรวมครอบครัว (2026-10-31)
+      { const rl = await handleRules({ url, request, env, cors: corsHeaders, authUserId }); if (rl) return rl; }
+      { const ins = await handleInsurance({ url, request, env, cors: corsHeaders, authUserId }); if (ins) return ins; }   // 🛡️ ประกัน (v259)   // ⚡ กฎอัตโนมัติ (v257)   // 🏢 Company เริ่มต้นต่อบัญชี (v256)   // 📝 Detail จาก statement (v255)   // ⇄ โอนระหว่างบัญชีของเรา (2026-10-31)   // 💸 หนี้สินที่ติดตาม (2026-10-31)   // 👨‍👩‍👧 ภาพรวมครอบครัว (2026-10-31)
       { const sm = await handleSimilar({ url, request, env, cors: corsHeaders, authUserId }); if (sm) return sm; }   // 🔎 รายการใกล้เคียง (2026-10-31)
       { const wp = await handleWepay({ url, request, env, cors: corsHeaders, authUserId }); if (wp) return wp; }   // 📱 wePAY (2026-10-31)
       { const dv = await handleDrive({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny, fetchImpl: env.__fetch }); if (dv) return dv; }   // 📁 Google Drive (2026-10-31)   // 🏦 ภาพรวมตามบัญชี (2026-10-30)
