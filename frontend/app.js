@@ -7036,7 +7036,9 @@ async function parseTextStatement(pdf) {
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
-    const items = tc.items.filter(it => it.str && it.str.trim() && !/^[lI|]{1,4}$/.test(it.str.trim())).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim(), w: it.width || 0 }));   // ตัดขีดขอบกระดาษ "l"/"ll" (2026-10-30)
+    const items = tc.items.filter(it => it.str && it.str.trim() && !/^[lI|]{1,4}$/.test(it.str.trim())).map(it => { const [a, b] = it.transform, rot = Math.abs(b) > Math.abs(a);
+      /* 2026-10-31 · กรุงไทย Business (JasperReports): หน้าแนวนอนที่ตัวหนังสือหมุน 90° → แถว = แกน x · คอลัมน์ = แกน y → สลับแกนกลับให้เป็นแนวปกติ */
+      return { x: rot ? (b > 0 ? it.transform[5] : -it.transform[5]) : it.transform[4], y: rot ? (b > 0 ? -it.transform[4] : it.transform[4]) : it.transform[5], s: it.str.trim(), w: it.width || 0 }; });   // ตัดขีดขอบกระดาษ "l"/"ll" (2026-10-30)
     textChars += items.reduce((n, it) => n + it.s.length, 0);
     if (allTxt.length < 20000) allTxt += items.map(it => it.s).join(' ') + '\n';
     /* 2026-10-30 · SCB: วันที่กับเวลาอยู่ช่องเดียว "05/01/26 22:02" → แยกเป็น 2 ช่อง (เดิมไม่เจอวันที่ → "ไม่พบตารางรายการ") */
