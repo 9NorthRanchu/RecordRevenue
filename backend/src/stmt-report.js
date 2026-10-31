@@ -222,8 +222,13 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
         WHERE p.status = 'PENDING_REVIEW' AND p.source = 'PDF_IMPORT' ${acc ? 'AND p.account_id = ?' : ''}
           AND ((${sg.replace(/\bt\./g, 'p.')}) < 0) = ((${sg.replace(/\bt\./g, 'k.')}) < 0)
         ORDER BY gap, p.date LIMIT 3000`).bind(...(acc ? [authUserId, acc] : [authUserId])).all()).results) || [];
+    /* 2026-10-31 (North: wePAY เติมเงิน 0629… ถูกจับคู่กับรายการเติมเงิน 0636… วันเดียวกัน ยอดเท่ากัน)
+       ทั้งสองฝั่งมีเลขยาว (เบอร์โทร/เลขบัญชี ≥ 9 หลัก) แต่ไม่มีเลขตรงกันเลย = คนละรายการ → ไม่จับคู่ · เลขตรงกัน → จับคู่ก่อน */
+    const longNums = t => new Set((String(t || '').match(/\d{9,}/g) || []));
+    const numMatch = r => { const a = longNums(r.p_desc), b = longNums(r.k_desc); if (!a.size || !b.size) return 0; for (const x of a) if (b.has(x)) return 1; return -1; };
+    const scored = rows.map(r => ({ r, m: numMatch(r) })).filter(x => x.m >= 0).sort((x, y) => y.m - x.m || x.r.gap - y.r.gap);
     const usedP = new Set(), usedK = new Set(), pairs = [];
-    for (const r of rows) { if (usedP.has(r.pending_id) || usedK.has(r.keep_id)) continue; usedP.add(r.pending_id); usedK.add(r.keep_id); pairs.push(r); }
+    for (const { r } of scored) { if (usedP.has(r.pending_id) || usedK.has(r.keep_id)) continue; usedP.add(r.pending_id); usedK.add(r.keep_id); pairs.push(r); }
     return json({ pairs }, cors);
   }
 

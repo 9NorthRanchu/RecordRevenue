@@ -85,7 +85,11 @@ export async function handleSimilar({ url, request, env, cors, authUserId }) {
         WHERE up.user_id = ? AND t.status = 'CONFIRMED' AND t.transaction_id != ? AND ABS(ABS(t.total_amount) - ?) < 0.01
           AND substr(t.date,1,10) BETWEEN date(?, '-3 day') AND date(?, '+3 day') LIMIT 50`).bind(authUserId, exclude, dAmt, dDate, dDate).all()).results) || [];
     const days = d => Math.abs((Date.parse(d) - Date.parse(dDate)) / 864e5);
+    const myNums = new Set(String(desc).match(/\d{9,}/g) || []);
     dup = drow.filter(r => !(sign && Math.sign(r.total_amount) === -sign)).filter(r => {
+      /* เลขยาว (เบอร์/บัญชี) ทั้งสองฝั่งแต่ไม่ตรงกัน = คนละรายการ (wePAY เติมเงินคนละเบอร์ ยอดเท่ากัน) */
+      const theirs = String(r.statement_desc || '').match(/\d{9,}/g) || [];
+      if (myNums.size && theirs.length) return theirs.some(x => myNums.has(x));
       const hay = `${simKey(r.statement_desc)} ${simKey(r.note)}`, payee = (key && simKey(r.statement_desc) === key) || toks.some(t => hay.includes(t));
       return payee || (acc && r.account_id === acc && dAmt >= 100 && days(r.date) <= 1);
     }).slice(0, 5).map(r => ({ transaction_id: r.transaction_id, date: r.date, amount: r.total_amount, statement_desc: r.statement_desc, account_name: r.account_name, note: r.note }));

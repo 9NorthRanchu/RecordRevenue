@@ -113,6 +113,14 @@ INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type
 r = await call('/api/transactions/duplicates?account_id=A06', { user: '9North' });
 const prs = (r.j?.pairs || []).map(x => x.pending_id + '>' + x.keep_id).sort().join();
 check('dup pairs (ไม่จับเงินเข้ากับเงินออก)', r.s === 200 && prs === 'NEW1>OLD1,NEW2>OLD2', r.j);
+/* wePAY: เติมเงินคนละเบอร์ วันเดียวกัน ยอดเท่ากัน → ไม่ใช่คู่ซ้ำ · เบอร์เดียวกัน → คู่ซ้ำ (2026-10-31) */
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc,time) VALUES
+  ('WPK1','A06','2025-11-03',-9.9,'CONFIRMED','WEB_GRID','9North','เติมเงิน 0636199166',NULL),('WPK2','A06','2025-11-03',-9.9,'CONFIRMED','WEB_GRID','9North','เติมเงิน 0629899354',NULL),
+  ('WPP1','A06','2025-11-03',-9.9,'PENDING_REVIEW','PDF_IMPORT','9North','wePAY เติมเงิน AIS 0629899354','09:41:00');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('DWK1','WPK1',-9.9,'T01','EXPENSE'),('DWK2','WPK2',-9.9,'T01','EXPENSE'),('DWP1','WPP1',-9.9,'Cat_Uncategorized','EXPENSE');`);
+{ const wp = ((await call('/api/transactions/duplicates?account_id=A06', { user: '9North' })).j?.pairs || []).filter(x => x.pending_id === 'WPP1').map(x => x.keep_id);
+  check('dup pairs: เบอร์เดียวกันเท่านั้น (ไม่จับเบอร์อื่นยอดเท่ากัน)', wp.join() === 'WPK2', wp); }
+db.exec(`DELETE FROM Transactions WHERE transaction_id IN ('WPK1','WPK2','WPP1'); DELETE FROM TransactionDetails WHERE detail_id IN ('DWK1','DWK2','DWP1');`);
 r = await call('/api/transactions/merge', { user: '9North', method: 'POST', body: { pairs: [{ pending_id: 'NEW1', keep_id: 'OLD1' }] } });
 let k = db.prepare(`SELECT * FROM Transactions WHERE transaction_id='OLD1'`).get(), kd = db.prepare(`SELECT * FROM TransactionDetails WHERE transaction_id='OLD1'`).get();
 check('merge: เก็บรายการเดิม + เวลา/ข้อความธนาคาร + โน้ตเดิม', r.j.merged === 1 && k.time === '16:04:00' && k.statement_desc.includes('K PLUS') && kd.note === 'Ppuy 1.11.25' && kd.category_id === 'T01' && k.status === 'CONFIRMED', { k, kd });

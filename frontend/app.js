@@ -16025,7 +16025,8 @@ const WePay = (() => {
         const [date, time] = [row.datetime.slice(0, 10), (row.datetime.slice(11, 19) || '00:00:00').padEnd(8, ':00').slice(0, 8)];
         return { date, time, type: dep ? 'INCOME' : 'EXPENSE', amount: net,
             statement_desc: dep ? `wePAY เติมเงินเข้ากระเป๋า${row.balance != null ? ` (คงเหลือ ${fm(row.balance)})` : ''}` : `wePAY ${row.kind === 'package' ? 'แพ็กเกจ' : 'เติมเงิน'} ${row.operator || ''} ${row.phone || ''}`.replace(/\s+/g, ' ').trim(),
-            note: dep ? null : (row.refund ? `เติม ${fm(row.amount)} ได้คืน ${fm(row.refund)}` : null),
+            /* 2026-10-31 North: "detail ให้ระบุหมายเลขด้วย" */
+            note: dep ? null : `${row.kind === 'package' ? 'แพ็กเกจ' : 'เติม'}${row.phone ? ' ' + row.phone : ''} ${fm(row.amount)}${row.refund ? ` ได้คืน ${fm(row.refund)}` : ''}`,
             ref_code: `WP${dep ? 'D' : 'T'}${row.datetime.replace(/\D/g, '').slice(0, 12)}${row.phone || Math.round(row.amount * 100)}`,
             category_id: dep ? ((AppState.categories || []).some(c => c.category_id === 'Bank_Transfer') ? 'Bank_Transfer' : null) : catId, detail_type: dep ? 'TRANSFER' : 'EXPENSE', balance: null };
     };
