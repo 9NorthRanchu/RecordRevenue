@@ -14826,9 +14826,32 @@ const StmtReport = (() => {
                 <span>ยกไป ${fmH(g.closeSys)}${g.closeBank != null ? ` / ธ. ${fmH(g.closeBank)}` : ''}</span>${g.header?.files?.length ? `<span class="drv-row">${DriveStore.buttons(g.header.files, rep.account?.account_id)}</span>` : ''}<em>${esc(g.status)}${g.missingLines ? ` · ขาด ${g.missingLines} บรรทัด` : ''}</em>
                 ${g.empty && g.header ? `<button type="button" class="btn btn-sm btn-outline-danger sr-delhdr" data-stmt="${esc(g.header.stmt_id)}" title="นำเข้าผิดบัญชีแล้วลบรายการไปแล้ว → ลบหัว statement + ยอดธนาคารที่ค้าง">🗑️ ลบหัว statement นี้</button>` : ''}</summary>
                 ${!g.empty && g.header && g.pending ? `<button type="button" class="btn btn-sm btn-outline-danger sr-delstmt" data-stmt="${esc(g.header.stmt_id)}" data-n="${g.pending}" title="นำเข้าผิด (ผิดแบบ/ผิดบัญชี) → ลบรายการรอตรวจของ statement นี้ แล้วนำเข้าไฟล์ใหม่">🗑️ ลบ statement นี้ (รอตรวจ ${g.pending})</button>` : ''}
-                <div class="table-responsive"><table class="sr-tbl"><thead><tr>${COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
-                ${g.rows.map((r, i) => { const c = rowCells(r, i); return `<tr class="${r._flag ? 'sr-' + r._flag : ''}">${c.map((v, k) => `<td class="${k >= 5 && k <= 9 ? 'r' : ''}">${k >= 5 && k <= 9 ? fmH(v) : esc(v)}</td>`).join('')}</tr>`; }).join('')}
+                ${g.rows.length ? `<div class="sr-selbar"><button type="button" class="btn btn-sm btn-outline-danger sr-delsel" disabled title="ติ๊กช่องหน้ารายการก่อน">🗑️ ลบที่เลือก (0)</button><small>ติ๊กช่องหน้ารายการที่ต้องการลบ</small></div>` : ''}
+                <div class="table-responsive"><table class="sr-tbl"><thead><tr><th class="sr-ck"><input type="checkbox" class="sr-selall" title="เลือกทั้งหมด"></th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
+                ${g.rows.map((r, i) => { const c = rowCells(r, i); return `<tr class="${r._flag ? 'sr-' + r._flag : ''}"><td class="sr-ck"><input type="checkbox" class="sr-sel" value="${esc(r.transaction_id)}" data-st="${esc(r.status)}"></td>${c.map((v, k) => `<td class="${k >= 5 && k <= 9 ? 'r' : ''}">${k >= 5 && k <= 9 ? fmH(v) : esc(v)}</td>`).join('')}</tr>`; }).join('')}
                 </tbody></table></div></details>`).join('')}</div>`).join('');
+        /* ☑️ ลบบางรายการ (2026-10-31 North: "สามารถลบบางรายการได้") — ติ๊กแล้วกดลบ · รายการที่ยืนยันแล้วถามยืนยันอีกชั้น */
+        box.querySelectorAll('.sr-grp').forEach(grp => {
+            const btn = grp.querySelector('.sr-delsel'); if (!btn) return;
+            const sel = () => [...grp.querySelectorAll('.sr-sel:checked')];
+            const upd = () => { const n = sel().length; btn.disabled = !n; btn.textContent = `🗑️ ลบที่เลือก (${n})`; };
+            grp.querySelectorAll('.sr-sel').forEach(c => c.onchange = upd);
+            const all = grp.querySelector('.sr-selall'); if (all) all.onchange = () => { grp.querySelectorAll('.sr-sel').forEach(c => { c.checked = all.checked; }); upd(); };
+            btn.onclick = async () => {
+                const list = sel(), nConf = list.filter(c => c.dataset.st === 'CONFIRMED').length;
+                if (!list.length || !confirm(`ลบ ${list.length} รายการ?${nConf ? `\n\n⚠️ ในนี้มีรายการที่ยืนยันแล้ว ${nConf} รายการ — จะถูกลบออกจากบัญชีด้วย` : ''}\n\nลบแล้วกู้คืนไม่ได้`)) return;
+                btn.disabled = true; let ok = 0; const errs = [];
+                for (const [k, c] of list.entries()) {
+                    btn.textContent = `⏳ ${k + 1}/${list.length}`;
+                    try { const r = await fetch(`${API_BASE}/api/transactions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transaction_id: c.value }) });
+                        const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || r.status); ok++; }
+                    catch (err) { errs.push(err.message); }
+                }
+                showToast?.(`🗑️ ลบแล้ว ${ok} รายการ${errs.length ? ` · ไม่สำเร็จ ${errs.length}` : ''}`);
+                if (errs.length) alert('ลบไม่สำเร็จบางรายการ:\n' + [...new Set(errs)].slice(0, 5).join('\n'));
+                document.getElementById('sr-run')?.click(); updatePendingBadge?.();
+            };
+        });
         /* 🗑️ ลบ statement ที่นำเข้าผิด พร้อมรายการรอตรวจของมัน (2026-10-30) — รายการที่ยืนยันแล้วไม่ถูกลบ */
         box.querySelectorAll('.sr-delstmt').forEach(b => b.onclick = async e => {
             e.preventDefault(); e.stopPropagation();

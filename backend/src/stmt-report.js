@@ -123,7 +123,8 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
           (SELECT GROUP_CONCAT(DISTINCT c.name) FROM TransactionDetails d LEFT JOIN Categories c ON c.category_id = d.category_id WHERE d.transaction_id = t.transaction_id) AS categories,
           (SELECT GROUP_CONCAT(DISTINCT d.note) FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id AND d.note IS NOT NULL AND d.note != '') AS notes
         FROM Transactions t WHERE t.account_id = ? AND substr(t.date, 1, 10) >= ? AND substr(t.date, 1, 10) <= ?
-        ORDER BY substr(t.date, 1, 10), CASE WHEN t.stmt_seq IS NULL THEN 1 ELSE 0 END, t.stmt_id, t.stmt_seq, t.time, t.created_at LIMIT 6000`)
+        /* 2026-10-31 North: "หน้านี้ให้เรียงตามเวลา" → ในวันเดียวกัน: มีเวลาก่อน เรียงตามเวลา · ไม่มีเวลา (ใบแจ้งยอดบัตร/จดเอง) ตามลำดับบรรทัด statement */
+        ORDER BY substr(t.date, 1, 10), CASE WHEN t.time IS NULL OR t.time = '' THEN 1 ELSE 0 END, t.time, CASE WHEN t.stmt_seq IS NULL THEN 1 ELSE 0 END, t.stmt_seq, t.created_at LIMIT 6000`)
       .bind(acc, from, to).all()).results) || [];
     const headers = ((await env.DB.prepare(`SELECT stmt_id, period_from, period_to, opening, closing, line_count, file_name, source_kind, created_at
         FROM StatementImports WHERE account_id = ? AND period_to >= ? AND period_from <= ? ORDER BY period_from, created_at`).bind(acc, from, to).all()).results) || [];

@@ -600,3 +600,6 @@ body.ui-dark .bk-stat.none{background:#2A2344;border-color:#6741D9;color:#D0BFFF
 .rr-hg{font-size:.85rem;animation:rr-hg 1.6s ease-in-out infinite}@keyframes rr-hg{0%,40%{transform:rotate(0)}50%,90%{transform:rotate(180deg)}100%{transform:rotate(180deg)}}
 #btn-trigger-statement-upload[aria-busy="true"]{cursor:progress;overflow:hidden;white-space:nowrap}
 .sim-ent{color:#868E96;font-weight:400}.sim-ent::before{content:'Company: '}
+/* ☑️ ลบบางรายการในรายงานยอดสะสม (v246) */
+.sr-ck{width:28px;text-align:center}.sr-ck input{width:16px;height:16px;cursor:pointer}
+.sr-selbar{display:flex;align-items:center;gap:10px;margin:6px 0}.sr-selbar small{color:#868E96}
