@@ -2680,7 +2680,9 @@ function generateTxId(date, accountId, amount, channel, opts = {}) {
     const dateKey = (date || '').replace(/-/g, '').substring(0, 8);
     const accKey  = (accountId || '').replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase();
     const amtAbs  = Math.round(Math.abs(amount || 0));
-    const amtKey  = ((amount || 0) < 0 ? 'N' : 'P') + amtAbs;
+    /* 2026-10-31 (North: ใบแจ้งยอดกรุงศรีขาด 1 รายการ): 129.75 กับ 130.00 ร้านเดียวกันวันเดียวกัน ปัดเป็น 130 → รหัสซ้ำ → ระบบข้ามรายการหลัง
+       statement ใช้ยอดเต็มสตางค์ในรหัส (รายการเดิมที่นำเข้าแล้วยังกันซ้ำได้ด้วยการเทียบ วัน·เวลา·ยอด·ข้อความ ฝั่งเซิร์ฟเวอร์) */
+    const amtKey  = ((amount || 0) < 0 ? 'N' : 'P') + (channel === 'PDF' && Math.abs(amount || 0) !== amtAbs ? Math.round(Math.abs(amount || 0) * 100) + 'S' : amtAbs);
 
     let dedupKey;
     if (channel === 'PDF') {
@@ -7129,6 +7131,7 @@ async function parseCardStatement(pdf) {
     for (const L of lines) {
       L.items.sort((a, b) => a.x - b.x);
       const text = L.items.map(i => i.s).join(' '); allText += text + '\n';
+      const textNS = text.replace(/\s+/g, '');   // กรุงศรี: ตัวไทยแตกเป็นชิ้น "ยอ ด เรียกเก็บขอ ง …" → เทียบแบบไม่มีช่องว่าง
       /* 2026-10-30 · CardX: คอลัมน์แรก = วันที่บันทึก (POSTING) คอลัมน์สอง = วันที่เกิดรายการ → ใช้คอลัมน์สอง (KBank กลับกัน) */
       { const pi = L.items.find(i => /^POSTING/i.test(i.s)), ti = L.items.find(i => /^TRANS(ACTION)?$|^TRANS\b/i.test(i.s)); if (pi && ti) postFirst = pi.x < ti.x; }
       const money = L.items.filter(i => MONEY.test(i.s)), dates = L.items.filter(i => DATE.test(i.s));
@@ -7137,10 +7140,14 @@ async function parseCardStatement(pdf) {
       else if (!stmtDate && wantStmtDate && dates.length) { const d = dates[0].s.match(DATE); stmtDate = iso(d[1], d[2], d[3]); wantStmtDate = false; }
       if (!stmtDate && /CLOSING DATE|วันสรุปยอดบัญชี/i.test(text) && !dates.length) wantStmtDate = true;
       const cm = text.match(CARD); if (cm && !anyCard) anyCard = cm;
+      /* กรุงศรี: หัวกระดาษหน้าแรก "เลขบัตร  31/05/26" (ไม่มีคำว่าวันที่สรุปยอด) = วันสรุปยอด */
+      if (!stmtDate && p === 1 && cm && dates.length === 1 && !money.length) { const d = dates[0].s.match(DATE); stmtDate = iso(d[1], d[2], d[3]); continue; }
       /* หัวบัตร: มีเลขบัตร ไม่มีตัวเงิน ไม่มีวันที่ (ไม่ใช่แถวสรุปวงเงิน/ใบนำฝาก) */
       if (cm && !money.length && !dates.length) { cur = cardOf(cm); const t = text.match(/ACCOUNT DETAILS\s+(.+?)\s+\d{4}\s?\d{2}[Xx*]/i) || text.match(/\d{4}\s?\d{2}[Xx*]{2}\s?[Xx*]{4}\s?\d{4}\s+([A-Za-z][A-Za-z ]+?)(?:\s+[\d,]+)*$/);
         if (t && !cur.type) cur.type = t[1].trim(); continue; }
-      if (/PREVIOUS BALANCE|ยอดเรียกเก็บของรอบบัญชีที่แล้ว|ยอดเรียกเก็บรอบที่แล้ว|ยอดยกมา/i.test(text) && money.length) { const v = num(money[money.length - 1].s); if (cur) { if (cur.opening == null) cur.opening = v; } else loose.opening = v; continue; }
+      /* กรุงศรี: "ยอดรวมที่ต้องชำระสำหรับบัตรเครดิต / Total Payment Due For Credit Card" = ยอดยกไป (ใช้เมื่อยอดเดินตรงเท่านั้น ดูท้ายฟังก์ชัน) */
+      if (/TOTAL PAYMENT DUE FOR CREDIT CARD/i.test(text) && money.length) { const t = cur || cards[cards.length - 1]; if (t && t.dueClose == null) t.dueClose = num(money[money.length - 1].s); continue; }
+      if (/PREVIOUS BALANCE|ยอดเรียกเก็บของรอบบัญชีที่แล้ว|ยอดเรียกเก็บรอบที่แล้ว|ยอดยกมา/i.test(text + ' ' + textNS) && money.length) { const v = num(money[money.length - 1].s); if (cur) { if (cur.opening == null) cur.opening = v; } else loose.opening = v; continue; }
       if (/TOTAL BALANCE|สรุปยอดรอบนี้/i.test(text) && money.length) { if (cur && cur.closing == null && cur.rows.length) cur.closing = num(money[money.length - 1].s); else if (!cur && !cards.length && loose.length && loose.closing == null) loose.closing = num(money[money.length - 1].s); cur = null; continue; }
       const f0 = L.items[0]?.s.match(DATE) || L.items[0]?.s.match(DM), f1 = L.items[1]?.s.match(DATE) || L.items[1]?.s.match(DM);
       if (f0 && f1 && money.length) {
@@ -7168,6 +7175,8 @@ async function parseCardStatement(pdf) {
   if (!used.some(c => c.rows.length)) return { ok: false, reason: 'ไม่พบรายการในใบแจ้งยอด' };
   for (const c of used) {
     c.sum = r2(c.rows.reduce((t, r) => t + r.value, 0));
+    /* ยอดยกไปจาก "Total Payment Due" (กรุงศรี) ใช้เมื่อ ยกมา + รายการ = ยอดนั้นพอดี (กันไปหยิบยอดขั้นต่ำของบัตรอื่น) */
+    if (c.closing == null && c.dueClose != null && c.opening != null && Math.abs(r2(c.opening + c.sum) - c.dueClose) < 0.01) c.closing = c.dueClose;
     c.agree = c.opening != null && c.closing != null ? Math.abs(r2(c.opening + c.sum) - c.closing) < 0.01 : null;
     /* 2026-10-30 · CardX: เครื่องหมายลบไม่อยู่ในตัวหนังสือ (วาดแยก) แต่ตัวเลขติดลบชิดขวาน้อยกว่าตัวอื่น ~3.4 จุด
        → ยอดเดินไม่ตรง: ลองกลับเครื่องหมายแถวที่ขอบขวาสั้นกว่าคอลัมน์ · ใช้เฉพาะเมื่อกลับแล้วยอดเดินตรง */
