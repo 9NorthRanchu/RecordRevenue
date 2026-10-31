@@ -7808,6 +7808,13 @@ function bindPDFUpload() {
             /* 📸 ภาพแคป (2026-10-15): ประวัติ TrueMoney/ShopeePay · รายการสั่งซื้อ Shopee/Lazada · ใบแจ้งยอดบัตรที่ถ่าย/แคปมา
                เลือกได้หลายภาพของบัญชีเดียวกัน → ย่อภาพ → AI อ่านทุกแถว → ตรวจก่อนนำเข้า → นำเข้า (จับคู่สลิปเดิม/กันซ้ำเหมือน PDF) */
             const allFiles = [...e.target.files];
+            /* 📱 บัญชี wePAY + รูปหน้าจอ → ใช้ตัวอ่าน wePAY (เข้าใจหน้า "รายการล่าสุด"/"กล่องข้อความ" · หักเงินคืน · ตัดซ้ำ) แทนตัวอ่าน statement ทั่วไป (2026-10-31) */
+            const selAcc = (AppState.accounts || []).find(a => a.account_id === selectedAccId);
+            if (selAcc && /we\s*pay/i.test(`${selAcc.name} ${selAcc.bank_name || ''}`) && allFiles.every(f => /^image\//.test(f.type)) && typeof WePay !== "undefined") {
+                triggerUploadBtn.disabled = false; setUploadBtnIdle(triggerUploadBtn);
+                try { await WePay.run(allFiles); } finally { pdfInput.value = ''; }
+                return;
+            }
             if (allFiles.some(f => /^image\//.test(f.type))) {
                 const done = () => { triggerUploadBtn.disabled = false; setUploadBtnIdle(triggerUploadBtn); pdfInput.value = ''; };
                 try {

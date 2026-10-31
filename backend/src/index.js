@@ -1,3 +1,4 @@
+import { parseAiJson } from './ai-json.js';
 import { handleUnifiedTrip } from './unified-trip.js';
 import { handleLegacyTrip } from './legacy-trip.js';
 import { handleLedgerInbox, geminiGenerate } from './ledger-inbox.js';
@@ -2529,6 +2530,10 @@ function statementKey(desc) {
 }
 
 async function runGeminiStatement(pdfBase64, imagesBase64, env) {
+  try { return await runGeminiStatementOnce(pdfBase64, imagesBase64, env); }
+  catch (e) { if (!(e instanceof SyntaxError)) throw e; return await runGeminiStatementOnce(pdfBase64, imagesBase64, env); }   // อ่านใหม่อีกครั้ง
+}
+async function runGeminiStatementOnce(pdfBase64, imagesBase64, env) {
   const apiKey = env?.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured on Cloudflare Workers.');
@@ -2600,7 +2605,7 @@ Do not wrap the JSON in markdown code blocks.`;
 
   const resData = await response.json();
   const textResult = resData.candidates[0].content.parts[0].text;
-  return JSON.parse(textResult.trim());
+  return parseAiJson(textResult);
 }
 
 async function runGeminiOCR(imageBase64, env) {
@@ -2664,7 +2669,7 @@ Do not wrap the JSON in markdown code blocks.`;
 
   const resData = await response.json();
   const textResult = resData.candidates[0].content.parts[0].text;
-  return JSON.parse(textResult.trim());
+  return parseAiJson(textResult);
 }
 
 // ==========================================

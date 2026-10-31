@@ -69,6 +69,14 @@ const hashTok = async t => Buffer.from(await crypto.subtle.digest('SHA-256', new
 for (const u of ['9North', 'Other']) db.prepare(`INSERT INTO Sessions VALUES (?,?,?)`).run(await hashTok(`tok-${u}`), u, '2099-01-01T00:00:00Z');
  const check = (n, c, x) => { if (c) ok++; else { bad++; console.log('  ❌', n, JSON.stringify(x)?.slice(0,200)); } };
 let ok = 0, bad = 0, r;
+/* 🩹 AI ตอบ JSON เพี้ยน → ซ่อม (2026-10-31) */
+{ const { parseAiJson } = await import(pathToFileURL(path.join(TMP, 'ai-json.js')).href);
+  check('JSON ปกติ / มี ``` / comma ท้าย', parseAiJson('{"a":1}').a === 1 && parseAiJson('```json\n{"a":2}\n```').a === 2 && parseAiJson('{"transactions":[{"x":1},],"closing_balance":5}').closing_balance === 5, null);
+  const r1 = parseAiJson('{"account_number":"123","transactions":[{"date":"2026-01-01","amount":10},{"date":"2026-01-02" "amount":20},{"date":"2026-01-03","amount":30}],"closing_balance":99}');
+  check('แถวที่เสียตัดทิ้ง เก็บแถวอื่น + ยอดยกไป', r1.transactions.length === 2 && r1.closing_balance === 99 && r1._repaired === 1, r1);
+  const r2 = parseAiJson('{"screen":"history","items":[{"amount":10},{"amount":20},{"amo');
+  check('AI ตอบไม่จบ → เก็บแถวที่ครบ', r2.items.length === 2, r2);
+  let threw = false; try { parseAiJson('ไม่ใช่ JSON'); } catch (e) { threw = e instanceof SyntaxError; } check('อ่านไม่ได้เลย → SyntaxError (ให้ AI อ่านใหม่)', threw, null); }
 db.exec(`INSERT INTO Entities VALUES ('Ent_North','Fam_Default','North',0),('Ent_Other','Fam_Other','Other',0);
 INSERT INTO Contacts (contact_id,family_id,name) VALUES ('CT1','Fam_Default','สำนักงานเขตประเวศ');
 INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES

@@ -1,3 +1,4 @@
+import { parseAiJson } from './ai-json.js';
 // ═══════════════════════════════════════════════════════════════════════
 // 📱 wePAY จากรูปหน้าจอ (2026-10-31 · North: "ส่วนใหญ่เติมเงินมือถือ · มีเงินเข้าก่อน · บางรายการได้เงินคืน เช่น จ่าย 10 ได้คืน 0.1")
 //  POST /api/wepay/read  (body = ไฟล์รูปดิบ · Content-Type = image/*) → AI อ่านทุกแถวในรูป
@@ -42,7 +43,7 @@ export async function handleWepay({ url, request, env, cors, authUserId }) {
       const res = await geminiGenerate(env, env.GEMINI_MODEL || 'gemini-3.1-flash-lite', { contents: [{ parts: [{ text: WEPAY_PROMPT }, part] }], generationConfig: { responseMimeType: 'application/json' } });
       if (!res.ok) throw new Error(`AI อ่านรูปไม่สำเร็จ (${res.status})`);
       const text = (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      out = JSON.parse(text.trim().replace(/^```json\s*|```$/g, ''));
+      out = parseAiJson(text);
     }
     const items = (Array.isArray(out?.items) ? out.items : []).map(x => ({
       kind: ['topup', 'deposit', 'refund', 'package'].includes(x.kind) ? x.kind : 'other',

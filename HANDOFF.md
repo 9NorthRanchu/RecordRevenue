@@ -3945,3 +3945,7 @@ frontend
 - v234 (North): ป้าย Recorded / Wait / Total / Bank (dd) · ตัดแถว "ระบบ" · สถานะล่างสุดตำแหน่งเดียวกันทุกการ์ด: ✓ Match (เขียว) / ✗ Mismatch + ผลต่าง + ⚖️ Fix (แดง) / + Add bank balance · ชิปหัว Match/Mismatch/No bank · app.js?v=234 ui-a.css?v=30
 - v235: ✏️ (ใส่ยอดธนาคารเอง ใช้ไม่บ่อย) ย้ายไปมุมขวาบนของการ์ด จางไว้ ชี้แล้วชัด · app.js?v=235 ui-a.css?v=31
 - v236: ปุ่มนำเข้า statement (ไอคอน 32px) ตอนทำงานแสดง ⏳ (fa-hourglass-half หมุน) ข้อความสถานะอยู่ใน tooltip แทน — setUploadBtnBusy/Idle ใช้ทั้งไฟล์เดียว/หลายไฟล์/ภาพแคป · app.js?v=236 ui-a.css?v=32
+- v237: North เลือกบัญชี [A17] WePay แล้วใช้ปุ่มอัปโหลด statement กับรูป → เดิมไปตัวอ่าน statement ทั่วไป (/api/statement-ocr) และ AI ตอบ JSON เพี้ยน "Expected ':' ... position 10570"
+  · frontend: บัญชีชื่อ wePAY + ไฟล์เป็นรูปทั้งหมด → ส่งไป WePay.run (ตัวอ่าน wePAY)
+  · backend/src/ai-json.js parseAiJson: ตัด ``` · ตัดส่วนเกิน · ลบ comma ท้าย · ตัดแถวที่เสีย/ไม่จบใน transactions|items เก็บแถวที่เหลือ (_repaired) · ใช้กับ runGeminiStatement / runGeminiOCR / wepay · runGeminiStatement อ่านไม่ได้ → ให้ AI อ่านใหม่ 1 ครั้ง
+  · เทสต์ similar-wepay 15 ✅ · Playwright wpr.cjs: เลือก A17 + 2 รูป → เรียก /api/wepay/read 2 ครั้ง ไม่เรียก statement-ocr ✅
