@@ -23,6 +23,12 @@ Output datetime as ISO "YYYY-MM-DDTHH:MM:SS" (seconds 00 if not shown).
 Skip any card or message that is cut off at the top or bottom edge so that its amount OR date-time is not fully visible. Ignore the header/footer, buttons, version text and the overlapping page title.
 Keep the order as shown on screen (top to bottom).`;
 
+/* วันเวลาจาก AI: รับทั้ง "2026-03-03T21:06:06" และ "2026-03-03 21:06" · ปี พ.ศ. (≥2400) → ค.ศ. (2026-10-31 · กันแถวหายเงียบ ๆ) */
+export function normDt(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(v || '').trim()); if (!m) return null;
+  const y = +m[1] >= 2400 ? +m[1] - 543 : +m[1];
+  return `${y}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] || '00'}`;
+}
 export async function handleWepay({ url, request, env, cors, authUserId }) {
   if (url.pathname !== '/api/wepay/read' || request.method !== 'POST') return null;
   if (!authUserId) return json({ error: 'Unauthorized' }, cors, 401);
@@ -49,7 +55,7 @@ export async function handleWepay({ url, request, env, cors, authUserId }) {
       kind: ['topup', 'deposit', 'refund', 'package'].includes(x.kind) ? x.kind : 'other',
       phone: String(x.phone || '').replace(/\D/g, '').slice(0, 10) || null,
       operator: x.operator || null, amount: Math.abs(Number(x.amount) || 0), refund: x.refund == null ? null : Math.abs(Number(x.refund) || 0),
-      datetime: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(x.datetime || '') ? String(x.datetime).slice(0, 19) : null,
+      datetime: normDt(x.datetime),
       balance: x.balance == null ? null : Number(x.balance), text: String(x.text || '').slice(0, 120) })).filter(x => x.amount > 0 && x.datetime);
     return json({ screen: out?.screen || 'other', items }, cors);
   } catch (e) { return json({ error: e.message }, cors, 502); }

@@ -2683,8 +2683,10 @@ function generateTxId(date, accountId, amount, channel, opts = {}) {
 
     let dedupKey;
     if (channel === 'PDF') {
+        /* 2026-10-31 (North: wePAY "ข้อมูลมาไม่ครบ"): ref_code ของ wePAY = WPT + วันเวลา + เบอร์ → ตัด 10 ตัวแรกเหลือแค่ "WPT2026030"
+           ทุกรายการวันเดียวกันได้รหัสเดียวกัน → ระบบคิดว่ามีแล้ว ข้ามทิ้ง · wePAY ใช้ hash ของรหัสเต็มแทน (ธนาคารอื่นคงแบบเดิม กันรหัสเก่าเปลี่ยน) */
         dedupKey = opts.refCode
-            ? opts.refCode.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)
+            ? (/^WP[DT]/.test(opts.refCode) ? 'WP' + simpleHash(opts.refCode) : opts.refCode.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10))
             : simpleHash((opts.statementDesc || '') + (opts.time || ''));
     } else if (channel === 'EXCEL') {
         dedupKey = simpleHash((opts.note || '') + dateKey + amtAbs);
