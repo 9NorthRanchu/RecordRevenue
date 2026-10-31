@@ -3280,7 +3280,10 @@ async function loadPending() {
         }
 
         /* ⚡ 2026-10-30: ไม่รอเช็กรายการซ้ำก่อนวาด — วาดการ์ดก่อน เช็กเสร็จค่อยวาดใหม่ถ้ามีคู่ซ้ำ */
-        DupPairs.load().then(() => { if (DupPairs.count && DupPairs.count()) { renderPendingTransactions(); renderPendingHero(); } }).catch(() => {});   // 2026-10-31: วาดหัว (ปุ่ม 🔁 อาจซ้ำ / รวมรายการซ้ำ) ใหม่ด้วย — เดิมปุ่มหาย
+        DupPairs.load().then(() => { if (DupPairs.count && DupPairs.count()) { renderPendingTransactions(); renderPendingHero(); } }).catch(() => {});
+        /* 📝 ครั้งแรกต่อการเปิดแอป: เติมเบอร์ใน detail รายการ wePAY ที่รอตรวจ (นำเข้าก่อน v243) → มีที่แก้ค่อยโหลดใหม่ */
+        try { if (!sessionStorage.getItem('rr_wpfix')) { sessionStorage.setItem('rr_wpfix', '1');
+            fetch(`${API_BASE}/api/wepay/fix-notes`, { method: 'POST' }).then(r => r.json()).then(j => { if (j.fixed > 0) { window.showToast?.(`📝 เติมเบอร์ใน detail รายการ wePAY ${j.fixed} รายการ`); loadPending(); } }).catch(() => {}); } } catch { /* */ }   // 2026-10-31: วาดหัว (ปุ่ม 🔁 อาจซ้ำ / รวมรายการซ้ำ) ใหม่ด้วย — เดิมปุ่มหาย
         renderPendingTransactions();
         renderPendingHero();
         LineSlips.load();   // 📲 สลิป LINE ที่ต้องเลือกก่อน (2026-10-15)
@@ -15866,7 +15869,7 @@ const Similar = (() => {
         const p = fetch(`${API_BASE}/api/transactions/similar?${qs}`).then(r => r.json()).catch(() => ({ items: [] }));
         cache.set(qs, p); return p;
     }
-    const line = x => [clean(x.category_name), x.entity_name, x.contact_name, x.note].filter(Boolean).map(esc).join(' · ') || '<i>ไม่มีรายละเอียด</i>';
+    const line = x => [x.category_name ? `<b>${esc(clean(x.category_name))}</b>` : '', x.entity_name ? `<span class="sim-ent">${esc(x.entity_name)}</span>` : '', esc(x.contact_name || ''), esc(x.note || '')].filter(Boolean).join(' · ') || '<i>ไม่มีรายละเอียด</i>';
     /* ⚠️ อาจจ่ายซ้ำ: ยอดเท่ากัน ผู้รับเดียวกัน วันใกล้กัน (ยืนยันไปแล้ว) */
     const dupHtml = r => r?.dup?.length ? `<div class="sim-dup"><span>⚠️ <b>อาจซ้ำ</b> — มีรายการยืนยันแล้วยอดเท่ากันในช่วงใกล้กัน ตรวจก่อนบันทึก:</span>
           ${r.dup.map(x => `<div>${dTh(x.date)} · ${esc(clean(x.account_name))} · ${esc(x.statement_desc || x.note || '-')} · <b>${fm(x.amount)}</b></div>`).join('')}</div>` : '';
@@ -15900,7 +15903,8 @@ const Similar = (() => {
         const capId = v.caption_id || (AppState.categories || []).find(c => c.category_id === v.category_id)?.caption_id;
         if (cap && capId) { cap.value = capId; cap.dispatchEvent(new Event('change')); }
         if (cat && v.category_id) { cat.value = v.category_id; cat.dispatchEvent(new Event('change')); }
-        const ent = row.querySelector('.select-entity'); if (ent && v.entity_id) { ent.value = v.entity_id; ent.dispatchEvent(new Event('change')); }
+        /* 2026-10-31 North: "ใช้อันนี้ ให้เปลี่ยน category ไม่ใช่เปลี่ยนที่ company" → Company ที่การ์ดมีอยู่แล้วไม่ทับ (เติมเฉพาะช่องว่าง) */
+        const ent = row.querySelector('.select-entity'); if (ent && v.entity_id && !ent.value) { ent.value = v.entity_id; ent.dispatchEvent(new Event('change')); }
         const con = row.querySelector('.select-contact'); if (con && v.contact_id) { fillContactSelect(con); con.value = v.contact_id; con.dispatchEvent(new Event('change')); }
         const note = row.querySelector('.input-detail'); if (note && v.note && !note.value) { note.value = v.note; note.dispatchEvent(new Event('change')); }
         card.style.outline = '2px solid #20C997';

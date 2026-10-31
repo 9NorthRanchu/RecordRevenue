@@ -3972,3 +3972,5 @@ frontend
   · /api/transactions/duplicates: ทั้งสองฝั่งมีเลข ≥9 หลักแต่ไม่ตรงกัน → ไม่จับคู่ · เลขตรง → จับก่อน (เดิมเรียงแค่ระยะวัน)
   · similar.js dup (⚠️ อาจซ้ำ): กฎเดียวกัน · wePAY note = "เติม <เบอร์> 10.00 ได้คืน 0.10"
   · เทสต์ stmt-report 44 ✅ · app.js?v=243
+- v244: POST /api/wepay/fix-notes เติมเบอร์ใน detail รายการ wePAY ที่รอตรวจ (จากข้อความรายการ · ไม่แตะเงินเข้ากระเป๋า · ทำซ้ำไม่แก้ซ้ำ) · หน้าเว็บเรียกครั้งแรกต่อการเปิดแอป (sessionStorage rr_wpfix) · เทสต์ similar-wepay 20 ✅
+- v245 (North: "ใช้อันนี้ ให้เปลี่ยน category ไม่ใช่เปลี่ยนที่ company"): Similar.applyToCard ไม่ทับ Company ที่การ์ดมีอยู่ (เติมเฉพาะช่องว่าง) — ใช้กับ ใช้อันนี้ / ✓ ใช้ / ใช้กับการ์ดอื่น / 🪄 · แถบใช้บ่อยแสดงหมวดตัวหนา + 'Company: …' จาง · Playwright ent.cjs ✅ · app.js?v=245 ui-a.css?v=33

@@ -599,3 +599,4 @@ body.ui-dark .bk-stat.none{background:#2A2344;border-color:#6741D9;color:#D0BFFF
 /* ⏳ ปุ่มนำเข้าตอนทำงาน (v236) */
 .rr-hg{font-size:.85rem;animation:rr-hg 1.6s ease-in-out infinite}@keyframes rr-hg{0%,40%{transform:rotate(0)}50%,90%{transform:rotate(180deg)}100%{transform:rotate(180deg)}}
 #btn-trigger-statement-upload[aria-busy="true"]{cursor:progress;overflow:hidden;white-space:nowrap}
+.sim-ent{color:#868E96;font-weight:400}.sim-ent::before{content:'Company: '}

@@ -127,4 +127,14 @@ let res = await worker.fetch(new Request('https://w.test/api/wepay/read', { meth
 let j = await res.json(); check('wePAY อ่านรูป → แถวที่ครบ', res.status === 200 && j.items.length === 1 && j.items[0].phone === '0649364168' && j.items[0].refund === 0.1, j);
 res = await worker.fetch(new Request('https://w.test/api/wepay/read', { method: 'POST', headers: { Authorization: 'Bearer tok-9North', 'Content-Type': 'application/pdf' }, body: new Uint8Array([1]) }), env, {});
 check('wePAY รับเฉพาะรูป', res.status === 400, res.status);
+/* 📝 เติมเบอร์ใน detail รายการ wePAY ที่รอตรวจ */
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES
+  ('WN1','A02','2026-03-03',-9.9,'PENDING_REVIEW','PDF_IMPORT','9North','wePAY เติมเงิน AIS 0629899354'),('WN2','A02','2026-03-03',-4.85,'PENDING_REVIEW','PDF_IMPORT','9North','wePAY แพ็กเกจ 0996399153'),
+  ('WN3','A02','2026-03-03',100,'PENDING_REVIEW','PDF_IMPORT','9North','wePAY เติมเงินเข้ากระเป๋า (คงเหลือ 105.97)'),('WN4','X99','2026-03-03',-9.9,'PENDING_REVIEW','PDF_IMPORT','Other','wePAY เติมเงิน 0811111111');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type,note) VALUES ('dn1','WN1',-9.9,'T01','EXPENSE','เติม 10.00 ได้คืน 0.10'),('dn2','WN2',-4.85,'T01','EXPENSE','เติม 5.00 ได้คืน 0.15'),
+  ('dn3','WN3',100,'T01','TRANSFER',NULL),('dn4','WN4',-9.9,'T01','EXPENSE','เติม 10.00 ได้คืน 0.10');`);
+r = await call('/api/wepay/fix-notes', { user: '9North', method: 'POST' });
+const nt = id => db.prepare(`SELECT note FROM TransactionDetails WHERE detail_id = ?`).get(id).note;
+check('เติมเบอร์ใน detail: เติมเงิน/แพ็กเกจ · ไม่แตะเงินเข้ากระเป๋า · ไม่แตะครอบครัวอื่น', r.j?.fixed === 2 && nt('dn1') === 'เติม 0629899354 10.00 ได้คืน 0.10' && nt('dn2') === 'แพ็กเกจ 0996399153 5.00 ได้คืน 0.15' && nt('dn3') === null && nt('dn4') === 'เติม 10.00 ได้คืน 0.10', [r.j, nt('dn1'), nt('dn2')]);
+r = await call('/api/wepay/fix-notes', { user: '9North', method: 'POST' }); check('ทำซ้ำไม่แก้ซ้ำ', r.j?.fixed === 0, r.j);
 console.log(`similar-wepay: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);

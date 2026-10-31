@@ -30,6 +30,24 @@ export function normDt(v) {
   return `${y}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] || '00'}`;
 }
 export async function handleWepay({ url, request, env, cors, authUserId }) {
+  /* 📝 เติมเบอร์ใน detail ของรายการ wePAY ที่รอตรวจ (2026-10-31 North: "detail ให้ระบุหมายเลขด้วย")
+     รายการที่นำเข้าก่อน v243: หมายเหตุ "เติม 10.00 ได้คืน 0.10" → "เติม 0629899354 10.00 ได้คืน 0.10" (เบอร์จากข้อความรายการ) · ทำซ้ำได้ ไม่แก้ซ้ำ */
+  if (url.pathname === '/api/wepay/fix-notes' && request.method === 'POST') {
+    if (!authUserId) return json({ error: 'Unauthorized' }, cors, 401);
+    const rows = ((await env.DB.prepare(`SELECT d.detail_id, d.note, t.statement_desc FROM Transactions t
+        JOIN Accounts a ON a.account_id = t.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id AND up.user_id = ?
+        JOIN TransactionDetails d ON d.transaction_id = t.transaction_id
+        WHERE t.status = 'PENDING_REVIEW' AND t.statement_desc LIKE 'wePAY %' AND (d.note LIKE 'เติม %' OR d.note IS NULL OR d.note = '') LIMIT 2000`).bind(authUserId).all()).results) || [];
+    const ops = [];
+    for (const r of rows) {
+      const phone = (String(r.statement_desc).match(/\b0\d{8,9}\b/) || [])[0]; if (!phone || String(r.note || '').includes(phone)) continue;
+      const pkg = /แพ็กเกจ/.test(r.statement_desc), m = /^เติม\s+(.*)$/.exec(String(r.note || '').trim());
+      const note = `${pkg ? 'แพ็กเกจ' : 'เติม'} ${phone}${m ? ' ' + m[1] : ''}`;
+      ops.push(env.DB.prepare(`UPDATE TransactionDetails SET note = ? WHERE detail_id = ?`).bind(note, r.detail_id));
+    }
+    for (let i = 0; i < ops.length; i += 50) await env.DB.batch(ops.slice(i, i + 50));
+    return json({ success: true, fixed: ops.length }, cors);
+  }
   if (url.pathname !== '/api/wepay/read' || request.method !== 'POST') return null;
   if (!authUserId) return json({ error: 'Unauthorized' }, cors, 401);
   const mime = (request.headers.get('Content-Type') || 'image/jpeg').split(';')[0];
