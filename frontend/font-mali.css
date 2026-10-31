@@ -13,3 +13,26 @@ input, select, textarea, button { font-size:inherit; }
 input::placeholder, textarea::placeholder { font-weight:300; }
 /* ตัวหนังสือเล็ก (ป้าย/คำอธิบาย) ไม่ให้เล็กเกิน 12px — Mali ตัวโค้ง ถ้าเล็กมากอ่านยาก */
 small, .av-pair small, .av-s h4 small, .av-bars-lbl, .av-rc-t small, .rb-dc small, .dv2-xs, .dv2-imeta { font-size:max(12px, .8em) !important; }
+
+/* ── 2026-10-31 รอบ 2 (North: "ตัวอักษรเล็กเกินไป จางเกินไป") ──
+   Mali น้ำหนัก 400 เส้นบาง → ใช้ 500 เป็นพื้น · ขยายขนาดทั้งแอป ~6% · ข้อความรอง/ตารางเข้มขึ้น */
+html { font-size:17px; }
+body { font-weight:500; color:var(--text-primary); }
+td, li, label, p, input, select, textarea, .btn, button { font-weight:500; }
+th, b, strong, .btn-primary, h4, h5 { font-weight:700; }
+h1, h2, h3 { font-weight:700; }
+table td, table th { font-size:max(15px, 1em); }
+table th { color:var(--text-primary) !important; }
+input::placeholder, textarea::placeholder { font-weight:400; opacity:.75; }
+small, .av-pair small, .av-s h4 small, .av-bars-lbl, .av-rc-t small, .rb-dc small, .dv2-xs, .dv2-imeta { font-size:max(12.5px, .82em) !important; }
+/* ข้อความรอง (สีจาง) เข้มขึ้นทุกธีมสว่าง */
+:is(html, body):not([data-theme="dark"]) { --text-secondary:#3F3A55; --dv-txt2:#3F3A55; --av-t2:#3F3A55; }
+:is(html, body)[data-theme="sakura"] { --text-secondary:#4E3A45; }
+:is(html, body)[data-theme="fuji"], :is(html, body)[data-theme="hokkaido"] { --text-secondary:#2F3A52; }
+/* เมนูซ้าย: ตัวหนังสือใหญ่และเข้มขึ้น */
+.sidebar .nav-item span, .sidebar .hunsa-menu-link span { font-size:1.02rem; font-weight:600; }
+/* แท็บตั้งค่า: ตัวใหญ่ขึ้นแล้วชื่อแท็บถูกตัด → ให้ขึ้นบรรทัดใหม่ได้ ไม่ตัดชื่อ (มือถือยังเลื่อนซ้าย-ขวาเหมือนเดิม) */
+@media (min-width:769px) {
+  #view-settings .settings-tabs { flex-wrap:wrap !important; overflow:visible !important; }
+  #view-settings .settings-tab { flex:0 0 auto !important; width:auto !important; max-width:none !important; overflow:visible !important; text-overflow:clip !important; }
+}

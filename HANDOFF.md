@@ -3900,3 +3900,4 @@ frontend
 - drive.js: Slip/<บัญชี>/<ปี-เดือน> · Expense/<บัญชี>/<ปี-เดือน> · Statement/<บัญชี>/<ปี> (North: "แยกตาม Statement") · ไฟล์ที่อัปไปก่อนหน้านี้อยู่ที่เดิม
 - frontend/font-mali.css (ลิงก์ Google Fonts Mali 300–700) ใส่ใน index.html · guest.html · ledger/quick.html · trip-unified-prototype (index/trips/join/map-compare) · ยกเว้นไอคอน Font Awesome · Chart.js ใช้ Mali · ตัวหนังสือเล็กไม่ต่ำกว่า 12px · print.html/PDF รายงานยังใช้ Sarabun (เอกสารพิมพ์)
 - ทดสอบ Playwright (ฟอนต์ Mali จริงจาก @fontsource): รายงาน · หน้าบัญชี (คอม/มือถือ) · หน้าต่างแก้รายการ อ่านชัด · app.js?v=225 font-mali.css?v=2
+- 2026-10-31 รอบ 2 (North: "ตัวอักษรเล็กเกินไป จางเกินไป"): font-mali.css → html 17px · น้ำหนักพื้น 500 · หัวตาราง/ตัวหนา 700 · ตาราง ≥15px · ตัวเล็ก ≥12.5px · --text-secondary เข้มขึ้นทุกธีมสว่าง (Fuji/Hokkaido #2F3A52) · เมนูซ้ายใหญ่ขึ้น · แท็บตั้งค่าขึ้นบรรทัดใหม่แทนตัดชื่อ (คอม) · font-mali.css?v=4
