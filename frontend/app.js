@@ -119,12 +119,13 @@ window.getSessionToken = () => {
     if (!on) return;
     const log = [], freezes = []; let box = null, last = performance.now(), worst = 0;
     const draw = () => {
+        if (window.__rrPerfOff) return;
         if (!box) { box = document.createElement('div'); box.id = 'rr-perf'; box.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;background:rgba(20,16,40,.92);color:#fff;font:12px/1.45 ui-monospace,Menlo,monospace;padding:8px 10px;border-radius:10px;max-width:440px;max-height:46vh;overflow:auto;box-shadow:0 6px 20px rgba(0,0,0,.3)';
-            box.addEventListener('click', e => { if (e.target.dataset.act === 'clear') { log.length = 0; freezes.length = 0; worst = 0; draw(); } if (e.target.dataset.act === 'copy') navigator.clipboard?.writeText(box.innerText); });
+            box.addEventListener('click', e => { if (e.target.dataset.act === 'clear') { log.length = 0; freezes.length = 0; worst = 0; draw(); } if (e.target.dataset.act === 'copy') navigator.clipboard?.writeText(box.innerText); if (e.target.dataset.act === 'close') { try { localStorage.removeItem('rr_perf'); } catch { /* */ } box.remove(); box = null; window.__rrPerfOff = true; } });
             (document.body || document.documentElement).appendChild(box); }
         const ua = /Safari/.test(navigator.userAgent) && !/Chrome|Chromium|Edg/.test(navigator.userAgent) ? 'Safari' : /Chrome|Chromium/.test(navigator.userAgent) ? 'Chrome' : 'อื่น ๆ';
         box.innerHTML = `<b>⏱️ ${ua}</b> · ค้างนานสุด <b style="color:${worst > 300 ? '#ff8787' : '#8ce99a'}">${Math.round(worst)} ms</b> · ค้าง &gt;200ms ${freezes.length} ครั้ง
-          <span data-act="copy" style="float:right;cursor:pointer;margin-left:8px">📋</span><span data-act="clear" style="float:right;cursor:pointer">🧹</span>
+          <span data-act="close" title="ปิดตัววัด (เปิดใหม่ด้วย ?perf=1)" style="float:right;cursor:pointer;margin-left:10px">✕</span><span data-act="copy" style="float:right;cursor:pointer;margin-left:8px">📋</span><span data-act="clear" style="float:right;cursor:pointer">🧹</span>
           ${log.slice(-14).reverse().map(x => `<div style="color:${x.ms > 1500 ? '#ff8787' : x.ms > 600 ? '#ffd43b' : '#c5f6fa'}">${String(Math.round(x.ms)).padStart(5)} ms · ${x.m} ${x.u}${x.kb ? ` · ${x.kb}KB` : ''}${x.s >= 400 ? ` · ${x.s}` : ''}</div>`).join('')}`;
     };
     /* หน้าจอค้าง: ตัวจับเวลาทุก 100ms ถ้ามาช้ากว่ากำหนด = JavaScript/วาดหน้าจอกินเวลาอยู่ (ใช้ได้ทั้ง Safari ที่ไม่มี longtask) */
@@ -3279,7 +3280,7 @@ async function loadPending() {
         }
 
         /* ⚡ 2026-10-30: ไม่รอเช็กรายการซ้ำก่อนวาด — วาดการ์ดก่อน เช็กเสร็จค่อยวาดใหม่ถ้ามีคู่ซ้ำ */
-        DupPairs.load().then(() => { if (DupPairs.count && DupPairs.count()) renderPendingTransactions(); }).catch(() => {});
+        DupPairs.load().then(() => { if (DupPairs.count && DupPairs.count()) { renderPendingTransactions(); renderPendingHero(); } }).catch(() => {});   // 2026-10-31: วาดหัว (ปุ่ม 🔁 อาจซ้ำ / รวมรายการซ้ำ) ใหม่ด้วย — เดิมปุ่มหาย
         renderPendingTransactions();
         renderPendingHero();
         LineSlips.load();   // 📲 สลิป LINE ที่ต้องเลือกก่อน (2026-10-15)
