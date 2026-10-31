@@ -7035,8 +7035,9 @@ async function parseTextStatement(pdf) {
     if (allTxt.length < 20000) allTxt += items.map(it => it.s).join(' ') + '\n';
     /* 2026-10-30 · SCB: วันที่กับเวลาอยู่ช่องเดียว "05/01/26 22:02" → แยกเป็น 2 ช่อง (เดิมไม่เจอวันที่ → "ไม่พบตารางรายการ") */
     for (let k = items.length - 1; k >= 0; k--) {
-      const m = items[k].s.match(/^(\d{1,2}[-/.]\d{1,2}[-/.](?:\d{2}|\d{4}))\s+(\d{1,2}:\d{2}(?::\d{2})?)$/);
-      if (m) items.splice(k, 1, { ...items[k], s: m[1] }, { ...items[k], x: items[k].x + 0.5, s: m[2] });
+      /* 2026-10-31 · กรุงศรี ออมทรัพย์: "01/11/2025 01:01:19 รับโอนเงิน" วันที่ เวลา และรายการอยู่ช่องเดียว → แยกเป็น 3 ช่อง */
+      const m = items[k].s.match(/^(\d{1,2}[-/.]\d{1,2}[-/.](?:\d{2}|\d{4}))\s+(\d{1,2}:\d{2}(?::\d{2})?)(?:\s+(.+))?$/);
+      if (m) items.splice(k, 1, { ...items[k], s: m[1] }, { ...items[k], x: items[k].x + 0.5, s: m[2] }, ...(m[3] ? [{ ...items[k], x: items[k].x + 1, s: m[3].trim() }] : []));
     }
     if (!accountNumber) { const a = items.find(it => /^[\dXx*]{3}-[\dXx*]-[\dXx*]{5}-[\dXx*]$|^[\dXx*]{3}-[\dXx*]{6}-[\dXx*]$/.test(it.s)); if (a) accountNumber = a.s; }
     // จัดเป็นบรรทัด (y ใกล้กัน ≤ 2.5)
@@ -7319,7 +7320,9 @@ async function statementPrecheck(accId, info) {
         showDenyButton: !!other, denyButtonText: other ? `นำเข้าเข้า ${other.name}` : '', denyButtonColor: '#087F5B',
         confirmButtonText: state === 'bad' ? `ยืนยัน นำเข้าเข้า ${me?.name || ''}` : 'นำเข้า', confirmButtonColor: state === 'bad' ? '#C92A2A' : '#5F3DC4',
         focusConfirm: state !== 'bad', focusCancel: state === 'bad', preConfirm: () => ({ open: !!document.getElementById('pc-open')?.checked }) });
-    const closeVal = info.closing != null && info.closing !== '' && !isNaN(+info.closing) ? +info.closing : null;
+    let closeVal = info.closing != null && info.closing !== '' && !isNaN(+info.closing) ? +info.closing : null;
+    /* 2026-10-31: ไม่มียอดยกไปแยก (AI อ่าน / ไฟล์ที่ไม่มีบรรทัดยกไป) → ใช้ยอดคงเหลือของบรรทัดสุดท้าย → ขึ้น Bank ใน Balance Check */
+    if (closeVal == null) { const withBal = rows.filter(r => r.balance != null && r.balance !== '' && isFinite(+r.balance)); if (withBal.length) closeVal = +withBal[withBal.length - 1].balance; }
     const setCp = id => { const a = accs.find(x => x.account_id === id); window._rrCheckpoint = closeVal == null || !dates.length ? null
         : { account_id: id, as_of: dates[dates.length - 1], balance: a?.account_type === 'CREDIT' ? -Math.abs(closeVal) : closeVal }; };
     if (r.isDenied && other) { const sel = document.getElementById('import-account-selector'); if (sel) sel.value = other.account_id; setCp(other.account_id); return other.account_id; }
