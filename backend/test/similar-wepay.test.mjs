@@ -81,9 +81,13 @@ INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,enti
  ('d1','O1',-584.09,'T05','Ent_North','CT1','ภาษีที่ดิน','EXPENSE'),('d2','O2',-600,'T05','Ent_North','CT1','ภาษีที่ดิน','EXPENSE'),
  ('d3','O3',-120,'T01','Ent_North',NULL,'ข้าว','EXPENSE'),('d4','O4',-600,'T05',NULL,NULL,'ลับ','EXPENSE'),('d5','P1',-584.09,'Cat_Uncategorized',NULL,NULL,NULL,'EXPENSE');`);
 r = await call('/api/transactions/similar?desc=' + encodeURIComponent('จ่ายบิล สำนักงานเขตประเวศ 5034109999') + '&amount=584.09&account_id=A02&exclude=P1', { user: '9North' });
-check('เจอรายการเดิมของผู้รับเดียวกัน (ยอดเท่ากันมาก่อน)', r.s === 200 && r.j.items[0]?.transaction_id === 'O1' && r.j.items.some(x => x.transaction_id === 'O2') && !r.j.items.some(x => x.transaction_id === 'O3'), r.j);
+check('เจอรายการเดิมของผู้รับเดียวกัน (ไม่ดูยอดเงิน)', r.s === 200 && r.j.items.some(x => x.transaction_id === 'O1') && r.j.items.some(x => x.transaction_id === 'O2') && !r.j.items.some(x => x.transaction_id === 'O3'), r.j);
 check('ไม่เห็นของครอบครัวอื่น · ไม่รวมตัวเอง', !r.j.items.some(x => ['O4', 'P1'].includes(x.transaction_id)), r.j.items.map(x => x.transaction_id));
 check('สรุปที่ใช้บ่อย: หมวด T05 + คู่ค้า CT1 (2 ครั้ง)', r.j.summary?.category_id === 'T05' && r.j.summary?.contact_id === 'CT1' && r.j.summary.n === 2 && r.j.summary.note === 'ภาษีที่ดิน', r.j.summary);
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES ('O5','A02','2026-07-01',-584.09,'CONFIRMED','PDF_IMPORT','9North','GRAB TAXI');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('d6','O5',-584.09,'T01','EXPENSE');`);
+r = await call('/api/transactions/similar?desc=' + encodeURIComponent('จ่ายบิล สำนักงานเขตประเวศ 5034109999') + '&amount=584.09&account_id=A02&exclude=P1', { user: '9North' });
+check('ยอดเท่ากันแต่คนละผู้รับ → ไม่ขึ้นในประวัติ', !r.j.items.some(x => x.transaction_id === 'O5'), r.j.items.map(x => x.transaction_id));
 r = await call('/api/transactions/similar?name=' + encodeURIComponent('สำนักงานเขตประเวศ'), { user: '9North' }); check('ค้นจากชื่อผู้รับในสลิป', r.j.items.length >= 2, r.j);
 r = await call('/api/transactions/similar?desc=xx', { user: '9North' }); check('ไม่มีคำค้น → ว่าง', r.j.items.length === 0, r.j);
 db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES

@@ -2306,7 +2306,7 @@ function renderPendingHero() {
           <span class="ph-at"><b>สลิป / ใบเสร็จ</b><small>เลือกได้หลายไฟล์ · จับคู่ให้อัตโนมัติ</small></span><span class="ph-go" id="ph-slip-go" style="display:grid;place-items:center">อัปโหลด</span>
           <input type="file" id="ph-slip-in" accept="image/*,application/pdf" multiple hidden></label>
       </div>
-      <div class="ph-tools">${list.length ? `<button type="button" id="ph-bulkcat" class="pt-ok">🏷️ ใส่หมวดหลายรายการ</button><button type="button" id="ph-saveall" class="pt-ok">💾 บันทึกทั้งหมดที่พร้อม</button>` : ''}
+      <div class="ph-tools">${list.length ? `<button type="button" id="ph-autofill" class="pt-ok" title="รายการที่ยังไม่มีหมวด และผู้รับ/ร้านนี้เคยบันทึกหมวดเดิมสม่ำเสมอ → เติมให้ (ยังไม่ยืนยัน)">🪄 เติมหมวดจากประวัติ</button><button type="button" id="ph-bulkcat" class="pt-ok">🏷️ ใส่หมวดหลายรายการ</button><button type="button" id="ph-saveall" class="pt-ok">💾 บันทึกทั้งหมดที่พร้อม</button>` : ''}
         ${(() => { const all = AppState.pendingTransactions || [], n = all.filter(t => t.slip_image_url).length, f = AppState.pendingSlipFilter || 'ALL';
             return `<button type="button" class="ph-slipf${f === 'SLIP' ? ' on' : ''}" data-f="SLIP">📎 มีสลิป ${n.toLocaleString('en-US')}</button><button type="button" class="ph-slipf${f === 'NOSLIP' ? ' on' : ''}" data-f="NOSLIP">ไม่มีสลิป ${(all.length - n).toLocaleString('en-US')}</button>`; })()}
         ${DupPairs.count() ? `<button type="button" class="ph-slipf ph-dup${(AppState.pendingSlipFilter || '') === 'DUP' ? ' on' : ''}" data-f="DUP">🔁 อาจซ้ำ ${DupPairs.count().toLocaleString('en-US')}</button><button type="button" id="ph-dupall" class="pt-ok">🔁 รวมรายการซ้ำทั้งหมด</button>` : ''}
@@ -2353,6 +2353,7 @@ function renderPendingHero() {
     box.querySelector('#ph-dupall')?.addEventListener('click', () => DupPairs.mergeAll());
     box.querySelectorAll('.ph-slipf').forEach(b => b.onclick = () => { AppState.pendingSlipFilter = AppState.pendingSlipFilter === b.dataset.f ? 'ALL' : b.dataset.f; renderPendingTransactions(); renderPendingHero(); });
     box.querySelector('#ph-bulkcat')?.addEventListener('click', bulkCategorize);
+    box.querySelector('#ph-autofill')?.addEventListener('click', autofillFromHistory);
     box.querySelector('#ph-saveall')?.addEventListener('click', bulkSaveReady);
 }
 
@@ -2362,6 +2363,26 @@ function renderPendingHero() {
    บันทึกทั้งหมด: การ์ดที่มีหมวดครบและยอดลงตัว (✅) → บันทึก+ยืนยันทีละ 3 การ์ด แล้ว "จำ" สลิปที่มากับ LINE */
 function pendingCards() { return [...document.querySelectorAll('#pending-cards-container .tx-card')]; }
 function cardText(card) { return ((card.dataset.desc || '') + ' ' + (card.querySelector('.input-stmt-note')?.value || '')).toLowerCase(); }
+/* 🪄 เติมหมวดจากประวัติให้ทุกการ์ดที่ยังไม่มีหมวด (2026-10-31 · ข้อเสนอ ก.)
+   ใช้คำใบ้ที่ "มั่นใจ" เท่านั้น: ผู้รับ/ร้านเดียวกันเคยบันทึกหมวดเดียวกันทุกครั้ง หรือ ≥ 3 ครั้งและหมวดเดียวกัน ≥ 60% · เติมอย่างเดียว ยังไม่ยืนยัน */
+async function autofillFromHistory() {
+    const btn = document.getElementById('ph-autofill'), old = btn?.innerHTML; if (btn) { btn.disabled = true; btn.innerHTML = '⏳ กำลังหา…'; }
+    try {
+        const hints = (await (await fetch(`${API_BASE}/api/transactions/category-hints`)).json()).hints || {};
+        let filled = 0, seen = 0;
+        for (const c of pendingCards()) {
+            const row = c.querySelector('.sub-row-item'); if (!row || row.querySelector('.select-category')?.value) continue;
+            const tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === c.dataset.txid); if (!tx) continue;
+            seen++;
+            const k = statementKey(tx.statement_desc), dir = (Number(tx.total_amount) < 0 || tx.details?.[0]?.type === 'EXPENSE') ? 'OUT' : 'IN', h = k && hints[dir + '|' + k];
+            if (!h) continue;
+            Similar.applyToCard(c, { category_id: h.category_id, entity_id: h.entity_id, contact_id: h.contact_id }, true);
+            c.dataset.autofill = '1'; filled++;
+        }
+        alert(`🪄 เติมหมวดจากประวัติแล้ว ${filled} จาก ${seen} การ์ดที่ยังไม่มีหมวด (กรอบเขียว)\n\nตรวจแล้วกด "💾 บันทึกทั้งหมดที่พร้อม" หรือยืนยันทีละการ์ด`);
+    } catch (e) { alert('เติมไม่สำเร็จ: ' + e.message); }
+    finally { if (btn) { btn.disabled = false; btn.innerHTML = old; } }
+}
 async function bulkCategorize() {
     const cats = (AppState.categories || []).filter(c => !/uncategor/i.test(c.category_id || '') && !String(c.name || '').includes('รอการระบุ'));
     const caps = AppState.captions || [];
@@ -15766,7 +15787,7 @@ const Similar = (() => {
         return r;
     }
     /* การ์ดรอตรวจ: เติมแถวย่อยแรก (หัวข้อ → หมวด · Company · คู่ค้า · รายละเอียด) */
-    function applyToCard(card, v) {
+    function applyToCard(card, v, quiet = false) {
         const row = card.querySelector('.sub-row-item'); if (!row) return;
         const cap = row.querySelector('.select-caption'), cat = row.querySelector('.select-category');
         const capId = v.caption_id || (AppState.categories || []).find(c => c.category_id === v.category_id)?.caption_id;
@@ -15776,7 +15797,7 @@ const Similar = (() => {
         const con = row.querySelector('.select-contact'); if (con && v.contact_id) { fillContactSelect(con); con.value = v.contact_id; con.dispatchEvent(new Event('change')); }
         const note = row.querySelector('.input-detail'); if (note && v.note && !note.value) { note.value = v.note; note.dispatchEvent(new Event('change')); }
         card.style.outline = '2px solid #20C997';
-        window.showToast?.('✓ ใช้รายละเอียดจากรายการเดิมแล้ว — ตรวจแล้วกดยืนยัน');
+        if (!quiet) window.showToast?.('✓ ใช้รายละเอียดจากรายการเดิมแล้ว — ตรวจแล้วกดยืนยัน');
     }
     async function forCard(card) {
         const tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === card.dataset.txid) || {};
@@ -15844,7 +15865,7 @@ const Similar = (() => {
         const fill = () => {
             const v = cardValues(card); if (!v) { msg('⚠️ เลือกหมวดของการ์ดนี้ก่อน แล้วค่อยกดใช้กับรายการอื่น'); return null; }
             const ids = sel(), cards = ids.map(cardOf).filter(Boolean);
-            cards.forEach(c => applyToCard(c, v));
+            cards.forEach(c => applyToCard(c, v, true));
             const miss = ids.length - cards.length;
             msg(`✓ เติมแล้ว ${cards.length} การ์ด${miss ? ` · อีก ${miss} รายการยังไม่แสดงในหน้านี้ (ตัวกรอง/บัญชีอื่น)` : ''}`);
             return cards;

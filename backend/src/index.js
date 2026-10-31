@@ -594,12 +594,23 @@ export default {
           WHERE t.status = 'CONFIRMED' AND t.statement_desc IS NOT NULL
           GROUP BY t.transaction_id HAVING n_lines = 1 AND category_id IS NOT NULL AND category_id != 'Cat_Uncategorized'
           ORDER BY t.date DESC LIMIT 3000`).bind(authUserId).all()).results || [];
-        const hints = {};
+        /* 2026-10-31: เลือกหมวดที่ "ใช้ส่วนใหญ่" ไม่ใช่ครั้งล่าสุด — ร้านเดียวกันแต่ซื้อหลายอย่าง (เช่น Shopee) หมวดไม่แน่นอน → ไม่เดา
+           ให้คำใบ้เมื่อ: ทุกครั้งเป็นหมวดเดียวกัน · หรือมี ≥3 ครั้งและหมวดเดียวกัน ≥ 60% */
+        const groups = {};
         for (const r of rows) {
           const k = statementKey(r.statement_desc); if (!k) continue;
           const dir = (Number(r.total_amount) < 0 || r.type === 'EXPENSE') ? 'OUT' : 'IN', key = dir + '|' + k;
-          if (!hints[key]) hints[key] = { category_id: r.category_id, contact_id: r.contact_id || null, entity_id: r.entity_id || null, type: r.type || null, n: 0 };
-          hints[key].n++;
+          const g = groups[key] ||= { n: 0, combos: {} }; g.n++;
+          const ck = [r.category_id, r.entity_id || '', r.contact_id || ''].join('|');
+          (g.combos[ck] ||= { category_id: r.category_id, contact_id: r.contact_id || null, entity_id: r.entity_id || null, type: r.type || null, c: 0 }).c++;
+        }
+        const hints = {};
+        for (const [key, g] of Object.entries(groups)) {
+          /* ตัดสินจาก "หมวด" ก่อน (Company/คู่ค้า ที่ต่างกันไม่ทำให้หมวดไม่แน่นอน) แล้วเอา Company/คู่ค้าที่ใช้บ่อยสุดในหมวดนั้น */
+          const byCat = {}; for (const c of Object.values(g.combos)) (byCat[c.category_id] ||= []).push(c);
+          const [, best] = Object.entries(byCat).map(([k, l]) => [k, l]).sort((a, b) => b[1].reduce((s, x) => s + x.c, 0) - a[1].reduce((s, x) => s + x.c, 0))[0];
+          const top = best.slice().sort((a, b) => b.c - a.c || (b.contact_id ? 1 : 0) - (a.contact_id ? 1 : 0))[0], share = best.reduce((s, x) => s + x.c, 0) / g.n;
+          if (share === 1 || (g.n >= 3 && share >= 0.6)) hints[key] = { category_id: top.category_id, contact_id: top.contact_id, entity_id: top.entity_id, type: top.type, n: g.n, share: Math.round(share * 100) / 100 };
         }
         return new Response(JSON.stringify({ hints }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
