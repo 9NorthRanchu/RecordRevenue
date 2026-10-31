@@ -505,3 +505,7 @@ body.ui-a[data-view="reports"] .top-header{display:none}   /* หน้ารา
 #drv-view .dv-b{background:#fff;color:#1E1B2E;border:0;border-radius:8px;padding:7px 12px;font-family:inherit;cursor:pointer;text-decoration:none;font-size:.85rem}
 #drv-view .dv-body{flex:1;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:12px;padding:14px;color:#fff}
 #drv-view canvas,#drv-view img{max-width:min(1100px,100%);height:auto;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.4)}
+.av-ed-att{display:grid;gap:6px;border-top:1px dashed #D9CFF7;padding-top:8px}.av-ed-att small{color:#5C5872;font-weight:400}
+.ave-f{display:inline-flex;align-items:center;gap:2px}.ave-f>button:last-child{border:0;background:transparent;color:#C92A2A;cursor:pointer;font-size:.9rem}
+.av-ed .ave-add{display:block;border:1px dashed #9775FA;border-radius:10px;padding:9px;text-align:center;color:#5F3DC4;cursor:pointer;font-weight:600}
+.av-ed .ave-add input{display:block;margin:6px auto 0;font-size:.8rem}

@@ -3888,3 +3888,10 @@ frontend
 - importStatementRows คืน stmtId · importCardStatement รับ fileObj
 - ยังไม่ทำ: สลิป LINE/รูปค่าใช้จ่ายหลายรูปต่อรายการลง Drive (มีโครงแล้ว kind slip/expense + link tx)
 - app.js?v=223 ui-a.css?v=21
+
+## 2026-10-31 · 📁 สลิป LINE + หลักฐานหลายไฟล์ต่อรายการ → Google Drive
+- POST /api/drive/sync-slips: LedgerDocs ที่ผูกรายการแล้ว (R2 ledger-docs/ ลบเองใน 30 วัน) → สำเนาลง Drive Slip/<ปี-เดือน> ทีละ 8 · hash "r2:<key>" · ไฟล์ R2 หมดอายุแล้ว = จดเป็น kind missing (ไม่วนหา) · ผูก DriveLinks tx
+- POST /api/drive/unlink · /files ไม่นับ missing · statement-running ส่ง n_files ต่อรายการ
+- หน้าเว็บ: เปิดแอป 8 วิ → DriveStore.syncSlips (เงียบ · ทีละชุดจนหมด) · ปุ่ม "🧾 สำเนาสลิป LINE ลง Drive" ในการ์ดตั้งค่า
+- หน้าต่างแก้รายการ (หน้ารายละเอียดบัญชี): 📎 หลักฐาน — ไฟล์เดิม (เปิด/✕ เลิกผูก) + แนบรูป/PDF หลายไฟล์ (ถ่ายรูปได้) → Drive Expense/<ปี-เดือน> · คอลัมน์หลักฐานแสดง 📎n
+- เทสต์ drive 18 · Playwright แนบ 2 ไฟล์ + เลิกผูก 1 ✅ · app.js?v=224 ui-a.css?v=22

@@ -8,7 +8,7 @@
  *   RecordRevenue/Slip/<ปี-เดือน>/…                 (สลิป · ใบเสร็จ · รูปค่าใช้จ่าย)
  * ปลอดภัย: ทุกคำขอต้องมี SECRET ตรง · อ่าน/ลบได้เฉพาะไฟล์ที่อยู่ใต้โฟลเดอร์ RecordRevenue เท่านั้น
  */
-const SECRET = 'เปลี่ยนเป็นรหัสลับยาวๆ-ของคุณ';
+const SECRET = 'Nimz2156';
 const ROOT_NAME = 'RecordRevenue';
 
 function doPost(e) {

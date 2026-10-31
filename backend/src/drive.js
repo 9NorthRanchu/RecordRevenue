@@ -95,11 +95,58 @@ export async function handleDrive({ url, request, env, cors, authUserId, canUseA
     return json({ success: true, reused, file: { file_id: file.file_id, name: file.name, url: file.url, mime: file.mime } }, cors);
   }
 
+  /* 🧾 สลิป/เอกสารจาก LINE (เก็บใน R2) → สำเนาลง Drive (2026-10-31) · ทีละไม่เกิน 8 ไฟล์ต่อครั้ง (หน้าเว็บเรียกซ้ำจนหมด)
+     ผูกกับรายการที่สลิปนั้นจับคู่อยู่ · hash = "r2:<file_key>" กันอัปซ้ำ */
+  if (p === '/api/drive/sync-slips' && request.method === 'POST') {
+    if (!cfg.drive_url) return json({ error: 'ยังไม่ได้ตั้งค่า Google Drive' }, cors, 400);
+    if (!env.ICONS) return json({ error: 'ไม่พบที่เก็บไฟล์สลิป' }, cors, 500);
+    const pendingSql = `FROM LedgerDocs d WHERE d.family_id = ? AND d.file_key IS NOT NULL AND d.file_key != ''
+        AND EXISTS (SELECT 1 FROM LedgerDocLinks l WHERE l.doc_id = d.doc_id)
+        AND NOT EXISTS (SELECT 1 FROM DriveFiles f WHERE f.family_id = d.family_id AND f.file_hash = 'r2:' || d.file_key)`;
+    const docs = ((await env.DB.prepare(`SELECT d.doc_id, d.file_key, d.mime, d.file_name, d.doc_type, d.created_at ${pendingSql} ORDER BY d.created_at LIMIT 8`).bind(fam).all()).results) || [];
+    let done = 0, missing = 0; const errors = [];
+    for (const d of docs) {
+      const links = ((await env.DB.prepare(`SELECT l.transaction_id, t.account_id, t.date FROM LedgerDocLinks l JOIN Transactions t ON t.transaction_id = l.transaction_id WHERE l.doc_id = ?`).bind(d.doc_id).all()).results) || [];
+      const obj = await env.ICONS.get(d.file_key);
+      const hash = 'r2:' + d.file_key, now = new Date().toISOString();
+      if (!obj) {   // ไฟล์ใน R2 หมดอายุแล้ว → จดไว้ว่าไม่มี จะได้ไม่วนหาอีก
+        await env.DB.prepare(`INSERT INTO DriveFiles (file_id, family_id, drive_id, name, mime, kind, file_hash, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+          .bind('DF-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), fam, '', d.file_name || d.doc_id, d.mime, 'missing', hash, authUserId, now).run();
+        missing++; continue;
+      }
+      const buf = new Uint8Array(await obj.arrayBuffer()); let bin = '';
+      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+      const ym = String(links[0]?.date || d.created_at || now).slice(0, 7);
+      const ext = /pdf/.test(d.mime || '') ? '.pdf' : /png/.test(d.mime || '') ? '.png' : '.jpg';
+      const name = (d.file_name && /\.\w{2,4}$/.test(d.file_name) ? d.file_name : `${String(links[0]?.date || d.created_at || '').slice(0, 10)}_${d.doc_type || 'SLIP'}_${d.doc_id.slice(-6)}${ext}`);
+      try {
+        const up = await gas({ action: 'upload', path: ['Slip', ym], name, mime: d.mime || 'image/jpeg', data: btoa(bin), description: `RecordRevenue ${d.doc_id}` });
+        const fid = 'DF-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        await env.DB.batch([env.DB.prepare(`INSERT INTO DriveFiles (file_id, family_id, drive_id, name, mime, size, kind, account_id, file_hash, url, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+            .bind(fid, fam, up.id, name, d.mime || null, up.size || null, 'slip', links[0]?.account_id || null, hash, up.url || null, authUserId, now),
+          ...links.map(l => env.DB.prepare(`INSERT OR IGNORE INTO DriveLinks (file_id, ref_type, ref_id, created_at) VALUES (?, 'tx', ?, ?)`).bind(fid, l.transaction_id, now))]);
+        done++;
+      } catch (e) { errors.push(e.message); break; }
+    }
+    const remaining = (await env.DB.prepare(`SELECT COUNT(*) AS n ${pendingSql}`).bind(fam).first())?.n || 0;
+    return json({ success: !errors.length, done, missing, remaining, error: errors[0] || null }, cors);
+  }
+
+  /* ✂️ เลิกผูกไฟล์กับรายการ (ไฟล์ใน Drive ยังอยู่) */
+  if (p === '/api/drive/unlink' && request.method === 'POST') {
+    const b = await request.json().catch(() => ({}));
+    const f = await env.DB.prepare(`SELECT file_id, account_id FROM DriveFiles WHERE file_id = ? AND family_id = ?`).bind(String(b.file_id || ''), fam).first();
+    if (!f) return json({ error: 'ไม่พบไฟล์' }, cors, 404);
+    if (f.account_id && !(await canUseAccount(f.account_id))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
+    await env.DB.prepare(`DELETE FROM DriveLinks WHERE file_id = ? AND ref_type = ? AND ref_id = ?`).bind(f.file_id, String(b.ref_type || ''), String(b.ref_id || '')).run();
+    return json({ success: true }, cors);
+  }
+
   if (p === '/api/drive/files' && request.method === 'GET') {
     const t = url.searchParams.get('ref_type'), ids = String(url.searchParams.get('ref_ids') || '').split(',').filter(Boolean).slice(0, 90);
     if (!['stmt', 'tx'].includes(t) || !ids.length) return json({ files: [] }, cors);
     const rows = ((await env.DB.prepare(`SELECT l.ref_id, f.file_id, f.name, f.mime, f.size, f.url, f.kind, f.created_at FROM DriveLinks l JOIN DriveFiles f ON f.file_id = l.file_id
-        WHERE l.ref_type = ? AND l.ref_id IN (${ids.map(() => '?').join(',')}) AND f.family_id = ? ORDER BY f.created_at`).bind(t, ...ids, fam).all()).results) || [];
+        WHERE l.ref_type = ? AND l.ref_id IN (${ids.map(() => '?').join(',')}) AND f.family_id = ? AND f.drive_id != '' ORDER BY f.created_at`).bind(t, ...ids, fam).all()).results) || [];
     return json({ files: rows }, cors);
   }
 

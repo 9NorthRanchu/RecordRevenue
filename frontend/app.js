@@ -1159,6 +1159,7 @@ async function initApp() {
 
         // สำรองข้อมูลอัตโนมัติถ้าเลยกำหนด (Admin เท่านั้น) — ไม่รอผล
         checkScheduledBackup();
+        setTimeout(() => { try { DriveStore.syncSlips(false); } catch { /* */ } }, 8000);   // 🧾 สำเนาสลิป LINE ลง Drive (2026-10-31)
 
         // Check if redirect query exists (from LINE flex link)
         const urlParams = new URLSearchParams(window.location.search);
@@ -1270,6 +1271,7 @@ function bindNavigation() {
             // Fetch master data on login
             await fetchMasterData();
             checkScheduledBackup();
+        setTimeout(() => { try { DriveStore.syncSlips(false); } catch { /* */ } }, 8000);   // 🧾 สำเนาสลิป LINE ลง Drive (2026-10-31)
             Swal.close();
             switchView('dashboard');
         } catch (err) {
@@ -15348,7 +15350,7 @@ const AccView = (() => {
               <td>${esc(String(r.categories || '').replace(/^\s*\[[^\]]+\]\s*/, '') || '–')}</td>
               <td class="r av-pos">${r.amount > 0 ? fm(r.amount) : ''}</td><td class="r av-neg">${r.amount < 0 ? fm(r.amount) : ''}</td>
               <td class="r">${fm(r._run)}</td><td class="r">${r._bank == null ? '' : fm(r._bank)}</td><td class="r ${bad(r._diff) ? 'av-neg' : ''}">${r._diff == null ? '' : fm(r._diff)}${r._flag === 'start' ? ' ⚠️' : ''}</td>
-              <td>${r.has_slip ? '<span class="av-slip" title="มีสลิป/หลักฐาน"><i class="fa-solid fa-receipt"></i></span>' : ''}</td></tr>`).join('')}
+              <td>${r.has_slip ? '<span class="av-slip" title="มีสลิป/หลักฐาน"><i class="fa-solid fa-receipt"></i></span>' : ''}${r.n_files ? `<span class="av-slip" title="ไฟล์แนบใน Google Drive ${r.n_files} ไฟล์">📎${r.n_files > 1 ? r.n_files : ''}</span>` : ''}</td></tr>`).join('')}
             <tr class="av-ob"><td>${dTh(to)}</td><td colspan="2"><b>ยอดยกไป</b></td><td class="r av-pos">${fm(sumIn)}</td><td class="r av-neg">${fm(sumOut)}</td><td class="r">${fm(closeSys)}</td><td class="r">${o.bank && o.bank.as_of === to ? fm(bankEnd) : ''}</td><td class="r">${o.bank && o.bank.as_of === to && dClose != null ? fm(dClose) : ''}</td><td></td></tr>
           </tbody></table></div>
           <div class="av-list">${rows.map(r => `<div class="av-li av-click ${r._flag === 'start' ? 'av-bad' : r._flag ? 'av-warnrow' : ''}" onclick="AccView.edit('${esc(r.transaction_id)}')">
@@ -15368,6 +15370,7 @@ const AccView = (() => {
         try { const r = await fetch(`${API_BASE}/api/transactions?id=${encodeURIComponent(txId)}`, { headers: hdr() }); tx = (await r.json())?.[0]; } catch { /* */ }
         if (!tx) { alert('ไม่พบรายการนี้'); return; }
         const pend = tx.status === 'PENDING_REVIEW';
+        const drvOn = (await DriveStore.config()).configured, files = drvOn ? await DriveStore.txFiles(tx.transaction_id) : [];
         if ((tx.details || []).length > 1) {
             if (confirm(`รายการนี้แบ่งเป็น ${tx.details.length} รายการย่อย — ไปแก้ที่หน้า${pend ? 'รอตรวจ' : 'ประวัติ'}?`)) switchView(pend ? 'pending' : 'history');
             return;
@@ -15385,10 +15388,15 @@ const AccView = (() => {
             <label>Company<select id="ave-ent"><option value="">—</option>${opt(AppState.entities || [], 'entity_id', 'name', d.entity_id || (AppState.allowedEntities || [])[0])}</select></label>
             <label>คู่ค้า<select id="ave-con"><option value="">— ไม่ระบุ —</option>${opt(AppState.contacts || [], 'contact_id', 'name', d.contact_id)}</select></label>
             <label>หมายเหตุ<input id="ave-note" value="${esc(d.note || '')}" placeholder="เช่น ค่าอาหารกลางวัน"></label>
+            <div class="av-ed-att"><b>📎 หลักฐาน</b>${tx.slip_image_url ? ` <a href="#" onclick="event.preventDefault();window.open(API_BASE+'${esc(tx.slip_image_url)}','_blank')">🧾 สลิป LINE</a>` : ''}
+              <div id="ave-files" class="drv-row">${drvOn ? (files.map(f => `<span class="ave-f" data-fid="${esc(f.file_id)}">${DriveStore.buttons([f], tx.account_id)}<button type="button" title="เลิกผูกไฟล์นี้" onclick="this.parentNode.dataset.unlink='1';this.parentNode.style.opacity=.35">✕</button></span>`).join('') || '<small>ยังไม่มีไฟล์</small>') : '<small>ตั้งค่า Google Drive ก่อน (ตั้งค่า → Backup/Restore) เพื่อแนบไฟล์</small>'}</div>
+              ${drvOn ? '<label class="ave-add">➕ แนบรูป / PDF (เลือกได้หลายไฟล์ · ถ่ายรูปได้)<input type="file" id="ave-up" accept="image/*,application/pdf" multiple></label><div id="ave-upn"></div>' : ''}</div>
             ${pend ? '<label class="av-ed-ck"><input type="checkbox" id="ave-ok" checked> ยืนยันรายการนี้ด้วย (ย้ายจากรอตรวจไปประวัติ)</label>' : ''}</div>`;
         const r = await Swal.fire({ title: 'แก้ไขรายการ', html, width: 520, showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก', focusConfirm: false,
+            didOpen: () => { const up = document.getElementById('ave-up'); if (up) up.onchange = () => { document.getElementById('ave-upn').innerHTML = [...up.files].map(f => `<small>🆕 ${esc(f.name)}</small>`).join('<br>'); }; },
             preConfirm: () => {
-                const v = { cat: document.getElementById('ave-cat').value, ent: document.getElementById('ave-ent').value, con: document.getElementById('ave-con').value,
+                const v = { cat: document.getElementById('ave-cat').value, newFiles: [...(document.getElementById('ave-up')?.files || [])],
+                    unlink: [...document.querySelectorAll('#ave-files .ave-f[data-unlink="1"]')].map(x => x.dataset.fid).filter(Boolean), ent: document.getElementById('ave-ent').value, con: document.getElementById('ave-con').value,
                     note: document.getElementById('ave-note').value.trim(), ok: !!document.getElementById('ave-ok')?.checked };
                 if (v.ok && !v.cat) { Swal.showValidationMessage('ยืนยันรายการต้องเลือกหมวดก่อน'); return false; }
                 return v;
@@ -15409,7 +15417,12 @@ const AccView = (() => {
                 const c = await fetch(`${API_BASE}/api/transactions/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transaction_id: tx.transaction_id }) });
                 if (!c.ok) throw new Error('บันทึกแล้ว แต่ยืนยันไม่สำเร็จ');
             }
-            window.showToast?.(pend && v.ok ? '✅ บันทึกและยืนยันแล้ว' : '✅ บันทึกแล้ว');
+            /* 📎 ไฟล์แนบ → Drive (2026-10-31) */
+            for (const fid of v.unlink || []) await DriveStore.unlink(fid, tx.transaction_id);
+            let upOk = 0, upErr = '';
+            for (const f of v.newFiles || []) { try { await DriveStore.upload(f, { kind: 'expense', account_id: tx.account_id, date: tx.date, links: [{ type: 'tx', id: tx.transaction_id }] }); upOk++; } catch (e) { upErr = e.message; } }
+            if (upErr) alert(`แนบไฟล์ไม่สำเร็จบางไฟล์: ${upErr}`);
+            window.showToast?.((pend && v.ok ? '✅ บันทึกและยืนยันแล้ว' : '✅ บันทึกแล้ว') + (upOk ? ` · 📎 แนบ ${upOk} ไฟล์` : ''));
             updatePendingBadge?.();
             if (S.acc) open(S.acc.account_id, S.month);
         } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }
@@ -15627,7 +15640,7 @@ const DriveStore = (() => {
             <input id="drv-url" placeholder="URL ของ Apps Script (ลงท้ายด้วย /exec)" style="padding:9px 10px;border-radius:10px;border:1px solid var(--border-color,#ddd)">
             <input id="drv-secret" type="password" placeholder="รหัสลับ (SECRET ในโค้ด Apps Script)${c.configured ? ' — เว้นว่าง = ใช้รหัสเดิม' : ''}" style="padding:9px 10px;border-radius:10px;border:1px solid var(--border-color,#ddd)">
             <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="drv-save" type="button">💾 บันทึก + ทดสอบ</button>
-              ${c.configured ? '<button class="btn btn-outline-primary" id="drv-test" type="button">🔌 ทดสอบการเชื่อมต่อ</button>' : ''}</div>
+              ${c.configured ? '<button class="btn btn-outline-primary" id="drv-test" type="button">🔌 ทดสอบการเชื่อมต่อ</button><button class="btn btn-outline-primary" id="drv-sync" type="button">🧾 สำเนาสลิป LINE ลง Drive</button>' : ''}</div>
             <div id="drv-msg" style="font-size:.85rem"></div></div>` : '<small>เฉพาะ Admin ตั้งค่าได้</small>'}`;
         const msg = t => { const m = document.getElementById('drv-msg'); if (m) m.innerHTML = t; };
         const sv = document.getElementById('drv-save');
@@ -15638,6 +15651,8 @@ const DriveStore = (() => {
                 await renderCard(); msg(`✅ เชื่อมต่อสำเร็จ · บัญชี ${esc(j.user || '')} · <a href="${esc(j.root)}" target="_blank" rel="noopener">เปิดโฟลเดอร์ RecordRevenue</a>`);
             } catch (e) { msg(`<span style="color:#C92A2A">⚠️ ${esc(e.message)}</span>`); } finally { sv.disabled = false; }
         };
+        const sy = document.getElementById('drv-sync');
+        if (sy) sy.onclick = async () => { sy.disabled = true; msg('⏳ กำลังสำเนาสลิป…'); await syncSlips(true); msg(''); sy.disabled = false; };
         const ts = document.getElementById('drv-test');
         if (ts) ts.onclick = async () => { ts.disabled = true; msg('⏳ …');
             try { const r = await fetch(`${API_BASE}/api/drive/test`, { method: 'POST' }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status);
@@ -15645,7 +15660,21 @@ const DriveStore = (() => {
     }
     /* ปุ่ม "📎 ไฟล์" สำหรับหัว statement */
     const buttons = (files, accId) => (files || []).map(f => `<button type="button" class="drv-btn" onclick="event.preventDefault();event.stopPropagation();DriveView.open('${esc(f.file_id)}','${esc(accId || '')}','${esc(f.name || '')}')" title="เปิดไฟล์ต้นฉบับจาก Google Drive">📎 ${esc(f.name || 'ไฟล์')}</button>`).join('');
-    return { config, upload, saveStatement, renderCard, buttons };
+    /* 🧾 สำเนาสลิป LINE (R2 เก็บแค่ 30 วัน) ลง Drive — เรียกเองตอนเปิดแอป · ทีละชุดจนหมด · เงียบถ้ายังไม่ตั้งค่า */
+    async function syncSlips(manual) {
+        if (!(await config()).configured) { if (manual) alert('ตั้งค่า Google Drive ก่อน'); return; }
+        let done = 0, missing = 0;
+        for (let i = 0; i < 40; i++) {
+            let j; try { const r = await fetch(`${API_BASE}/api/drive/sync-slips`, { method: 'POST' }); j = await r.json(); } catch { break; }
+            done += j.done || 0; missing += j.missing || 0;
+            if (j.error) { if (manual) alert('ซิงก์สลิปไม่สำเร็จ: ' + j.error); break; }
+            if (!j.remaining || (!j.done && !j.missing)) break;
+        }
+        if (done || manual) window.showToast?.(`🧾 สำเนาสลิปลง Google Drive ${done} ไฟล์${missing ? ` · หมดอายุไปแล้ว ${missing}` : ''}`);
+    }
+    const txFiles = async txId => { try { const r = await fetch(`${API_BASE}/api/drive/files?ref_type=tx&ref_ids=${encodeURIComponent(txId)}`); return (await r.json()).files || []; } catch { return []; } };
+    const unlink = (fileId, txId) => fetch(`${API_BASE}/api/drive/unlink`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file_id: fileId, ref_type: 'tx', ref_id: txId }) });
+    return { config, upload, saveStatement, renderCard, buttons, syncSlips, txFiles, unlink };
 })();
 
 const DriveView = (() => {

@@ -101,4 +101,19 @@ const res = await worker.fetch(new Request('https://w.test/api/drive/file?id=' +
 check('เปิดไฟล์ → ได้ไฟล์จริง', res.status === 200 && (await res.text()) === 'PDF' && res.headers.get('Content-Type') === 'application/pdf', res.status);
 const res2 = await worker.fetch(new Request('https://w.test/api/drive/file?id=' + fid, { headers: { Authorization: 'Bearer tok-Other' } }), env, {});
 check('ครอบครัวอื่นเปิดไม่ได้', res2.status === 404, res2.status);
+/* สลิปจาก LINE (R2) → Drive */
+const r2 = { 'ledger-docs/s1.jpg': new Uint8Array([1, 2, 3]) };
+env.ICONS = { get: async k => r2[k] ? { arrayBuffer: async () => r2[k].buffer } : null };
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id) VALUES ('TS1','A02','2026-10-05',-50,'CONFIRMED','LINE_SLIP','9North');
+INSERT INTO LedgerDocs (doc_id,family_id,source,file_key,mime,status,doc_type,created_at) VALUES ('DOC1','Fam_Default','LINE','ledger-docs/s1.jpg','image/jpeg','DONE','SLIP','2026-10-05'),('DOC2','Fam_Default','LINE','ledger-docs/gone.jpg','image/jpeg','DONE','SLIP','2026-08-01');
+INSERT INTO LedgerDocLinks (doc_id,transaction_id,role) VALUES ('DOC1','TS1','MATCHED'),('DOC2','TS1','MATCHED');`);
+r = await call('/api/drive/sync-slips', { user: '9North', method: 'POST' });
+check('ซิงก์สลิป: 1 ไฟล์ขึ้น Drive · 1 ไฟล์หมดอายุ', r.j.done === 1 && r.j.missing === 1 && r.j.remaining === 0, r.j);
+r = await call('/api/drive/sync-slips', { user: '9North', method: 'POST' }); check('ซิงก์ซ้ำ → ไม่มีงาน', r.j.done === 0 && r.j.remaining === 0, r.j);
+r = await call('/api/drive/files?ref_type=tx&ref_ids=TS1', { user: '9North' }); check('รายการมีไฟล์แนบ 1 (ไม่นับที่หมดอายุ)', r.j.files.length === 1 && store[r.j.files[0] ? 'G1' : 'x'].path[0] === 'Slip', [r.j, Object.keys(store)]);
+r = await call('/api/reports/statement-running?account_id=A02&from=2026-10-01&to=2026-10-31', { user: '9North' });
+check('รายงานยอดสะสม: n_files ต่อรายการ', r.j.rows.find(x => x.transaction_id === 'TS1')?.n_files === 1, r.j.rows);
+const tf = (await call('/api/drive/files?ref_type=tx&ref_ids=TS1', { user: '9North' })).j.files[0];
+r = await call('/api/drive/unlink', { user: '9North', method: 'POST', body: { file_id: tf.file_id, ref_type: 'tx', ref_id: 'TS1' } });
+r = await call('/api/drive/files?ref_type=tx&ref_ids=TS1', { user: '9North' }); check('เลิกผูก', r.j.files.length === 0, r.j);
 console.log(`drive: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);

@@ -10,6 +10,7 @@
 //    การคิดยอดสะสม/หาจุดผิด ทำฝั่งหน้าเว็บ (buildStatementRunning ใน app.js) เพื่อออก Excel/PDF
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { ensureDrive } from './drive.js';
 const json = (data, cors, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const isDate = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
@@ -111,12 +112,14 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
     const acc = url.searchParams.get('account_id') || '', from = url.searchParams.get('from') || '', to = url.searchParams.get('to') || '';
     if (!acc || !isDate(from) || !isDate(to)) return json({ error: 'ต้องระบุ account_id, from, to (YYYY-MM-DD)' }, cors, 400);
     if (!(await canUseAccount(acc))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
+    await ensureDrive(env);   // ตาราง DriveLinks ต้องมีก่อนนับไฟล์แนบ
     const account = await env.DB.prepare(`SELECT account_id, name, bank_name, account_number, account_type FROM Accounts WHERE account_id = ?`).bind(acc).first();
     const before = await env.DB.prepare(`SELECT ROUND(COALESCE(SUM(${SIGNED_AMOUNT_SQL}), 0), 2) AS bal, COUNT(*) AS n FROM Transactions t
         WHERE t.account_id = ? AND substr(t.date, 1, 10) < ?`).bind(acc, from).first();
     const rows = ((await env.DB.prepare(`SELECT t.transaction_id, substr(t.date, 1, 10) AS date, t.time, t.statement_desc, t.ref_code, t.status, t.source,
           ROUND(${SIGNED_AMOUNT_SQL}, 2) AS amount, t.stmt_id, t.stmt_seq, t.stmt_balance, t.created_at,
           CASE WHEN t.slip_image_url IS NOT NULL AND t.slip_image_url != '' THEN 1 ELSE 0 END AS has_slip,
+          (SELECT COUNT(*) FROM DriveLinks dl WHERE dl.ref_type = 'tx' AND dl.ref_id = t.transaction_id) AS n_files,
           (SELECT GROUP_CONCAT(DISTINCT c.name) FROM TransactionDetails d LEFT JOIN Categories c ON c.category_id = d.category_id WHERE d.transaction_id = t.transaction_id) AS categories,
           (SELECT GROUP_CONCAT(DISTINCT d.note) FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id AND d.note IS NOT NULL AND d.note != '') AS notes
         FROM Transactions t WHERE t.account_id = ? AND substr(t.date, 1, 10) >= ? AND substr(t.date, 1, 10) <= ?
