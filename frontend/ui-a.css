@@ -530,3 +530,42 @@ body.ui-a[data-view="reports"] .top-header{display:none}   /* หน้ารา
 /* ⚠️ อาจจ่ายซ้ำ (v230) */
 .sim-dup{background:#FFF0F0;border:1px solid #FFC9C9;color:#A61E1E;border-radius:8px;padding:6px 10px;font-size:.84rem;display:grid;gap:2px}.sim-dup>div{color:#5C2B2B}
 [data-theme="dark"] .sim-dup{background:#3A1E22;border-color:#6B2B33;color:#FFB3B8}[data-theme="dark"] .sim-dup>div{color:#F1C9CC}
+/* ⚖️ Balance Check แบบตาราง (v231) */
+.bk-chips{display:flex;gap:6px;flex:1;flex-wrap:wrap}.bk-c{font-style:normal;font-size:.76rem;font-weight:600;padding:2px 9px;border-radius:999px}
+.bk-c.ok{background:#E6FCF5;color:#087F5B}.bk-c.bad{background:#FFF0F0;color:#C92A2A}.bk-c.no{background:#F1F3F5;color:#5C5872}
+.bk-tbl{margin-top:10px;background:#fff;border:1px solid #E9E5F5;border-radius:12px;overflow:hidden}
+.bk-row{display:grid;grid-template-columns:minmax(150px,1.6fr) repeat(4,minmax(92px,1fr)) minmax(200px,1.3fr);align-items:center;gap:10px;padding:8px 14px;border-top:1px solid #F1EEF8;font-size:.88rem}
+.bk-row:first-child{border-top:0}.bk-row:not(.bk-hd):hover{background:#FAF8FF}
+.bk-hd{background:#F6F3FF;font-size:.74rem;font-weight:700;color:#5C5872;text-transform:uppercase;letter-spacing:.4px}.bk-hd span:not(:first-child):not(:last-child){text-align:right}
+.bk-row.is-bad{background:#FFF8F8}
+.bk-name{font-weight:600;color:#4F46E5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-n{text-align:right;font-weight:600;color:#1E293B;white-space:nowrap}.bk-now{color:#4F46E5}
+.bk-neg{color:#DC2626}.bk-dim{color:#ADB5BD;font-weight:400}
+.bk-bank{display:inline-flex;flex-direction:column;align-items:flex-end;line-height:1.2}.bk-bank small{font-size:.7rem;color:#868E96;font-weight:400}
+.bk-s{display:flex;align-items:center;gap:6px;justify-content:flex-start;flex-wrap:nowrap}
+.bk-st{font-size:.78rem;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}.bk-st.ok{background:#E6FCF5;color:#087F5B}.bk-st.bad{background:#FFE3E3;color:#C92A2A;cursor:help}
+.bk-btn{border:1px dashed #B197FC;background:#F8F5FF;color:#5F3DC4;border-radius:8px;padding:3px 9px;font-size:.76rem;font-weight:600;cursor:pointer;white-space:nowrap}
+.bk-ic{border:0;background:transparent;cursor:pointer;padding:0 2px;font-size:.82rem;opacity:.7}.bk-ic:hover{opacity:1}
+.bk-foot{padding:6px 14px;font-size:.72rem;color:#868E96;border-top:1px solid #F1EEF8;background:#FCFBFF}
+body.ui-dark .bk-tbl{background:#1E1B2E;border-color:#3B3552}body.ui-dark .bk-row{border-color:#2E2944}body.ui-dark .bk-hd,body.ui-dark .bk-foot{background:#25213A;color:#B8B2D6}
+body.ui-dark .bk-row:not(.bk-hd):hover{background:#262140}body.ui-dark .bk-row.is-bad{background:#2E1C24}body.ui-dark .bk-n{color:#EDE9FE}body.ui-dark .bk-name,body.ui-dark .bk-now{color:#B197FC}
+body.ui-dark .bk-neg{color:#FF8787}body.ui-dark .bk-st.ok,body.ui-dark .bk-c.ok{background:rgba(12,166,120,.18);color:#63E6BE}body.ui-dark .bk-st.bad,body.ui-dark .bk-c.bad{background:rgba(224,49,49,.2);color:#FFA8A8}
+body.ui-dark .bk-btn{background:#2A2344;border-color:#6741D9;color:#D0BFFF}body.ui-dark .bk-c.no{background:#2A2738;color:#B8B2D6}
+@media (max-width:820px){
+  .bk-hd{display:none}
+  .bk-row{grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px}
+  .bk-name{grid-column:1/-1;font-size:.95rem}
+  .bk-n{display:flex;justify-content:space-between;align-items:baseline;font-size:.86rem}
+  .bk-n::before{content:attr(data-l);font-size:.72rem;font-weight:500;color:#868E96}
+  .bk-s{grid-column:1/-1;margin-top:2px}
+}
+/* 👥 รายงานผู้รับ/ผู้จ่าย (v231) */
+.py-panel{margin-top:14px}.py-sub{font-size:.74rem;color:#868E96;font-weight:400;margin-left:6px}
+.py-q{width:100%;max-width:320px;margin:4px 0 8px;padding:7px 12px;border:1px solid #E0DBF2;border-radius:10px;font-size:.86rem;background:#fff}
+.py-tbl{width:100%}.py-r{cursor:pointer}.py-r:hover td{background:#FAF8FF}.py-r.on td{background:#F3F0FF}.py-cat{color:#5C5872;font-size:.82rem}
+.py-m td{font-size:.8rem;color:#5C5872;background:#FCFBFF;padding-top:3px;padding-bottom:3px}
+.py-more{margin-top:8px;border:1px dashed #B197FC;background:#F8F5FF;color:#5F3DC4;border-radius:8px;padding:5px 12px;font-size:.8rem;cursor:pointer}
+body.ui-dark .py-q{background:#25213A;border-color:#3B3552;color:#EDE9FE}body.ui-dark .py-r:hover td,body.ui-dark .py-r.on td{background:#262140}body.ui-dark .py-m td{background:#211D33;color:#B8B2D6}
+body.ui-dark .py-more{background:#2A2344;border-color:#6741D9;color:#D0BFFF}
+@media (max-width:600px){.py-tbl th:nth-child(5),.py-tbl td:nth-child(5){display:none}}
+@media (min-width:1181px){.rb-cards{grid-template-columns:repeat(5,minmax(0,1fr))}}

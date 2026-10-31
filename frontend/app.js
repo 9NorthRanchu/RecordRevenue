@@ -3656,53 +3656,42 @@ async function renderSharedStatusSummary() {
     if (AppState._sumAll) (AppState.accounts || []).forEach(a => allAccIds.add(a.account_id));
     const hiddenN = Math.max(0, totalAccs - allAccIds.size);
     
+    /* 2026-10-31 (North: "ปรับหน้านี้ให้อ่านง่าย เป็นระเบียบ ใช้ภาษาอังกฤษ/ตัวย่อได้") → ตารางบรรทัดละบัญชี แทนการ์ดสูง ๆ
+       ไม่ตรงธนาคารขึ้นก่อน · บัญชีที่ยังไม่มียอดธนาคารต่อท้าย */
+    const fc = v => `<span class="${v < 0 ? 'bk-neg' : ''}">${formatCurrency(v)}</span>`;
+    const rows = [...allAccIds].map(accId => {
+        const acc = (AppState.accounts || []).find(a => a.account_id === accId);
+        const conf = confirmedGroups[accId] || 0, pend = savedPendingGroups[accId] || 0, cp = checkpoints[accId];
+        const ok = cp ? Math.abs(cp.diff || 0) < 0.005 : null;
+        return { accId, acc, name: acc ? acc.name : 'Unknown', conf, pend, now: conf + pend, cp, ok, rank: ok === false ? 0 : ok === true ? 1 : 2 };
+    }).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+    const nBad = rows.filter(r => r.ok === false).length, nOk = rows.filter(r => r.ok).length, nNo = rows.filter(r => r.ok == null).length;
     let html = `
-        <div class="sum-head"><b>⚖️ ตรวจยอดคงเหลือ</b><span>ยืนยันแล้ว + รอตรวจ เทียบกับยอดธนาคาร</span>
-          ${AppState._sumAll ? `<button type="button" class="sum-all" onclick="AppState._sumAll=false;renderSharedStatusSummary()">แสดงเฉพาะที่มีรายการ</button>`
-            : hiddenN ? `<button type="button" class="sum-all" onclick="AppState._sumAll=true;renderSharedStatusSummary()">➕ ทุกบัญชี (${hiddenN})</button>` : ''}</div>
-        <div class="pending-status-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 10px;">
-    `;
-    
-    allAccIds.forEach(accId => {
-        const acc = AppState.accounts.find(a => a.account_id === accId);
-        const accName = acc ? acc.name : 'Unknown Account';
-        const bankName = acc ? acc.bank_name : '';
-        
-        const confirmedSum = confirmedGroups[accId] || 0;
-        const pendingSum = savedPendingGroups[accId] || 0;
-        const totalSum = confirmedSum + pendingSum;
-
-        const isConfirmedNeg = confirmedSum < 0;
-        const isPendingNeg = pendingSum < 0;
-        const isTotalNeg = totalSum < 0;
-        
+        <div class="sum-head"><b>⚖️ Balance Check</b>
+          <span class="bk-chips"><i class="bk-c ok">✓ Match ${nOk}</i>${nBad ? `<i class="bk-c bad">⚠ Diff ${nBad}</i>` : ''}${nNo ? `<i class="bk-c no">– No bank bal ${nNo}</i>` : ''}</span>
+          ${AppState._sumAll ? `<button type="button" class="sum-all" onclick="AppState._sumAll=false;renderSharedStatusSummary()">Active only</button>`
+            : hiddenN ? `<button type="button" class="sum-all" onclick="AppState._sumAll=true;renderSharedStatusSummary()">➕ All accounts (${hiddenN})</button>` : ''}</div>
+        <div class="bk-tbl">
+          <div class="bk-row bk-hd"><span>Account</span><span title="ยืนยันแล้ว (รวมยอดยกมา)">Confirmed</span><span title="รอตรวจ">Pending</span><span title="ยืนยันแล้ว + รอตรวจ">Now</span><span title="ยอดธนาคาร ณ วันที่">Bank</span><span>Status</span></div>`;
+    rows.forEach(r => {
+        const cp = r.cp, d = cp ? String(cp.as_of || '').split('-') : [], dd = d.length === 3 ? `${d[2]}/${d[1]}/${d[0].slice(2)}` : (cp?.as_of || '');
+        const bank = cp ? `<span class="bk-bank">${fc(cp.bank)}<small>@ ${dd}${cp.source === 'STATEMENT' ? '' : ' ✍️'}</small></span>` : '<span class="bk-dim">—</span>';
+        const status = !cp ? `<button type="button" class="bk-btn" onclick="recordBankBalance('${r.accId}')" title="ใส่ยอดคงเหลือตามธนาคาร">+ Bank bal</button>`
+            : r.ok ? `<span class="bk-st ok">✓ Match</span><button type="button" class="bk-ic" title="ใส่ยอดธนาคารใหม่" onclick="recordBankBalance('${r.accId}')">✏️</button>`
+            : `<span class="bk-st bad" title="ระบบ ณ ${dd}: ${formatCurrency(cp.system)} · ${Math.abs(cp.bank) > Math.abs(cp.system) ? 'ธนาคารมากกว่า' : 'ระบบมากกว่า'} — ขาดรายการ / ยอดยกมาไม่ครบ / นำเข้าซ้ำ">⚠ Diff ${formatCurrency(Math.abs(cp.diff))}</span>
+               <button type="button" class="bk-btn" onclick="reconcileAccount('${r.accId}', ${Number(cp.system) || 0}, ${Number(cp.bank) || 0})" title="ปรับยอดยกมาให้ยอดในระบบเท่าธนาคาร">⚖️ Fix</button>
+               <button type="button" class="bk-ic" title="ใส่ยอดธนาคารใหม่" onclick="recordBankBalance('${r.accId}')">✏️</button>`;
         html += `
-            <div class="status-summary-card" style="background: #ffffff; border: 1px solid #E2E8F0; border-radius: 12px; padding: 10px 14px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 8px; border-left: 4px solid #6366f1;">
-                <div style="display: flex; align-items: center; justify-content: space-between; font-weight: 700; color: #1E293B; font-size: 0.9rem;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span>${getBankIcon(bankName)}</span>
-                        <span style="color: #4F46E5; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;">${accName}</span>
-                    </div>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #F1F5F9; padding-top: 8px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between;" title="ยืนยันแล้ว (รวมยอดยกมา)">
-                        <span style="font-size: .78rem;color:#5C5872">🏦 ยืนยันแล้ว</span>
-                        <span style="font-weight: 700; font-size: 0.9rem; color: ${isConfirmedNeg ? '#DC2626' : '#1E293B'};">${formatCurrency(confirmedSum)}</span>
-                    </div>
-                    <div style="display: flex; align-items: center; justify-content: space-between;" title="รายการรอตรวจสอบ (Pending)">
-                        <span style="font-size: .78rem;color:#5C5872">⏳ รอตรวจ</span>
-                        <span style="font-weight: 700; font-size: 0.9rem; color: ${isPendingNeg ? '#DC2626' : '#10B981'};">${formatCurrency(pendingSum)}</span>
-                    </div>
-                    <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px dashed #E2E8F0; padding-top: 4px;" title="รวม (Total)">
-                        <span style="font-size: .78rem;color:#5C5872">💰 รวมตอนนี้</span>
-                        <span style="font-weight: 700; font-size: 0.9rem; color: ${isTotalNeg ? '#DC2626' : '#4F46E5'};">${formatCurrency(totalSum)}</span>
-                    </div>
-                    ${bankCheckHtml(accId, checkpoints[accId], acc)}
-                </div>
-            </div>
-        `;
+          <div class="bk-row ${r.ok === false ? 'is-bad' : ''}">
+            <span class="bk-name" title="${String(r.name).replace(/"/g, '&quot;')}">${getBankIcon(r.acc?.bank_name || '')} ${r.name}</span>
+            <span class="bk-n" data-l="Confirmed">${fc(r.conf)}</span>
+            <span class="bk-n" data-l="Pending">${r.pend ? fc(r.pend) : '<span class="bk-dim">0.00</span>'}</span>
+            <span class="bk-n bk-now" data-l="Now">${fc(r.now)}</span>
+            <span class="bk-n" data-l="Bank">${bank}</span>
+            <span class="bk-s">${status}</span>
+          </div>`;
     });
-    
+    html += `<div class="bk-foot">Confirmed = ยืนยันแล้ว · Pending = รอตรวจ · Now = รวมตอนนี้ · Bank = ยอดธนาคาร (✍️ ใส่เอง) · Diff = ต่างจากธนาคาร</div>`;
     html += `</div>`;
     
     if (allAccIds.size === 0 && !totalAccs) {
@@ -15501,7 +15490,7 @@ const AccView = (() => {
 //  ข้อมูล: /api/dashboard/summary (ชุดเดียวกับหน้าภาพรวม) · รายงานเดิมใช้ปุ่ม/ตารางเดิมของแต่ละแท็บ
 // ═══════════════════════════════════════════════════════════════════════
 const RepHome = (() => {
-    const S = { period: 'month', month: null, data: null };
+    const S = { period: 'month', month: null, data: null, pq: '', pAll: false, pOpen: null };
     const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
     const fm = n => { const v = r2(n), t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -15509,7 +15498,7 @@ const RepHome = (() => {
     const OUT = ['#FA5252', '#FF922B', '#FCC419', '#7950F2', '#339AF0', '#40C057', '#ADB5BD'], INC = ['#40C057', '#339AF0', '#FCC419', '#ADB5BD', '#CED4DA', '#7950F2', '#E9ECEF'];
     const clean = n => String(n || '-').replace(/^\s*\[[^\]]+\]\s*/, '');
     const label = () => { if (S.period === 'all') return 'ทั้งหมด'; const [y, m] = (S.month || '').split('-').map(Number); return S.period === 'year' ? `ปี ${y + 543}` : `${MTH[m - 1]} ${y + 543}`; };
-    const shift = k => { const [y, m] = S.month.split('-').map(Number); const d = S.period === 'year' ? new Date(Date.UTC(y + k, m - 1, 1)) : new Date(Date.UTC(y, m - 1 + k, 1)); S.month = d.toISOString().slice(0, 7); load(); };
+    const shift = k => { const [y, m] = S.month.split('-').map(Number); const d = S.period === 'year' ? new Date(Date.UTC(y + k, m - 1, 1)) : new Date(Date.UTC(y, m - 1 + k, 1)); S.month = d.toISOString().slice(0, 7); S.pOpen = null; load(); };
     function groups(rows, sign) {
         const m = new Map();
         for (const x of rows || []) { const k = x.category_id || x.category_name || '-'; const g = m.get(k) || { name: clean(x.category_name || x.category_id), sum: 0, n: 0 }; g.sum += Math.abs(Number(x.amount) || 0); g.n++; m.set(k, g); }
@@ -15531,11 +15520,44 @@ const RepHome = (() => {
             ${g.list.map((x, i) => `<tr><td><i class="rb-dot" style="background:${colors[i % colors.length]}"></i>${esc(x.name)}</td><td class="r ${cls === 'out' ? 'rb-neg' : 'rb-pos'}">${fm(x.sum)}</td><td class="r">${x.pct.toFixed(2)}%</td></tr>`).join('')
               || '<tr><td colspan="3" class="rb-mute">ไม่มีรายการ</td></tr>'}</tbody></table></div></div>`;
     }
+    /* 👥 สรุปตามผู้รับ/ผู้จ่าย (2026-10-31 ข้อ ง): คู่ค้าที่เลือกไว้ก่อน · ไม่มี → ข้อความรายการ (ตัดเลข) · แยกรายเดือน */
+    function payees() {
+        const d = S.data || {}, m = new Map();
+        const add = (x, side) => {
+            const k = x.contact_name ? 'c|' + x.contact_name : 'd|' + (statementKey(x.desc || x.title) || String(x.desc || x.title || '-').toLowerCase());
+            const g = m.get(k) || { name: x.contact_name || String(x.desc || x.title || '-').replace(/\s*\d{4,}.*$/, '').replace(/\s+/g, ' ').trim() || '-', n: 0, out: 0, inc: 0, cats: {}, months: {} };
+            const v = Math.abs(Number(x.amount) || 0), mo = String(x.date || '').slice(0, 7);
+            g.n++; if (side < 0) g.out += v; else g.inc += v;
+            const cn = clean(x.category_name || ''); if (cn && cn !== '-') g.cats[cn] = (g.cats[cn] || 0) + 1;
+            const mm = g.months[mo] || (g.months[mo] = { out: 0, inc: 0, n: 0 }); mm.n++; if (side < 0) mm.out += v; else mm.inc += v;
+            m.set(k, g);
+        };
+        (d.expense || []).forEach(x => add(x, -1)); (d.income || []).forEach(x => add(x, 1));
+        return [...m.values()].map(g => ({ ...g, out: r2(g.out), inc: r2(g.inc), cat: Object.entries(g.cats).sort((a, b) => b[1] - a[1])[0]?.[0] || '' }))
+            .sort((a, b) => (b.out + b.inc) - (a.out + a.inc));
+    }
+    function payeePanel() {
+        const all = payees(), q = S.pq.trim().toLowerCase(), list = q ? all.filter(g => `${g.name} ${g.cat}`.toLowerCase().includes(q)) : all;
+        const shown = S.pAll ? list : list.slice(0, 20);
+        const mrows = g => Object.entries(g.months).sort((a, b) => b[0].localeCompare(a[0])).map(([mo, v]) => { const [y, mm] = mo.split('-').map(Number);
+            return `<tr class="py-m"><td>↳ ${MTH[mm - 1] || '-'} ${(y + 543) % 100}</td><td class="r">${v.n}</td><td class="r rb-neg">${v.out ? fm(-v.out) : ''}</td><td class="r rb-pos">${v.inc ? fm(v.inc) : ''}</td><td></td></tr>`; }).join('');
+        return `<div class="rb-panel py-panel"><h3><span class="rb-hi in"><i class="fa-solid fa-users"></i></span>ผู้รับ / ผู้จ่าย <small class="py-sub">${label()} · ${all.length} ราย · กดชื่อเพื่อดูรายเดือน</small></h3>
+          <input class="py-q" placeholder="🔍 ค้นชื่อ / หมวด" value="${esc(S.pq)}" oninput="RepHome.pq(this.value)">
+          <table class="rb-tbl py-tbl"><thead><tr><th>Payee</th><th class="r">Count</th><th class="r">Paid</th><th class="r">Received</th><th>Top category</th></tr></thead><tbody>
+          ${shown.map((g, i) => { const id = all.indexOf(g); return `<tr class="py-r${S.pOpen === id ? ' on' : ''}" onclick="RepHome.pOpen(${id})"><td><b>${esc(g.name)}</b></td><td class="r">${g.n}</td>
+              <td class="r rb-neg">${g.out ? fm(-g.out) : ''}</td><td class="r rb-pos">${g.inc ? fm(g.inc) : ''}</td><td class="py-cat">${esc(g.cat)}</td></tr>${S.pOpen === id ? mrows(g) : ''}`; }).join('')
+            || '<tr><td colspan="5" class="rb-mute">ไม่มีรายการ</td></tr>'}</tbody></table>
+          ${list.length > 20 ? `<button class="py-more" onclick="RepHome.pAll()">${S.pAll ? 'แสดง 20 อันดับแรก' : `แสดงทั้งหมด ${list.length} ราย`}</button>` : ''}</div>`;
+    }
+    const payeeTable = () => [['ผู้รับ/ผู้จ่าย', 'จำนวนรายการ', 'จ่าย (บาท)', 'รับ (บาท)', 'หมวดที่ใช้บ่อย'], ...payees().map(g => [g.name, String(g.n), g.out ? fm(-g.out) : '', g.inc ? fm(g.inc) : '', g.cat])];
+    const payeeMonthTable = () => { const rows = [['ผู้รับ/ผู้จ่าย', 'เดือน', 'จำนวนรายการ', 'จ่าย (บาท)', 'รับ (บาท)']];
+        payees().forEach(g => Object.entries(g.months).sort((a, b) => a[0].localeCompare(b[0])).forEach(([mo, v]) => rows.push([g.name, mo, String(v.n), v.out ? fm(-v.out) : '', v.inc ? fm(v.inc) : '']))); return rows; };
     const CARDS = [
         { k: 'stmt', ico: 'fa-book', cls: 'c1', t: 'ยอดสะสม statement', d: 'ยอดคงเหลือรายบรรทัด เทียบธนาคาร หารายการที่ขาด' },
         { k: 'wht', ico: 'fa-percent', cls: 'c2', t: 'ภาษีหัก ณ ที่จ่าย', d: 'สรุปรายการภาษีหัก ณ ที่จ่ายรายเดือน' },
         { k: 'tb', ico: 'fa-scale-balanced', cls: 'c3', t: 'งบทดลอง', d: 'ยอดคงเหลือทุกบัญชีแยกประเภท' },
-        { k: 'ie', ico: 'fa-chart-column', cls: 'c4', t: 'รายรับ-รายจ่าย', d: 'สรุปรายรับและรายจ่ายตามหมวด ช่วงที่เลือก' }];
+        { k: 'ie', ico: 'fa-chart-column', cls: 'c4', t: 'รายรับ-รายจ่าย', d: 'สรุปรายรับและรายจ่ายตามหมวด ช่วงที่เลือก' },
+        { k: 'payee', ico: 'fa-users', cls: 'c1', t: 'ผู้รับ / ผู้จ่าย', d: 'จ่ายให้ใคร รับจากใคร รวมเท่าไร แยกรายเดือน' }];
     function render() {
         const el = document.getElementById('rep-home'); if (!el) return;
         const d = S.data || {}, out = groups(d.expense, -1), inc = groups(d.income, 1);
@@ -15543,6 +15565,7 @@ const RepHome = (() => {
         el.innerHTML = `<div class="rb-top"><h2>รายงาน</h2><div class="rb-per">${chip('month', 'รายเดือน')}${chip('year', 'รายปี')}${chip('all', 'ทั้งหมด')}
             ${S.period === 'all' ? '' : `<span class="rb-nav"><button onclick="RepHome.shift(-1)" aria-label="ก่อนหน้า"><i class="fa-solid fa-chevron-left"></i></button><b>${label()}</b><button onclick="RepHome.shift(1)" aria-label="ถัดไป"><i class="fa-solid fa-chevron-right"></i></button></span>`}</div></div>
           <div class="rb-two">${panel('รายจ่ายตามหมวดหมู่', 'fa-arrow-up', 'out', out, OUT)}${panel('รายรับตามหมวดหมู่', 'fa-arrow-down', 'in', inc, INC)}</div>
+          <div id="py-wrap">${payeePanel()}</div>
           <div class="rb-cards">${CARDS.map(c => `<div class="rb-card"><div class="rb-ch"><span class="rb-ci ${c.cls}"><i class="fa-solid ${c.ico}"></i></span><b>${c.t}</b></div>
             <p>${c.d}</p><div class="rb-btns"><button class="rb-x" onclick="RepHome.exp('${c.k}','xlsx')"><i class="fa-solid fa-file-excel"></i> Excel</button>
             <button class="rb-p" onclick="RepHome.exp('${c.k}','pdf')"><i class="fa-solid fa-file-pdf"></i> PDF</button></div>
@@ -15562,6 +15585,7 @@ const RepHome = (() => {
     /* เปิดแท็บรายงานเดิมข้างล่าง */
     function open(k) {
         if (k === 'ie') { document.getElementById('rep-home')?.scrollIntoView({ behavior: 'smooth' }); return; }
+        if (k === 'payee') { document.getElementById('py-wrap')?.scrollIntoView({ behavior: 'smooth' }); return; }
         document.querySelector(`.report-tab[data-report="${k}"]`)?.click();
         document.querySelector('.reports-tabs')?.scrollIntoView({ behavior: 'smooth' });
     }
@@ -15601,7 +15625,11 @@ td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.neg{
         if (kind === 'pdf' && !w) { alert('เบราว์เซอร์บล็อกป๊อปอัป — กรุณาอนุญาตแล้วลองใหม่'); return; }
         if (w) w.document.write('<p style="font-family:sans-serif;padding:20px">⏳ กำลังสร้างรายงาน…</p>');
         try {
-            if (k === 'ie') {
+            if (k === 'payee') {
+                const per = S.period === 'all' ? 'all' : S.period === 'year' ? S.month.slice(0, 4) : S.month;
+                if (kind === 'xlsx') toXlsx([['ผู้รับ-ผู้จ่าย', payeeTable()], ['แยกรายเดือน', payeeMonthTable()]], `payees_${per}.xlsx`);
+                else toPdf(w, 'สรุปตามผู้รับ / ผู้จ่าย', label(), [['สรุป', payeeTable()]]);
+            } else if (k === 'ie') {
                 if (kind === 'xlsx') toXlsx(ieTables(), `income-expense_${S.period === 'all' ? 'all' : S.period === 'year' ? S.month.slice(0, 4) : S.month}.xlsx`); else toPdf(w, 'รายงานรายรับ-รายจ่าย', label(), ieTables());
             } else if (k === 'stmt') {
                 if (w) w.close();
@@ -15620,7 +15648,10 @@ td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.neg{
             }
         } catch (e) { if (w) w.close(); alert('ส่งออกไม่สำเร็จ: ' + e.message); }
     }
-    return { load, render, exp, open, shift, period: p => { S.period = p; load(); } };
+    const rePayee = () => { const w = document.getElementById('py-wrap'); if (!w) return; const f = document.activeElement?.classList.contains('py-q'); w.innerHTML = payeePanel();
+        if (f) { const i = w.querySelector('.py-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); } };
+    return { load, render, exp, open, shift, period: p => { S.period = p; S.pOpen = null; load(); },
+        pq: v => { S.pq = v; S.pOpen = null; rePayee(); }, pAll: () => { S.pAll = !S.pAll; rePayee(); }, pOpen: i => { S.pOpen = S.pOpen === i ? null : i; rePayee(); } };
 })();
 
 // ═══════════════════════════════════════════════════════════════════════

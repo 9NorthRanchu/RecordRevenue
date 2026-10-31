@@ -2351,7 +2351,7 @@ export default {
             title: r.note || r.category_name || r.statement_desc || '-',
             category_id: r.category_id, category_name: r.category_name,
             entity_id: r.entity_id, entity_name: r.entity_name,
-            contact_name: r.contact_name,
+            contact_name: r.contact_name, desc: r.statement_desc || null,   // desc: รายงานตามผู้รับ/ผู้จ่าย (2026-10-31)
             user_id: r.user_id, user_name: r.user_name || '-'
           };
           if (isInv) investment.push(row);

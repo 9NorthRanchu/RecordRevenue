@@ -3924,3 +3924,9 @@ frontend
 - similar.js: ถ้าส่ง amount + date → คืน `dup` (≤5): รายการ CONFIRMED ยอดเท่ากัน ทิศเดียวกัน ห่าง ≤3 วัน และ (ผู้รับเดียวกัน หรือ บัญชีเดียวกัน ห่าง ≤1 วัน ยอด ≥100) — ยอดเงินใช้เฉพาะเช็คซ้ำ ไม่ใช้กับประวัติ
 - app.js Similar: กล่องแดง .sim-dup บนสุดของแถบประวัติในการ์ดรอตรวจ · ส่ง date ไปทุกคำขอ · ui-a.css?v=26 app.js?v=230
 - เทสต์ similar-wepay 11 ✅ · Playwright dup.cjs ✅
+
+## v231 — Balance Check แบบตาราง + รายงานผู้รับ/ผู้จ่าย (2026-10-31)
+- North: "ปรับหน้านี้ให้อ่านง่าย เป็นระเบียบ ใช้ภาษาอังกฤษหรือตัวย่อได้" → renderSharedStatusSummary เป็นตาราง บรรทัดละบัญชี (Account · Confirmed · Pending · Now · Bank@date · Status) ไม่ตรงขึ้นก่อน · ชิป Match/Diff/No bank bal · มือถือ ≤820px เป็นการ์ดเล็ก 2 คอลัมน์ · คลาส bk-* (ระวัง rb-* เป็นของ RepHome)
+- ข้อ ง: RepHome payeePanel (#py-wrap) จัดกลุ่มตามคู่ค้า → ไม่มีใช้ statementKey(desc) · ค้นหา · กดแถว → รายเดือน · การ์ดส่งออก 'payee' (xlsx 2 ชีต: สรุป + แยกเดือน / pdf)
+- backend dashboard/summary: แถว income/expense เพิ่ม desc (statement_desc)
+- app.js?v=231 ui-a.css?v=27 · Playwright rb.cjs / py.cjs ✅
