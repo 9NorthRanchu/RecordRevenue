@@ -2594,6 +2594,7 @@ function dv2Render() {
     if (!root || !DashState.data) return;
     root.innerHTML = `${dv2TopBar()}
       ${dv2Kpis()}
+      <div class="dv2-sec" id="fam-home"></div>
       <div class="dv2-sec" id="acc-home"><div class="av-mute" style="padding:14px">กำลังโหลดบัญชี…</div></div>
       <div class="dv2-sec dv2-g3">${dv2Stmt()}${dv2Credit()}${dv2Invest()}</div>
       <div class="dv2-sec dv2-g3">${dv2Donut('income')}${dv2Donut('expense')}${dv2Top5()}</div>
@@ -2608,6 +2609,7 @@ async function loadDashboard() {
         await Promise.all([loadDashboardV2Data(), dv2LoadPendingCount()]);
         dv2Render();
         AccView.home(DashState.period === 'month' && DashState.month ? `${DashState.year}-${DashState.month}` : null);   // 🏦 การ์ดบัญชี (แนวคิด ข · 2026-10-30)
+        FamView.load();   // 👨‍👩‍👧 ครอบครัว & ธุรกิจ (2026-10-31)
     } catch (err) {
         console.error('Dashboard Load Error:', err);
         const root = document.getElementById('dv2-root');
@@ -9637,6 +9639,51 @@ const DebtorView = (() => {
     return { open };
 })();
 window.DebtorView = DebtorView;
+
+/* 👨‍👩‍👧 ครอบครัว & ธุรกิจ บนหน้าภาพรวม (2026-10-31 · North: ใช้ในครอบครัว · ดูรวม/เฉพาะของตัวเอง · ธุรกิจทำด้วยกันใช้ statement ร่วมกัน)
+   ผู้ดูแล: ทั้งครอบครัว / ของฉัน / ธุรกิจ · user: ของฉัน / ธุรกิจที่ร่วม (เซิร์ฟเวอร์กรองตามสิทธิ์อยู่แล้ว) */
+const FamView = (() => {
+    let scope = null, data = null;
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fm = n => { const v = Math.round((Number(n) || 0) * 100) / 100, t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const COLORS = ['#7950F2', '#E64980', '#1C7ED6', '#0CA678', '#F76707', '#AE3EC9'];
+    const colorOf = id => COLORS[[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
+    const av = (u, sz = 22) => `<i class="fv-av" style="background:${colorOf(u.user_id)};width:${sz}px;height:${sz}px;font-size:${Math.round(sz * .48)}px" title="${esc(u.name)}">${esc(String(u.name || '?').trim()[0] || '?').toUpperCase()}</i>`;
+    const ago = t => { const d = Date.parse(String(t).replace(' ', 'T') + (/Z|[+-]\d\d:?\d\d$/.test(t) ? '' : 'Z')); if (!d) return ''; const m = Math.round((Date.now() - d) / 60000);
+        return m < 60 ? `${Math.max(1, m)} นาทีก่อน` : m < 1440 ? `${Math.round(m / 60)} ชม.ก่อน` : m < 2880 ? 'เมื่อวาน' : `${Math.round(m / 1440)} วันก่อน`; };
+    const SRC = { PDF_IMPORT: 'นำเข้า statement', LINE_SLIP: 'สลิป LINE', LINE_TEXT: 'ข้อความ LINE', WEB_GRID: 'บันทึกเอง', EXCEL: 'นำเข้า Excel' };
+    async function load() {
+        const box = document.getElementById('fam-home'); if (!box) return;
+        const q = DashState?.period === 'all' ? 'period=all' : DashState?.period === 'year' ? `period=year&month=${DashState.year}-01` : DashState?.year && DashState?.month ? `period=month&month=${DashState.year}-${DashState.month}` : 'month=latest';
+        try { const r = await fetch(`${API_BASE}/api/family/overview?${q}`); data = await r.json(); if (!r.ok || data.error) throw new Error(data.error || r.status); }
+        catch (e) { box.innerHTML = ''; return; }
+        if (data.empty) { box.innerHTML = '<div class="fv-empty">👋 ยังไม่ได้รับสิทธิ์ใน Company ใด — ให้ผู้ดูแลเพิ่มสิทธิ์ที่ ตั้งค่า → ผู้ใช้</div>'; return; }
+        if (!scope) scope = data.is_admin ? 'FAMILY' : 'MINE';
+        render();
+    }
+    function render() {
+        const box = document.getElementById('fam-home'); if (!box || !data) return;
+        const tabs = (data.is_admin ? [['FAMILY', '👨‍👩‍👧 ทั้งครอบครัว'], ['MINE', '👤 ของฉัน'], ['BIZ', '🏢 ธุรกิจ']] : [['MINE', '👤 ของฉัน'], ['BIZ', '🏢 ธุรกิจที่ร่วมทำ']])
+            .map(([k, t]) => `<button type="button" class="${scope === k ? 'on' : ''}" onclick="FamView.scope('${k}')">${t}</button>`).join('');
+        const T = data.totals || {}, mine = data.mine || {};
+        const kp = scope === 'FAMILY' ? [['รับ', T.in, 'pos', `ส่วนตัว ${fm(T.personal_in)} · ธุรกิจ ${fm(T.business_in)}`], ['จ่าย', -T.out, 'neg', `ส่วนตัว ${fm(T.personal_out)} · ธุรกิจ ${fm(T.business_out)}`], ['สุทธิ', T.in - T.out, T.in - T.out < 0 ? 'neg' : 'pos', 'ทุกคน + ทุกธุรกิจ']]
+            : scope === 'MINE' ? [['รับ (ส่วนตัว)', mine.in, 'pos', esc(data.me.name)], ['จ่าย (ส่วนตัว)', -mine.out, 'neg', esc(data.me.name)], ['สุทธิ', mine.in - mine.out, mine.in - mine.out < 0 ? 'neg' : 'pos', 'ไม่รวมธุรกิจ']]
+            : [['รับ (ธุรกิจ)', T.business_in, 'pos', `${data.businesses.length} ธุรกิจ`], ['จ่าย (ธุรกิจ)', -T.business_out, 'neg', ''], ['กำไร', T.business_in - T.business_out, T.business_in - T.business_out < 0 ? 'neg' : 'pos', 'รวมทุกธุรกิจ']];
+        const members = scope === 'FAMILY' ? data.members : scope === 'MINE' ? data.members.filter(m => m.is_me) : [];
+        const bizs = scope === 'MINE' ? data.businesses.filter(b => b.users.some(u => u.user_id === data.me.user_id)) : data.businesses;
+        box.innerHTML = `<div class="fv"><div class="fv-h"><b>👨‍👩‍👧 ครอบครัว & ธุรกิจ</b><div class="fv-tabs">${tabs}</div></div>
+          <div class="fv-k">${kp.map(k => `<div><small>${k[0]}</small><b class="${k[2]}">${fm(k[1])}</b><i>${k[3]}</i></div>`).join('')}</div>
+          ${members.length ? `<div class="fv-sec">สมาชิก</div><div class="fv-mem">${members.map(m => `<div class="fv-m${m.is_me ? ' me' : ''}"><div class="fv-mh">${av(m, 30)}<b>${esc(m.name)}</b>${m.role === 'admin' ? '<span class="fv-tag">ผู้ดูแล</span>' : ''}${m.is_me ? '<span class="fv-tag me">ฉัน</span>' : ''}</div>
+              ${m.no_access ? '<div class="fv-warn">⚠️ ยังไม่มีสิทธิ์ใน Company ใด · ตั้งค่า → ผู้ใช้</div>' : `<div class="fv-l"><span>รับ</span><b class="pos">${m.in ? fm(m.in) : '—'}</b></div><div class="fv-l"><span>จ่าย</span><b class="neg">${m.out ? fm(-m.out) : '—'}</b></div>
+              <div class="fv-l"><span>บัญชีส่วนตัว · รอตรวจ</span><b>${m.accounts} · ${m.pending.toLocaleString('en-US')}</b></div><div class="fv-l"><span>ธุรกิจที่ร่วม</span><b>${m.businesses}</b></div>`}</div>`).join('')}</div>` : ''}
+          ${scope !== 'MINE' || bizs.length ? `<div class="fv-sec">ธุรกิจ (ใช้ statement ร่วมกัน)</div>${bizs.length ? `<div class="fv-tbl"><div class="fv-tr h"><span>ธุรกิจ</span><span>ใครใช้ได้</span><span class="r">บัญชี · รอตรวจ</span><span class="r">รับ</span><span class="r">จ่าย</span><span class="r">กำไร</span></div>
+              ${bizs.map(b => `<div class="fv-tr"><b>${esc(b.name)}</b><span class="fv-who">${b.users.map(u => av(u)).join('')}</span><span class="r">${b.accounts} · ${b.pending.toLocaleString('en-US')}</span><span class="r pos">${b.in ? fm(b.in) : '—'}</span><span class="r neg">${b.out ? fm(-b.out) : '—'}</span><b class="r ${b.in - b.out < 0 ? 'neg' : ''}">${fm(b.in - b.out)}</b></div>`).join('')}</div>` : '<div class="fv-empty">ยังไม่มีธุรกิจที่มีรายการ</div>'}` : ''}
+          ${data.activity?.length && scope !== 'BIZ' ? `<div class="fv-sec">ใครบันทึกอะไรล่าสุด</div><div class="fv-act">${data.activity.slice(0, 6).map(a => `<div>${av({ user_id: a.user_id || '?', name: a.user_name || '?' })}<span><b>${esc(a.user_name || 'ระบบ')}</b> · ${SRC[a.source] || esc(a.source || 'บันทึก')} ${esc(a.account_name || '')} · ${a.n.toLocaleString('en-US')} รายการ${a.status === 'PENDING_REVIEW' ? ' (รอตรวจ)' : ''}</span><small>${ago(a.at)}</small></div>`).join('')}</div>` : ''}
+        </div>`;
+    }
+    return { load, render, scope: k => { scope = k; render(); } };
+})();
+window.FamView = FamView;
 
 /* 📜 หน้าประวัติแบบใหม่ (2026-10-31 · North: "ออกแบบให้สวยงาม มีข้อมูลที่ต้องรู้จะได้แก้ไขได้" · เลือกแบบ ก.)
    รายการแบ่งตามวัน · แถวมี เวลา · บัญชี · ข้อความธนาคาร · หมายเหตุ · Company · สลิป · หมวด · ยอด · ไม่มีหมวด = แดง

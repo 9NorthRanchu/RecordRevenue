@@ -10,6 +10,7 @@ import { createSession, revokeSession, resolveUserId, bearerFrom, purgeExpiredSe
 import { handleStmtReport, ensureStmtCols, stmtFields, cleanupStatementHeaders } from './stmt-report.js';
 import { handleRevenueChart } from './revenue-chart.js';
 import { handleAccOverview } from './acc-overview.js';
+import { handleFamily, ensureAdminScope } from './family.js';
 import { handleDrive } from './drive.js';
 import { handleSimilar } from './similar.js';
 import { handleWepay } from './wepay.js';
@@ -146,6 +147,7 @@ export default {
       /* 👥 ผังเก็บรายได้ BKP → จับเงินเข้า (2026-10-30 · revenue-chart.js) */
       { const rc = await handleRevenueChart({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny }); if (rc) return rc; }
       { const ao = await handleAccOverview({ url, request, env, cors: corsHeaders, authUserId }); if (ao) return ao; }
+      { const fm = await handleFamily({ url, request, env, cors: corsHeaders, authUserId }); if (fm) return fm; }   // 👨‍👩‍👧 ภาพรวมครอบครัว (2026-10-31)
       { const sm = await handleSimilar({ url, request, env, cors: corsHeaders, authUserId }); if (sm) return sm; }   // 🔎 รายการใกล้เคียง (2026-10-31)
       { const wp = await handleWepay({ url, request, env, cors: corsHeaders, authUserId }); if (wp) return wp; }   // 📱 wePAY (2026-10-31)
       { const dv = await handleDrive({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny, fetchImpl: env.__fetch }); if (dv) return dv; }   // 📁 Google Drive (2026-10-31)   // 🏦 ภาพรวมตามบัญชี (2026-10-30)
@@ -990,6 +992,7 @@ export default {
         if (!userId) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
+        try { await ensureAdminScope(env, userId); } catch { /* ไม่มีตารางในเทสต์เก่าก็ข้าม */ }   // ผู้ดูแลเห็นทุก Company (2026-10-31)
         const userCheck = await env.DB.prepare(`SELECT role, family_id FROM Users WHERE user_id = ?`).bind(userId).first();
         if (!userCheck) {
           return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
