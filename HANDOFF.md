@@ -3901,3 +3901,14 @@ frontend
 - frontend/font-mali.css (ลิงก์ Google Fonts Mali 300–700) ใส่ใน index.html · guest.html · ledger/quick.html · trip-unified-prototype (index/trips/join/map-compare) · ยกเว้นไอคอน Font Awesome · Chart.js ใช้ Mali · ตัวหนังสือเล็กไม่ต่ำกว่า 12px · print.html/PDF รายงานยังใช้ Sarabun (เอกสารพิมพ์)
 - ทดสอบ Playwright (ฟอนต์ Mali จริงจาก @fontsource): รายงาน · หน้าบัญชี (คอม/มือถือ) · หน้าต่างแก้รายการ อ่านชัด · app.js?v=225 font-mali.css?v=2
 - 2026-10-31 รอบ 2 (North: "ตัวอักษรเล็กเกินไป จางเกินไป"): font-mali.css → html 17px · น้ำหนักพื้น 500 · หัวตาราง/ตัวหนา 700 · ตาราง ≥15px · ตัวเล็ก ≥12.5px · --text-secondary เข้มขึ้นทุกธีมสว่าง (Fuji/Hokkaido #2F3A52) · เมนูซ้ายใหญ่ขึ้น · แท็บตั้งค่าขึ้นบรรทัดใหม่แทนตัดชื่อ (คอม) · font-mali.css?v=4
+
+## 2026-10-31 · 📱 wePAY จากรูปหน้าจอ + 🔎 รายการใกล้เคียง
+- North ตอบ: 1ก เงินคืนหักออกจากยอด · 2ก รูป "รายการล่าสุด" + หาเงินเข้ากระเป๋าจาก "กล่องข้อความ" · 3ข ทุกเบอร์หมวดเดียว ใช้หมวดเดิมครั้งต่อไป · บัญชี [A17] WePay มีแล้ว
+- backend/src/wepay.js: POST /api/wepay/read (รูปดิบ → Gemini Files API · WEPAY_PROMPT แยก history/inbox · topup/deposit/refund/package · ปี พ.ศ.→ค.ศ.)
+- app.js WePay: เมนู นำเข้า → "wePAY (รูปหน้าจอ)" หลายรูป · merge: เติมเงินจากรายการล่าสุด · กล่องข้อความ = เงินเข้ากระเป๋า + เติมเงินที่ไม่มีในรายการล่าสุด (±10 นาที ตัดซ้ำ · จับเงินคืน ±3 นาที) · ตรวจก่อนนำเข้า · ref_code WP… กันซ้ำ · หมวดจำใน import_format.cat · เงินเข้า = Bank_Transfer
+- importStatementRows: tx.category_id/detail_type กำหนดหมวดจากตัวนำเข้าได้
+- backend/src/similar.js: GET /api/transactions/similar (desc/name/amount/account_id/exclude) → รายการยืนยันแล้วที่คล้าย (คำในข้อความธนาคาร/หมายเหตุ/คู่ค้า + ยอด + บัญชี) สูงสุด 8 + summary ใช้บ่อยสุด (≥2 ครั้ง)
+- app.js Similar: ปุ่ม 🔎 ที่การ์ดรอตรวจ (กดใช้ → เติมหัวข้อ/หมวด/Company/คู่ค้า/รายละเอียด แถวแรก) · หน้าต่างแก้รายการ (กล่องใช้บ่อย + ประวัติ) · ตรวจสลิป (ใช้ชื่อผู้รับ/ร้านจากสลิป → เติมหมวด + รายละเอียด)
+- เทสต์ similar-wepay 7 · Playwright: กดใช้บ่อย → เติมหมวด/Company/หมายเหตุ ✅ · wePAY 2 รูป → 6 รายการ ตัดซ้ำ + จับเงินคืนถูก ✅ · app.js?v=226 ui-a.css?v=23
+- 2026-10-31 (North: "แสดงประวัติ = ค่าใช้จ่ายและรายรับทั้งหมด ที่จะบันทึกของทุก statement"): ทุกการ์ดรอตรวจมีแถบประวัติใต้หัวการ์ดเอง (Similar.watchCard · โหลดเมื่อเลื่อนมาเห็น · IntersectionObserver) · ค้นทุกบัญชี · /similar รับ sign (ทิศเดียวกันได้คะแนนก่อน รับ/จ่ายสลับ −2) · ทดสอบ 200 การ์ด → ยิงแค่การ์ดที่เห็น · app.js?v=227 ui-a.css?v=24
+- 2026-10-31 (North: "click รายการรอตรวจ → แสดงประวัติ + รายการรอตรวจอื่นที่คาดว่าเป็นรายการเดียวกัน"): กดที่การ์ด → Similar.expand · /similar?include_pending=1 คืน pending (ข้อความตรงทุกคำค้น · ทิศเดียวกัน · ≤50) · กล่อง ⏳ เลือกได้ · "📋 ใช้รายละเอียดของการ์ดนี้กับที่เลือก" · "✅ ใช้ + ยืนยันการ์ดนี้และที่เลือก" (getCardPayload → POST → confirm → เอาการ์ดออก) · Playwright: 4 รายการเติมถูก ยืนยัน 5 ✅ · เทสต์ similar-wepay 8 · app.js?v=228 ui-a.css?v=25

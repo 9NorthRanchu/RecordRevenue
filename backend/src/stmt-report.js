@@ -78,7 +78,7 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
     if (!acc || !(await canUseAccount(acc))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
     const f = b.format || {};
     const fmt = { kind: f.kind === 'CARD' ? 'CARD' : 'BANK', issuer: String(f.issuer || '').slice(0, 30) || null, parser: String(f.parser || '').slice(0, 20) || null,
-      read: String(f.read || '').slice(0, 40) || null, at: new Date().toISOString().slice(0, 10) };
+      read: String(f.read || '').slice(0, 40) || null, cat: String(f.cat || '').slice(0, 60) || null, at: new Date().toISOString().slice(0, 10) };   // cat = หมวดที่ใช้ครั้งก่อน (wePAY · 2026-10-31)
     await env.DB.prepare(`UPDATE Accounts SET import_format = ? WHERE account_id = ?`).bind(JSON.stringify(fmt), acc).run();
     return json({ success: true, format: fmt }, cors);
   }

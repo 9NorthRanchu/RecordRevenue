@@ -509,3 +509,21 @@ body.ui-a[data-view="reports"] .top-header{display:none}   /* หน้ารา
 .ave-f{display:inline-flex;align-items:center;gap:2px}.ave-f>button:last-child{border:0;background:transparent;color:#C92A2A;cursor:pointer;font-size:.9rem}
 .av-ed .ave-add{display:block;border:1px dashed #9775FA;border-radius:10px;padding:9px;text-align:center;color:#5F3DC4;cursor:pointer;font-weight:600}
 .av-ed .ave-add input{display:block;margin:6px auto 0;font-size:.8rem}
+/* 🔎 รายการใกล้เคียง (2026-10-31) */
+.sim-box{text-align:left;display:grid;gap:6px;font-size:.86rem;margin:2px 0 4px}.sim-none{color:#5C5872;font-size:.82rem;text-align:left;margin:2px 0}
+.sim-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#F3F0FF;border:1px solid #D0BFFF;border-radius:10px;padding:7px 9px}.sim-top span{color:#6741D9;font-size:.78rem;font-weight:700}.sim-top b{flex:1;min-width:140px}
+.sim-use{border:0;border-radius:8px;background:#7950F2;color:#fff;padding:5px 10px;font-family:inherit;font-weight:600;cursor:pointer;white-space:nowrap}.sim-use.on{background:#2F9E44}
+.sim-list summary{cursor:pointer;color:#5F3DC4;font-weight:600;font-size:.82rem}.sim-row{display:flex;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid #EEE9FB;padding:6px 2px}
+.sim-row small{color:#5C5872}.sim-d{font-size:.8rem;color:#3F3A55;word-break:break-word}.sim-l{font-weight:600}.sim-neg{color:#C92A2A}.sim-pos{color:#087F5B}.sim-q{text-align:left;margin-bottom:8px;color:#3F3A55}
+/* 📱 wePAY (2026-10-31) */
+.wp-sum{background:#E7F5FF;border-radius:10px;padding:8px 10px;margin-bottom:8px}.wp-f{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.wp-f label{display:grid;gap:3px;font-weight:600;font-size:.8rem}
+.wp-f select{padding:7px;border-radius:8px;border:1px solid #ccc;font-family:inherit}.wp-tbl{width:100%;border-collapse:collapse;font-size:.8rem}.wp-tbl th{background:#1971C2;color:#fff;padding:5px;position:sticky;top:0}
+.wp-tbl td{padding:5px;border-top:1px solid #E9ECEF;vertical-align:top}.wp-tbl .r{text-align:right;white-space:nowrap}.wp-pos{color:#087F5B}.wp-neg{color:#C92A2A}.wp-err{color:#C92A2A;margin-top:6px}.wp-note{color:#5C5872;font-size:.76rem;margin-top:6px}
+@media (max-width:600px){.wp-f{grid-template-columns:1fr}}
+.sim-strip{padding:6px 12px 2px;background:#FAF8FF;border-bottom:1px solid #EEE9FB}.sim-compact{font-size:.8rem;gap:4px}.sim-compact .sim-top{padding:4px 8px}.sim-compact .sim-none{font-size:.76rem;color:#7C7896}
+[data-theme="dark"] .sim-strip{background:#1D2130;border-color:#2B3144}[data-theme="dark"] .sim-top{background:#262046;border-color:#3B3170}[data-theme="dark"] .sim-d{color:#C9CFDD}
+.sim-pend{border:1px solid #FFD8A8;background:#FFF9F0;border-radius:10px;padding:7px 9px;display:grid;gap:6px}.sim-ph{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.84rem;color:#B35C00}.sim-ph label{margin-left:auto;font-weight:500;color:#3F3A55}
+.sim-plist{max-height:220px;overflow:auto;display:grid;gap:2px}.sim-prow{display:grid;grid-template-columns:auto 110px 120px 1fr auto;gap:8px;align-items:center;font-size:.8rem;padding:3px 2px;border-top:1px solid #FFE8CC;cursor:pointer}
+.sim-pacc{color:#5C5872;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sim-pd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sim-pbtns{display:flex;gap:6px;flex-wrap:wrap}.sim-pmsg{font-size:.8rem;color:#2F9E44}
+@media (max-width:768px){.sim-prow{grid-template-columns:auto 1fr auto}.sim-prow .sim-pacc,.sim-prow .sim-pd{grid-column:2}}
+[data-theme="dark"] .sim-pend{background:#2A2216;border-color:#5A4520}

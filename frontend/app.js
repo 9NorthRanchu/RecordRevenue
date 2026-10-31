@@ -3334,6 +3334,7 @@ function renderPendingTransactions() {
                     <input type="text" class="form-control input-stmt-note" value="${displayNote}" placeholder="หมายเหตุ..." style="flex: 1 1 40px; min-width: 40px; height: 28px; padding: 2px 8px; font-size: 0.8rem; background: rgba(255,255,255,0.07); color: #94A3B8; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;">
                 <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
                     ${tx.slip_image_url ? `<button class="btn" type="button" onclick="showSlip('${String(tx.slip_image_url).replace(/[^\w/.:-]/g, '')}')" style="width: 34px; height: 34px; padding: 0; font-size: 1rem; border-radius: 8px; background: #F59F00; color: #fff; border: none; cursor: pointer;" title="ดูสลิปจาก LINE">📎</button>` : ''}
+                    <button class="btn btn-sim" type="button" title="🔎 รายการที่เคยบันทึก (ผู้รับ/ร้านเดียวกัน) — กดใช้รายละเอียดเดิม" onclick="Similar.forCard(this.closest('.tx-card'))" style="width: 34px; height: 34px; padding: 0; font-size: 1rem; border-radius: 8px; background: #7950F2; color: #fff; border: none; cursor: pointer;">🔎</button>
                     <button class="btn btn-add-subrow-header" style="width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; border-radius: 8px; background: #3B82F6; color: #ffffff; border: none; cursor: pointer; box-shadow: 0 2px 6px rgba(59,130,246,0.4); transition: all 0.2s;" title="เพิ่มรายการย่อย" onmouseover="this.style.background='#2563EB'" onmouseout="this.style.background='#3B82F6'"><i class="fa-solid fa-plus"></i></button>
                     <button class="btn btn-confirm-single-pending" style="width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; border-radius: 8px; background: #10B981; color: #ffffff; border: none; cursor: pointer; box-shadow: 0 2px 6px rgba(16,185,129,0.4); transition: all 0.2s;" title="บันทึกรายการ" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10B981'"><i class="fa-solid fa-floppy-disk"></i></button>
                     <button class="btn btn-delete-pending" style="width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 1rem; border-radius: 8px; background: #EF4444; color: #ffffff; border: none; cursor: pointer; box-shadow: 0 2px 6px rgba(239,68,68,0.4); transition: all 0.2s;" title="ลบ" onmouseover="this.style.background='#DC2626'" onmouseout="this.style.background='#EF4444'"><i class="fa-solid fa-trash"></i></button>
@@ -3520,6 +3521,7 @@ function renderPendingTransactions() {
 
         updateCardStyle(cardEl);
         updateCardSum(cardEl);
+        try { Similar.watchCard(cardEl); } catch { /* */ }   // 🕘 ประวัติผู้รับ/ร้านเดียวกัน (2026-10-31)
     };
     const FIRST = 30, STEP = 40;
     displayList.slice(0, FIRST).forEach((tx, i) => renderOne(tx, i));
@@ -7559,7 +7561,8 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
                 dup_idx: dupIdx.get(tx) || 0,
                 details: [(() => { const k = statementKey(tx.statement_desc), h = k && hints[(tx.type === 'EXPENSE' ? 'OUT' : 'IN') + '|' + k];
                     const d = { amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), fee: 0, wht: 0, category_id: null, entity_id: entityId, note: tx.note, type: tx.type };
-                    if (h) { d.category_id = h.category_id; d.contact_id = h.contact_id; d.entity_id = h.entity_id || entityId; if (h.type) d.type = h.type; d._hint = 1; }
+                    if (tx.category_id) { d.category_id = tx.category_id; if (tx.detail_type) d.type = tx.detail_type; d._hint = 1; }   // หมวดที่กำหนดมาจากตัวนำเข้า (wePAY · 2026-10-31)
+                    else if (h) { d.category_id = h.category_id; d.contact_id = h.contact_id; d.entity_id = h.entity_id || entityId; if (h.type) d.type = h.type; d._hint = 1; }
                     /* 💳 ชำระบัตร (ใบแจ้งยอดบัตร) = โอนระหว่างบัญชี ไม่ใช่รายรับ (2026-10-30) */
                     else if (tx.note === 'ชำระบัตร' && (AppState.categories || []).some(c => c.category_id === 'Bank_Transfer')) { d.category_id = 'Bank_Transfer'; d.type = 'TRANSFER'; d._hint = 1; }
                     return d; })()]
@@ -14942,7 +14945,7 @@ const SlipReview = (() => {
               ${d.status === 'NEEDS_ACCOUNT' ? `<div class="srv-acts">${(sug.options || []).map(o => `<button type="button" class="btn btn-sm btn-outline-primary" data-acc="${esc(o.account_id)}" data-side="${esc(o.side)}">${o.side === 'IN' ? '⬇️ เข้า' : '⬆️ ออก'} · ${esc(accName(o.account_id))}</button>`).join('')}</div>` : ''}</div>
             ${pend.length && !transfer ? `<div class="srv-card"><h5>🏷️ หมวด</h5>${dets.length > 1 ? '<div class="srv-sub">แตกหลายหมวดแล้ว — แก้ในหน้ารอตรวจสอบ</div>' :
               `<select id="srv-cat"><option value="">— เลือกหมวด —</option>${cats.map(c => `<option value="${esc(c.category_id)}"${c.category_id === curCat ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
-               <input type="text" id="srv-note" placeholder="รายละเอียด" value="${esc(curNote || [ex.memo, ex.subsidy_note].filter(Boolean).join(' · '))}">`}</div>` : ''}
+               <input type="text" id="srv-note" placeholder="รายละเอียด" value="${esc(curNote || [ex.memo, ex.subsidy_note].filter(Boolean).join(' · '))}"><div id="srv-sim"></div>`}</div>` : ''}
             <details class="srv-card srv-edit"${editOpen ? ' open' : ''}><summary><h5>✏️ แก้ข้อมูลที่อ่านจากภาพ</h5></summary>
               <div class="srv-f2"><label>📅 วันที่<input type="date" id="srv-date" value="${esc(ex.date || '')}"></label><label>⏰ เวลา<input type="time" id="srv-time" value="${esc(String(ex.time || '').slice(0, 5))}"></label></div>
               <div class="srv-f2"><label>💰 ยอด<input type="number" step="0.01" inputmode="decimal" id="srv-amt" value="${ex.amount ?? ''}"></label><label>🏦 ค่าธรรมเนียม<input type="number" step="0.01" inputmode="decimal" id="srv-fee" value="${ex.fee || 0}"></label></div>
@@ -14964,6 +14967,10 @@ const SlipReview = (() => {
         const run = async (btn, fn, msg) => { if (btn) btn.disabled = true; try { await fn(); if (msg) toast(msg); await reload(d.doc_id); } catch (e) { toast('⚠️ ' + e.message, 'error'); if (btn) btn.disabled = false; } };
         $('#srv-prev').onclick = () => { S.i--; draw(); };
         $('#srv-next').onclick = () => { S.i++; draw(); };
+        /* 🔎 ผู้รับ/ร้านเดียวกันเคยบันทึกเป็นหมวดอะไร (2026-10-31) — กด "ใช้" เติมหมวด + รายละเอียด */
+        if ($('#srv-sim')) { const ex = d.extracted || {}, pt = (d.transactions || []).find(t => t.status === 'PENDING_REVIEW') || (d.transactions || [])[0] || {};
+            Similar.inline($('#srv-sim'), { name: ex.receiver?.name || ex.merchant || '', desc: pt.statement_desc || '', amount: Math.abs(ex.amount || 0), account_id: pt.account_id, exclude: pt.transaction_id },
+                v => { if ($('#srv-cat') && v.category_id) $('#srv-cat').value = v.category_id; if ($('#srv-note') && v.note && !$('#srv-note').value) $('#srv-note').value = v.note; }); }
         $('#srv-dis').onclick = e => { if (confirm('ไม่ต้องบันทึกสลิปนี้? (รายการที่สลิปนี้สร้างไว้จะถูกลบ · รายการจาก statement ไม่ถูกแตะ)')) run(e.currentTarget, () => post(`/api/inbox/${d.doc_id}/dismiss`), 'ลบออกแล้ว'); };
         $('#srv-refit') && ($('#srv-refit').onclick = e => {
             const b = { fields: { date: $('#srv-date').value, time: $('#srv-time').value, amount: $('#srv-amt').value, fee: $('#srv-fee').value, memo: $('#srv-memo').value } };
@@ -15384,6 +15391,7 @@ const AccView = (() => {
         const html = `<div class="av-ed">
             <div class="av-ed-h"><b>${esc(dTh(tx.date))}${tx.time && tx.time !== '00:00:00' ? ' · ' + String(tx.time).slice(0, 5) : ''}</b><span class="${tx.total_amount < 0 ? 'av-neg' : 'av-pos'}">${fm(tx.total_amount)}</span></div>
             <div class="av-ed-d">${esc(tx.statement_desc || '-')}</div>
+            <div id="ave-sim"></div>
             <label>หมวด<select id="ave-cat"><option value="">— เลือกหมวด —</option>${catHtml}</select></label>
             <label>Company<select id="ave-ent"><option value="">—</option>${opt(AppState.entities || [], 'entity_id', 'name', d.entity_id || (AppState.allowedEntities || [])[0])}</select></label>
             <label>คู่ค้า<select id="ave-con"><option value="">— ไม่ระบุ —</option>${opt(AppState.contacts || [], 'contact_id', 'name', d.contact_id)}</select></label>
@@ -15393,7 +15401,10 @@ const AccView = (() => {
               ${drvOn ? '<label class="ave-add">➕ แนบรูป / PDF (เลือกได้หลายไฟล์ · ถ่ายรูปได้)<input type="file" id="ave-up" accept="image/*,application/pdf" multiple></label><div id="ave-upn"></div>' : ''}</div>
             ${pend ? '<label class="av-ed-ck"><input type="checkbox" id="ave-ok" checked> ยืนยันรายการนี้ด้วย (ย้ายจากรอตรวจไปประวัติ)</label>' : ''}</div>`;
         const r = await Swal.fire({ title: 'แก้ไขรายการ', html, width: 520, showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก', focusConfirm: false,
-            didOpen: () => { const up = document.getElementById('ave-up'); if (up) up.onchange = () => { document.getElementById('ave-upn').innerHTML = [...up.files].map(f => `<small>🆕 ${esc(f.name)}</small>`).join('<br>'); }; },
+            didOpen: () => { Similar.inline(document.getElementById('ave-sim'), { desc: tx.statement_desc || '', name: d.note || '', amount: Math.abs(tx.total_amount || 0), sign: Math.sign(Number(tx.total_amount) || 0) || '', account_id: tx.account_id, exclude: tx.transaction_id },
+                    v => { const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+                        set('ave-cat', v.category_id); set('ave-ent', v.entity_id); set('ave-con', v.contact_id); if (v.note && !document.getElementById('ave-note').value) set('ave-note', v.note); });
+                const up = document.getElementById('ave-up'); if (up) up.onchange = () => { document.getElementById('ave-upn').innerHTML = [...up.files].map(f => `<small>🆕 ${esc(f.name)}</small>`).join('<br>'); }; },
             preConfirm: () => {
                 const v = { cat: document.getElementById('ave-cat').value, newFiles: [...(document.getElementById('ave-up')?.files || [])],
                     unlink: [...document.querySelectorAll('#ave-files .ave-f[data-unlink="1"]')].map(x => x.dataset.fid).filter(Boolean), ent: document.getElementById('ave-ent').value, con: document.getElementById('ave-con').value,
@@ -15713,3 +15724,222 @@ const DriveView = (() => {
 /* 🔤 กราฟ Chart.js ใช้ฟอนต์ Mali เหมือนทั้งแอป (2026-10-31) */
 (function chartFont() { const set = () => { try { if (window.Chart?.defaults?.font) Chart.defaults.font.family = "'Mali','Noto Sans Thai',sans-serif"; } catch { /* */ } };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', set); else set(); })();
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🔎 รายการใกล้เคียง (2026-10-31 · North: "แสดงข้อมูลที่ผู้จ่าย ผู้รับ รายเดียวกัน และประวัติว่าเคยบันทึกอะไรไป
+//    ยืนยันใช้รายละเอียดของรายการเก่าในรายการใหม่ได้") — ใช้ในหน้ารอตรวจ (ปุ่ม 🔎 ที่การ์ด) · หน้าต่างแก้รายการ · ตรวจสลิป
+// ═══════════════════════════════════════════════════════════════════════
+const Similar = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fm = n => { const v = Math.round((Number(n) || 0) * 100) / 100, t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const clean = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '');
+    const MTH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${+m[3]} ${MTH[+m[2] - 1]} ${(+m[1] + 543) % 100}` : ''; };
+    const cache = new Map();
+    async function fetchSim(q) {
+        const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v != null && v !== '')).toString();
+        if (cache.has(qs)) return cache.get(qs);
+        const p = fetch(`${API_BASE}/api/transactions/similar?${qs}`).then(r => r.json()).catch(() => ({ items: [] }));
+        cache.set(qs, p); return p;
+    }
+    const line = x => [clean(x.category_name), x.entity_name, x.contact_name, x.note].filter(Boolean).map(esc).join(' · ') || '<i>ไม่มีรายละเอียด</i>';
+    function html(r, uid, compact) {
+        if (!r?.items?.length && !r?.summary) return `<div class="sim-none">${compact ? '🕘 ยังไม่เคยบันทึกผู้รับ/ร้านนี้' : 'ยังไม่เคยบันทึกรายการคล้ายกันนี้'}</div>`;
+        return `${r.summary ? `<div class="sim-top"><span>⭐ ใช้บ่อย (${r.summary.n} ครั้ง)</span><b>${line(r.summary)}</b><button type="button" class="sim-use" data-sim="${uid}" data-i="s">✓ ใช้อันนี้</button></div>` : ''}
+          <details class="sim-list"${r.summary || compact ? '' : ' open'}><summary>🕘 เคยบันทึก ${r.items.length} รายการที่คล้ายกัน</summary>
+          ${r.items.map((x, i) => `<div class="sim-row"><div><small>${dTh(x.date)} · ${esc(clean(x.account_name))} · <span class="${x.amount < 0 ? 'sim-neg' : 'sim-pos'}">${fm(x.amount)}</span></small>
+              <div class="sim-d">${esc(x.statement_desc || '-')}</div><div class="sim-l">${line(x)}</div></div>
+              <button type="button" class="sim-use" data-sim="${uid}" data-i="${i}">✓ ใช้</button></div>`).join('')}</details>`;
+    }
+    /* แสดงในกล่องที่ให้มา · กด "ใช้" → onApply(รายละเอียดของรายการเก่า) */
+    async function inline(el, q, onApply, compact = false) {
+        if (!el) return;
+        el.innerHTML = '<div class="sim-none">🔎 กำลังหารายการที่เคยบันทึก…</div>';
+        const tok = el.dataset.simTok = Math.random().toString(36).slice(2);
+        const r = await fetchSim(q), uid = 'S' + Math.random().toString(36).slice(2, 7);
+        if (el.dataset.simTok !== tok) return r;   // มีการโหลดใหม่ทับแล้ว (เช่น กดขยายการ์ดระหว่างโหลดแบบย่อ)
+        el.innerHTML = `<div class="sim-box${compact ? ' sim-compact' : ''}">${html(r, uid, compact)}</div>`;
+        el.querySelectorAll(`[data-sim="${uid}"]`).forEach(b => b.onclick = e => {
+            e.preventDefault(); const v = b.dataset.i === 's' ? r.summary : r.items[+b.dataset.i]; if (!v) return;
+            onApply(v); el.querySelectorAll('.sim-use').forEach(x => x.classList.remove('on')); b.classList.add('on'); b.textContent = '✓ ใช้แล้ว';
+        });
+        return r;
+    }
+    /* การ์ดรอตรวจ: เติมแถวย่อยแรก (หัวข้อ → หมวด · Company · คู่ค้า · รายละเอียด) */
+    function applyToCard(card, v) {
+        const row = card.querySelector('.sub-row-item'); if (!row) return;
+        const cap = row.querySelector('.select-caption'), cat = row.querySelector('.select-category');
+        const capId = v.caption_id || (AppState.categories || []).find(c => c.category_id === v.category_id)?.caption_id;
+        if (cap && capId) { cap.value = capId; cap.dispatchEvent(new Event('change')); }
+        if (cat && v.category_id) { cat.value = v.category_id; cat.dispatchEvent(new Event('change')); }
+        const ent = row.querySelector('.select-entity'); if (ent && v.entity_id) { ent.value = v.entity_id; ent.dispatchEvent(new Event('change')); }
+        const con = row.querySelector('.select-contact'); if (con && v.contact_id) { fillContactSelect(con); con.value = v.contact_id; con.dispatchEvent(new Event('change')); }
+        const note = row.querySelector('.input-detail'); if (note && v.note && !note.value) { note.value = v.note; note.dispatchEvent(new Event('change')); }
+        card.style.outline = '2px solid #20C997';
+        window.showToast?.('✓ ใช้รายละเอียดจากรายการเดิมแล้ว — ตรวจแล้วกดยืนยัน');
+    }
+    async function forCard(card) {
+        const tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === card.dataset.txid) || {};
+        await Swal.fire({ title: '🔎 รายการที่เคยบันทึก', width: 640, showConfirmButton: false, showCloseButton: true,
+            html: `<div class="sim-q">${esc(tx.statement_desc || card.dataset.desc || '')} · <b>${fm(tx.total_amount)}</b></div><div id="sim-pop"></div>`,
+            didOpen: () => inline(document.getElementById('sim-pop'), { desc: tx.statement_desc || card.dataset.desc || '', name: tx.details?.[0]?.note || '', amount: Math.abs(tx.total_amount || 0), account_id: tx.account_id, exclude: tx.transaction_id },
+                v => { applyToCard(card, v); Swal.close(); }) });
+    }
+    /* 2026-10-31 (North: "แสดงประวัติ ค่าใช้จ่ายและรายรับทั้งหมด ที่จะบันทึกของทุก statement"):
+       ทุกการ์ดรอตรวจแสดงประวัติเองใต้หัวการ์ด (ไม่ต้องกด 🔎) · โหลดเฉพาะการ์ดที่เลื่อนมาเห็น เพื่อไม่ยิงทีเดียวเป็นพันคำขอ */
+    const io = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver(es => es.forEach(e => {
+        if (!e.isIntersecting) return; io.unobserve(e.target);
+        if (e.target.dataset.simOpen) return;
+        const card = e.target, tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === card.dataset.txid) || {};
+        const strip = card.querySelector('.sim-strip'); if (!strip) return;
+        inline(strip, { desc: tx.statement_desc || card.dataset.desc || '', name: tx.details?.[0]?.note || '', amount: Math.abs(tx.total_amount || 0), sign: Math.sign(Number(tx.total_amount) || 0) || '',
+            account_id: tx.account_id, exclude: tx.transaction_id }, v => applyToCard(card, v), true);
+    }), { rootMargin: '300px' }) : null;
+    function watchCard(card) {
+        if (!io || !card || card.querySelector('.sim-strip') || card.dataset.isNew === 'true') return;
+        const head = card.querySelector('.tx-card-header'); if (!head) return;
+        const strip = document.createElement('div'); strip.className = 'sim-strip'; head.after(strip); io.observe(card);
+        /* กดที่การ์ด → ขยาย: ประวัติ + รายการรอตรวจอื่นที่น่าจะเป็นผู้รับ/ร้านเดียวกัน (2026-10-31) */
+        card.addEventListener('click', e => { if (card.dataset.simOpen || e.target.closest('.sim-strip, .btn-delete-pending, .btn-confirm-single-pending')) return; expand(card); });
+    }
+    /* อ่านรายละเอียดแถวแรกของการ์ด (ไว้ใช้กับการ์ดอื่น) */
+    function cardValues(card) {
+        const row = card.querySelector('.sub-row-item'); if (!row) return null;
+        const v = { caption_id: row.querySelector('.select-caption')?.value || '', category_id: row.querySelector('.select-category')?.value || '',
+            entity_id: row.querySelector('.select-entity')?.value || '', contact_id: row.querySelector('.select-contact')?.value || '', note: row.querySelector('.input-detail')?.value || '' };
+        return v.category_id ? v : null;
+    }
+    const cardOf = id => document.querySelector(`#pending-cards-container .tx-card[data-txid="${CSS.escape(id)}"]`);
+    async function saveAndConfirm(cards) {
+        let ok = 0, fail = 0;
+        for (const c of cards) {
+            const p = typeof getCardPayload === 'function' ? getCardPayload(c) : null; if (!p) { fail++; continue; }
+            try {
+                const r = await fetch(`${API_BASE}/api/transactions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) }, body: JSON.stringify(p) });
+                const j = await r.json().catch(() => ({})); if (!r.ok || j.error || j.skipped) throw new Error(j.error || 'skip');
+                const cr = await fetch(`${API_BASE}/api/transactions/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transaction_id: p.transaction_id }) });
+                if (!cr.ok) throw new Error('confirm'); ok++; removePendingCardLocal(c, p.transaction_id);
+            } catch { fail++; c.style.outline = '2px solid #FA5252'; }
+        }
+        return { ok, fail };
+    }
+    async function expand(card) {
+        card.dataset.simOpen = '1';
+        const tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === card.dataset.txid) || {};
+        const strip = card.querySelector('.sim-strip'); if (!strip) return;
+        const q = { desc: tx.statement_desc || '', name: tx.details?.[0]?.note || '', amount: Math.abs(tx.total_amount || 0), sign: Math.sign(Number(tx.total_amount) || 0) || '', account_id: tx.account_id, exclude: tx.transaction_id, include_pending: 1 };
+        const r = await inline(strip, q, v => applyToCard(card, v), false);
+        const pend = (r?.pending || []).filter(x => x.transaction_id !== tx.transaction_id);
+        if (!pend.length) return;
+        const box = document.createElement('div'); box.className = 'sim-pend';
+        box.innerHTML = `<div class="sim-ph">⏳ รอตรวจอื่นที่น่าจะเป็นรายการเดียวกัน <b>${pend.length}</b> รายการ <label><input type="checkbox" class="sp-all" checked> เลือกทั้งหมด</label></div>
+          <div class="sim-plist">${pend.map(x => `<label class="sim-prow"><input type="checkbox" class="sp-one" value="${esc(x.transaction_id)}" checked>
+            <span>${dTh(x.date)}${x.time && x.time !== '00:00:00' ? ' ' + String(x.time).slice(0, 5) : ''}</span><span class="sim-pacc">${esc(clean(x.account_name))}</span>
+            <span class="sim-pd">${esc(x.statement_desc || '-')}${x.note ? ` · ${esc(x.note)}` : ''}</span><b class="${x.amount < 0 ? 'sim-neg' : 'sim-pos'}">${fm(x.amount)}</b></label>`).join('')}</div>
+          <div class="sim-pbtns"><button type="button" class="sim-use sp-fill">📋 ใช้รายละเอียดของการ์ดนี้กับที่เลือก</button><button type="button" class="sim-use sp-save">✅ ใช้ + ยืนยันการ์ดนี้และที่เลือก</button></div>
+          <div class="sim-pmsg"></div>`;
+        strip.querySelector('.sim-box')?.appendChild(box);
+        const sel = () => [...box.querySelectorAll('.sp-one:checked')].map(c => c.value), msg = t => { box.querySelector('.sim-pmsg').innerHTML = t; };
+        box.querySelector('.sp-all').onchange = e => box.querySelectorAll('.sp-one').forEach(c => { c.checked = e.target.checked; });
+        const fill = () => {
+            const v = cardValues(card); if (!v) { msg('⚠️ เลือกหมวดของการ์ดนี้ก่อน แล้วค่อยกดใช้กับรายการอื่น'); return null; }
+            const ids = sel(), cards = ids.map(cardOf).filter(Boolean);
+            cards.forEach(c => applyToCard(c, v));
+            const miss = ids.length - cards.length;
+            msg(`✓ เติมแล้ว ${cards.length} การ์ด${miss ? ` · อีก ${miss} รายการยังไม่แสดงในหน้านี้ (ตัวกรอง/บัญชีอื่น)` : ''}`);
+            return cards;
+        };
+        box.querySelector('.sp-fill').onclick = () => fill();
+        box.querySelector('.sp-save').onclick = async e => {
+            const cards = fill(); if (!cards) return;
+            if (!confirm(`บันทึกและยืนยัน ${cards.length + 1} รายการ (การ์ดนี้ + ที่เลือก) ด้วยรายละเอียดเดียวกัน?`)) return;
+            e.target.disabled = true; msg('⏳ กำลังบันทึก…');
+            const res = await saveAndConfirm([card, ...cards]);
+            window.showToast?.(`✅ ยืนยันแล้ว ${res.ok} รายการ${res.fail ? ` · ไม่สำเร็จ ${res.fail}` : ''}`);
+            if (document.body.contains(box)) { msg(`✅ ยืนยันแล้ว ${res.ok}${res.fail ? ` · ไม่สำเร็จ ${res.fail} (กรอบแดง)` : ''}`); e.target.disabled = false; }
+        };
+    }
+    return { inline, forCard, applyToCard, watchCard, expand, fetch: fetchSim };
+})();
+
+// ═══════════════════════════════════════════════════════════════════════
+// 📱 wePAY จากรูปหน้าจอ (2026-10-31 · North: 1ก หักเงินคืนออกจากยอด · 2ก รูปหน้า "รายการล่าสุด" + หาเงินเข้ากระเป๋าจากหน้า "กล่องข้อความ"
+//    · 3ข ทุกเบอร์หมวดเดียวกัน และใช้หมวดเดิมครั้งต่อไป)
+//  อ่านรูป (AI) → รวม/ตัดซ้ำ → ตรวจก่อนนำเข้า → เข้า "รอตรวจ" ของบัญชี wePAY (ref_code กันซ้ำเมื่อส่งรูปเดิมอีก)
+// ═══════════════════════════════════════════════════════════════════════
+const WePay = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+    const fm = n => r2(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const t = s => Date.parse(String(s).replace(' ', 'T') + (String(s).length <= 16 ? ':00' : ''));
+    const dTh = s => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(s || ''); return m ? `${m[3]}/${m[2]}/${(+m[1] + 543) % 100} ${m[4]}` : s; };
+    /* รวมผลจากหลายรูป: เติมเงินจากหน้า "รายการล่าสุด" เป็นหลัก · เงินเข้ากระเป๋า/เติมเงินที่หน้าแรกไม่มี เอาจาก "กล่องข้อความ" (จับเงินคืนที่เวลาใกล้กัน) */
+    function merge(reads) {
+        const hist = [], inbox = [];
+        for (const r of reads) for (const x of r.items) (r.screen === 'history' ? hist : inbox).push(x);
+        const rows = [], key = new Set();
+        const add = row => { const k = row.kind + '|' + (row.phone || '') + '|' + row.datetime.slice(0, 16) + '|' + row.amount; if (key.has(k)) return; key.add(k); rows.push(row); };
+        for (const x of hist.filter(x => x.kind === 'topup' || x.kind === 'package')) add({ ...x, src: 'รายการล่าสุด' });
+        const near = (a, b, min) => Math.abs(t(a) - t(b)) <= min * 60000;
+        const usedRefund = new Set();
+        for (const x of inbox) {
+            if (x.kind === 'deposit') add({ ...x, src: 'กล่องข้อความ' });
+            else if (x.kind === 'topup' || x.kind === 'package') {
+                if (rows.some(r => (r.kind === 'topup' || r.kind === 'package') && r.phone === x.phone && Math.abs(r.amount - x.amount) < 0.01 && near(r.datetime, x.datetime, 10))) continue;
+                const rf = inbox.find((y, i) => y.kind === 'refund' && !usedRefund.has(i) && near(y.datetime, x.datetime, 3) && (usedRefund.add(i), true));
+                add({ ...x, refund: x.refund ?? rf?.amount ?? null, src: 'กล่องข้อความ' });
+            }
+        }
+        return rows.sort((a, b) => a.datetime.localeCompare(b.datetime));
+    }
+    const toTx = (row, catId) => {
+        const dep = row.kind === 'deposit', net = dep ? r2(row.amount) : r2(row.amount - (row.refund || 0));
+        const [date, time] = [row.datetime.slice(0, 10), (row.datetime.slice(11, 19) || '00:00:00').padEnd(8, ':00').slice(0, 8)];
+        return { date, time, type: dep ? 'INCOME' : 'EXPENSE', amount: net,
+            statement_desc: dep ? `wePAY เติมเงินเข้ากระเป๋า${row.balance != null ? ` (คงเหลือ ${fm(row.balance)})` : ''}` : `wePAY ${row.kind === 'package' ? 'แพ็กเกจ' : 'เติมเงิน'} ${row.operator || ''} ${row.phone || ''}`.replace(/\s+/g, ' ').trim(),
+            note: dep ? null : (row.refund ? `เติม ${fm(row.amount)} ได้คืน ${fm(row.refund)}` : null),
+            ref_code: `WP${dep ? 'D' : 'T'}${row.datetime.replace(/\D/g, '').slice(0, 12)}${row.phone || Math.round(row.amount * 100)}`,
+            category_id: dep ? ((AppState.categories || []).some(c => c.category_id === 'Bank_Transfer') ? 'Bank_Transfer' : null) : catId, detail_type: dep ? 'TRANSFER' : 'EXPENSE', balance: null };
+    };
+    async function run(files) {
+        files = [...files].filter(f => /^image\//.test(f.type)); if (!files.length) return alert('เลือกรูปหน้าจอ wePAY');
+        const reads = [], errs = [];
+        Swal.fire({ title: '📱 กำลังอ่านรูป wePAY…', html: `<div id="wp-prog">0/${files.length}</div>`, allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        for (const [i, f] of files.entries()) {
+            try { const r = await fetch(`${API_BASE}/api/wepay/read`, { method: 'POST', headers: { 'Content-Type': f.type }, body: f }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status); reads.push(j); }
+            catch (e) { errs.push(`${f.name}: ${e.message}`); }
+            const pg = document.getElementById('wp-prog'); if (pg) pg.textContent = `${i + 1}/${files.length}`;
+        }
+        const rows = merge(reads);
+        if (!rows.length) { Swal.fire('ไม่พบรายการ', errs.join('<br>') || 'รูปนี้ไม่มีรายการที่อ่านได้', 'info'); return; }
+        const accs = AppState.accounts || [], acc0 = accs.find(a => /wepay|we pay/i.test(`${a.name} ${a.bank_name}`))?.account_id || '';
+        const fmtOf = id => { try { return JSON.parse(accs.find(a => a.account_id === id)?.import_format || 'null'); } catch { return null; } };
+        const cats = (AppState.categories || []).filter(c => !/uncategor/i.test(c.category_id || '') && !String(c.name || '').includes('รอการระบุ'));
+        const exp = rows.filter(r => r.kind !== 'deposit'), dep = rows.filter(r => r.kind === 'deposit');
+        const sum = (a, f) => r2(a.reduce((s, x) => s + f(x), 0));
+        const html = `<div style="text-align:left;font-size:.86rem">
+            <div class="wp-sum">อ่านได้ <b>${rows.length}</b> รายการ จาก ${files.length} รูป · เติมเงิน ${exp.length} ครั้ง จ่ายจริง <b>${fm(sum(exp, x => x.amount - (x.refund || 0)))}</b> (เงินคืน ${fm(sum(exp, x => x.refund || 0))}) · เงินเข้ากระเป๋า ${dep.length} ครั้ง <b>${fm(sum(dep, x => x.amount))}</b></div>
+            <div class="wp-f"><label>บัญชี<select id="wp-acc"><option value="">— เลือกบัญชี —</option>${accs.map(a => `<option value="${esc(a.account_id)}"${a.account_id === acc0 ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label>
+              <label>หมวด (ค่าเติมเงินทุกเบอร์)<select id="wp-cat"><option value="">— เลือกหมวด —</option>${cats.map(c => `<option value="${esc(c.category_id)}">${esc(c.name)}</option>`).join('')}</select></label></div>
+            <div style="max-height:46vh;overflow:auto"><table class="wp-tbl"><thead><tr><th></th><th>วันเวลา</th><th>รายการ</th><th class="r">ยอด</th><th class="r">เงินคืน</th><th class="r">บันทึก</th></tr></thead><tbody>
+            ${rows.map((x, i) => `<tr><td><input type="checkbox" data-wp="${i}" checked></td><td>${esc(dTh(x.datetime))}</td><td>${x.kind === 'deposit' ? '⬇️ เงินเข้ากระเป๋า' : `📱 ${esc(x.operator || '')} ${esc(x.phone || '')}${x.kind === 'package' ? ' (แพ็กเกจ)' : ''}`}<br><small>${esc(x.src)}</small></td>
+              <td class="r">${fm(x.amount)}</td><td class="r">${x.refund ? fm(x.refund) : ''}</td><td class="r"><b class="${x.kind === 'deposit' ? 'wp-pos' : 'wp-neg'}">${x.kind === 'deposit' ? '' : '('}${fm(x.kind === 'deposit' ? x.amount : x.amount - (x.refund || 0))}${x.kind === 'deposit' ? '' : ')'}</b></td></tr>`).join('')}
+            </tbody></table></div>
+            ${errs.length ? `<div class="wp-err">อ่านไม่ได้ ${errs.length} รูป: ${errs.map(esc).join(' · ')}</div>` : ''}
+            <div class="wp-note">เติมเงิน = จ่าย (หักเงินคืนแล้ว) · เงินเข้ากระเป๋า = โอนเข้า (Bank Transfer) · ทุกรายการเข้า "รอตรวจ" ก่อน · ส่งรูปเดิมซ้ำ รายการเดิมจะไม่เพิ่มซ้ำ</div></div>`;
+        const go = await Swal.fire({ title: '📱 นำเข้า wePAY', html, width: 860, showCancelButton: true, confirmButtonText: 'นำเข้าที่เลือก', cancelButtonText: 'ยกเลิก',
+            didOpen: () => { const sync = () => { const f = fmtOf(document.getElementById('wp-acc').value); if (f?.cat && cats.some(c => c.category_id === f.cat)) document.getElementById('wp-cat').value = f.cat; };
+                document.getElementById('wp-acc').onchange = sync; sync(); },
+            preConfirm: () => { const acc = document.getElementById('wp-acc').value, cat = document.getElementById('wp-cat').value;
+                if (!acc) { Swal.showValidationMessage('เลือกบัญชี wePAY'); return false; }
+                if (!cat && exp.length) { Swal.showValidationMessage('เลือกหมวดของค่าเติมเงิน'); return false; }
+                return { acc, cat, on: [...document.querySelectorAll('[data-wp]')].filter(c => c.checked).map(c => +c.dataset.wp) }; } });
+        if (!go.isConfirmed) return;
+        const { acc, cat, on } = go.value, txs = on.map(i => toTx(rows[i], cat));
+        Swal.fire({ title: 'กำลังบันทึก…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        const res = await importStatementRows(acc, txs, () => {}, { format: { kind: 'BANK', issuer: 'wePAY', parser: 'wepay', cat }, walk: null });
+        Swal.fire({ icon: 'success', title: 'นำเข้า wePAY แล้ว', html: `เพิ่ม ${res.importedCount} รายการ${res.skippedCount ? ` · มีอยู่แล้ว ${res.skippedCount}` : ''}${res.mergedCount ? ` · จับคู่กับรายการเดิม ${res.mergedCount}` : ''}${res.errorCount ? ` · <span style="color:#C92A2A">ไม่สำเร็จ ${res.errorCount}</span>` : ''}<br><small>อยู่ในหน้ารอตรวจ</small>` });
+        if (typeof loadPending === 'function') loadPending();
+    }
+    return { run, merge, toTx };
+})();

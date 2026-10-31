@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=129">
-    <link rel="stylesheet" href="ui-a.css?v=22">
+    <link rel="stylesheet" href="ui-a.css?v=25">
     <!-- ⚡ 2026-10-30: ไลบรารีทั้งหมดย้ายไปท้ายหน้า + defer → หน้าขึ้นก่อน ไม่ต้องรอดาวน์โหลด ~2MB -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Mali:wght@300;400;500;600;700&display=swap" rel="stylesheet">   <!-- ฟอนต์ Mali ทั้งแอป (2026-10-31) -->
@@ -194,6 +194,13 @@
                                         <i class="fa-solid fa-file-arrow-up" style="font-size: 0.8rem; width: 14px; text-align: center;"></i> Import Excel
                                     </div>
                                     <input type="file" id="btn-pending-upload-csv" accept=".xlsx,.xls" style="display: none;">
+                                    <!-- 📱 wePAY จากรูปหน้าจอ (2026-10-31) -->
+                                    <div style="padding: 7px 14px; display: flex; align-items: center; gap: 9px; font-size: 0.78rem; font-weight: 600; color: #1971C2; cursor: pointer; user-select: none;"
+                                        onmouseover="this.style.background='#E7F5FF'" onmouseout="this.style.background='transparent'"
+                                        onclick="document.getElementById('import-dropdown-menu').style.display='none'; document.getElementById('wepay-files').click();">
+                                        <i class="fa-solid fa-mobile-screen" style="font-size: 0.8rem; width: 14px; text-align: center;"></i> wePAY (รูปหน้าจอ)
+                                    </div>
+                                    <input type="file" id="wepay-files" accept="image/*" multiple style="display: none;" onchange="WePay.run(this.files); this.value='';">
 
                                     <div style="height: 1px; background: #F3F4F6; margin: 2px 8px;"></div>
 
@@ -1748,7 +1755,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script defer src="travel.js?v=105"></script>
-    <script defer src="app.js?v=225"></script>
+    <script defer src="app.js?v=228"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">
