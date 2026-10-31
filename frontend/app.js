@@ -7015,6 +7015,19 @@ function bindPendingPageActions() {
    · จัดคำเป็นบรรทัดตามแกน y · บรรทัดที่ขึ้นต้นด้วยวันที่ = รายการ · บรรทัดไม่มีวันที่ใต้รายการ = ข้อความต่อ
    · ตัวเลขเงินขวาสุด = ยอดคงเหลือ · ทิศเงินเข้า/ออก ตัดสินจากผลต่างยอดคงเหลือ แล้วเทียบกับยอดที่อ่านได้
    · บรรทัด "ยอดยกมา" ไม่ใช่รายการ (ใช้เป็นยอดยกมาครั้งแรก) · ไม่ผ่านเกณฑ์ → คืน ok:false ให้ไปใช้ AI แทน */
+/* 📌 ผู้ออกเอกสาร (ใช้จำรูปแบบนำเข้าต่อบัญชี · 2026-10-31) */
+function detectStatementIssuer(text) {
+  const t = String(text || '');
+  if (/CardX|Card X Co/i.test(t)) return 'CardX';
+  if (/KRUNGTHAI CARD|บัตรกรุงไทย|\bKTC\b/i.test(t)) return 'KTC';
+  if (/KASIKORN|กสิกร|KBANK|K PLUS|K BIZ/i.test(t)) return 'KBank';
+  if (/SIAM COMMERCIAL|ไทยพาณิชย์|\bSCB\b/i.test(t)) return 'SCB';
+  if (/KRUNGSRI|AYUDHYA|กรุงศรี/i.test(t)) return 'Krungsri';
+  if (/BANGKOK BANK|ธนาคารกรุงเทพ|\bBBL\b/i.test(t)) return 'BBL';
+  if (/KRUNG THAI BANK|ธนาคารกรุงไทย|\bKTB\b/i.test(t)) return 'KTB';
+  if (/\bttb\b|ทหารไทยธนชาต|TMBTHANACHART/i.test(t)) return 'ttb';
+  return null;
+}
 async function parseTextStatement(pdf) {
   const MONEY = /^-?\(?[\d,]+\.\d{2}\)?$/;
   const DATE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/;
@@ -7025,12 +7038,13 @@ async function parseTextStatement(pdf) {
   const r2 = n => Math.round(n * 100) / 100;
   const isoDate = (d, m, y) => { let yy = +y; if (yy < 100) yy = yy >= 40 ? yy + 2500 - 543 : yy + 2000; if (yy > 2400) yy -= 543;
     if (+m < 1 || +m > 12 || +d < 1 || +d > 31) return null; return `${yy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
-  const rows = []; let opening = null, closing = null, accountNumber = null, textChars = 0;
+  const rows = []; let opening = null, closing = null, accountNumber = null, textChars = 0, allTxt = '';
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
     const items = tc.items.filter(it => it.str && it.str.trim() && !/^[lI|]{1,4}$/.test(it.str.trim())).map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim(), w: it.width || 0 }));   // ตัดขีดขอบกระดาษ "l"/"ll" (2026-10-30)
     textChars += items.reduce((n, it) => n + it.s.length, 0);
+    if (allTxt.length < 20000) allTxt += items.map(it => it.s).join(' ') + '\n';
     /* 2026-10-30 · SCB: วันที่กับเวลาอยู่ช่องเดียว "05/01/26 22:02" → แยกเป็น 2 ช่อง (เดิมไม่เจอวันที่ → "ไม่พบตารางรายการ") */
     for (let k = items.length - 1; k >= 0; k--) {
       const m = items[k].s.match(/^(\d{1,2}[-/.]\d{1,2}[-/.](?:\d{2}|\d{4}))\s+(\d{1,2}:\d{2}(?::\d{2})?)$/);
@@ -7093,7 +7107,7 @@ async function parseTextStatement(pdf) {
   const checkable = out.length - (firstUnknown ? 1 : 0);
   const rate = checkable ? agree / checkable : 0;
   if (checkable && rate < 0.95) return { ok: false, reason: `อ่านตัวเลขได้ไม่ตรงยอดคงเหลือ ${Math.round((1 - rate) * 100)}%` };
-  return { ok: true, lines: out, opening, closing: closing ?? out[out.length - 1].balance, account_number: accountNumber, agree, checkable };
+  return { ok: true, lines: out, opening, closing: closing ?? out[out.length - 1].balance, account_number: accountNumber, agree, checkable, issuer: detectStatementIssuer(allTxt) };
 }
 
 function statementPdfPasswords(accId) {
@@ -7185,7 +7199,7 @@ async function parseCardStatement(pdf) {
         statement_desc: r.desc, note: r.value < 0 ? (pay ? 'ชำระบัตร' : /IPP|INSTAL/i.test(r.desc) ? 'แปลงเป็นผ่อนชำระ (IPP)' : 'คืนเงิน/ยกเลิกรายการ') : null, balance: null };
     });
   }
-  return { ok: true, cards: used, statementDate: stmtDate };
+  return { ok: true, cards: used, statementDate: stmtDate, issuer: detectStatementIssuer(allText) };
 }
 
 /* นำเข้าใบแจ้งยอดบัตรที่อ่านแล้ว: บัตรละ 1 บัญชี (หาบัญชีบัตรจากเลขบัตรในตั้งค่า · ไม่เจอ = ให้เลือก) แล้วผ่านด่านตรวจเดิม (statementPrecheck) ทีละบัตร */
@@ -7228,7 +7242,8 @@ async function importCardStatement(card, selectedAccId, fileName, btn) {
     /* จุดตรวจยอด: ยอดค้างตามใบแจ้งยอด ณ วันสรุปยอด (ระบบเก็บบัตรเป็นลบ) */
     if (p.c.closing != null) window._rrCheckpoint = { account_id: useAcc, as_of: card.statementDate || p.c.txs.map(t => t.date).sort().pop(), balance: -Math.abs(p.c.closing) };
     const res = await importStatementRows(useAcc, p.c.txs, (d, n) => { if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 💳 ${p.c.last4} ${d}/${n}`; },
-      { opening: p.c.opening, closing: p.c.closing, source_kind: 'CREDIT_CARD', file_name: `${fileName} · ${p.c.masked}`, ...cardCycle(card.statementDate, p.c.txs) });
+      { opening: p.c.opening, closing: p.c.closing, source_kind: 'CREDIT_CARD', file_name: `${fileName} · ${p.c.masked}`, ...cardCycle(card.statementDate, p.c.txs),
+        format: { kind: 'CARD', issuer: card.issuer, parser: 'card', read: p.c.masked }, walk: p.c.agree });
     done.push(`💳 ${p.c.masked} → ${(accs.find(a => a.account_id === useAcc) || {}).name || useAcc}: นำเข้า ${res.importedCount}` + (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · มีอยู่แล้ว ${res.skippedCount}` : '') + (res.removedCount ? ` · 🧹 ลบที่ซ้ำ ${res.removedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : '') +
       (res.skippedCount && res.addedDetails?.length && res.addedDetails.length <= 10 ? `\n   ➕ ${res.addedDetails.join('\n   ➕ ')}` : ''));
   }
@@ -7561,6 +7576,12 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
     await saveStatementCheckpoint(accId);
     try { localStorage.setItem('rr_last_import', JSON.stringify({ imported: importedCount, skipped: skippedCount, merged: mergedCount, errors: errorCount, at: new Date().toISOString() })); } catch { /* */ }
     rematchWaitingDocs();
+    /* 📌 จำรูปแบบนำเข้าของบัญชีนี้ (2026-10-31): นำเข้าสำเร็จ + ยอดเดินตรง (หรือตรวจไม่ได้) → เก็บไว้เทียบครั้งหน้า */
+    if (meta?.format && meta.walk !== false && !errorCount) {
+        const fmt = meta.format;
+        fetch(`${API_BASE}/api/accounts/import-format`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accId, format: fmt }) })
+            .then(r => r.ok ? r.json() : null).then(j => { const a = (AppState.accounts || []).find(x => x.account_id === accId); if (a && j?.format) a.import_format = JSON.stringify(j.format); }).catch(() => {});
+    }
     return { importedCount, skippedCount, errorCount, mergedCount, autoCatCount, skippedDetails, removedCount, addedDetails };
 }
 
@@ -7605,13 +7626,13 @@ async function batchImportStatements(files, btn) {
         const txs = bank.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00', type: l.amount > 0 ? 'INCOME' : 'EXPENSE',
           amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null }));
         const sum = r2(bank.lines.reduce((t, l) => t + l.amount, 0));
-        items.push({ file: file.name, kind: 'BANK', read: bank.account_number || '', acc: findAcc(bank.account_number || '', '', false), txs, opening: bank.opening, closing: bank.closing,
+        items.push({ file: file.name, kind: 'BANK', issuer: bank.issuer, read: bank.account_number || '', acc: findAcc(bank.account_number || '', '', false), txs, opening: bank.opening, closing: bank.closing,
           walk: bank.opening != null && bank.closing != null ? Math.abs(r2(bank.opening + sum) - r2(bank.closing)) < 0.01 : null, sign: 1 });
         continue;
       }
       const card = card0;
       if (card.ok) {
-        for (const c of card.cards) items.push({ file: file.name, kind: 'CARD', read: c.masked, label: c.type, acc: findAcc(c.masked, c.last4, true), txs: c.txs, opening: c.opening, closing: c.closing,
+        for (const c of card.cards) items.push({ file: file.name, kind: 'CARD', issuer: card.issuer, read: c.masked, label: c.type, acc: findAcc(c.masked, c.last4, true), txs: c.txs, opening: c.opening, closing: c.closing,
           walk: c.agree, sign: -1, asOf: card.statementDate });
         continue;
       }
@@ -7626,6 +7647,17 @@ async function batchImportStatements(files, btn) {
     it.dup = null; if (!it.acc) return;
     try { const r = await fetch(`${API_BASE}/api/statements/header`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: it.acc, period_from: it.pf, period_to: it.pt, closing: it.closing, check_only: true }) });
       const j = await r.json(); if (j.exists) it.dup = j; } catch { /* */ }
+  };
+  /* 📌 เทียบกับรูปแบบที่จำไว้ของบัญชี + ประเภทบัญชี (2026-10-31) — อ่านผิดแบบ (บัตร ↔ ธนาคาร) → เตือนและไม่ติ๊กให้ */
+  const KIND_TH = k => k === 'CARD' ? 'ใบแจ้งยอดบัตร' : 'statement ธนาคาร';
+  const fmtCheck = it => {
+    it.fmtBad = ''; it.fmtNote = '';
+    const a = accs.find(x => x.account_id === it.acc); if (!a) return;
+    let fm = null; try { fm = a.import_format ? JSON.parse(a.import_format) : null; } catch { /* */ }
+    if (a.account_type && (a.account_type === 'CREDIT') !== (it.kind === 'CARD')) it.fmtBad = `บัญชีนี้เป็น${a.account_type === 'CREDIT' ? 'บัตรเครดิต' : 'บัญชีธนาคาร'} แต่ไฟล์อ่านได้เป็น${KIND_TH(it.kind)}`;
+    else if (fm && fm.kind && fm.kind !== it.kind) it.fmtBad = `ครั้งก่อนบัญชีนี้นำเข้าเป็น${KIND_TH(fm.kind)}${fm.issuer ? ' ' + fm.issuer : ''} แต่ไฟล์นี้อ่านได้เป็น${KIND_TH(it.kind)}`;
+    else if (fm && fm.issuer && it.issuer && fm.issuer !== it.issuer) it.fmtNote = `⚠️ ผู้ออกต่างจากครั้งก่อน (เดิม ${fm.issuer} · ไฟล์นี้ ${it.issuer})`;
+    else if (fm) it.fmtNote = `📌 รูปแบบเดิม: ${KIND_TH(fm.kind)}${fm.issuer ? ' ' + fm.issuer : ''}`;
   };
   const sysOpen = {};
   const continuity = async () => {
@@ -7651,14 +7683,15 @@ async function batchImportStatements(files, btn) {
   for (const it of items) {
     await checkDup(it);
     if (it.acc && !(it.acc + '|' + it.from in sysOpen)) { try { const r = await fetch(`${API_BASE}/api/accounts/balance-at?account_id=${encodeURIComponent(it.acc)}&date=${it.from}`); if (r.ok) sysOpen[it.acc + '|' + it.from] = await r.json(); } catch { /* */ } }
-    it.on = !!it.acc && !it.dup;
+    fmtCheck(it);
+    it.on = !!it.acc && !it.dup && !it.fmtBad;
   }
   await continuity();
   /* ── ตารางตรวจก่อนนำเข้า ── */
   const accOpts = sel => `<option value="">— เลือกบัญชี —</option>` + accs.map(a => `<option value="${esc(a.account_id)}"${a.account_id === sel ? ' selected' : ''}>${a.account_type === 'CREDIT' ? '💳' : '🏦'} ${esc(a.name)}</option>`).join('');
   const rowHtml = (it, i) => `<tr class="${it.on ? '' : 'bi-off'}"><td><input type="checkbox" data-on="${i}"${it.on ? ' checked' : ''}${it.acc ? '' : ' disabled'}></td>
     <td><b>${esc(it.file)}</b><br><small>${it.kind === 'CARD' ? '💳' : '🏦'} ${esc(it.read || 'ไม่พบเลขบัญชีในไฟล์')} ${esc(it.label || '')}</small></td>
-    <td><select data-acc="${i}">${accOpts(it.acc)}</select>${it.acc ? '' : '<br><small style="color:#E67700">① หาบัญชีจากเลขในไฟล์ไม่เจอ</small>'}</td>
+    <td><select data-acc="${i}">${accOpts(it.acc)}</select>${it.acc ? '' : '<br><small style="color:#E67700">① หาบัญชีจากเลขในไฟล์ไม่เจอ</small>'}${it.fmtBad ? `<br><small style="color:#C92A2A">⚠️ ${esc(it.fmtBad)}</small>` : it.fmtNote ? `<br><small style="color:${it.fmtNote.startsWith('⚠️') ? '#E67700' : '#5C5872'}">${esc(it.fmtNote)}</small>` : ''}</td>
     <td>${dTh(it.from)} – ${dTh(it.to)}<br><small>${it.txs.length} รายการ</small></td>
     <td class="r">${f(it.opening)} → ${f(it.closing)}<br><small>${it.walk === true ? '② ✅ ยอดเดินตรง' : it.walk === false ? '<span style="color:#C92A2A">② ⚠️ ยอดเดินไม่ตรง</span>' : '② ไม่มียอดให้ตรวจ'}</small></td>
     <td><small>${it.cont === 'ok' ? '③ ✅ ต่อเนื่อง' : it.cont === 'gap' ? '<span style="color:#C92A2A">③ ⚠️ ไม่ต่อเนื่อง</span>' : it.cont === 'new' ? '③ 🆕 เริ่มบัญชี' : '③ -'} ${esc(it.contNote || '')}</small>
@@ -7676,7 +7709,7 @@ async function batchImportStatements(files, btn) {
         el.querySelectorAll('[data-acc]').forEach(s => s.onchange = async () => {
           const it = items[+s.dataset.acc]; it.acc = s.value; await checkDup(it);
           if (it.acc && !(it.acc + '|' + it.from in sysOpen)) { try { const r = await fetch(`${API_BASE}/api/accounts/balance-at?account_id=${encodeURIComponent(it.acc)}&date=${it.from}`); if (r.ok) sysOpen[it.acc + '|' + it.from] = await r.json(); } catch { /* */ } }
-          it.on = !!it.acc && !it.dup; await continuity(); Swal.update({ html: html() }); wire(); });
+          fmtCheck(it); it.on = !!it.acc && !it.dup && !it.fmtBad; await continuity(); Swal.update({ html: html() }); wire(); });
       };
       wire();
     } });
@@ -7688,7 +7721,7 @@ async function batchImportStatements(files, btn) {
     if (it.closing != null) window._rrCheckpoint = { account_id: it.acc, as_of: it.asOf || it.to, balance: it.kind === 'CARD' ? -Math.abs(it.closing) : it.closing };
     const res = await importStatementRows(it.acc, it.txs, (d, n) => setBtn(`ไฟล์ ${k + 1}/${todo.length} · ${d}/${n}`),
       { opening: it.opening, closing: it.closing, source_kind: it.kind === 'CARD' ? 'CREDIT_CARD' : 'BANK', file_name: it.kind === 'CARD' ? `${it.file} · ${it.read}` : it.file,
-        ...(it.kind === 'CARD' ? cardCycle(it.asOf, it.txs) : {}) });
+        ...(it.kind === 'CARD' ? cardCycle(it.asOf, it.txs) : {}), format: { kind: it.kind, issuer: it.issuer, parser: it.kind === 'CARD' ? 'card' : 'text', read: it.read }, walk: it.walk });
     out.push(`${it.kind === 'CARD' ? '💳' : '🏦'} ${(accs.find(a => a.account_id === it.acc) || {}).name || it.acc} · ${dTh(it.from)}–${dTh(it.to)}: นำเข้า ${res.importedCount}` +
       (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · มีอยู่แล้ว ${res.skippedCount}` : '') + (res.removedCount ? ` · 🧹 ลบที่ซ้ำ ${res.removedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : '') +
       (res.skippedCount && res.addedDetails?.length && res.addedDetails.length <= 10 ? `\n     ➕ ${res.addedDetails.join('\n     ➕ ')}` : ''));
@@ -7790,7 +7823,8 @@ function bindPDFUpload() {
                         if (!useAcc) { resetUploadBtn(); return; }
                         selectedAccId = useAcc;
                         const res = await importStatementRows(selectedAccId, txs, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; },
-                            { opening: parsed.opening, closing: parsed.closing, source_kind: 'BANK', file_name: file.name });
+                            { opening: parsed.opening, closing: parsed.closing, source_kind: 'BANK', file_name: file.name,
+                              format: { kind: 'BANK', issuer: parsed.issuer, parser: 'text', read: parsed.account_number }, walk: parsed.checkable ? parsed.agree === parsed.checkable : null });
                         const sumIn = parsed.lines.filter(l => l.amount > 0).reduce((t, l) => t + l.amount, 0), sumOut = -parsed.lines.filter(l => l.amount < 0).reduce((t, l) => t + l.amount, 0);
                         let msg = `อ่านจากตัวหนังสือในไฟล์ (ไม่ใช้ AI) ${parsed.lines.length} รายการ\n` +
                             `ยอดยกมา ${Number(parsed.opening ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} · ยอดยกไป ${Number(parsed.closing ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +

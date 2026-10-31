@@ -496,3 +496,4 @@ body.ui-a[data-view="reports"] .top-header{display:none}   /* หน้ารา
 .av-ed select,.av-ed input:not([type=checkbox]){width:100%;padding:9px 10px;border:1px solid #D9CFF7;border-radius:10px;font-family:inherit;font-size:.92rem;background:#fff;color:#1E1B2E}
 .av-ed-h{display:flex;justify-content:space-between;font-size:1rem}.av-ed-d{color:#5C5872;background:#F7F4FF;border-radius:10px;padding:8px 10px;font-size:.84rem}
 .av-ed .av-ed-ck{display:flex;align-items:center;gap:8px;font-weight:500}.av-ed .av-pos{color:#087F5B !important}.av-ed .av-neg{color:#C92A2A !important}
+[data-theme="dark"] .av-tag.ok{background:#11301F;color:#2FD07A}[data-theme="dark"] .av-tag.bad{background:#3B1E22;color:#FF8787}

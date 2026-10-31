@@ -29,6 +29,9 @@ export async function ensureStmtCols(env) {
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS StatementImports (stmt_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, period_from TEXT, period_to TEXT,
     opening REAL, closing REAL, line_count INTEGER, file_name TEXT, source_kind TEXT, created_by TEXT, created_at TEXT)`).run();
   try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_stmtimports_acc ON StatementImports(account_id, period_to)`).run(); } catch { /* */ }
+  /* 📌 รูปแบบนำเข้าที่จำไว้ต่อบัญชี (2026-10-31 · North ข้อ 6: "จำรูปแบบนำเข้าของแต่ละ statement") */
+  try { const ac = new Set(((await env.DB.prepare(`PRAGMA table_info(Accounts)`).all()).results || []).map(c => c.name));
+    if (!ac.has('import_format')) await env.DB.prepare(`ALTER TABLE Accounts ADD COLUMN import_format TEXT`).run(); } catch { /* มีแล้ว */ }
   /* ⚡ 2026-10-30: นับบรรทัดต่อ statement / ค้นรายการเดิมตอนนำเข้า เร็วขึ้น */
   try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_tx_stmt ON Transactions(stmt_id)`).run(); } catch { /* */ }
   try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_tx_acc_date ON Transactions(account_id, date)`).run(); } catch { /* */ }
@@ -63,8 +66,21 @@ export async function cleanupStatementHeaders(env, stmtIds) {
 
 export async function handleStmtReport({ url, request, env, cors, authUserId, canUseAccount, deny }) {
   const p = url.pathname;
-  if (!['/api/statements/header', '/api/reports/statement-running', '/api/transactions/duplicates', '/api/transactions/merge', '/api/statements/delete', '/api/statements/sync'].includes(p)) return null;
+  if (!['/api/accounts/import-format', '/api/statements/header', '/api/reports/statement-running', '/api/transactions/duplicates', '/api/transactions/merge', '/api/statements/delete', '/api/statements/sync'].includes(p)) return null;
   await ensureStmtCols(env);
+
+  /* 📌 จำรูปแบบนำเข้า (2026-10-31): หลังนำเข้าแล้วยอดเดินตรง หน้าเว็บส่ง {kind: CARD|BANK, issuer, parser, read} มาเก็บที่บัญชี
+     ครั้งต่อไปนำเข้า: ไฟล์อ่านได้คนละแบบกับที่จำไว้ (เช่น บัญชีบัตรแต่ไฟล์ถูกอ่านเป็น statement ธนาคาร) → เตือนและไม่ติ๊กให้ */
+  if (p === '/api/accounts/import-format' && request.method === 'POST') {
+    const b = await request.json().catch(() => ({}));
+    const acc = String(b.account_id || '');
+    if (!acc || !(await canUseAccount(acc))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
+    const f = b.format || {};
+    const fmt = { kind: f.kind === 'CARD' ? 'CARD' : 'BANK', issuer: String(f.issuer || '').slice(0, 30) || null, parser: String(f.parser || '').slice(0, 20) || null,
+      read: String(f.read || '').slice(0, 40) || null, at: new Date().toISOString().slice(0, 10) };
+    await env.DB.prepare(`UPDATE Accounts SET import_format = ? WHERE account_id = ?`).bind(JSON.stringify(fmt), acc).run();
+    return json({ success: true, format: fmt }, cors);
+  }
 
   /* หัว statement: ส่งก่อนนำเข้ารายการ → ได้ stmt_id กลับไปใส่ทุกบรรทัด
      statement เดิม (บัญชี + ช่วงวันที่ + ยอดยกไป ตรงกัน) → ใช้ stmt_id เดิม (นำเข้าซ้ำไม่เกิดหัวซ้ำ) */

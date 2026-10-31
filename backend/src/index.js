@@ -800,9 +800,11 @@ export default {
       if (url.pathname === '/api/accounts') {
         const userId = authUserId;
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        await ensureStmtCols(env);   // มีคอลัมน์ import_format แน่ ๆ ก่อน SELECT (2026-10-31)
         const accounts = await env.DB.prepare(`
           SELECT a.account_id, a.entity_id, a.name, a.bank_name, a.account_number, a.pdf_password, e.name as entity_name,
                  IFNULL(a.account_type,'BANK') AS account_type, IFNULL(a.credit_limit,0) AS credit_limit,   /* 2026-10-30: หน้าเว็บใช้แยกบัตร/ธนาคารตอนจับคู่เลขบัญชี */
+                 a.import_format,   /* 📌 รูปแบบนำเข้าที่จำไว้ (2026-10-31) */
                  ROUND(COALESCE(b.bal, 0), 2) as balance
           FROM Accounts a
           JOIN Entities e ON a.entity_id = e.entity_id

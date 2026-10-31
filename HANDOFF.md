@@ -3871,3 +3871,12 @@ frontend
 - AccView.edit(txId): GET /api/transactions?id= (ใหม่) → หน้าต่างแก้ หมวด/Company/คู่ค้า/หมายเหตุ + ติ๊ก "ยืนยันรายการนี้ด้วย" (รอตรวจ) → POST เดิมทั้งแถว (คงวันที่ เวลา ข้อความธนาคาร ที่มา stmt) → /confirm · หลายรายการย่อย → พาไปหน้ารอตรวจ/ประวัติ
 - backend: GET /api/transactions ?id= · รายละเอียดส่ง type ด้วย · แก้รายการ PDF_IMPORT เดิม (มีรหัสแล้ว ไม่ใช่การนำเข้า) ไม่เช็กซ้ำ (เดิมบรรทัดเหมือนกันทุกช่องแก้แล้วถูกมองว่าซ้ำ) และไม่ตกไปเช็กแบบ WEB_GRID
 - เทสต์ stmt-report 43 · Playwright: กดแถว → หน้าต่างแก้ → บันทึก + ยืนยัน ✅ · app.js?v=221 ui-a.css?v=19
+
+## 2026-10-31 · 📌 จำรูปแบบนำเข้าต่อบัญชี (North ข้อ 6) + ตรวจโหมดมืดกับข้อมูลจริง
+- Accounts.import_format (JSON: kind CARD|BANK · issuer · parser · read · at) เพิ่มอัตโนมัติใน ensureStmtCols · POST /api/accounts/import-format · /api/accounts ส่ง import_format
+- detectStatementIssuer(text): CardX · KTC · KBank · SCB · Krungsri · BBL · KTB · ttb · ตัวอ่านทั้ง 2 คืน issuer
+- importStatementRows(meta.format, meta.walk): นำเข้าสำเร็จ + ยอดเดินไม่ผิด → จำ · ส่งจาก 3 ทาง (บัตรไฟล์เดียว · ธนาคารไฟล์เดียว · หลายไฟล์)
+- นำเข้าหลายไฟล์: fmtCheck → ประเภทบัญชีไม่ตรงกับไฟล์ (บัตร↔ธนาคาร) หรือไม่ตรงกับที่จำไว้ = ⚠️ ไม่ติ๊กให้ · ผู้ออกเปลี่ยน = เตือนเหลือง · ตรง = "📌 รูปแบบเดิม …"
+- ทดสอบไฟล์จริง 3 ไฟล์ (CardX ก.ค. · SCB ออม · KTC): จับบัญชีถูก · SCB ที่ตั้งบัญชีเป็นบัตร → ไม่นำเข้า · เทสต์ acc-overview 13
+- โหมดมืด (ข้อมูลจริงในเบราว์เซอร์ Claude ของ North · v214): การ์ดบัญชี + หน้ารายละเอียดอ่านได้ดี · แก้ป้าย ตรงกัน/ไม่ตรงกัน ในโหมดมืด · คืนธีมม่วงแล้ว
+- app.js?v=222 ui-a.css?v=20

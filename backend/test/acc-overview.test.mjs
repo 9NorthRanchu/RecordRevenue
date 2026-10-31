@@ -92,4 +92,10 @@ check('รายวัน', a2.daily.length === 3 && a2.daily.find(x => x.d === 
 check('ไม่เห็นบัญชีครอบครัวอื่น', !r.j.accounts.some(a => a.account_id === 'X99'), r.j.accounts.map(a => a.account_id));
 r = await call('/api/accounts/overview', { user: '9North' }); check('ไม่ระบุเดือน → เดือนล่าสุดที่มีรายการ', r.j.month === '2026-10', r.j.month);
 r = await call('/api/accounts/overview?month=2026-10'); check('ไม่ล็อกอิน → 401', r.s === 401, r);
+/* 📌 จำรูปแบบนำเข้า */
+r = await call('/api/accounts/import-format', { user: '9North', method: 'POST', body: { account_id: 'C01', format: { kind: 'CARD', issuer: 'CardX', parser: 'card', read: '3565 18XX XXXX 9607' } } });
+check('จำรูปแบบนำเข้า', r.s === 200 && r.j.format.kind === 'CARD' && r.j.format.issuer === 'CardX', r.j);
+r = await call('/api/accounts', { user: '9North' }); const c01 = r.j.find(a => a.account_id === 'C01');
+check('/api/accounts ส่ง import_format + account_type', c01 && JSON.parse(c01.import_format).issuer === 'CardX' && c01.account_type === 'CREDIT', c01);
+r = await call('/api/accounts/import-format', { user: 'Other', method: 'POST', body: { account_id: 'C01', format: { kind: 'BANK' } } }); check('ครอบครัวอื่นแก้ไม่ได้', r.s === 403, r);
 console.log(`acc-overview: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exit(1);
