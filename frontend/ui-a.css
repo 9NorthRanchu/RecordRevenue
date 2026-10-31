@@ -738,3 +738,16 @@ body.ui-dark .dl-k>div,body.ui-dark .dl-c,body.ui-dark .dl-tbl{background:#1E1B2
 #pend-groups small { color:#868E96; font-size:.75rem; }
 .ph-tools .pt-ok.on { background:#7950F2 !important; color:#fff !important; }
 [data-theme="dark"] #pend-groups .pg-list, [data-theme="dark"] #pend-groups .pg-sel { background:#1E1B2E; border-color:#3B2F66; }
+
+/* v257 ⚡ กฎอัตโนมัติ */
+#pend-groups .pg-rule { border:0; border-radius:9px; padding:7px 14px; font-weight:700; color:#fff; cursor:pointer; background:#F59F00; }
+.ar { text-align:left; font-size:.86rem; }
+.ar-intro { color:#5C5872; margin:0 0 10px; }
+.ar h4 { margin:14px 0 6px; font-size:.95rem; color:#5F3DC4; } .ar h4 small { color:#868E96; font-weight:400; font-size:.75rem; }
+.ar-tw { max-height:300px; overflow:auto; border:1px solid #EEE; border-radius:10px; }
+.ar table { width:100%; border-collapse:collapse; } .ar th, .ar td { padding:5px 8px; border-bottom:1px solid #F1F3F5; text-align:left; vertical-align:middle; }
+.ar th { position:sticky; top:0; background:#F8F9FA; font-size:.75rem; color:#868E96; z-index:1; } .ar .n { text-align:right; white-space:nowrap; }
+.ar tr.off td { opacity:.45; } .ar-mute { color:#ADB5BD; }
+.ar-run, .ar-add { border:0; border-radius:10px; padding:8px 14px; font-weight:700; color:#fff; cursor:pointer; margin:6px 0; }
+.ar-run { background:#12B886; width:100%; } .ar-add { background:#7950F2; }
+.ar-del { border:0; background:transparent; color:#FA5252; cursor:pointer; font-size:1rem; }

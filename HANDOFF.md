@@ -4050,3 +4050,11 @@ frontend
 - ⇄ ตัวกรอง "น่าจะเป็นโอน": ขาออก-ขาเข้าคู่เดียวกันอยู่ติดกัน (TransferPairs.list)
 - 👥 โหมดจัดกลุ่มผู้รับ/ร้าน (ปุ่ม ph-group · PendGroups): key = ทิศ + payeeKey(statementKey) · แถบกลุ่ม (≥2) มากไปน้อย ค้นได้ · เลือกกลุ่ม → หมวด/Company/คู่ค้า "ใส่ให้ทั้งกลุ่ม" (applyRowValues · เฉพาะการ์ดรายการย่อยเดียว) → "บันทึก+ยืนยันทั้งกลุ่ม" (bulkSaveReady) · กลุ่มหมด → กลับหน้ารวมกลุ่ม
 - test/transfers.test.mjs 22 ผ่าน (รวม detail-notes + account-defaults)
+
+## v257 (2026-11-01) ⚡ กฎอัตโนมัติ
+- backend/src/rules.js · ตาราง AutoRules (dir, payee = payeeKey(statementKey) ตรงกับ PendGroups.keyOf, account_id?, category/entity/contact, active, hits)
+  · GET /api/rules → กฎ + จำนวนรอตรวจที่ตรง + คำแนะนำ (ยืนยันแล้ว ≥3 ครั้ง หมวดเดียว ≥90% · ไม่รวม Bank_Transfer)
+  · POST /api/rules/save (รับ rules[] · ซ้ำ = แก้) · /delete · /toggle · /apply (รอตรวจ PDF_IMPORT บรรทัดย่อยเดียว → หมวด + Company (กฎ หรือค่าเริ่มต้นบัญชี) + ยืนยัน · เก็บ Detail เดิม)
+  · test/rules.test.mjs 12 ผ่าน
+- frontend AutoRules: ปุ่ม "⚡ กฎอัตโนมัติ" (แนะนำ → เพิ่มกฎ+ยืนยัน · เปิด/ปิด/ลบกฎ · ใช้กฎกับรอตรวจตอนนี้)
+  · โหมดกลุ่ม: "⚡ ตั้งเป็นกฎ + ยืนยันทั้งกลุ่ม" · นำเข้า statement เสร็จ → เรียก /api/rules/apply อัตโนมัติ

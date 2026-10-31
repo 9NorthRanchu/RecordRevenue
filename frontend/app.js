@@ -2336,7 +2336,7 @@ function renderPendingHero() {
           <span class="ph-at"><b>สลิป / ใบเสร็จ</b><small>เลือกได้หลายไฟล์ · จับคู่ให้อัตโนมัติ</small></span><span class="ph-go" id="ph-slip-go" style="display:grid;place-items:center">อัปโหลด</span>
           <input type="file" id="ph-slip-in" accept="image/*,application/pdf" multiple hidden></label>
       </div>
-      <div class="ph-tools">${list.length ? `<button type="button" id="ph-autofill" class="pt-ok" title="รายการที่ยังไม่มีหมวด และผู้รับ/ร้านนี้เคยบันทึกหมวดเดิมสม่ำเสมอ → เติมให้ (ยังไม่ยืนยัน)">🪄 เติมหมวดจากประวัติ</button><button type="button" id="ph-bulkcat" class="pt-ok">🏷️ ใส่หมวดหลายรายการ</button><button type="button" id="ph-saveall" class="pt-ok">💾 บันทึกทั้งหมดที่พร้อม</button><button type="button" id="ph-group" class="pt-ok${AppState.pendingGroupMode ? ' on' : ''}" title="รวมรายการผู้รับ/ร้านเดียวกันเป็นกลุ่ม → ใส่หมวด/Company ทีเดียวทั้งกลุ่ม">👥 จัดกลุ่มผู้รับ/ร้าน</button>` : ''}
+      <div class="ph-tools">${list.length ? `<button type="button" id="ph-autofill" class="pt-ok" title="รายการที่ยังไม่มีหมวด และผู้รับ/ร้านนี้เคยบันทึกหมวดเดิมสม่ำเสมอ → เติมให้ (ยังไม่ยืนยัน)">🪄 เติมหมวดจากประวัติ</button><button type="button" id="ph-bulkcat" class="pt-ok">🏷️ ใส่หมวดหลายรายการ</button><button type="button" id="ph-saveall" class="pt-ok">💾 บันทึกทั้งหมดที่พร้อม</button><button type="button" id="ph-group" class="pt-ok${AppState.pendingGroupMode ? ' on' : ''}" title="รวมรายการผู้รับ/ร้านเดียวกันเป็นกลุ่ม → ใส่หมวด/Company ทีเดียวทั้งกลุ่ม">👥 จัดกลุ่มผู้รับ/ร้าน</button><button type="button" id="ph-rules" class="pt-ok" title="ร้าน/ผู้รับที่ยืนยันหมวดเดิมซ้ำ → ยืนยันให้อัตโนมัติ">⚡ กฎอัตโนมัติ</button>` : ''}
         ${(() => { const all = AppState.pendingTransactions || [], n = all.filter(t => t.slip_image_url).length, f = AppState.pendingSlipFilter || 'ALL';
             return `<button type="button" class="ph-slipf${f === 'SLIP' ? ' on' : ''}" data-f="SLIP">📎 มีสลิป ${n.toLocaleString('en-US')}</button><button type="button" class="ph-slipf${f === 'NOSLIP' ? ' on' : ''}" data-f="NOSLIP">ไม่มีสลิป ${(all.length - n).toLocaleString('en-US')}</button>`; })()}
         ${DupPairs.count() ? `<button type="button" class="ph-slipf ph-dup${(AppState.pendingSlipFilter || '') === 'DUP' ? ' on' : ''}" data-f="DUP">🔁 อาจซ้ำ ${DupPairs.count().toLocaleString('en-US')}</button><button type="button" id="ph-dupall" class="pt-ok">🔁 รวมรายการซ้ำทั้งหมด</button>` : ''}
@@ -2387,6 +2387,7 @@ function renderPendingHero() {
     box.querySelector('#ph-bulkcat')?.addEventListener('click', bulkCategorize);
     box.querySelector('#ph-autofill')?.addEventListener('click', autofillFromHistory);
     box.querySelector('#ph-saveall')?.addEventListener('click', bulkSaveReady);
+    box.querySelector('#ph-rules')?.addEventListener('click', () => AutoRules.open());
     box.querySelector('#ph-group')?.addEventListener('click', () => { AppState.pendingGroupMode = !AppState.pendingGroupMode; AppState.pendingGroupKey = null; renderPendingTransactions(); renderPendingHero(); });
 }
 
@@ -7644,6 +7645,8 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
     await Promise.all(Array.from({ length: Math.min(6, transactions.length) }, worker));
     await saveStatementCheckpoint(accId);
     try { localStorage.setItem('rr_last_import', JSON.stringify({ imported: importedCount, skipped: skippedCount, merged: mergedCount, errors: errorCount, at: new Date().toISOString() })); } catch { /* */ }
+    /* ⚡ v257 กฎอัตโนมัติ: รายการที่ตรงกฎ → ใส่หมวด + ยืนยันให้เลย */
+    if (importedCount) try { const j = await AutoRules.apply(); if (j.applied) window.showToast?.(`⚡ ยืนยันตามกฎอัตโนมัติ ${j.applied.toLocaleString('en-US')} รายการ`); } catch { /* ไม่มีกฎก็ได้ */ }
     rematchWaitingDocs();
     /* 📌 จำรูปแบบนำเข้าของบัญชีนี้ (2026-10-31): นำเข้าสำเร็จ + ยอดเดินตรง (หรือตรวจไม่ได้) → เก็บไว้เทียบครั้งหน้า */
     if (meta?.format && meta.walk !== false && !errorCount) {
@@ -15680,7 +15683,7 @@ const PendGroups = (() => {
               <div class="pg-f"><select id="pg-cat"><option value="">— หมวด —</option>${caps.map(x => `<optgroup label="${esc(x.cp.name)}">${x.list.map(c => `<option value="${esc(c.category_id)}">${esc(c.name)}</option>`).join('')}</optgroup>`).join('')}</select>
                 <select id="pg-ent"><option value="">— Company (ไม่เปลี่ยน) —</option><option value="__clear">✕ ล้าง Company</option>${(AppState.entities || []).map(e => `<option value="${esc(e.entity_id)}">${esc(e.name)}</option>`).join('')}</select>
                 <select id="pg-con"><option value="">— คู่ค้า (ไม่เปลี่ยน) —</option>${(AppState.contacts || []).map(c => `<option value="${esc(c.contact_id)}">${esc(c.name)}</option>`).join('')}</select>
-                <button type="button" class="pg-go" data-act="apply">✓ ใส่ให้ทั้ง ${sel.n} รายการ</button><button type="button" class="pg-save" data-act="save">💾 บันทึก+ยืนยันทั้งกลุ่ม</button></div>
+                <button type="button" class="pg-go" data-act="apply">✓ ใส่ให้ทั้ง ${sel.n} รายการ</button><button type="button" class="pg-save" data-act="save">💾 บันทึก+ยืนยันทั้งกลุ่ม</button><button type="button" class="pg-rule" data-act="rule" title="จำเป็นกฎ: ครั้งต่อไปนำเข้าแล้วยืนยันให้เอง">⚡ ตั้งเป็นกฎ + ยืนยันทั้งกลุ่ม</button></div>
               <small>ใส่แล้วตรวจ/แก้รายตัวได้ก่อนกดบันทึก · การ์ดที่มีหลายรายการย่อยจะไม่ถูกแก้</small></div>`;
         } else {
             const shown = all.filter(g => !q || String(g.sample).toLowerCase().includes(q) || g.key.toLowerCase().includes(q));
@@ -15704,12 +15707,69 @@ const PendGroups = (() => {
                 for (const c of pendingCards()) { const rows = c.querySelectorAll('.sub-row-item'); if (rows.length !== 1) continue; applyRowValues(rows[0], v); c.style.outline = '2px solid #20C997'; n++; }
                 window.showToast?.(`👥 ใส่ให้ ${n} รายการแล้ว — ตรวจแล้วกด "บันทึก+ยืนยันทั้งกลุ่ม"`);
             } else if (act === 'save') await bulkSaveReady();
+            else if (act === 'rule') {
+                const cat = document.getElementById('pg-cat').value, ent = document.getElementById('pg-ent').value, con = document.getElementById('pg-con').value;
+                if (!cat) return alert('เลือกหมวดก่อน');
+                const i = sel.key.indexOf('|'), catN = (AppState.categories || []).find(c => c.category_id === cat)?.name || cat;
+                if (!confirm(`ตั้งกฎ: "${String(sel.sample).slice(0, 60)}" → ${catN}\n\nยืนยันรายการรอตรวจที่ตรงกฎทั้งหมดตอนนี้ และครั้งต่อไปที่นำเข้า statement จะยืนยันให้อัตโนมัติ\n(ดู/ปิดกฎได้ที่ปุ่ม ⚡ กฎอัตโนมัติ)`)) return;
+                b.disabled = true;
+                try { await AutoRules.save([{ dir: sel.key.slice(0, i), payee: sel.key.slice(i + 1), category_id: cat, entity_id: ent && ent !== '__clear' ? ent : null, contact_id: con || null, sample: sel.sample }]);
+                    const j = await AutoRules.apply(); window.showToast?.(`⚡ ตั้งกฎแล้ว · ยืนยัน ${j.applied || 0} รายการ`); AppState.pendingGroupKey = null; loadPending(); }
+                catch (err) { alert('ไม่สำเร็จ: ' + err.message); b.disabled = false; }
+            }
         };
         const qi = el.querySelector('#pg-q'); if (qi) qi.oninput = () => { q = qi.value.trim().toLowerCase(); const pos = qi.selectionStart; panel(displayList); const n = document.getElementById('pg-q'); n.focus(); try { n.setSelectionRange(pos, pos); } catch { /* */ } };
     }
     return { keyOf, sizes, panel };
 })();
 window.PendGroups = PendGroups;
+
+/* ⚡ v257 กฎอัตโนมัติ (backend/src/rules.js) — หน้าต่างดู/เพิ่ม/ปิดกฎ + แนะนำจากประวัติ */
+const AutoRules = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const H = { 'Content-Type': 'application/json' };
+    const call = async (path, body) => { const r = await fetch(`${API_BASE}${path}`, body ? { method: 'POST', headers: H, body: JSON.stringify(body) } : {}); const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status)); return j; };
+    const catN = id => (AppState.categories || []).find(c => c.category_id === id)?.name || id || '-';
+    const entN = id => id ? String((AppState.entities || []).find(e => e.entity_id === id)?.name || id) : '<span class="ar-mute">ตามบัญชี</span>';
+    const save = rules => call('/api/rules/save', { rules });
+    const apply = () => call('/api/rules/apply', {});
+    async function open() {
+        let d;
+        try { d = await call('/api/rules'); } catch (e) { return alert('โหลดกฎไม่สำเร็จ: ' + e.message); }
+        const pendRule = d.rules.filter(r => r.active).reduce((t, r) => t + (r.pending || 0), 0);
+        const sugRows = d.suggestions.map((x, i) => `<tr><td><input type="checkbox" class="ar-ck" data-i="${i}"${x.pending ? ' checked' : ''}></td><td>${x.dir === 'OUT' ? '⬆️' : '⬇️'} <b>${esc(String(x.sample).slice(0, 48))}</b></td>
+            <td>${esc(catN(x.category_id))}</td><td>${x.entity_id ? esc(entN(x.entity_id)) : entN(null)}</td><td class="n">${x.history} <small>(${x.share}%)</small></td><td class="n">${x.pending ? `<b>${x.pending}</b>` : '-'}</td></tr>`).join('');
+        const ruleRows = d.rules.map(r => `<tr class="${r.active ? '' : 'off'}"><td><input type="checkbox" class="ar-on" data-id="${esc(r.rule_id)}"${r.active ? ' checked' : ''} title="เปิด/ปิดกฎ"></td><td>${r.dir === 'OUT' ? '⬆️' : '⬇️'} <b>${esc(String(r.sample || r.payee).slice(0, 48))}</b></td>
+            <td>${esc(catN(r.category_id))}</td><td>${r.entity_id ? esc(entN(r.entity_id)) : entN(null)}</td><td class="n">${r.hits || 0}</td><td class="n">${r.pending ? `<b>${r.pending}</b>` : '-'}</td><td><button type="button" class="ar-del" data-id="${esc(r.rule_id)}" title="ลบกฎ">✕</button></td></tr>`).join('');
+        await Swal.fire({ title: '⚡ กฎอัตโนมัติ', width: 920, showConfirmButton: false, showCloseButton: true,
+            html: `<div class="ar">
+              <p class="ar-intro">ร้าน/ผู้รับที่ตั้งกฎไว้ → นำเข้า statement แล้ว <b>ใส่หมวด + ยืนยันให้เอง</b> ไม่ต้องผ่านหน้ารอตรวจ · Company ว่าง = ใช้ Company เริ่มต้นของบัญชี</p>
+              ${pendRule ? `<button type="button" class="ar-run" id="ar-run">▶ ใช้กฎกับรายการรอตรวจตอนนี้ · ยืนยัน ${pendRule.toLocaleString('en-US')} รายการ</button>` : ''}
+              <h4>💡 แนะนำจากประวัติ <small>ยืนยันแล้ว ≥ 3 ครั้ง หมวดเดียวกัน ≥ 90% · ${d.suggestions.length} รายการ</small></h4>
+              ${d.suggestions.length ? `<div class="ar-tw"><table><thead><tr><th><input type="checkbox" id="ar-all"></th><th>ร้าน/ผู้รับ</th><th>หมวด</th><th>Company</th><th class="n">เคยยืนยัน</th><th class="n">รอตรวจตรง</th></tr></thead><tbody>${sugRows}</tbody></table></div>
+                <button type="button" class="ar-add" id="ar-add">＋ เพิ่มเป็นกฎ (ที่เลือก) แล้วยืนยันรายการรอตรวจที่ตรง</button>` : '<p class="ar-mute">ยังไม่มีคำแนะนำ — ยืนยันรายการไปก่อน ระบบจะเรียนรู้จากที่ยืนยัน</p>'}
+              <h4>📋 กฎที่มี <small>${d.rules.length} กฎ</small></h4>
+              ${d.rules.length ? `<div class="ar-tw"><table><thead><tr><th>เปิด</th><th>ร้าน/ผู้รับ</th><th>หมวด</th><th>Company</th><th class="n">ใช้แล้ว</th><th class="n">รอตรวจตรง</th><th></th></tr></thead><tbody>${ruleRows}</tbody></table></div>` : '<p class="ar-mute">ยังไม่มีกฎ — เลือกจากคำแนะนำ หรือ 👥 โหมดกลุ่ม → "⚡ ตั้งเป็นกฎ"</p>'}
+            </div>`,
+            didOpen: () => {
+                const box = Swal.getHtmlContainer();
+                box.querySelector('#ar-all')?.addEventListener('change', e => box.querySelectorAll('.ar-ck').forEach(c => { c.checked = e.target.checked; }));
+                box.querySelector('#ar-run')?.addEventListener('click', async e => { e.target.disabled = true; try { const j = await apply(); Swal.close(); window.showToast?.(`⚡ ยืนยันตามกฎ ${j.applied} รายการ`); loadPending(); } catch (err) { alert(err.message); e.target.disabled = false; } });
+                box.querySelector('#ar-add')?.addEventListener('click', async e => {
+                    const pick = [...box.querySelectorAll('.ar-ck:checked')].map(c => d.suggestions[+c.dataset.i]);
+                    if (!pick.length) return alert('เลือกอย่างน้อย 1 รายการ');
+                    e.target.disabled = true;
+                    try { await save(pick.map(x => ({ dir: x.dir, payee: x.payee, category_id: x.category_id, entity_id: x.entity_id, contact_id: x.contact_id, sample: x.sample })));
+                        const j = await apply(); Swal.close(); window.showToast?.(`⚡ เพิ่ม ${pick.length} กฎ · ยืนยัน ${j.applied} รายการ`); loadPending(); }
+                    catch (err) { alert('ไม่สำเร็จ: ' + err.message); e.target.disabled = false; }
+                });
+                box.querySelectorAll('.ar-on').forEach(c => c.addEventListener('change', async () => { try { await call('/api/rules/toggle', { rule_id: c.dataset.id, active: c.checked }); c.closest('tr').classList.toggle('off', !c.checked); } catch (err) { alert(err.message); } }));
+                box.querySelectorAll('.ar-del').forEach(b => b.addEventListener('click', async () => { if (!confirm('ลบกฎนี้? (รายการที่ยืนยันไปแล้วไม่เปลี่ยน)')) return; try { await call('/api/rules/delete', { rule_id: b.dataset.id }); b.closest('tr').remove(); } catch (err) { alert(err.message); } }));
+            } });
+    }
+    return { open, save, apply };
+})();
+window.AutoRules = AutoRules;
 /* ใส่ หมวด/Company/คู่ค้า ให้แถวรายการย่อย (โหมดกลุ่ม) · ent "__clear" = ล้าง */
 function applyRowValues(row, v) {
     if (v.cat) { const cat = row.querySelector('.select-category'), cap = row.querySelector('.select-caption'), catObj = (AppState.categories || []).find(x => x.category_id === v.cat);
