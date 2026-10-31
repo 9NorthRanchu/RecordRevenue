@@ -61,4 +61,21 @@ check('ไม่ระบุบัญชี → ตั้งเป็นกา�
 r = await call('/api/transfers/apply', 'Puii', { transaction_id: 'o3' }); check('Puii ทำรายการบัญชี North ไม่ได้', r.s === 404, r.j);
 r = await call('/api/transfers/apply', 'Puii', { transaction_id: 'pp', counter_account_id: 'CASH', create_counter: true }); check('Puii สร้างขาในบัญชีที่ไม่มีสิทธิ์ไม่ได้', r.s === 403, r.j);
 r = await call('/api/transfers/apply', 'North', { transaction_id: 'o3', counter_account_id: 'KB' }); check('บัญชีปลายทางซ้ำกับต้นทาง → ไม่รับ', r.s === 400, r.j);
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,statement_desc) VALUES ('n1','KB','2026-10-20',-50,'PENDING_REVIEW','โอนเงิน · K PLUS · โอนไป X2106 นาย ปรัชญา นิ่มน++'),('n2','KB','2026-10-20',-60,'PENDING_REVIEW','X2 ENET · DESC : · จ่ายบิล PLANET'),('n3','KB','2026-10-20',-70,'PENDING_REVIEW','SHOPEE'),('n4','KB','2026-10-20',-80,'CONFIRMED','SHOPEE'),('n5','PA','2026-10-20',-90,'PENDING_REVIEW','PUII ONLY');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,note) VALUES ('dn1','n1',-50,NULL),('dn2','n2',-60,''),('dn3','n3',-70,'มีแล้ว'),('dn4','n4',-80,NULL),('dn5','n5',-90,NULL);`);
+r = await call('/api/transactions/fill-detail-notes', 'Puii', {}); check('Puii เติมได้เฉพาะบัญชีตัวเอง', r.j.filled === 1 && det('n5')[0].note === 'PUII ONLY' && det('n1')[0].note == null, r.j);
+r = await call('/api/transactions/fill-detail-notes', 'North', {});
+check('เติม Detail: ตัด ++ / DESC : · ไม่ทับของเดิม · ไม่แตะที่ยืนยันแล้ว', det('n1')[0].note === 'โอนเงิน · K PLUS · โอนไป X2106 นาย ปรัชญา นิ่มน' && det('n2')[0].note === 'X2 ENET · จ่ายบิล PLANET' && det('n3')[0].note === 'มีแล้ว' && det('n4')[0].note == null, [det('n1'), det('n2'), r.j]);
+/* 🏢 Company เริ่มต้นต่อบัญชี (v256) */
+db.exec(`INSERT INTO Entities VALUES ('Ent_Co_S01','F1','Bookkeeper',1),('Ent_Co_S02','F1','Me Prach',1);
+INSERT INTO Accounts (account_id,entity_id,name) VALUES ('A02','E_N','[A02] BK KBANK'),('A04','E_N','[A04] PRACH KBANK'),('A12','E_N','[A12] Something Else');
+INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source) VALUES ('c1','A02','2026-10-01',-10,'PENDING_REVIEW','PDF_IMPORT'),('c2','A06x','2026-10-01',-10,'PENDING_REVIEW','PDF_IMPORT'),('c3','KB','2026-10-01',-10,'PENDING_REVIEW','PDF_IMPORT'),('c4','KB','2026-10-01',-10,'PENDING_REVIEW','WEB_GRID'),('c5','A02','2026-10-01',-10,'CONFIRMED','PDF_IMPORT');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,entity_id) VALUES ('dc1','c1',-10,'E_N'),('dc3','c3',-10,'Ent_Co_S01'),('dc4','c4',-10,'Ent_Co_S01'),('dc5','c5',-10,'E_N');`);
+r = await call('/api/accounts/tx-defaults', 'North');
+check('ค่าตั้งต้น: BK KBANK = Bookkeeper · PRACH = Me Prach · ชื่อไม่ตรงไม่ใส่', r.j.defaults.A02 === 'Ent_Co_S01' && r.j.defaults.A04 === 'Ent_Co_S02' && !r.j.defaults.A12, r.j);
+r = await call('/api/transactions/apply-company-defaults', 'North', {});
+const ent = id => db.prepare(`SELECT entity_id FROM TransactionDetails WHERE detail_id = ?`).get(id).entity_id;
+check('รอตรวจ: บัญชีมีค่าเริ่มต้น → ใส่ · ไม่มี → ว่าง · ไม่แตะที่กรอกเอง/ยืนยันแล้ว', ent('dc1') === 'Ent_Co_S01' && ent('dc3') == null && ent('dc4') === 'Ent_Co_S01' && ent('dc5') === 'E_N', [ent('dc1'), ent('dc3'), ent('dc4'), ent('dc5'), r.j]);
+r = await call('/api/accounts/tx-default', 'North', { account_id: 'KB', entity_id: 'Ent_Co_S02' }); check('ตั้งค่าเริ่มต้นบัญชีได้', r.j.success && db.prepare(`SELECT tx_entity_id FROM Accounts WHERE account_id='KB'`).get().tx_entity_id === 'Ent_Co_S02', r.j);
+r = await call('/api/accounts/tx-default', 'Puii', { account_id: 'KB', entity_id: null }); check('Puii แก้บัญชี North ไม่ได้', r.s === 403, r.j);
 console.log(`transfers: ${ok} ผ่าน · ${bad} ไม่ผ่าน`); if (bad) process.exitCode = 1;

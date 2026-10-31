@@ -698,3 +698,43 @@ body.ui-dark .dl-k>div,body.ui-dark .dl-c,body.ui-dark .dl-tbl{background:#1E1B2
 .trf-f small { color:#868E96; font-size:.76rem; line-height:1.45; }
 .trf-sum { padding:8px 10px; border-radius:10px; background:#F8F9FA; }
 .trf-sug { padding:6px 8px; border-radius:8px; background:#E6FCF5; color:#085F4B; font-size:.8rem; }
+
+/* v255 ⚡ การ์ดรอตรวจวาดตามการเลื่อน · 📅 ช่องวันที่พิมพ์ต่อเนื่อง */
+.pend-more { display:flex; justify-content:center; padding:14px 0 24px; }
+.pend-more button { border:1px dashed #B197FC; background:#F8F5FF; color:#5F3DC4; border-radius:10px; padding:8px 18px; font-weight:700; cursor:pointer; }
+.rr-dwrap { display:inline-flex; position:relative; align-items:stretch; vertical-align:middle; max-width:100%; }
+.rr-dwrap .rr-date { padding-right:26px !important; font-variant-numeric:tabular-nums; }
+.rr-dwrap .rr-date.bad { border-color:#FA5252 !important; color:#C92A2A !important; }
+.rr-dwrap .rr-dcal { position:absolute; right:3px; top:50%; transform:translateY(-50%); border:0; background:transparent; padding:0 3px; font-size:.85rem; line-height:1; cursor:pointer; opacity:.75; min-width:0 !important; width:auto !important; height:auto !important; box-shadow:none !important; }
+.rr-dwrap .rr-dcal:hover { opacity:1; }
+.rr-dwrap .rr-dnative { position:absolute !important; left:0; bottom:0; width:1px !important; height:1px !important; opacity:0 !important; pointer-events:none !important; padding:0 !important; border:0 !important; min-width:0 !important; }
+/* v255 📝 ช่อง Detail ในการ์ดรอตรวจ: เดิมกว้างไม่กี่ตัวอักษร → ขึ้นบรรทัดของตัวเองเต็มความกว้าง (อ่านข้อความ statement ได้) */
+@media (min-width:769px) {
+  #pending-cards-container .sub-row-grid { grid-template-columns:78px minmax(0,1.3fr) minmax(0,1.1fr) minmax(0,1fr) 105px 70px 80px 76px; row-gap:4px; }
+  #pending-cards-container .sub-row-grid > .sub-row-col:nth-child(8) { grid-column:1 / 8; grid-row:2; }
+  #pending-cards-container .sub-row-grid > .sub-row-col:nth-child(8) .sub-row-label { text-align:left !important; }
+  #pending-cards-container .sub-row-grid > .sub-row-col:nth-child(9) { grid-column:8; grid-row:1; }
+  #pending-cards-container .sub-row-grid .input-detail { color:#495057; }
+}
+
+/* v256 👥 โหมดจัดกลุ่มผู้รับ/ร้าน */
+#pend-groups { margin:0 0 12px; }
+#pend-groups .pg-list, #pend-groups .pg-sel { background:#fff; border:1px solid #E5DBFF; border-radius:14px; padding:12px 14px; box-shadow:0 2px 10px rgba(95,61,196,.06); }
+#pend-groups .pg-h { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin-bottom:10px; }
+#pend-groups .pg-h b { color:#5F3DC4; } #pend-groups .pg-h span { color:#868E96; font-size:.82rem; flex:1 1 220px; }
+#pend-groups .pg-h input { border:1px solid #E0DBF2; border-radius:8px; padding:5px 10px; min-width:180px; font-family:inherit; }
+#pend-groups .pg-x { border:1px solid #DEE2E6; background:#F8F9FA; border-radius:8px; padding:5px 10px; cursor:pointer; font-weight:600; }
+#pend-groups .pg-chips { display:flex; flex-wrap:wrap; gap:6px; max-height:230px; overflow:auto; }
+#pend-groups .pg-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid #D0BFFF; background:#F8F5FF; border-radius:999px; padding:4px 10px; cursor:pointer; font-size:.8rem; max-width:100%; }
+#pend-groups .pg-chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px; }
+#pend-groups .pg-chip b { background:#7950F2; color:#fff; border-radius:999px; padding:0 7px; font-size:.75rem; }
+#pend-groups .pg-chip small { color:#868E96; }
+#pend-groups .pg-chip.done { background:#EBFBEE; border-color:#B2F2BB; } #pend-groups .pg-chip.done b { background:#2F9E44; }
+#pend-groups .pg-more { color:#868E96; font-size:.8rem; align-self:center; }
+#pend-groups .pg-f { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px; }
+#pend-groups .pg-f select { flex:1 1 180px; min-width:0; border:1px solid #E0DBF2; border-radius:8px; padding:6px 8px; font-family:inherit; }
+#pend-groups .pg-go, #pend-groups .pg-save { border:0; border-radius:9px; padding:7px 14px; font-weight:700; color:#fff; cursor:pointer; }
+#pend-groups .pg-go { background:#7950F2; } #pend-groups .pg-save { background:#12B886; }
+#pend-groups small { color:#868E96; font-size:.75rem; }
+.ph-tools .pt-ok.on { background:#7950F2 !important; color:#fff !important; }
+[data-theme="dark"] #pend-groups .pg-list, [data-theme="dark"] #pend-groups .pg-sel { background:#1E1B2E; border-color:#3B2F66; }

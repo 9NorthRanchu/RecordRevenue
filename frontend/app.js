@@ -2336,7 +2336,7 @@ function renderPendingHero() {
           <span class="ph-at"><b>สลิป / ใบเสร็จ</b><small>เลือกได้หลายไฟล์ · จับคู่ให้อัตโนมัติ</small></span><span class="ph-go" id="ph-slip-go" style="display:grid;place-items:center">อัปโหลด</span>
           <input type="file" id="ph-slip-in" accept="image/*,application/pdf" multiple hidden></label>
       </div>
-      <div class="ph-tools">${list.length ? `<button type="button" id="ph-autofill" class="pt-ok" title="รายการที่ยังไม่มีหมวด และผู้รับ/ร้านนี้เคยบันทึกหมวดเดิมสม่ำเสมอ → เติมให้ (ยังไม่ยืนยัน)">🪄 เติมหมวดจากประวัติ</button><button type="button" id="ph-bulkcat" class="pt-ok">🏷️ ใส่หมวดหลายรายการ</button><button type="button" id="ph-saveall" class="pt-ok">💾 บันทึกทั้งหมดที่พร้อม</button>` : ''}
+      <div class="ph-tools">${list.length ? `<button type="button" id="ph-autofill" class="pt-ok" title="รายการที่ยังไม่มีหมวด และผู้รับ/ร้านนี้เคยบันทึกหมวดเดิมสม่ำเสมอ → เติมให้ (ยังไม่ยืนยัน)">🪄 เติมหมวดจากประวัติ</button><button type="button" id="ph-bulkcat" class="pt-ok">🏷️ ใส่หมวดหลายรายการ</button><button type="button" id="ph-saveall" class="pt-ok">💾 บันทึกทั้งหมดที่พร้อม</button><button type="button" id="ph-group" class="pt-ok${AppState.pendingGroupMode ? ' on' : ''}" title="รวมรายการผู้รับ/ร้านเดียวกันเป็นกลุ่ม → ใส่หมวด/Company ทีเดียวทั้งกลุ่ม">👥 จัดกลุ่มผู้รับ/ร้าน</button>` : ''}
         ${(() => { const all = AppState.pendingTransactions || [], n = all.filter(t => t.slip_image_url).length, f = AppState.pendingSlipFilter || 'ALL';
             return `<button type="button" class="ph-slipf${f === 'SLIP' ? ' on' : ''}" data-f="SLIP">📎 มีสลิป ${n.toLocaleString('en-US')}</button><button type="button" class="ph-slipf${f === 'NOSLIP' ? ' on' : ''}" data-f="NOSLIP">ไม่มีสลิป ${(all.length - n).toLocaleString('en-US')}</button>`; })()}
         ${DupPairs.count() ? `<button type="button" class="ph-slipf ph-dup${(AppState.pendingSlipFilter || '') === 'DUP' ? ' on' : ''}" data-f="DUP">🔁 อาจซ้ำ ${DupPairs.count().toLocaleString('en-US')}</button><button type="button" id="ph-dupall" class="pt-ok">🔁 รวมรายการซ้ำทั้งหมด</button>` : ''}
@@ -2387,6 +2387,7 @@ function renderPendingHero() {
     box.querySelector('#ph-bulkcat')?.addEventListener('click', bulkCategorize);
     box.querySelector('#ph-autofill')?.addEventListener('click', autofillFromHistory);
     box.querySelector('#ph-saveall')?.addEventListener('click', bulkSaveReady);
+    box.querySelector('#ph-group')?.addEventListener('click', () => { AppState.pendingGroupMode = !AppState.pendingGroupMode; AppState.pendingGroupKey = null; renderPendingTransactions(); renderPendingHero(); });
 }
 
 
@@ -2398,6 +2399,7 @@ function cardText(card) { return ((card.dataset.desc || '') + ' ' + (card.queryS
 /* 🪄 เติมหมวดจากประวัติให้ทุกการ์ดที่ยังไม่มีหมวด (2026-10-31 · ข้อเสนอ ก.)
    ใช้คำใบ้ที่ "มั่นใจ" เท่านั้น: ผู้รับ/ร้านเดียวกันเคยบันทึกหมวดเดียวกันทุกครั้ง หรือ ≥ 3 ครั้งและหมวดเดียวกัน ≥ 60% · เติมอย่างเดียว ยังไม่ยืนยัน */
 async function autofillFromHistory() {
+    await AppState._pendingRenderRest?.();   // ⚡ v255: การ์ดวาดตามการเลื่อน → วาดให้ครบก่อนทำทีละหลายรายการ
     const btn = document.getElementById('ph-autofill'), old = btn?.innerHTML; if (btn) { btn.disabled = true; btn.innerHTML = '⏳ กำลังหา…'; }
     try {
         const hints = (await (await fetch(`${API_BASE}/api/transactions/category-hints`)).json()).hints || {};
@@ -2417,6 +2419,7 @@ async function autofillFromHistory() {
     finally { if (btn) { btn.disabled = false; btn.innerHTML = old; } }
 }
 async function bulkCategorize() {
+    await AppState._pendingRenderRest?.();   // ⚡ v255: การ์ดวาดตามการเลื่อน → วาดให้ครบก่อนทำทีละหลายรายการ
     const cats = (AppState.categories || []).filter(c => !/uncategor/i.test(c.category_id || '') && !String(c.name || '').includes('รอการระบุ'));
     const caps = AppState.captions || [];
     const byCap = caps.map(cp => ({ cp, list: cats.filter(c => c.caption_id === cp.type_id) })).filter(x => x.list.length);
@@ -2449,6 +2452,7 @@ async function bulkCategorize() {
 }
 function slipDocIdOf(card) { const m = String(card.dataset.slip || '').match(/\/api\/inbox\/file\/([\w-]+)/); return m ? m[1] : null; }
 async function bulkSaveReady() {
+    await AppState._pendingRenderRest?.();   // ⚡ v255: การ์ดวาดตามการเลื่อน → วาดให้ครบก่อนทำทีละหลายรายการ
     const ready = pendingCards().filter(c => { const rows = [...c.querySelectorAll('.sub-row-item')];
         return rows.length && rows.every(r => r.querySelector('.select-category')?.value && r.querySelector('.select-caption')?.value) && /✅/.test(c.querySelector('.zero-sum-status')?.textContent || ''); });
     if (!ready.length) { alert('ยังไม่มีการ์ดที่พร้อมบันทึก (ต้องมี Caption + หมวดครบทุกแถว และยอดลงตัว ✅)'); return; }
@@ -3229,6 +3233,7 @@ async function createNewPendingCard() {
 }
 
 async function loadPending() {
+    const _accDefP = AccDefaults.load();   // 🏢 v256 Company เริ่มต้นต่อบัญชี
     try {
         /* limit=0 (2026-10-30): เดิมได้แค่ 500 รายการล่าสุด → รายการเก่า (นำเข้าย้อนหลัง) หาไม่เจอ */
         const res = await fetch(`${API_BASE}/api/transactions?status=PENDING_REVIEW&limit=0`, {
@@ -3289,8 +3294,15 @@ async function loadPending() {
         DupPairs.load().then(() => { if (DupPairs.count && DupPairs.count()) { renderPendingTransactions(); renderPendingHero(); } }).catch(() => {});
         TransferPairs.load().then(() => { if (TransferPairs.count()) { renderPendingTransactions(); renderPendingHero(); } }).catch(() => {});   // ⇄ คู่โอน (2026-10-31)
         /* 📝 ครั้งแรกต่อการเปิดแอป: เติมเบอร์ใน detail รายการ wePAY ที่รอตรวจ (นำเข้าก่อน v243) → มีที่แก้ค่อยโหลดใหม่ */
+        /* 📝 v255 (North: "นำ detail/หมายเหตุใน statement มาใส่ช่อง Detail โดยไม่ต้องโหลดไฟล์ใหม่") — ครั้งแรกต่อการเปิดแอป: รายการรอตรวจที่ Detail ว่าง → ใช้ข้อความ statement */
+        try { if (!sessionStorage.getItem('rr_dnfix')) { sessionStorage.setItem('rr_dnfix', '1');
+            fetch(`${API_BASE}/api/transactions/fill-detail-notes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).then(j => { if (j.filled > 0) { window.showToast?.(`📝 เติม Detail จากข้อความ statement ${j.filled.toLocaleString('en-US')} รายการ`); loadPending(); } }).catch(() => {}); } } catch { /* */ }
         try { if (!sessionStorage.getItem('rr_wpfix')) { sessionStorage.setItem('rr_wpfix', '1');
             fetch(`${API_BASE}/api/wepay/fix-notes`, { method: 'POST' }).then(r => r.json()).then(j => { if (j.fixed > 0) { window.showToast?.(`📝 เติมเบอร์ใน detail รายการ wePAY ${j.fixed} รายการ`); loadPending(); } }).catch(() => {}); } } catch { /* */ }   // 2026-10-31: วาดหัว (ปุ่ม 🔁 อาจซ้ำ / รวมรายการซ้ำ) ใหม่ด้วย — เดิมปุ่มหาย
+        await _accDefP;
+        /* 🏢 v256 ครั้งเดียวต่อเครื่อง: รายการรอตรวจจาก statement → Company ตามค่าเริ่มต้นของบัญชี (บัญชีอื่น = ว่าง ให้เลือกเอง) */
+        try { if (!localStorage.getItem('rr_cofix_v256')) { localStorage.setItem('rr_cofix_v256', '1');
+            fetch(`${API_BASE}/api/transactions/apply-company-defaults`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).then(j => { if (j.changed > 0) { window.showToast?.(`🏢 ตั้ง Company ตามบัญชีแล้ว ${j.changed.toLocaleString('en-US')} รายการ`); loadPending(); } }).catch(() => {}); } } catch { /* */ }
         renderPendingTransactions();
         renderPendingHero();
         LineSlips.load();   // 📲 สลิป LINE ที่ต้องเลือกก่อน (2026-10-15)
@@ -3332,6 +3344,7 @@ function renderPendingTransactions() {
     else if (AppState.pendingSlipFilter === 'NOSLIP') displayList = displayList.filter(tx => !tx.slip_image_url);
     else if (AppState.pendingSlipFilter === 'DUP') displayList = displayList.filter(tx => DupPairs.of(tx.transaction_id));
     else if (AppState.pendingSlipFilter === 'TRF') displayList = displayList.filter(tx => TransferPairs.of(tx.transaction_id));
+    if (AppState.pendingGroupKey) displayList = displayList.filter(tx => PendGroups.keyOf(tx) === AppState.pendingGroupKey);   // 👥 v256
     
     const sortSel = document.getElementById("pending-sort-filter");
     const sortVal = sortSel ? sortSel.value : 'desc';
@@ -3340,6 +3353,11 @@ function renderPendingTransactions() {
         const datetimeB = b.date + ' ' + (b.time || '00:00:00');
         return sortVal === 'asc' ? datetimeA.localeCompare(datetimeB) : datetimeB.localeCompare(datetimeA);
     });
+    /* ⇄ v256: ตัวกรองโอน → ขาออกกับขาเข้าของคู่เดียวกันอยู่ติดกัน · 👥 โหมดจัดกลุ่ม → ผู้รับ/ร้านเดียวกันอยู่ติดกัน (กลุ่มใหญ่ก่อน) */
+    if (AppState.pendingSlipFilter === 'TRF') { const pos = {}; TransferPairs.list().forEach((p, i) => { pos[p.out_id] = i * 2; pos[p.in_id] = i * 2 + 1; }); displayList.sort((a, b) => (pos[a.transaction_id] ?? 1e9) - (pos[b.transaction_id] ?? 1e9)); }
+    else if (AppState.pendingGroupMode && !AppState.pendingGroupKey) { const g = PendGroups.sizes(displayList), k = new Map(displayList.map(t => [t, PendGroups.keyOf(t)]));
+        displayList.sort((a, b) => (g.get(k.get(b)) - g.get(k.get(a))) || k.get(a).localeCompare(k.get(b))); }
+    PendGroups.panel(displayList);
     
     if (displayList.length === 0) {
         container.innerHTML = '<div style="text-align: center; color: #888; padding: 40px; background: rgba(255,255,255,0.4); border-radius: 12px; border: 1px dashed #cccccc;">ไม่มีรายการในบัญชีที่เลือก</div>';
@@ -3437,7 +3455,7 @@ function renderPendingTransactions() {
         detailsToRender.forEach((detail, subIdx) => {
             const dCat = detail.category_id || (subIdx === 0 ? (am.category_id || '') : '');
             let dCont = detail.contact_id || (subIdx === 0 ? (am.contact_id || '') : '');
-            let dEntity = detail.entity_id || (subIdx === 0 ? (am.entity_id || '') : '');
+            let dEntity = detail.entity_id || (subIdx === 0 ? (am.entity_id || (tx.source === 'PDF_IMPORT' ? AccDefaults.of(tx.account_id) : '') || '') : '');   // 🏢 v256
             const stmtSignedAmount = isExpense ? -Math.abs(tx.total_amount) : Math.abs(tx.total_amount);
             // sub-row amount has SAME sign as stmt (new signed model)
             let dAmt = 0;
@@ -3590,18 +3608,32 @@ function renderPendingTransactions() {
         updateCardSum(cardEl);
         try { Similar.watchCard(cardEl); } catch { /* */ }   // 🕘 ประวัติผู้รับ/ร้านเดียวกัน (2026-10-31)
     };
+    /* ⚡ 2026-11-01 (North: "เลือกรายการ/พิมพ์ข้อมูลช้า สะดุด · หน้าตั้งค่ากลับมาช้า") — เดิมทยอยวาดเบื้องหลังจนครบทุกใบ
+       (รอตรวจ 1,969 ใบ = ช่องเลือกหลายแสนตัว ค้างในหน้าเว็บตลอด ทุกหน้าช้าตาม) → วาดเฉพาะที่เลื่อนไปถึง ครั้งละ 40 ใบ
+       ปุ่มทำหลายรายการ (เติมหมวด / ใส่หมวดหลายรายการ / บันทึกทั้งหมด) เรียก AppState._pendingRenderRest() ให้วาดครบก่อน */
     const FIRST = 30, STEP = 40;
+    try { AppState._pendingIO?.disconnect(); } catch { /* */ }
     displayList.slice(0, FIRST).forEach((tx, i) => renderOne(tx, i));
-    let _next = FIRST;
+    let _next = Math.min(FIRST, displayList.length), sentinel = null, io = null;
     const more = () => {
         if (_renderToken !== AppState._pendingRenderToken || _next >= displayList.length) return;
         const end = Math.min(displayList.length, _next + STEP);
         for (let i = _next; i < end; i++) renderOne(displayList[i], i);
         _next = end;
         RevenueChart.decorate(container);
-        if (_next < displayList.length) setTimeout(more, 16);
+        if (!sentinel) return;
+        if (_next >= displayList.length) { io?.disconnect(); sentinel.remove(); sentinel = null; return; }
+        container.appendChild(sentinel); sentinel.querySelector('b').textContent = (displayList.length - _next).toLocaleString('en-US');
+        requestAnimationFrame(() => { if (sentinel && container.offsetParent !== null && sentinel.getBoundingClientRect().top < innerHeight + 600) more(); });
     };
-    if (displayList.length > FIRST) setTimeout(more, 50);
+    AppState._pendingRenderRest = async () => { while (_renderToken === AppState._pendingRenderToken && _next < displayList.length) { more(); await new Promise(r => setTimeout(r, 0)); } };
+    if (displayList.length > _next) {
+        sentinel = document.createElement('div'); sentinel.className = 'pend-more';
+        sentinel.innerHTML = `<button type="button" tabindex="-1">⬇️ แสดงเพิ่ม · เหลือ <b>${(displayList.length - _next).toLocaleString('en-US')}</b> รายการ</button>`;
+        sentinel.querySelector('button').onclick = more;
+        container.appendChild(sentinel);
+        if ('IntersectionObserver' in window) { io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) more(); }, { rootMargin: '600px 0px' }); io.observe(sentinel); AppState._pendingIO = io; }
+    }
 
     // Re-insert unsaved draft cards at the top (legacy safety — should be empty now)
     unsavedCards.forEach(c => container.insertBefore(c, container.firstChild));
@@ -3670,7 +3702,7 @@ async function renderSharedStatusSummary() {
             (pending || []).forEach(tx => {
                 if (!tx.account_id) return;
                 // Skip WEB_GRID — we'll read those live from DOM below
-                if (tx.source === 'WEB_GRID') return;
+                if (tx.source === 'WEB_GRID' && document.querySelector(`#pending-cards-container .tx-card[data-txid="${CSS.escape(String(tx.transaction_id))}"]`)) return;   // v255: ยังไม่ได้วาดการ์ด → ใช้ยอดจาก API
                 if (!savedPendingGroups[tx.account_id]) savedPendingGroups[tx.account_id] = 0;
 
                 const am = tx.auto_match || {};
@@ -6384,6 +6416,7 @@ function openSettingModal(type, oldId = '', extraData = {}) {
     document.getElementById("group-setting-bank").classList.add("hidden");
     document.getElementById("group-setting-accnum").classList.add("hidden");
     document.getElementById("group-setting-pdfpassword")?.classList.add("hidden");
+    document.getElementById("group-setting-txentity")?.classList.add("hidden");
     document.getElementById("group-setting-iscompany").classList.add("hidden");
     document.getElementById("group-setting-contacttype").classList.add("hidden");
     document.getElementById("group-setting-behavior")?.classList.add("hidden");
@@ -6524,6 +6557,9 @@ function openSettingModal(type, oldId = '', extraData = {}) {
         document.getElementById("group-setting-accnum").classList.remove("hidden");
         document.getElementById("group-setting-pdfpassword")?.classList.remove("hidden");
         document.getElementById("group-setting-accounttype")?.classList.remove("hidden");
+        { const g = document.getElementById("group-setting-txentity"), sel = document.getElementById("setting-tx-entity-id");   // 🏢 v256
+          if (g && sel) { g.classList.remove("hidden"); sel.innerHTML = '<option value="">— ว่าง (เลือกเองทุกรายการ) —</option>' + (AppState.entities || []).map(e => `<option value="${e.entity_id}">${String(e.name).replace(/</g, '&lt;')}</option>`).join('');
+            sel.value = (oldId && AccDefaults.of(oldId)) || ''; } }
 
         if (oldId) {
             const acc = AppState.settings.accounts.find(a => a.account_id === oldId);
@@ -6640,6 +6676,10 @@ async function saveSettingItem(e) {
             body: JSON.stringify(payload)
         });
 
+        if (res.ok && type === 'account' && document.getElementById("setting-tx-entity-id") && !document.getElementById("group-setting-txentity")?.classList.contains("hidden")) {
+            const v = document.getElementById("setting-tx-entity-id").value || null;
+            if ((AccDefaults.of(newId) || null) !== v) await fetch(`${API_BASE}/api/accounts/tx-default`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: newId, entity_id: v }) }).then(() => AccDefaults.load()).catch(() => {});
+        }
         if (res.ok) {
             /* ⚡ 2026-10-30 (North: "แก้ตั้งค่าช้า"): ปิดหน้าต่างทันที + แจ้งแบบไม่ต้องกด OK
                โหลดตั้งค่ากับข้อมูลหลักพร้อมกัน (เดิมรอทีละอย่าง) · ล้างแคชข้อมูลหลัก ไม่งั้นชื่อที่เพิ่งแก้ยังเป็นของเก่า 10 นาที */
@@ -7582,9 +7622,9 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
                 ...(stmtId ? { stmt_id: stmtId, stmt_seq: seqOf.get(tx), stmt_balance: (tx.balance == null || tx.balance === '' || !isFinite(tx.balance)) ? null : Number(tx.balance) } : {}),
                 dup_idx: dupIdx.get(tx) || 0,
                 details: [(() => { const k = statementKey(tx.statement_desc), h = k && hints[(tx.type === 'EXPENSE' ? 'OUT' : 'IN') + '|' + k];
-                    const d = { amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), fee: 0, wht: 0, category_id: null, entity_id: entityId, note: tx.note, type: tx.type };
+                    const d = { amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), fee: 0, wht: 0, category_id: null, entity_id: AccDefaults.of(accId) || null /* 🏢 v256: ว่าง ยกเว้นบัญชีที่ตั้ง Company เริ่มต้น */, note: tx.note || stmtDetailNote(tx.statement_desc) || null, type: tx.type };   // v255: Detail = ข้อความ statement
                     if (tx.category_id) { d.category_id = tx.category_id; if (tx.detail_type) d.type = tx.detail_type; d._hint = 1; }   // หมวดที่กำหนดมาจากตัวนำเข้า (wePAY · 2026-10-31)
-                    else if (h) { d.category_id = h.category_id; d.contact_id = h.contact_id; d.entity_id = h.entity_id || entityId; if (h.type) d.type = h.type; d._hint = 1; }
+                    else if (h) { d.category_id = h.category_id; d.contact_id = h.contact_id; if (h.type) d.type = h.type; d._hint = 1; }   // v256: Company ไม่เดาจากประวัติ (ใช้ค่าเริ่มต้นของบัญชี)
                     /* 💳 ชำระบัตร (ใบแจ้งยอดบัตร) = โอนระหว่างบัญชี ไม่ใช่รายรับ (2026-10-30) */
                     else if (tx.note === 'ชำระบัตร' && (AppState.categories || []).some(c => c.category_id === 'Bank_Transfer')) { d.category_id = 'Bank_Transfer'; d.type = 'TRANSFER'; d._hint = 1; }
                     return d; })()]
@@ -9801,8 +9841,8 @@ const FamView = (() => {
         const kp = scope === 'FAMILY' ? [['รับ', T.in, 'pos', `ส่วนตัว ${fm(T.personal_in)} · ธุรกิจ ${fm(T.business_in)}`], ['จ่าย', -T.out, 'neg', `ส่วนตัว ${fm(T.personal_out)} · ธุรกิจ ${fm(T.business_out)}`], ['สุทธิ', T.in - T.out, T.in - T.out < 0 ? 'neg' : 'pos', 'ทุกคน + ทุกธุรกิจ']]
             : scope === 'MINE' ? [['รับ (ส่วนตัว)', mine.in, 'pos', esc(data.me?.name)], ['จ่าย (ส่วนตัว)', -mine.out, 'neg', esc(data.me?.name)], ['สุทธิ', mine.in - mine.out, mine.in - mine.out < 0 ? 'neg' : 'pos', 'ไม่รวมธุรกิจ']]
             : [['รับ (ธุรกิจ)', T.business_in, 'pos', `${data.businesses.length} ธุรกิจ`], ['จ่าย (ธุรกิจ)', -T.business_out, 'neg', ''], ['กำไร', T.business_in - T.business_out, T.business_in - T.business_out < 0 ? 'neg' : 'pos', 'รวมทุกธุรกิจ']];
-        const members = scope === 'FAMILY' ? data.members : scope === 'MINE' ? data.members.filter(m => m.is_me) : [];
-        const bizs = scope === 'MINE' ? data.businesses.filter(b => b.users.some(u => u.user_id === data.me.user_id)) : data.businesses;
+        const members = scope === 'FAMILY' ? (data.members || []) : scope === 'MINE' ? (data.members || []).filter(m => m.is_me) : [];
+        const bizs = scope === 'MINE' ? (data.businesses || []).filter(b => (b.users || []).some(u => u.user_id === data.me?.user_id)) : (data.businesses || []);
         box.innerHTML = `<div class="fv"><div class="fv-h"><b>👨‍👩‍👧 ครอบครัว & ธุรกิจ</b><div class="fv-tabs">${tabs}</div></div>
           <div class="fv-k">${kp.map(k => `<div><small>${k[0]}</small><b class="${k[2]}">${fm(k[1])}</b><i>${k[3]}</i></div>`).join('')}</div>
           ${members.length ? `<div class="fv-sec">สมาชิก</div><div class="fv-mem">${members.map(m => `<div class="fv-m${m.is_me ? ' me' : ''}"><div class="fv-mh">${av(m, 30)}<b>${esc(m.name)}</b>${m.role === 'admin' ? '<span class="fv-tag">ผู้ดูแล</span>' : ''}${m.is_me ? '<span class="fv-tag me">ฉัน</span>' : ''}</div>
@@ -15589,9 +15629,172 @@ const TransferPairs = (() => {
             loadPending();
         } catch (e) { alert('ไม่สำเร็จ: ' + e.message); }
     }
-    return { load, decorate, applyAll, openFor, of: id => byTx[id], count: () => pairs.length };
+    return { load, decorate, applyAll, openFor, of: id => byTx[id], count: () => pairs.length, list: () => pairs.slice() };
 })();
 window.TransferPairs = TransferPairs;
+
+/* 🏢 v256 Company เริ่มต้นต่อบัญชี (Accounts.tx_entity_id · ตั้งได้ที่ ตั้งค่า → บัญชี) */
+const AccDefaults = (() => {
+    let map = {};
+    async function load() { try { const r = await fetch(`${API_BASE}/api/accounts/tx-defaults`); if (r.ok) map = (await r.json()).defaults || {}; } catch { /* ใช้ค่าเดิม */ } AppState.accTxEntity = map; return map; }
+    return { load, of: id => map[id] || '' };
+})();
+window.AccDefaults = AccDefaults;
+
+/* 👥 v256 (North: "ค่าใช้จ่ายรายเดียวกัน filter มาทำงานพร้อมกัน · ข้อมูลทั้งปีทำให้เร็วที่สุด")
+   โหมดจัดกลุ่ม: ผู้รับ/ร้านเดียวกัน (ทิศเดียวกัน) = 1 กลุ่ม · แถบกลุ่มเรียงจากมากไปน้อย · กดกลุ่ม = ดูเฉพาะกลุ่มนั้น
+   แล้วเลือก หมวด / Company / คู่ค้า → "ใส่ให้ทั้งกลุ่ม" → "บันทึก+ยืนยันทั้งกลุ่ม" (ใช้ bulkSaveReady กับการ์ดที่แสดงอยู่) */
+const PendGroups = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fm = n => { const v = Math.round((Number(n) || 0) * 100) / 100, t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const signed = tx => { let a = Number(tx.total_amount) || 0; if (a > 0 && (tx.details || []).some(d => d.type === 'EXPENSE')) a = -a; return a; };
+    const cache = new WeakMap();
+    function keyOf(tx) {
+        if (cache.has(tx)) return cache.get(tx);
+        const k = statementKey(tx.statement_desc) || String(tx.statement_desc || '').toLowerCase().trim() || '—';
+        const key = (signed(tx) < 0 ? 'OUT|' : 'IN|') + (payeeKey(k) || k);
+        cache.set(tx, key); return key;
+    }
+    const sizes = list => { const m = new Map(); for (const t of list) { const k = keyOf(t); m.set(k, (m.get(k) || 0) + 1); } return m; };
+    let q = '';
+    function groupsOf(list) {
+        const m = new Map();
+        for (const t of list) { const k = keyOf(t); let g = m.get(k); if (!g) m.set(k, g = { key: k, n: 0, sum: 0, sample: t.statement_desc || '', accs: new Set(), nocat: 0 });
+            g.n++; g.sum += signed(t); g.accs.add(t.account_id); if (!(t.details || []).some(d => d.category_id && !/uncategor/i.test(d.category_id))) g.nocat++; }
+        return [...m.values()].filter(g => g.n >= 2).sort((a, b) => b.n - a.n || Math.abs(b.sum) - Math.abs(a.sum));
+    }
+    function panel(displayList) {
+        const host = document.getElementById('pending-cards-container'); if (!host) return;
+        let el = document.getElementById('pend-groups');
+        if (!AppState.pendingGroupMode) { el?.remove(); return; }
+        if (!el) { el = document.createElement('div'); el.id = 'pend-groups'; host.parentNode.insertBefore(el, host); }
+        const all = AppState.pendingGroupKey ? groupsOf(AppState.pendingTransactions || []) : groupsOf(displayList);
+        const sel = AppState.pendingGroupKey ? all.find(g => g.key === AppState.pendingGroupKey) : null;
+        if (AppState.pendingGroupKey && !sel) { AppState.pendingGroupKey = null; setTimeout(renderPendingTransactions, 0); return; }   // กลุ่มนี้บันทึกครบแล้ว → กลับหน้ารวมกลุ่ม
+        const accN = id => String((AppState.accounts || []).find(a => a.account_id === id)?.name || id).replace(/^\s*\[[^\]]+\]\s*/, '');
+        if (sel) {
+            const cats = (AppState.categories || []).filter(c => !/uncategor/i.test(c.category_id || '') && !String(c.name || '').includes('รอการระบุ'));
+            const caps = (AppState.captions || []).map(cp => ({ cp, list: cats.filter(c => c.caption_id === cp.type_id) })).filter(x => x.list.length);
+            el.innerHTML = `<div class="pg-sel"><div class="pg-h"><b>👥 ${esc(String(sel.sample).slice(0, 90))}</b><span>${sel.n} รายการ · ${fm(sel.sum)} · ${[...sel.accs].map(accN).map(esc).join(', ')}${sel.nocat ? ` · ยังไม่มีหมวด ${sel.nocat}` : ''}</span>
+                <button type="button" class="pg-x" data-act="back">← กลุ่มทั้งหมด</button></div>
+              <div class="pg-f"><select id="pg-cat"><option value="">— หมวด —</option>${caps.map(x => `<optgroup label="${esc(x.cp.name)}">${x.list.map(c => `<option value="${esc(c.category_id)}">${esc(c.name)}</option>`).join('')}</optgroup>`).join('')}</select>
+                <select id="pg-ent"><option value="">— Company (ไม่เปลี่ยน) —</option><option value="__clear">✕ ล้าง Company</option>${(AppState.entities || []).map(e => `<option value="${esc(e.entity_id)}">${esc(e.name)}</option>`).join('')}</select>
+                <select id="pg-con"><option value="">— คู่ค้า (ไม่เปลี่ยน) —</option>${(AppState.contacts || []).map(c => `<option value="${esc(c.contact_id)}">${esc(c.name)}</option>`).join('')}</select>
+                <button type="button" class="pg-go" data-act="apply">✓ ใส่ให้ทั้ง ${sel.n} รายการ</button><button type="button" class="pg-save" data-act="save">💾 บันทึก+ยืนยันทั้งกลุ่ม</button></div>
+              <small>ใส่แล้วตรวจ/แก้รายตัวได้ก่อนกดบันทึก · การ์ดที่มีหลายรายการย่อยจะไม่ถูกแก้</small></div>`;
+        } else {
+            const shown = all.filter(g => !q || String(g.sample).toLowerCase().includes(q) || g.key.toLowerCase().includes(q));
+            const covered = all.reduce((t, g) => t + g.n, 0);
+            el.innerHTML = `<div class="pg-list"><div class="pg-h"><b>👥 จัดกลุ่มผู้รับ/ร้านเดียวกัน</b><span>${all.length.toLocaleString('en-US')} กลุ่ม ครอบคลุม ${covered.toLocaleString('en-US')} จาก ${displayList.length.toLocaleString('en-US')} รายการ · กลุ่มใหญ่ก่อน</span>
+                <input type="search" id="pg-q" placeholder="ค้นชื่อร้าน/ผู้รับ…" value="${esc(q)}"><button type="button" class="pg-x" data-act="off">✕ ปิดโหมดกลุ่ม</button></div>
+              <div class="pg-chips">${shown.slice(0, 60).map(g => `<button type="button" class="pg-chip${g.nocat ? '' : ' done'}" data-key="${esc(g.key)}" title="${esc(g.sample)}"><span>${g.key.startsWith('OUT|') ? '⬆️' : '⬇️'} ${esc(String(g.sample).slice(0, 42))}</span><b>${g.n}</b><small>${fm(g.sum)}</small></button>`).join('')}
+                ${shown.length > 60 ? `<span class="pg-more">+ อีก ${shown.length - 60} กลุ่ม (พิมพ์ค้นหา)</span>` : ''}</div></div>`;
+        }
+        el.onclick = async e => {
+            const b = e.target.closest('button'); if (!b) return;
+            if (b.dataset.key) { AppState.pendingGroupKey = b.dataset.key; renderPendingTransactions(); renderPendingHero(); el.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+            const act = b.dataset.act;
+            if (act === 'off') { AppState.pendingGroupMode = false; AppState.pendingGroupKey = null; renderPendingTransactions(); renderPendingHero(); }
+            else if (act === 'back') { AppState.pendingGroupKey = null; renderPendingTransactions(); }
+            else if (act === 'apply') {
+                const v = { cat: document.getElementById('pg-cat').value, ent: document.getElementById('pg-ent').value, con: document.getElementById('pg-con').value };
+                if (!v.cat && !v.ent && !v.con) return alert('เลือกหมวด / Company / คู่ค้า อย่างน้อย 1 อย่าง');
+                await AppState._pendingRenderRest?.();
+                let n = 0;
+                for (const c of pendingCards()) { const rows = c.querySelectorAll('.sub-row-item'); if (rows.length !== 1) continue; applyRowValues(rows[0], v); c.style.outline = '2px solid #20C997'; n++; }
+                window.showToast?.(`👥 ใส่ให้ ${n} รายการแล้ว — ตรวจแล้วกด "บันทึก+ยืนยันทั้งกลุ่ม"`);
+            } else if (act === 'save') await bulkSaveReady();
+        };
+        const qi = el.querySelector('#pg-q'); if (qi) qi.oninput = () => { q = qi.value.trim().toLowerCase(); const pos = qi.selectionStart; panel(displayList); const n = document.getElementById('pg-q'); n.focus(); try { n.setSelectionRange(pos, pos); } catch { /* */ } };
+    }
+    return { keyOf, sizes, panel };
+})();
+window.PendGroups = PendGroups;
+/* ใส่ หมวด/Company/คู่ค้า ให้แถวรายการย่อย (โหมดกลุ่ม) · ent "__clear" = ล้าง */
+function applyRowValues(row, v) {
+    if (v.cat) { const cat = row.querySelector('.select-category'), cap = row.querySelector('.select-caption'), catObj = (AppState.categories || []).find(x => x.category_id === v.cat);
+        if (cap && catObj?.caption_id) { cap.value = catObj.caption_id; cap.dispatchEvent(new Event('change')); }
+        if (cat) { cat.value = v.cat; cat.dispatchEvent(new Event('change')); } }
+    if (v.ent) { const e = row.querySelector('.select-entity'); if (e) { e.value = v.ent === '__clear' ? '' : v.ent; e.dispatchEvent(new Event('change')); } }
+    if (v.con) { const e = row.querySelector('.select-contact'); if (e) { fillContactSelect(e); e.value = v.con; e.dispatchEvent(new Event('change')); } }
+}
+
+/* 📝 Detail จากข้อความ statement (v255) · ตัด "-" "DESC :" และ "++" (ชื่อถูกตัด) · ต้องตรงกับ backend/src/detail-notes.js */
+function stmtDetailNote(desc) {
+    return String(desc || '').split(' · ').map(x => x.trim().replace(/\+\+$/, '')).filter(x => x && x !== '-' && !/^DESC\s*:?$/i.test(x)).join(' · ').slice(0, 200);
+}
+
+/* ⌨️ v255 (North: "ในหน้ารอตรวจ กด tab เปลี่ยนช่องได้เรื่อย ๆ ไม่ข้ามไปมา") — Tab/Shift+Tab ในการ์ดรอตรวจ ไปเฉพาะช่องกรอก (ข้ามปุ่ม/แถบคำแนะนำ) ตามลำดับบนลงล่าง */
+document.addEventListener('keydown', e => {
+    if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+    const box = e.target?.closest?.('#pending-cards-container'); if (!box || !e.target.matches('input, select, textarea')) return;
+    const els = [...box.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([disabled]), select:not([disabled]), textarea:not([disabled])')]
+        .filter(el => el.tabIndex !== -1 && !el.readOnly && el.offsetParent !== null && !el.closest('.sim-box, .sim-panel, .dup-strip, .trf-strip'));
+    const i = els.indexOf(e.target); if (i < 0) return;
+    const nx = els[i + (e.shiftKey ? -1 : 1)]; if (!nx) return;
+    e.preventDefault(); nx.focus({ preventScroll: false });
+    if (nx.tagName === 'INPUT' && /^(text|search|tel|)$/.test(nx.type)) { try { nx.select(); } catch { /* */ } }
+}, true);
+
+/* 📅 v255 (North: "ช่องวันที่ ให้พิมพ์วันเดือนปีต่อเนื่องได้เลย ไม่ต้องกด tab · ทุกช่องที่เป็นวันที่")
+   ทุก input[type=date] → ช่องพิมพ์ "วว/ดด/ปปปป" (ใส่ / ให้เอง · ปี พ.ศ. ก็ได้ · 6 หลัก = ปี 2 หลัก) + ปุ่ม 📅 เปิดปฏิทินเดิม
+   ช่องเดิมยังอยู่ (ซ่อน) ค่า YYYY-MM-DD เหมือนเดิม → โค้ดเดิมอ่าน .value ได้ตามปกติ · พิมพ์ครบ = ส่ง input/change ให้ช่องเดิม */
+const DateType = (() => {
+    const VAL = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    const toTxt = v => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v || ''); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
+    const fmt = (dg, trail) => { let o = dg.slice(0, 2); if (dg.length >= 2 && (dg.length > 2 || trail)) o += '/'; o += dg.slice(2, 4); if (dg.length >= 4 && (dg.length > 4 || trail)) o += '/'; return o + dg.slice(4, 8); };
+    const digitsOf = raw => { const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(raw).trim()); if (iso) raw = `${iso[3]}/${iso[2]}/${iso[1]}`;
+        const parts = String(raw).split(/[\/.\-\s]+/);
+        if (parts.length < 2) return String(raw).replace(/\D/g, '').slice(0, 8);
+        const d = parts[0].replace(/\D/g, ''), m = (parts[1] || '').replace(/\D/g, ''), y = parts.slice(2).join('').replace(/\D/g, '');
+        return ((d.length === 1 ? '0' + d : d.slice(0, 2)) + (parts.length > 2 && m.length === 1 ? '0' + m : m.slice(0, 2)) + y).slice(0, 8); };
+    const toIso = dg => { if (dg.length !== 8 && dg.length !== 6) return null;
+        const d = +dg.slice(0, 2), m = +dg.slice(2, 4); let y = +dg.slice(4);
+        if (dg.length === 6) y = y >= 60 ? 2500 + y - 543 : 2000 + y; else if (y > 2400) y -= 543;
+        const dt = new Date(Date.UTC(y, m - 1, d)); if (!m || !d || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d || y < 1900) return null;
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
+    function enhance(el) {
+        if (el.dataset.rrd || el.dataset.native != null || el.closest('[data-native-date]')) return;
+        el.dataset.rrd = '1';
+        const w = document.createElement('span'); w.className = 'rr-dwrap';
+        w.style.cssText = (el.style.cssText || '') + ';padding:0;border:0;background:none;box-shadow:none;';
+        if (!el.style.width && el.classList.contains('form-control')) w.style.width = '100%';
+        const t = document.createElement('input'); t.type = 'text'; t.inputMode = 'numeric'; t.autocomplete = 'off'; t.placeholder = 'วว/ดด/ปปปป'; t.className = 'rr-date' + (el.classList.contains('form-control') ? ' form-control' : '') + (el.classList.contains('form-control-sm') ? ' form-control-sm' : '');
+        t.style.cssText = (el.style.cssText || '') + ';width:100%;min-width:0;margin:0;flex:1 1 auto;';
+        if (el.title) t.title = el.title; if (el.getAttribute('aria-label')) t.setAttribute('aria-label', el.getAttribute('aria-label'));
+        t.value = toTxt(VAL.get.call(el)); t.disabled = el.disabled;
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'rr-dcal'; b.tabIndex = -1; b.title = 'เลือกจากปฏิทิน'; b.textContent = '📅';
+        el.parentNode.insertBefore(w, el); w.append(t, b, el);
+        el.tabIndex = -1; el.classList.add('rr-dnative');
+        Object.defineProperty(el, 'value', { configurable: true, get() { return VAL.get.call(el); }, set(v) { VAL.set.call(el, v); if (document.activeElement !== t) t.value = toTxt(VAL.get.call(el)); } });
+        const push = iso => { if (VAL.get.call(el) === iso) return; VAL.set.call(el, iso); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+        t.addEventListener('input', e => {
+            const del = /^delete/.test(e.inputType || ''), dg = digitsOf(t.value);
+            t.value = fmt(dg, !del && /[\/.\-\s]$/.test(t.value) || (!del && (dg.length === 2 || dg.length === 4)));
+            if (dg.length === 8) { const iso = toIso(dg); t.classList.toggle('bad', !iso); if (iso) push(iso); } else t.classList.remove('bad');
+        });
+        t.addEventListener('blur', () => { const dg = digitsOf(t.value);
+            if (!dg.length) { if (VAL.get.call(el)) push(''); t.classList.remove('bad'); return; }
+            const iso = toIso(dg); if (iso) push(iso); t.value = toTxt(VAL.get.call(el)); t.classList.remove('bad'); });
+        /* คลิกเข้าช่อง = เลือกทั้งหมด → พิมพ์ทับได้เลย (กันคลิกแล้วเคอร์เซอร์ไปต่อท้ายค่าเดิม) */
+        t.addEventListener('focus', () => { t._sel = true; try { t.select(); } catch { /* */ } });
+        t.addEventListener('mouseup', e => { if (t._sel) { e.preventDefault(); t._sel = false; try { t.select(); } catch { /* */ } } });
+        t.addEventListener('keydown', e => { if (e.key === 'Enter') { const iso = toIso(digitsOf(t.value)); if (iso) push(iso); } });
+        el.addEventListener('change', () => { if (document.activeElement !== t) t.value = toTxt(VAL.get.call(el)); });
+        b.onclick = () => { try { if (el.showPicker) { el.showPicker(); return; } } catch { /* */ } el.tabIndex = 0; el.focus(); el.click?.(); el.tabIndex = -1; };
+    }
+    const scan = root => { if (!root || root.nodeType !== 1) return; if (root.matches?.('input[type=date]')) enhance(root); root.querySelectorAll?.('input[type=date]:not([data-rrd])').forEach(enhance); };
+    let queued = [], raf = 0;
+    const flush = () => { raf = 0; const q = queued; queued = []; q.forEach(scan); };
+    function start() {
+        scan(document.body);
+        new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) queued.push(n); if (queued.length && !raf) raf = requestAnimationFrame(flush); })
+            .observe(document.body, { childList: true, subtree: true });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+    return { enhance, toIso, digitsOf, fmt };
+})();
+window.DateType = DateType;
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🏦 แนวคิด ข "ตามบัญชี" (2026-10-30 · North เลือกจาก mockup 008-ข / 009-1 / 010)

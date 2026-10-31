@@ -4031,3 +4031,22 @@ frontend
 ## v254 (2026-10-31)
 - parseTextStatement: หน้าที่ตัวหนังสือหมุน 90° (กรุงไทย Business "Historical_…" จาก JasperReports) → สลับแกน x/y ก่อนจัดบรรทัด
   · ทดสอบ 017-0-27382-2 ต.ค.–ธ.ค. 68: 13 รายการ ยกมา 6,986.21 ยกไป 15,391.21 ยอดเดินตรง 13/13 · ไฟล์กรุงศรี/ไฟล์อื่นผลเหมือนเดิม
+
+## v255 (2026-11-01) ความลื่นหน้ารอตรวจ + ช่องวันที่ + Detail จาก statement
+- รอตรวจ: เดิมทยอยวาดครบทุกใบ (จริง 1,969 ใบ ค้างใน DOM → ทุกหน้าช้า รวมตั้งค่า) → วาด 30 ใบ + ทีละ 40 เมื่อเลื่อนถึง (.pend-more + IntersectionObserver)
+  · AppState._pendingRenderRest() วาดให้ครบก่อน: autofillFromHistory / bulkCategorize / bulkSaveReady · สรุป Balance check: การ์ด WEB_GRID ที่ยังไม่วาด → ใช้ยอดจาก API
+- Tab ในการ์ดรอตรวจ: ไปเฉพาะช่องกรอกตามลำดับ (ข้ามปุ่ม/แถบคำแนะนำ) · ช่องข้อความเลือกทั้งหมดเมื่อเข้า
+- DateType: ทุก input[type=date] (MutationObserver) → ช่องพิมพ์ วว/ดด/ปปปป ใส่ / เอง · พ.ศ./ปี 2 หลักได้ · 📅 = showPicker ช่องเดิม (ซ่อน ค่าเดิม YYYY-MM-DD · ตั้ง .value ด้วยโค้ด → ช่องพิมพ์อัปเดตตาม)
+  · ไม่ต้องการ: ใส่ data-native บน input หรือ data-native-date บนกล่องแม่
+- Detail = ข้อความ statement: นำเข้าใหม่ (stmtDetailNote) · ของเดิม POST /api/transactions/fill-detail-notes (backend/src/detail-notes.js) เรียกอัตโนมัติครั้งแรกต่อการเปิดแอป (sessionStorage rr_dnfix) · ไม่ทับ Detail ที่มีแล้ว · เฉพาะรอตรวจ บรรทัดย่อยเดียว
+- ช่อง Detail ในการ์ด (จอ ≥ 769px) ขึ้นบรรทัดเต็มความกว้าง
+
+## v256 (2026-11-01) ทำงานข้อมูลทั้งปีให้เร็ว
+- 🏢 Company เริ่มต้นต่อบัญชี: Accounts.tx_entity_id (backend/src/account-defaults.js) · ตั้งต้น (ใส่ครั้งเดียวตอนสร้างคอลัมน์ ชื่อบัญชีต้องตรง):
+  A02 BK KBANK / A03 BK BBL / A12 BK KKP → Ent_Co_S01 (Me Bookkeeper) · A04 PRACH KBANK → Ent_Co_S02 · A15 Sorsim KTB → Ent_Co_S05
+  · GET /api/accounts/tx-defaults · POST /api/accounts/tx-default · ตั้งค่า → บัญชี: ช่อง "Company เริ่มต้นของรายการ"
+  · นำเข้า: entity = ค่าเริ่มต้นบัญชี (ไม่เดาจากประวัติ/เจ้าของบัญชีแล้ว) · การ์ด PDF_IMPORT ที่ Company ว่าง → เติมค่าเริ่มต้น
+  · POST /api/transactions/apply-company-defaults: รอตรวจ PDF_IMPORT → Company = ค่าเริ่มต้นบัญชี/ว่าง · เรียกครั้งเดียวต่อเครื่อง (localStorage rr_cofix_v256)
+- ⇄ ตัวกรอง "น่าจะเป็นโอน": ขาออก-ขาเข้าคู่เดียวกันอยู่ติดกัน (TransferPairs.list)
+- 👥 โหมดจัดกลุ่มผู้รับ/ร้าน (ปุ่ม ph-group · PendGroups): key = ทิศ + payeeKey(statementKey) · แถบกลุ่ม (≥2) มากไปน้อย ค้นได้ · เลือกกลุ่ม → หมวด/Company/คู่ค้า "ใส่ให้ทั้งกลุ่ม" (applyRowValues · เฉพาะการ์ดรายการย่อยเดียว) → "บันทึก+ยืนยันทั้งกลุ่ม" (bulkSaveReady) · กลุ่มหมด → กลับหน้ารวมกลุ่ม
+- test/transfers.test.mjs 22 ผ่าน (รวม detail-notes + account-defaults)

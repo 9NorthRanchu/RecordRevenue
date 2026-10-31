@@ -13,6 +13,8 @@ import { handleAccOverview } from './acc-overview.js';
 import { handleFamily, ensureAdminScope } from './family.js';
 import { handleLoans } from './loans.js';
 import { handleTransfers } from './transfers.js';
+import { handleDetailNotes } from './detail-notes.js';
+import { handleAccountDefaults } from './account-defaults.js';
 import { handleDrive } from './drive.js';
 import { handleSimilar } from './similar.js';
 import { handleWepay } from './wepay.js';
@@ -151,7 +153,9 @@ export default {
       { const ao = await handleAccOverview({ url, request, env, cors: corsHeaders, authUserId }); if (ao) return ao; }
       { const fm = await handleFamily({ url, request, env, cors: corsHeaders, authUserId }); if (fm) return fm; }
       { const ln = await handleLoans({ url, request, env, cors: corsHeaders, authUserId }); if (ln) return ln; }
-      { const tf = await handleTransfers({ url, request, env, cors: corsHeaders, authUserId }); if (tf) return tf; }   // ⇄ โอนระหว่างบัญชีของเรา (2026-10-31)   // 💸 หนี้สินที่ติดตาม (2026-10-31)   // 👨‍👩‍👧 ภาพรวมครอบครัว (2026-10-31)
+      { const tf = await handleTransfers({ url, request, env, cors: corsHeaders, authUserId }); if (tf) return tf; }
+      { const dn = await handleDetailNotes({ url, request, env, cors: corsHeaders, authUserId }); if (dn) return dn; }
+      { const ad = await handleAccountDefaults({ url, request, env, cors: corsHeaders, authUserId }); if (ad) return ad; }   // 🏢 Company เริ่มต้นต่อบัญชี (v256)   // 📝 Detail จาก statement (v255)   // ⇄ โอนระหว่างบัญชีของเรา (2026-10-31)   // 💸 หนี้สินที่ติดตาม (2026-10-31)   // 👨‍👩‍👧 ภาพรวมครอบครัว (2026-10-31)
       { const sm = await handleSimilar({ url, request, env, cors: corsHeaders, authUserId }); if (sm) return sm; }   // 🔎 รายการใกล้เคียง (2026-10-31)
       { const wp = await handleWepay({ url, request, env, cors: corsHeaders, authUserId }); if (wp) return wp; }   // 📱 wePAY (2026-10-31)
       { const dv = await handleDrive({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny, fetchImpl: env.__fetch }); if (dv) return dv; }   // 📁 Google Drive (2026-10-31)   // 🏦 ภาพรวมตามบัญชี (2026-10-30)
