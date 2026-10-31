@@ -596,3 +596,6 @@ body.ui-dark .bk-l.bk-sum b{color:#B197FC}body.ui-dark .bk-l.bk-sum{border-color
 body.ui-dark .bk-l.bk-bankl{border-color:#3B3552}body.ui-dark .bk-stat.ok{background:rgba(12,166,120,.18);color:#63E6BE}body.ui-dark .bk-stat.bad{background:rgba(224,49,49,.22);color:#FFA8A8}
 body.ui-dark .bk-stat.none{background:#2A2344;border-color:#6741D9;color:#D0BFFF}body.ui-dark .bk-fix{background:#1E1B2E;color:#FFA8A8}
 .bk-t .bk-edit{margin-left:auto;flex:none;font-size:.72rem;opacity:.45}.bk-t .bk-edit:hover{opacity:1}
+/* ⏳ ปุ่มนำเข้าตอนทำงาน (v236) */
+.rr-hg{font-size:.85rem;animation:rr-hg 1.6s ease-in-out infinite}@keyframes rr-hg{0%,40%{transform:rotate(0)}50%,90%{transform:rotate(180deg)}100%{transform:rotate(180deg)}}
+#btn-trigger-statement-upload[aria-busy="true"]{cursor:progress;overflow:hidden;white-space:nowrap}

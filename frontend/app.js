@@ -7619,6 +7619,16 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
    ② ยอดเดินในไฟล์ (ยกมา + รายการ = ยกไป)  ③ ต่อเนื่อง: ยกมาของไฟล์ = ยกไปของไฟล์ก่อนหน้า (บัญชีเดียวกัน) หรือ = ยอดในระบบ ณ วันแรก
    ④ ซ้ำ: statement นี้เคยนำเข้าแล้ว (บัญชี+ช่วงวัน+ยกไป เดิม) → ไม่ติ๊กให้ · ไฟล์ซ้ำกันในชุด → ข้าม · รายการซ้ำรายบรรทัด → ระบบข้าม/จับคู่ให้เหมือนเดิม
    อ่านเฉพาะไฟล์ที่มีตัวหนังสือ (ไม่ใช้ AI) · ไฟล์สแกน/Print to PDF → แจ้งให้นำเข้าทีละไฟล์ */
+/* ⏳ ปุ่มนำเข้าเป็นปุ่มไอคอนเล็ก (32px) → ตอนทำงานแสดงนาฬิกาทราย ข้อความไปอยู่ใน tooltip (North 2026-10-31: ข้อความไทยเกินขอบ) */
+function setUploadBtnBusy(btn, tip) {
+    if (!btn) return;
+    if (!btn.dataset.idleHtml) btn.dataset.idleHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-hourglass-half rr-hg"></i>'; btn.title = tip || 'กำลังทำงาน…'; btn.setAttribute('aria-busy', 'true');
+}
+function setUploadBtnIdle(btn) {
+    if (!btn) return;
+    btn.innerHTML = btn.dataset.idleHtml || '<i class="fa-solid fa-cloud-arrow-up" style="font-size: 0.8rem;"></i>'; btn.title = 'อัปโหลด PDF Statement'; btn.removeAttribute('aria-busy');
+}
 async function batchImportStatements(files, btn) {
   const accs = AppState.accounts || [], f = n => n == null || n === '' ? '-' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -7778,7 +7788,7 @@ function bindPDFUpload() {
             if (pdfs.length > 1 && pdfs.length === e.target.files.length) {
                 const orig = triggerUploadBtn.innerHTML; triggerUploadBtn.disabled = true;
                 try { await batchImportStatements(pdfs, triggerUploadBtn); } catch (err) { alert('นำเข้าหลายไฟล์ไม่สำเร็จ: ' + err.message); }
-                triggerUploadBtn.disabled = false; triggerUploadBtn.innerHTML = orig; pdfInput.value = ''; return;
+                triggerUploadBtn.disabled = false; setUploadBtnIdle(triggerUploadBtn); pdfInput.value = ''; return;
             }
             
             const importAccSel = document.getElementById("import-account-selector");
@@ -7791,15 +7801,15 @@ function bindPDFUpload() {
             
             const btnIcon = triggerUploadBtn.querySelector("i");
             const originalIconClass = btnIcon ? btnIcon.className : 'fa-solid fa-upload';
-            if(btnIcon) btnIcon.className = "fa-solid fa-spinner fa-spin";
+            if (!triggerUploadBtn.dataset.idleHtml) triggerUploadBtn.dataset.idleHtml = triggerUploadBtn.innerHTML;   // เก็บไอคอนเดิมก่อนเปลี่ยนเป็น ⏳
             triggerUploadBtn.disabled = true;
-            triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังประมวลผล...`;
+            setUploadBtnBusy(triggerUploadBtn, `กำลังประมวลผล...`);
 
             /* 📸 ภาพแคป (2026-10-15): ประวัติ TrueMoney/ShopeePay · รายการสั่งซื้อ Shopee/Lazada · ใบแจ้งยอดบัตรที่ถ่าย/แคปมา
                เลือกได้หลายภาพของบัญชีเดียวกัน → ย่อภาพ → AI อ่านทุกแถว → ตรวจก่อนนำเข้า → นำเข้า (จับคู่สลิปเดิม/กันซ้ำเหมือน PDF) */
             const allFiles = [...e.target.files];
             if (allFiles.some(f => /^image\//.test(f.type))) {
-                const done = () => { triggerUploadBtn.disabled = false; triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เลือกไฟล์ PDF เพื่อนำเข้า`; pdfInput.value = ''; };
+                const done = () => { triggerUploadBtn.disabled = false; setUploadBtnIdle(triggerUploadBtn); pdfInput.value = ''; };
                 try {
                     const shrink = f => new Promise((ok, bad) => { const img = new Image(), url = URL.createObjectURL(f);
                         img.onload = () => { const k = Math.min(1, 1800 / Math.max(img.width, img.height)); const c = document.createElement('canvas');
@@ -7808,14 +7818,14 @@ function bindPDFUpload() {
                         img.onerror = () => { URL.revokeObjectURL(url); bad(new Error('เปิดภาพไม่ได้: ' + f.name)); }; img.src = url; });
                     const imgs = [];
                     for (const f of allFiles.filter(f => /^image\//.test(f.type)).slice(0, 20)) imgs.push(await shrink(f));
-                    triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> AI กำลังอ่าน ${imgs.length} ภาพ...`;
+                    setUploadBtnBusy(triggerUploadBtn, `AI กำลังอ่าน ${imgs.length} ภาพ...`);
                     const r = await fetch(`${API_BASE}/api/statement-ocr`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imagesBase64: imgs }) });
                     const data = await r.json().catch(() => ({}));
                     if (!r.ok || data.error) throw new Error(data.error || `อ่านภาพไม่สำเร็จ (${r.status})`);
                     if (!data.transactions?.length) { alert('ไม่พบรายการเงินในภาพ'); done(); return; }
                     const useAcc = await statementPrecheck(selectedAccId, { account_number: data.account_number, rows: data.transactions, opening: data.opening_balance, closing: data.closing_balance });
                     if (!useAcc) { done(); return; }
-                    const res = await importStatementRows(useAcc, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; },
+                    const res = await importStatementRows(useAcc, data.transactions, (d, n) => { setUploadBtnBusy(triggerUploadBtn, `กำลังบันทึก ${d}/${n}`); },
                         { opening: data.opening_balance, closing: data.closing_balance, source_kind: data.source_kind, file_name: allFiles.map(f => f.name).join(', ').slice(0, 200) });
                     alert(`อ่านจากภาพด้วย AI ${data.transactions.length} รายการ\nนำเข้า ${res.importedCount} รายการ` + (res.mergedCount ? `\n🔗 จับคู่กับสลิป/รายการที่บันทึกไว้แล้ว ${res.mergedCount}` : '') + (res.autoCatCount ? `\n🏷️ ใส่หมวดอัตโนมัติ ${res.autoCatCount}` : '')
                         + (res.skippedCount ? `\nข้ามรายการซ้ำ ${res.skippedCount}` : '') + (res.errorCount ? `\n⚠️ ไม่สำเร็จ ${res.errorCount}` : '')
@@ -7827,7 +7837,7 @@ function bindPDFUpload() {
 
             const resetUploadBtn = () => {
                 triggerUploadBtn.disabled = false;
-                triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เลือกไฟล์ PDF เพื่อนำเข้า`;
+                setUploadBtnIdle(triggerUploadBtn);
                 pdfInput.value = '';
             };
             let foundPassword = null;
@@ -7850,7 +7860,7 @@ function bindPDFUpload() {
                         const useAcc = await statementPrecheck(selectedAccId, { account_number: parsed.account_number, rows: txs, opening: parsed.opening, closing: parsed.closing });
                         if (!useAcc) { resetUploadBtn(); return; }
                         selectedAccId = useAcc;
-                        const res = await importStatementRows(selectedAccId, txs, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; },
+                        const res = await importStatementRows(selectedAccId, txs, (d, n) => { setUploadBtnBusy(triggerUploadBtn, `กำลังบันทึก ${d}/${n}`); },
                             { opening: parsed.opening, closing: parsed.closing, source_kind: 'BANK', file_name: file.name,
                               format: { kind: 'BANK', issuer: parsed.issuer, parser: 'text', read: parsed.account_number }, walk: parsed.checkable ? parsed.agree === parsed.checkable : null });
                         if (res.stmtId) DriveStore.saveStatement(file, selectedAccId, res.stmtId, txs.map(t => t.date).sort().pop());   // 📁 Drive (2026-10-31)
@@ -7897,7 +7907,7 @@ function bindPDFUpload() {
                                 alert("ไฟล์ PDF นี้ถูกเข้ารหัสไว้ แต่คุณยังไม่ได้ตั้งค่า 'รหัสผ่าน PDF' สำหรับบัญชีนี้ในการตั้งค่าระบบ");
                                 if(btnIcon) btnIcon.className = originalIconClass;
                                 triggerUploadBtn.disabled = false;
-                                triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เริ่มนำเข้าข้อมูล`;
+                                setUploadBtnIdle(triggerUploadBtn);
                                 return;
                             }
                             
@@ -7938,7 +7948,7 @@ function bindPDFUpload() {
                                     alert("ไม่สามารถถอดรหัส PDF ได้ รหัสผ่านที่ตั้งไว้ในระบบอาจไม่ถูกต้อง (หรือไฟล์เสียหาย)");
                                     if(btnIcon) btnIcon.className = originalIconClass;
                                     triggerUploadBtn.disabled = false;
-                                    triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เริ่มนำเข้าข้อมูล`;
+                                    setUploadBtnIdle(triggerUploadBtn);
                                     return;
                                 }
                             }
@@ -7946,7 +7956,7 @@ function bindPDFUpload() {
                             alert("เกิดข้อผิดพลาดในการอ่านไฟล์ PDF: " + err.message);
                             if(btnIcon) btnIcon.className = originalIconClass;
                             triggerUploadBtn.disabled = false;
-                            triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เริ่มนำเข้าข้อมูล`;
+                            setUploadBtnIdle(triggerUploadBtn);
                             return;
                         }
                     }
@@ -7968,9 +7978,9 @@ function bindPDFUpload() {
                         const data = await res.json();
                         if (data && data.transactions && data.transactions.length > 0) {
                             const useAcc = await statementPrecheck(selectedAccId, { account_number: data.account_number, rows: data.transactions, opening: data.opening_balance, closing: data.closing_balance });
-                            if (!useAcc) { if(btnIcon) btnIcon.className = originalIconClass; triggerUploadBtn.disabled = false; triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เริ่มนำเข้าข้อมูล`; pdfInput.value = ''; return; }
+                            if (!useAcc) { if(btnIcon) btnIcon.className = originalIconClass; triggerUploadBtn.disabled = false; setUploadBtnIdle(triggerUploadBtn); pdfInput.value = ''; return; }
                             selectedAccId = useAcc;
-                            const res = await importStatementRows(selectedAccId, data.transactions, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; },
+                            const res = await importStatementRows(selectedAccId, data.transactions, (d, n) => { setUploadBtnBusy(triggerUploadBtn, `กำลังบันทึก ${d}/${n}`); },
                                 { opening: data.opening_balance, closing: data.closing_balance, source_kind: data.source_kind, file_name: file?.name || null });
                             let msg = `อ่านด้วย AI · นำเข้า ${res.importedCount} รายการ` + (res.mergedCount ? `\n🔗 จับคู่กับสลิป/รายการที่บันทึกไว้แล้ว ${res.mergedCount} รายการ (ไม่สร้างซ้ำ)` : '') + (res.autoCatCount ? `\n🏷️ ใส่หมวดให้อัตโนมัติจากรายการเดิม ${res.autoCatCount} รายการ (ตรวจแล้วกดบันทึก)` : '');
                             if (res.skippedCount > 0) {
@@ -7989,14 +7999,14 @@ function bindPDFUpload() {
                     }
                     
                     triggerUploadBtn.disabled = false;
-                    triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เลือกไฟล์ PDF เพื่อนำเข้า`;
+                    setUploadBtnIdle(triggerUploadBtn);
                     pdfInput.value = '';
                 };
             } catch (err) {
                 console.error("PDF Upload Error:", err);
                 alert("เกิดข้อผิดพลาดในการประมวลผลไฟล์");
                 triggerUploadBtn.disabled = false;
-                triggerUploadBtn.innerHTML = `<i class="${originalIconClass}"></i> เลือกไฟล์ PDF เพื่อนำเข้า`;
+                setUploadBtnIdle(triggerUploadBtn);
                 pdfInput.value = '';
             }
         });

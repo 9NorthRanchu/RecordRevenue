@@ -3944,3 +3944,4 @@ frontend
 - ยังย่อ/ขยายได้ ค่าเริ่มต้นย่อ · มือถือ 1 คอลัมน์ · app.js?v=233 ui-a.css?v=29
 - v234 (North): ป้าย Recorded / Wait / Total / Bank (dd) · ตัดแถว "ระบบ" · สถานะล่างสุดตำแหน่งเดียวกันทุกการ์ด: ✓ Match (เขียว) / ✗ Mismatch + ผลต่าง + ⚖️ Fix (แดง) / + Add bank balance · ชิปหัว Match/Mismatch/No bank · app.js?v=234 ui-a.css?v=30
 - v235: ✏️ (ใส่ยอดธนาคารเอง ใช้ไม่บ่อย) ย้ายไปมุมขวาบนของการ์ด จางไว้ ชี้แล้วชัด · app.js?v=235 ui-a.css?v=31
+- v236: ปุ่มนำเข้า statement (ไอคอน 32px) ตอนทำงานแสดง ⏳ (fa-hourglass-half หมุน) ข้อความสถานะอยู่ใน tooltip แทน — setUploadBtnBusy/Idle ใช้ทั้งไฟล์เดียว/หลายไฟล์/ภาพแคป · app.js?v=236 ui-a.css?v=32
