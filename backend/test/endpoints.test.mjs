@@ -178,6 +178,12 @@ db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,s
 r = await call('/api/transactions/category-hints', { user: '9North' });
 const hk = r.j?.hints || {};
 check('category-hints: 7-ELEVEN (ตัดเลขแล้วเป็นคีย์เดียว) → T01 · ไม่เห็นของครอบครัวอื่น', hk['OUT|eleven bkk']?.category_id === 'T01' && hk['OUT|eleven bkk'].n === 2 && !Object.keys(hk).some(k => k.includes('secret')), hk);
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES
+ ('TX-PAYEE1','A06','2026-09-01',-500,'CONFIRMED','PDF_IMPORT','9North','โอนเงิน K PLUS โอนไป BAY X1234 นาย สมชาย ใจดี'),('TX-PAYEE2','A06','2026-09-05',-300,'CONFIRMED','PDF_IMPORT','9North','โอนเงิน K PLUS โอนไป SCB X5678 นาย สมชาย ใจดี');
+ INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('D-PAYEE1','TX-PAYEE1',-500,'T03','EXPENSE'),('D-PAYEE2','TX-PAYEE2',-300,'T03','EXPENSE');`);
+const hkPayee = (await call('/api/transactions/category-hints', { user: '9North' })).j?.hints || {};
+check('category-hints: ผู้รับเดียวกันต่างธนาคาร (BAY/SCB) รวมเป็นคีย์ N: เดียว', hkPayee['N:OUT|โอนเงิน k plus โอนไป นาย สมชาย ใจดี']?.category_id === 'T03' && hkPayee['N:OUT|โอนเงิน k plus โอนไป นาย สมชาย ใจดี'].n === 2, Object.keys(hkPayee).filter(k => k.includes('สมชาย')));
+db.exec(`DELETE FROM Transactions WHERE transaction_id IN ('TX-PAYEE1','TX-PAYEE2'); DELETE FROM TransactionDetails WHERE detail_id IN ('D-PAYEE1','D-PAYEE2');`);
 
 /* ── ยอด ณ วันที่ (ตรวจยอดยกมา statement) ── */
 db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id) VALUES ('TX-BA1','A09','2026-08-01',1000,'CONFIRMED','WEB_GRID','9North'),('TX-BA2','A09','2026-08-10',300,'PENDING_REVIEW','PDF_IMPORT','9North'),('TX-BA3','A09','2026-09-01',50,'CONFIRMED','WEB_GRID','9North');

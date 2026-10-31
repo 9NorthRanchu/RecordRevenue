@@ -110,6 +110,35 @@ window.getSessionToken = () => {
     try { return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
 };
 
+/* ⏱️ ตัววัดความเร็ว (2026-10-31 · North: "บน Safari ช้ามาก ทั้งตั้งค่าและนำเข้าไฟล์")
+   เปิดด้วย ?perf=1 ต่อท้ายลิงก์ (จำไว้ในเครื่อง · ปิดด้วย ?perf=0) → กล่องมุมซ้ายล่าง: เวลาของแต่ละคำขอ API + หน้าจอค้างนานสุด
+   ใช้เทียบ Safari กับเบราว์เซอร์อื่น · ไม่ส่งข้อมูลไปไหน */
+(function perfProbe() {
+    let on = false;
+    try { const q = new URLSearchParams(location.search).get('perf'); if (q === '1') localStorage.setItem('rr_perf', '1'); if (q === '0') localStorage.removeItem('rr_perf'); on = localStorage.getItem('rr_perf') === '1'; } catch { /* */ }
+    if (!on) return;
+    const log = [], freezes = []; let box = null, last = performance.now(), worst = 0;
+    const draw = () => {
+        if (!box) { box = document.createElement('div'); box.id = 'rr-perf'; box.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;background:rgba(20,16,40,.92);color:#fff;font:12px/1.45 ui-monospace,Menlo,monospace;padding:8px 10px;border-radius:10px;max-width:440px;max-height:46vh;overflow:auto;box-shadow:0 6px 20px rgba(0,0,0,.3)';
+            box.addEventListener('click', e => { if (e.target.dataset.act === 'clear') { log.length = 0; freezes.length = 0; worst = 0; draw(); } if (e.target.dataset.act === 'copy') navigator.clipboard?.writeText(box.innerText); });
+            (document.body || document.documentElement).appendChild(box); }
+        const ua = /Safari/.test(navigator.userAgent) && !/Chrome|Chromium|Edg/.test(navigator.userAgent) ? 'Safari' : /Chrome|Chromium/.test(navigator.userAgent) ? 'Chrome' : 'อื่น ๆ';
+        box.innerHTML = `<b>⏱️ ${ua}</b> · ค้างนานสุด <b style="color:${worst > 300 ? '#ff8787' : '#8ce99a'}">${Math.round(worst)} ms</b> · ค้าง &gt;200ms ${freezes.length} ครั้ง
+          <span data-act="copy" style="float:right;cursor:pointer;margin-left:8px">📋</span><span data-act="clear" style="float:right;cursor:pointer">🧹</span>
+          ${log.slice(-14).reverse().map(x => `<div style="color:${x.ms > 1500 ? '#ff8787' : x.ms > 600 ? '#ffd43b' : '#c5f6fa'}">${String(Math.round(x.ms)).padStart(5)} ms · ${x.m} ${x.u}${x.kb ? ` · ${x.kb}KB` : ''}${x.s >= 400 ? ` · ${x.s}` : ''}</div>`).join('')}`;
+    };
+    /* หน้าจอค้าง: ตัวจับเวลาทุก 100ms ถ้ามาช้ากว่ากำหนด = JavaScript/วาดหน้าจอกินเวลาอยู่ (ใช้ได้ทั้ง Safari ที่ไม่มี longtask) */
+    setInterval(() => { const now = performance.now(), lag = now - last - 100; last = now; if (lag > 200) { freezes.push(lag); worst = Math.max(worst, lag); draw(); } }, 100);
+    const orig = window.fetch.bind(window);
+    window.fetch = (input, init = {}) => {
+        const url = typeof input === 'string' ? input : (input?.url || ''); if (!/\/api\//.test(url)) return orig(input, init);
+        const t = performance.now(), u = url.replace(/^https?:\/\/[^/]+/, '').slice(0, 60), m = (init.method || 'GET').toUpperCase();
+        return orig(input, init).then(r => { const kb = Math.round((+r.headers.get('content-length') || 0) / 1024); log.push({ u, m, ms: performance.now() - t, s: r.status, kb }); draw(); return r; },
+            e => { log.push({ u, m, ms: performance.now() - t, s: 'ERR' }); draw(); throw e; });
+    };
+    document.addEventListener('DOMContentLoaded', draw);
+})();
+
 (function attachTokenToApiCalls() {
     const original = window.fetch.bind(window);
     window.fetch = (input, init = {}) => {
@@ -2374,7 +2403,8 @@ async function autofillFromHistory() {
             const row = c.querySelector('.sub-row-item'); if (!row || row.querySelector('.select-category')?.value) continue;
             const tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === c.dataset.txid); if (!tx) continue;
             seen++;
-            const k = statementKey(tx.statement_desc), dir = (Number(tx.total_amount) < 0 || tx.details?.[0]?.type === 'EXPENSE') ? 'OUT' : 'IN', h = k && hints[dir + '|' + k];
+            const k = statementKey(tx.statement_desc), dir = (Number(tx.total_amount) < 0 || tx.details?.[0]?.type === 'EXPENSE') ? 'OUT' : 'IN';
+            const h = k && (hints[dir + '|' + k] || hints['N:' + dir + '|' + (payeeKey(k) || k)]);   // ตรงทั้งบรรทัดก่อน · ไม่เจอ → ผู้รับเดียวกันต่างธนาคาร
             if (!h) continue;
             Similar.applyToCard(c, { category_id: h.category_id, entity_id: h.entity_id, contact_id: h.contact_id }, true);
             c.dataset.autofill = '1'; filled++;
@@ -7529,6 +7559,9 @@ async function rematchWaitingDocs() {
 }
 
 /* สร้างรายการรอตรวจสอบจากบรรทัด statement (ใช้ทั้งทางอ่านเองและทาง AI) */
+/* คีย์ผู้รับ/ผู้จ่าย — ต้องเหมือน payeeKey() ใน backend/src/index.js (ตัดชื่อธนาคารปลายทาง/พร้อมเพย์) */
+const PAYEE_DROP = new Set(['bay', 'scb', 'kbank', 'ktb', 'bbl', 'ttb', 'gsb', 'kma', 'baac', 'uob', 'cimb', 'lhb', 'ghb', 'tisco', 'kkp', 'พร้อมเพย์', 'promptpay', 'x', 'for', 'tha', 'th', 'bangkok']);
+function payeeKey(k) { const p = String(k || '').split(' ').filter(w => w && !PAYEE_DROP.has(w)).join(' '); return p.length >= 3 ? p : null; }
 /* คีย์ข้อความธนาคาร — ต้องเหมือน statementKey() ใน backend/src/index.js */
 function statementKey(desc) {
     const k = String(desc || '').toLowerCase().replace(/[x*]{2,}/g, ' ').replace(/[0-9]+/g, ' ').replace(/[^a-z\u0e00-\u0e7f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -15997,11 +16030,19 @@ const WePay = (() => {
         files = [...files].filter(f => /^image\//.test(f.type)); if (!files.length) return alert('เลือกรูปหน้าจอ wePAY');
         const reads = [], errs = [];
         Swal.fire({ title: '📱 กำลังอ่านรูป wePAY…', html: `<div id="wp-prog">0/${files.length}</div>`, allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-        for (const [i, f] of files.entries()) {
-            try { const r = await fetch(`${API_BASE}/api/wepay/read`, { method: 'POST', headers: { 'Content-Type': f.type }, body: f }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status); reads.push(j); }
+        /* ⚡ 2026-10-31 (North: "28 รูป นานหลายนาที"): เดิมอ่านทีละรูป → อ่านพร้อมกัน 4 รูป + ย่อรูปก่อนส่ง (ด้านยาว ≤ 2000px · JPEG) */
+        const shrink = f => new Promise(ok => { const img = new Image(), url = URL.createObjectURL(f);
+            img.onload = () => { const k = Math.min(1, 2000 / Math.max(img.width, img.height)); if (k === 1 && f.size < 900e3) { URL.revokeObjectURL(url); return ok(f); }
+                const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                URL.revokeObjectURL(url); c.toBlob(b => ok(b || f), 'image/jpeg', 0.85); };
+            img.onerror = () => { URL.revokeObjectURL(url); ok(f); }; img.src = url; });
+        const out = new Array(files.length); let next = 0, done = 0;
+        const worker = async () => { while (next < files.length) { const i = next++, f = files[i];
+            try { const b = await shrink(f); const r = await fetch(`${API_BASE}/api/wepay/read`, { method: 'POST', headers: { 'Content-Type': b.type || f.type }, body: b }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status); out[i] = j; }
             catch (e) { errs.push(`${f.name}: ${e.message}`); }
-            const pg = document.getElementById('wp-prog'); if (pg) pg.textContent = `${i + 1}/${files.length}`;
-        }
+            done++; const pg = document.getElementById('wp-prog'); if (pg) pg.textContent = `${done}/${files.length}`; } };
+        await Promise.all(Array.from({ length: Math.min(4, files.length) }, worker));
+        out.forEach(j => j && reads.push(j));
         const rows = merge(reads);
         if (!rows.length) { Swal.fire('ไม่พบรายการ', errs.join('<br>') || 'รูปนี้ไม่มีรายการที่อ่านได้', 'info'); return; }
         const accs = AppState.accounts || [], acc0 = accs.find(a => /wepay|we pay/i.test(`${a.name} ${a.bank_name}`))?.account_id || '';

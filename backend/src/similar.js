@@ -9,7 +9,10 @@ const json = (data, cors, status = 200) => new Response(JSON.stringify(data), { 
 export const simKey = s => String(s || '').toLowerCase().replace(/[x*]{2,}/g, ' ').replace(/[0-9]+/g, ' ').replace(/[^a-z฀-๿]+/g, ' ').replace(/\s+/g, ' ').trim();
 /* คำที่ใช้ค้น: ตัดคำทั่วไปของธนาคารออก เหลือชื่อร้าน/ผู้รับ */
 const STOP = new Set(['transfer', 'withdrawal', 'deposit', 'from', 'to', 'payment', 'bill', 'k', 'biz', 'plus', 'internet', 'mobile', 'bangkok', 'tha', 'th', 'co', 'ltd', 'the',
-  'โอนเงิน', 'รับโอนเงิน', 'โอนไป', 'จาก', 'จ่ายบิล', 'ชำระเงิน', 'บจก', 'บริษัท', 'จำกัด', 'นาย', 'นาง', 'นางสาว', 'ร้าน']);
+  'โอนเงิน', 'รับโอนเงิน', 'โอนไป', 'จาก', 'จ่ายบิล', 'ชำระเงิน', 'บจก', 'บริษัท', 'จำกัด', 'นาย', 'นาง', 'นางสาว', 'ร้าน',
+  /* 2026-10-31 ข้อมูลจริง: "ชำระเงิน K PLUS เพื่อชำระ Ref xx NOODLE" ไปตรงกับ "...เพื่อชำระ... มณี shop" → หมวดผิด · ตัดคำทั่วไปเพิ่ม */
+  'เพื่อชำระ', 'ref', 'for', 'paid', 'enet', 'desc', 'พร้อมเพย์', 'promptpay', 'shop', 'qr', 'kbank', 'bay', 'scb', 'ktb', 'bbl', 'ttb', 'gsb', 'kma', 'baac', 'uob', 'cimb', 'lhb',
+  'รับโอนจาก', 'โอนเข้า', 'ถอนเงิน', 'ฝากเงิน', 'atm', 'cdm', 'pos', 'purchase', 'services', 'service', 'servicespayment', 'company', 'limited', 'public']);
 export const simTokens = s => [...new Set(simKey(s).split(' ').filter(w => w.length >= 3 && !STOP.has(w)))].sort((a, b) => b.length - a.length).slice(0, 3);
 
 export async function handleSimilar({ url, request, env, cors, authUserId }) {

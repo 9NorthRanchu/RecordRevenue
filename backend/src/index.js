@@ -25,6 +25,9 @@ export default {
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id, X-RR-Meta',
       'Access-Control-Expose-Headers': 'X-RR-Enc, X-RR-Mime',   // ไฟล์จาก Drive ส่ง base64 ให้หน้าเว็บถอดเอง (v232)
+      /* ⚡ Safari (2026-10-31 North: "บน Safari ช้ามาก"): ทุกคำขอมี Authorization → เบราว์เซอร์ถามสิทธิ์ (OPTIONS) ก่อนทุกครั้ง
+         ให้จำคำตอบไว้ (Safari สูงสุด 10 นาที · Chrome 2 ชม.) แทนที่จะถามซ้ำทุกคำขอ = เวลารอลดเกือบครึ่ง */
+      'Access-Control-Max-Age': '7200',
     };
 
     if (request.method === 'OPTIONS') {
@@ -602,9 +605,13 @@ export default {
         for (const r of rows) {
           const k = statementKey(r.statement_desc); if (!k) continue;
           const dir = (Number(r.total_amount) < 0 || r.type === 'EXPENSE') ? 'OUT' : 'IN', key = dir + '|' + k;
-          const g = groups[key] ||= { n: 0, combos: {} }; g.n++;
           const ck = [r.category_id, r.entity_id || '', r.contact_id || ''].join('|');
-          (g.combos[ck] ||= { category_id: r.category_id, contact_id: r.contact_id || null, entity_id: r.entity_id || null, type: r.type || null, c: 0 }).c++;
+          /* + คีย์ผู้รับ/ผู้จ่าย (ตัดชื่อธนาคารปลายทาง/พร้อมเพย์): "โอนไป BAY x นาย ก" = "โอนไป SCB x นาย ก" (2026-10-31 ข้อมูลจริง) */
+          const pk = payeeKey(k);
+          for (const kk of pk && pk !== k ? [key, 'N:' + dir + '|' + pk] : [key, 'N:' + dir + '|' + k]) {
+            const g = groups[kk] ||= { n: 0, combos: {} }; g.n++;
+            (g.combos[ck] ||= { category_id: r.category_id, contact_id: r.contact_id || null, entity_id: r.entity_id || null, type: r.type || null, c: 0 }).c++;
+          }
         }
         const hints = {};
         for (const [key, g] of Object.entries(groups)) {
@@ -2524,6 +2531,9 @@ function dbErrorResponse(err, corsHeaders) {
 }
 
 /* คีย์ของข้อความธนาคาร: ตัดเลขบัญชี/เลขอ้างอิง/วันที่/สัญลักษณ์ → เหลือชื่อร้าน/คู่โอน (ใช้คู่กับ statementKey ใน app.js) */
+/* คีย์ผู้รับ/ผู้จ่าย: statementKey แล้วตัดชื่อธนาคาร/ช่องทาง — ต้องเหมือน payeeKey() ใน frontend/app.js */
+const PAYEE_DROP = new Set(['bay', 'scb', 'kbank', 'ktb', 'bbl', 'ttb', 'gsb', 'kma', 'baac', 'uob', 'cimb', 'lhb', 'ghb', 'tisco', 'kkp', 'พร้อมเพย์', 'promptpay', 'x', 'for', 'tha', 'th', 'bangkok']);
+function payeeKey(k) { const p = String(k || '').split(' ').filter(w => w && !PAYEE_DROP.has(w)).join(' '); return p.length >= 3 ? p : null; }
 function statementKey(desc) {
   const k = String(desc || '').toLowerCase().replace(/[x*]{2,}/g, ' ').replace(/[0-9]+/g, ' ').replace(/[^a-z\u0e00-\u0e7f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
   return k.length >= 3 ? k : null;

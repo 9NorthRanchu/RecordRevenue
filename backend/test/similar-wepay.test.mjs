@@ -105,6 +105,14 @@ r = await call('/api/transactions/similar?sign=-1&desc=' + encodeURIComponent('�
 check('ไม่ส่งวันที่ → ไม่เช็คซ้ำ', !(r.j.dup || []).length, r.j.dup);
 db.exec(`DELETE FROM Transactions WHERE transaction_id IN ('O6','O7','O8','O9'); DELETE FROM TransactionDetails WHERE detail_id IN ('d7','d8','d9','d10');`);
 r = await call('/api/transactions/similar?name=' + encodeURIComponent('สำนักงานเขตประเวศ'), { user: '9North' }); check('ค้นจากชื่อผู้รับในสลิป', r.j.items.length >= 2, r.j);
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES
+ ('Q1','A02','2026-07-01',-80,'CONFIRMED','PDF_IMPORT','9North','ชำระเงิน K PLUS เพื่อชำระ Ref X1234 SCB มณี SHOP ลูกชิ้น'),('Q2','A02','2026-07-02',-60,'CONFIRMED','PDF_IMPORT','9North','ชำระเงิน K PLUS เพื่อชำระ Ref X9999 SCB มณี SHOP ลูกชิ้น');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('dq1','Q1',-80,'T02','EXPENSE'),('dq2','Q2',-60,'T02','EXPENSE');`);
+r = await call('/api/transactions/similar?sign=-1&desc=' + encodeURIComponent('ชำระเงิน K PLUS เพื่อชำระ Ref X5555 NOODLE'), { user: '9North' });
+check('คำทั่วไปของธนาคาร (ชำระเงิน/เพื่อชำระ/Ref) ไม่ทำให้ร้านอื่นมาเป็นประวัติ', !r.j.items.some(x => ['Q1', 'Q2'].includes(x.transaction_id)) && !r.j.summary, r.j);
+r = await call('/api/transactions/similar?sign=-1&desc=' + encodeURIComponent('ชำระเงิน K PLUS เพื่อชำระ Ref X7777 SCB มณี SHOP ลูกชิ้น'), { user: '9North' });
+check('ร้านเดียวกันยังเจอ', r.j.items.some(x => x.transaction_id === 'Q1') && r.j.summary?.category_id === 'T02', r.j.summary);
+db.exec(`DELETE FROM Transactions WHERE transaction_id IN ('Q1','Q2'); DELETE FROM TransactionDetails WHERE detail_id IN ('dq1','dq2');`);
 r = await call('/api/transactions/similar?desc=xx', { user: '9North' }); check('ไม่มีคำค้น → ว่าง', r.j.items.length === 0, r.j);
 db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES
  ('P2','A02','2026-10-29',-300,'PENDING_REVIEW','PDF_IMPORT','9North','จ่ายบิล สำนักงานเขตประเวศ 5034101111'),('P3','A02','2026-10-29',-50,'PENDING_REVIEW','PDF_IMPORT','9North','SHOPEEFOOD BANGKOK'),

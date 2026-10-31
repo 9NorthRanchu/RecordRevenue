@@ -3949,3 +3949,16 @@ frontend
   · frontend: บัญชีชื่อ wePAY + ไฟล์เป็นรูปทั้งหมด → ส่งไป WePay.run (ตัวอ่าน wePAY)
   · backend/src/ai-json.js parseAiJson: ตัด ``` · ตัดส่วนเกิน · ลบ comma ท้าย · ตัดแถวที่เสีย/ไม่จบใน transactions|items เก็บแถวที่เหลือ (_repaired) · ใช้กับ runGeminiStatement / runGeminiOCR / wepay · runGeminiStatement อ่านไม่ได้ → ให้ AI อ่านใหม่ 1 ครั้ง
   · เทสต์ similar-wepay 15 ✅ · Playwright wpr.cjs: เลือก A17 + 2 รูป → เรียก /api/wepay/read 2 ครั้ง ไม่เรียก statement-ocr ✅
+
+## v238 — ตรวจข้อมูลจริง (อ่านอย่างเดียว) แล้วแก้ประวัติ/เติมหมวด (2026-10-31)
+- ข้อมูลจริง: รอตรวจ 500 · ไม่มีหมวด 377 · ผู้รับไม่ซ้ำ 185 · ปุ่ม 🪄 เติมได้แค่ 2 · similar ~170ms/ครั้ง · Balance Check 10 บัญชี ตรงทั้งหมด
+- พบ: "ชำระเงิน K PLUS เพื่อชำระ Ref … NOODLE" ได้ "ใช้บ่อย = Bank Transfer" เพราะจับคำทั่วไป (เพื่อชำระ/ref/scb/shop) → เพิ่ม STOP ใน similar.js
+- พบ: "โอนไป BAY x นาย ก" กับ "โอนไป SCB x นาย ก" เป็นคนละคีย์ → payeeKey() (ตัดชื่อธนาคาร/พร้อมเพย์/x/for/tha/bangkok) ทั้ง backend+frontend · category-hints ส่งคีย์ "N:OUT|…" เพิ่ม · autofill ลองคีย์ตรงก่อน แล้วค่อย N:
+- เทสต์ endpoints 34 · similar-wepay 17 ✅ · app.js?v=238
+
+## v239 — Safari ช้า: ตัววัดความเร็ว + ลดการถามสิทธิ์ CORS (2026-10-31)
+- วัดใน Chromium (หน้าต่าง Claude): ตั้งค่าโหลด /api/settings ~180ms /api/users ~200ms · DOM ตั้งค่า ~6k nodes · ไม่มี long task → ช้าเฉพาะ Safari
+- backend: Access-Control-Max-Age 7200 (ทุกคำขอมี Authorization → preflight OPTIONS ทุกครั้ง · Safari จำได้สูงสุด 10 นาที)
+- frontend perfProbe: ?perf=1 (จำใน localStorage rr_perf · ?perf=0 ปิด) → กล่องมุมซ้ายล่าง เวลาแต่ละ API + หน้าจอค้าง (setInterval drift เพราะ Safari ไม่มี longtask) · 📋 คัดลอก 🧹 ล้าง
+- รอ North ส่งภาพกล่องจาก Safari (ตั้งค่า + นำเข้าไฟล์) แล้วค่อยแก้ตรงจุด · app.js?v=239
+- v240: WePay.run อ่านพร้อมกัน 4 รูป (เดิมทีละรูป · 28 รูปนานหลายนาที) + ย่อรูปก่อนส่ง (ด้านยาว ≤2000px JPEG 0.85 · รูปเล็กอยู่แล้วส่งตรง) · Playwright 8 รูป × 1 วิ → 3.6 วิ พร้อมกันสูงสุด 4 ✅
