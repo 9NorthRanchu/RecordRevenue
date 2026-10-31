@@ -9575,7 +9575,7 @@ window.showSlip = showSlip;
    แท็บ "สัญญาเงินกู้" = หน้าทะเบียนหนี้สินแบบเดิม (ยังอยู่ครบ) */
 const DebtorView = (() => {
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const S = { data: null, tab: 'SUM', sel: null, q: '' };
+    const S = { data: null, tab: 'DEBT', sel: null, q: '' };
     const root = () => document.getElementById('dbt-root');
     const thd = s => { if (!s) return '-'; const M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']; const [y, m, d] = s.slice(0, 10).split('-').map(Number); return `${d} ${M[m - 1]} ${String(y + 543).slice(2)}`; };
     const initial = n => esc(String(n || '?').replace(/^(นาย|นาง|นางสาว|คุณ|บจก\.|บริษัท)\s*/, '').trim().charAt(0) || '?');
@@ -9583,7 +9583,7 @@ const DebtorView = (() => {
     async function open() {
         const el = root(); if (!el) return;
         legacy(S.tab === 'LOAN');
-        if (S.tab === 'LOAN') return render();
+        if (S.tab === 'LOAN' || S.tab === 'DEBT') return render();
         el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-secondary)"><i class="fa-solid fa-spinner fa-spin"></i> กำลังโหลด…</div>';
         try { S.data = await get('/api/inbox/parties'); render(); } catch (e) { el.innerHTML = `<div class="dbt-card">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
     }
@@ -9593,9 +9593,10 @@ const DebtorView = (() => {
     }
     function render() {
         const el = root(), D = S.data || { parties: [], totals: { ar: 0, ap: 0, ar_n: 0, ap_n: 0 } }, t = D.totals || {};
-        const tabs = [['SUM', 'สรุป'], ['AR', 'ลูกหนี้ (เขาติดเรา)'], ['AP', 'เจ้าหนี้ (เราติดเขา)'], ['LOAN', 'สัญญาเงินกู้/ผ่อน']];
+        const tabs = [['DEBT', '💸 หนี้สินที่ติดตาม'], ['SUM', 'สรุปลูกหนี้/เจ้าหนี้'], ['AR', 'ลูกหนี้ (เขาติดเรา)'], ['AP', 'เจ้าหนี้ (เราติดเขา)'], ['LOAN', 'ทะเบียนเดิม']];
         const kpi = (ic, bg, col, lab, val, sub) => `<div class="dv2-kpi"><span class="dv2-kic" style="background:${bg};color:${col}">${ic}</span><div class="dv2-ktx"><div class="dv2-klab">${lab}</div><div class="dv2-kval" style="color:${col}">${val}</div><div class="dv2-ksub">${sub}</div></div></div>`;
         let html = `<div class="dbt-tabs">${tabs.map(([k, l]) => `<button type="button" class="${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
+        if (S.tab === 'DEBT') { el.innerHTML = html + '<div id="debt-ui"></div>'; bind(); DebtUI.render(document.getElementById('debt-ui')); return; }
         if (S.tab === 'LOAN') { el.innerHTML = html + '<div class="ob2-sub" style="margin:4px 0 10px">ทะเบียนสัญญาเงินกู้/ผ่อนแบบเดิม · ดูยอดคงเหลือที่คำนวณละเอียดกว่าได้ที่เมนู <a href="#" onclick="switchView(\'cards\');return false">บัตร & เงินกู้</a></div>'; bind(); return; }
         html += `<div class="dv2-kpis dbt-kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
             ${kpi('<i class="fa-solid fa-arrow-up-right"></i>', 'rgba(32,201,151,.14)', 'var(--success-color)', 'ลูกหนี้รวม (เขาติดเรา)', dv2F(t.ar || 0), `${t.ar_n || 0} คน`)}
@@ -9642,6 +9643,115 @@ const DebtorView = (() => {
     return { open };
 })();
 window.DebtorView = DebtorView;
+
+/* 💸 หนี้สินที่ติดตาม (2026-10-31 · North: หนี้บ้าน หนี้รถ ดอกเบี้ยจ่าย · หนี้อื่นที่ต้องการ monitor · ผูกกับ category)
+   ไม่รวมบัตรเครดิต · การ์ดต่อสัญญา: คงเหลือ · ความคืบหน้า · งวด · ดอกเบี้ย/เงินต้นปีนี้ · งวดถัดไป · กำหนดจ่าย 60 วัน · ลดหย่อนดอกเบี้ยบ้าน */
+const DebtUI = (() => {
+    let box = null, data = null, flt = 'ALL';
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fm = n => { const v = Math.round((Number(n) || 0) * 100) / 100, t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const f0 = n => Math.round(Number(n) || 0).toLocaleString('en-US');
+    const MTH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${+m[3]} ${MTH[+m[2] - 1]} ${(+m[1] + 543) % 100}` : '—'; };
+    const KIND = { HOME: ['🏠', 'บ้าน'], CAR: ['🚗', 'รถ'], OTHER: ['📌', 'อื่น ๆ'], LEND: ['🤝', 'ให้ยืม'] };
+    const api = async (path, body) => { const r = await fetch(API_BASE + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined); const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || r.status); return j; };
+    async function render(el) {
+        box = el || box; if (!box) return;
+        box.innerHTML = '<div class="dl-load">⏳ กำลังโหลด…</div>';
+        try { data = await api('/api/loans/overview'); } catch (e) { box.innerHTML = `<div class="dl-load">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
+        draw();
+    }
+    function dueChip(l) {
+        if (l.status === 'closed') return `<div class="dl-due ok"><span>✅ ปิดแล้ว ${dTh(l.closed_date)}</span></div>`;
+        if (!l.due_day) return l.last_payment ? `<div class="dl-due mute"><span>จ่ายล่าสุด ${dTh(l.last_payment)}</span><span>ไม่ได้ตั้งวันครบกำหนด</span></div>` : '';
+        const d = l.days_to_due;
+        return l.due_status === 'PAID' ? `<div class="dl-due ok"><span>✅ จ่ายงวดนี้แล้ว</span><span>ถัดไป ${dTh(l.next_due)}</span></div>`
+            : l.due_status === 'OVERDUE' ? `<div class="dl-due bad"><span>⚠️ ครบกำหนด ${dTh(l.next_due)}</span><span>เลยมา ${Math.abs(d)} วัน</span></div>`
+            : `<div class="dl-due ${l.due_status === 'DUE_SOON' ? 'warn' : 'mute'}"><span>⏰ ครบกำหนด ${dTh(l.next_due)}</span><span>อีก ${d} วัน</span></div>`;
+    }
+    function card(l) {
+        const [ic] = KIND[l.kind] || KIND.OTHER, rec = l.type === 'RECEIVABLE';
+        const sub = [l.start_date ? `เริ่มนับ ${dTh(l.start_date)}` : '', l.term_months ? `${l.term_months} งวด` : '', l.interest_rate ? `ดอกเบี้ย ${l.interest_rate}%${l.rate_type === 'FLAT' ? ' flat' : ''}` : (l.kind !== 'LEND' ? 'ไม่มีดอกเบี้ย' : ''), l.principal_category ? `หมวด ${String(l.principal_category).replace(/^\s*\[[^\]]+\]\s*/, '')}` : ''].filter(Boolean).join(' · ');
+        return `<div class="dl-c${l.status === 'closed' ? ' closed' : ''}" data-id="${esc(l.debt_id)}"><div class="dl-h"><b>${ic} ${esc(l.name)}</b>${l.lender || l.contact_name ? `<span class="dl-tag">${esc(l.lender || l.contact_name)}</span>` : ''}${l.entity_name ? `<span class="dl-tag ent">${esc(l.entity_name)}</span>` : ''}<button type="button" class="dl-ed" data-edit="${esc(l.debt_id)}" title="แก้ไข">✏️</button></div>
+          <div class="dl-sub">${esc(sub)}</div>
+          <div class="dl-l big"><span>${rec ? 'เขายังค้าง' : 'คงเหลือ'}</span><b class="${rec ? 'pos' : 'neg'}">${fm(rec ? l.outstanding : -l.outstanding)}</b></div>
+          <div class="dl-bar"><span style="width:${l.progress}%"></span></div>
+          <div class="dl-l sm"><span>${rec ? 'คืนแล้ว' : 'จ่ายแล้ว'} ${l.progress}%${l.term_months ? ` · ${l.paid_installments}/${l.term_months} งวด` : l.paid_installments ? ` · ${l.paid_installments} งวด` : ''}</span><span>ยอด${rec ? 'ยืม' : 'กู้'} ${f0(l.original)}</span></div>
+          ${l.installment_amount ? `<div class="dl-l"><span>งวดละ</span><b>${fm(l.installment_amount)}</b></div>` : ''}
+          ${!rec && (l.year_interest || l.year_principal) ? `<div class="dl-l"><span>ปีนี้ ดอกเบี้ย / เงินต้น</span><b>${f0(l.year_interest)} / ${f0(l.year_principal)}</b></div>` : ''}
+          ${l.next_split && l.status !== 'closed' && l.interest_rate ? `<div class="dl-l sm"><span>งวดถัดไปประมาณ</span><span>ต้น ${f0(l.next_split.principal)} · ดอก ${f0(l.next_split.interest)}</span></div>` : ''}
+          ${dueChip(l)}${l.asset_ref ? `<div class="dl-link">🔗 ${esc(l.asset_ref)}</div>` : ''}</div>`;
+    }
+    function draw() {
+        const L = data.loans || [], T = data.totals || {};
+        const cnt = k => L.filter(l => k === 'CLOSED' ? l.status === 'closed' : l.status !== 'closed' && (k === 'ALL' || l.kind === k)).length;
+        const list = L.filter(l => flt === 'CLOSED' ? l.status === 'closed' : l.status !== 'closed' && (flt === 'ALL' || l.kind === flt));
+        const tab = (k, t) => `<button type="button" class="${flt === k ? 'on' : ''}" data-f="${k}">${t} ${cnt(k)}</button>`;
+        box.innerHTML = `<div class="dl-top"><div class="dl-k"><div><small>หนี้คงเหลือทั้งหมด</small><b class="neg">${fm(-T.outstanding)}</b><i>${T.count} สัญญา</i></div>
+            <div><small>ผ่อนต่อเดือน</small><b>${fm(T.monthly)}</b><i>${T.next_due ? `ครบกำหนดถัดไป ${dTh(T.next_due)}` : 'ยังไม่ได้ตั้งวันครบกำหนด'}</i></div>
+            <div><small>ดอกเบี้ยจ่ายปีนี้</small><b class="neg">${fm(-T.year_interest)}</b><i>${T.home_interest ? `บ้านลดหย่อนได้ ${fm(T.home_interest_deductible)}` : 'ดอกเบี้ยบ้านลดหย่อนได้ ≤100,000'}</i></div>
+            <div><small>ให้ยืม (เขาติดเรา)</small><b class="pos">${fm(T.receivable)}</b><i>ดูลูกหนี้ทั้งหมดที่แท็บถัดไป</i></div></div>
+          <div class="dl-bar2"><div class="dl-tabs">${tab('ALL', 'ทั้งหมด')}${tab('HOME', '🏠 บ้าน')}${tab('CAR', '🚗 รถ')}${tab('OTHER', '📌 อื่น ๆ')}${tab('LEND', '🤝 ให้ยืม')}${tab('CLOSED', '✅ ปิดแล้ว')}</div><button type="button" class="dl-add">+ เพิ่มหนี้</button></div></div>
+          ${list.length ? `<div class="dl-grid">${list.map(card).join('')}</div>` : `<div class="dl-empty">${L.length ? 'ไม่มีรายการในหมวดนี้' : '💡 ยังไม่มีหนี้ที่ติดตาม — กด "+ เพิ่มหนี้" เช่น กู้บ้าน กู้รถ หรือหนี้อื่นที่อยากดูยอดคงเหลือ<br><small>ระบบนับการจ่ายจาก "หมวดเงินต้น / หมวดดอกเบี้ย" ที่เลือก (บันทึกค่างวดแยก 2 บรรทัด: เงินต้น + ดอกเบี้ย)</small>'}</div>`}
+          ${data.schedule?.length ? `<div class="dl-sec">📅 กำหนดจ่าย 60 วันข้างหน้า</div><div class="dl-tbl"><div class="dl-tr h"><span>วันที่</span><span>รายการ</span><span class="r">เงินต้น</span><span class="r">ดอกเบี้ย</span><span class="r">รวม</span></div>
+            ${data.schedule.map(x => `<div class="dl-tr"><span>${dTh(x.date)}</span><span>${(KIND[x.kind] || KIND.OTHER)[0]} ${esc(x.name)}</span><span class="r">${fm(x.principal)}</span><span class="r">${fm(x.interest)}</span><b class="r">${fm(x.installment)}</b></div>`).join('')}</div>
+            <div class="dl-note">เงินต้น/ดอกเบี้ยเป็นค่าประมาณจากยอดคงเหลือและอัตราดอกเบี้ย · ตอนบันทึกจริงใช้ตามใบเสร็จธนาคาร</div>` : ''}`;
+        box.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { flt = b.dataset.f; draw(); });
+        box.querySelector('.dl-add').onclick = () => form(null);
+        box.querySelectorAll('[data-edit]').forEach(b => b.onclick = e => { e.stopPropagation(); form(L.find(l => l.debt_id === b.dataset.edit)); });
+        box.querySelectorAll('.dl-c').forEach(c => c.onclick = () => detail(L.find(l => l.debt_id === c.dataset.id)));
+    }
+    async function detail(l) {
+        if (!l || !window.Swal) return;
+        Swal.fire({ title: `${(KIND[l.kind] || KIND.OTHER)[0]} ${esc(l.name)}`, width: 640, showConfirmButton: false, showCloseButton: true, html: '<div class="dl-load">⏳</div>', didOpen: async () => {
+            try { const d = await api('/api/loans/detail?id=' + encodeURIComponent(l.debt_id));
+                Swal.update({ html: `<div class="dl-det"><div class="dl-l big"><span>คงเหลือ</span><b class="${l.type === 'RECEIVABLE' ? 'pos' : 'neg'}">${fm(l.type === 'RECEIVABLE' ? d.outstanding : -d.outstanding)}</b></div>
+                  <div class="dl-l"><span>ดอกเบี้ยจ่ายรวม</span><b>${fm(d.interest_total)}</b></div><div class="dl-l"><span>จำนวนรายการ</span><b>${d.payments}</b></div>
+                  ${d.lines.length ? `<div class="dl-tbl" style="margin-top:8px"><div class="dl-tr h" style="grid-template-columns:90px 1fr 70px 100px 110px"><span>วันที่</span><span>รายการ</span><span>ประเภท</span><span class="r">ยอด</span><span class="r">คงเหลือ</span></div>
+                    ${d.lines.slice(0, 60).map(x => `<div class="dl-tr" style="grid-template-columns:90px 1fr 70px 100px 110px"><span>${dTh(x.date)}</span><span class="dl-ell">${esc(x.statement_desc || x.note || x.account_name || '')}</span><span>${x.kind === 'PRINCIPAL' ? 'เงินต้น' : 'ดอกเบี้ย'}</span><span class="r">${fm(x.amount)}</span><span class="r">${x.balance_after == null ? '' : fm(x.balance_after)}</span></div>`).join('')}</div>` : '<div class="dl-empty">ยังไม่พบการจ่ายในหมวดที่เลือก</div>'}
+                  <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end"><button type="button" class="dl-b o" id="dl-close">${l.status === 'closed' ? '↩️ เปิดใหม่' : '✅ ปิดหนี้นี้'}</button><button type="button" class="dl-b" id="dl-edit">✏️ แก้ไข</button></div></div>` });
+                document.getElementById('dl-edit').onclick = () => { Swal.close(); form(l); };
+                document.getElementById('dl-close').onclick = async () => { if (!confirm(l.status === 'closed' ? 'เปิดหนี้นี้กลับมาติดตาม?' : 'ปิดหนี้นี้ (จ่ายครบแล้ว)?')) return; await api('/api/loans/close', { debt_id: l.debt_id, reopen: l.status === 'closed' }); Swal.close(); render(); };
+            } catch (e) { Swal.update({ html: `<div class="dl-load">โหลดไม่สำเร็จ: ${esc(e.message)}</div>` }); } } });
+    }
+    function form(l) {
+        if (!window.Swal) return;
+        const cats = (AppState.categories || []).filter(c => !/uncategor/i.test(c.category_id || '')), caps = AppState.captions || [];
+        const catOpt = sel => caps.map(cp => { const g = cats.filter(c => c.caption_id === cp.type_id); return g.length ? `<optgroup label="${esc(cp.name)}">${g.map(c => `<option value="${esc(c.category_id)}"${c.category_id === sel ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</optgroup>` : ''; }).join('');
+        const conOpt = sel => (AppState.contacts || []).map(c => `<option value="${esc(c.contact_id)}"${c.contact_id === sel ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+        const entOpt = sel => (AppState.entities || []).filter(e => !(AppState.allowedEntities || []).length || AppState.allowedEntities.includes(e.entity_id)).map(e => `<option value="${esc(e.entity_id)}"${e.entity_id === sel ? ' selected' : ''}>${esc(e.name)}</option>`).join('');
+        const k0 = l?.kind || 'HOME';
+        Swal.fire({ title: l ? 'แก้ไขหนี้' : '+ เพิ่มหนี้ที่ติดตาม', width: 620, showCancelButton: true, cancelButtonText: 'ยกเลิก', confirmButtonText: 'บันทึก', confirmButtonColor: '#5F3DC4', focusConfirm: false,
+            html: `<div class="dl-f"><div class="dl-seg" id="dlk">${Object.entries(KIND).map(([k, [ic, t]]) => `<button type="button" data-k="${k}" class="${k === k0 ? 'on' : ''}">${ic} ${t}</button>`).join('')}</div>
+              <label class="w2">ชื่อ<input id="dl-n" value="${esc(l?.name || '')}" placeholder="เช่น บ้าน Chaiyapruk · Honda CR-V · ยืมพี่ปุ้ย"></label>
+              <label>ธนาคาร / ผู้ให้กู้<input id="dl-lender" value="${esc(l?.lender || '')}" placeholder="KBank · TISCO"></label>
+              <label>คู่ค้า (ไม่บังคับ)<select id="dl-con"><option value="">— ไม่ระบุ —</option>${conOpt(l?.contact_id)}</select></label>
+              <label>หมวดเงินต้น *<select id="dl-pc"><option value="">— เลือก —</option>${catOpt(l?.principal_category_id)}</select></label>
+              <label>หมวดดอกเบี้ย<select id="dl-ic"><option value="">— ไม่มี —</option>${catOpt(l?.interest_category_id)}</select></label>
+              <label>ยอดกู้เดิม<input id="dl-orig" inputmode="decimal" value="${l?.original ?? ''}" placeholder="5,000,000"></label>
+              <label>ยอดหนี้ ณ วันเริ่มนับ *<input id="dl-bal" inputmode="decimal" value="${l?.start_balance ?? ''}"></label>
+              <label>วันเริ่มนับ<input id="dl-sd" type="date" value="${esc(l?.start_date || '')}"></label>
+              <label>Company<select id="dl-ent"><option value="">— ไม่ระบุ —</option>${entOpt(l?.entity_id || (AppState.allowedEntities || [])[0])}</select></label>
+              <label>ดอกเบี้ย % ต่อปี<input id="dl-rate" inputmode="decimal" value="${l?.interest_rate ?? ''}" placeholder="3.25"></label>
+              <label>วิธีคิดดอกเบี้ย<select id="dl-rt"><option value="REDUCING"${l?.rate_type !== 'FLAT' ? ' selected' : ''}>ลดต้นลดดอก (บ้าน)</option><option value="FLAT"${l?.rate_type === 'FLAT' ? ' selected' : ''}>คงที่ flat (รถ)</option></select></label>
+              <label>ค่างวด / เดือน<input id="dl-inst" inputmode="decimal" value="${l?.installment_amount ?? ''}"></label>
+              <label>ครบกำหนดทุกวันที่<input id="dl-due" inputmode="numeric" value="${l?.due_day ?? ''}" placeholder="5"></label>
+              <label>จำนวนงวดทั้งหมด<input id="dl-term" inputmode="numeric" value="${l?.term_months ?? ''}" placeholder="360"></label>
+              <label>ผูกกับทรัพย์สิน<input id="dl-asset" value="${esc(l?.asset_ref || '')}" placeholder="เช่น บ้าน Chaiyapruk"></label>
+              <label class="w2">หมายเหตุ<input id="dl-note" value="${esc(l?.note || '')}"></label>
+              <small class="w2">ระบบนับว่าจ่ายแล้วเท่าไรจากรายการที่ยืนยันใน "หมวดเงินต้น" (และคู่ค้า ถ้าเลือก) ตั้งแต่วันเริ่มนับ · ดอกเบี้ยนับจาก "หมวดดอกเบี้ย"</small></div>`,
+            didOpen: () => { document.querySelectorAll('#dlk button').forEach(b => b.onclick = () => { document.querySelectorAll('#dlk button').forEach(x => x.classList.toggle('on', x === b)); const rt = document.getElementById('dl-rt'); if (b.dataset.k === 'CAR') rt.value = 'FLAT'; else if (b.dataset.k === 'HOME') rt.value = 'REDUCING'; }); },
+            preConfirm: async () => {
+                const v = id => document.getElementById(id).value.trim(), n = id => v(id).replace(/,/g, '');
+                const kind = document.querySelector('#dlk button.on')?.dataset.k || 'OTHER';
+                try { await api('/api/loans/save', { debt_id: l?.debt_id, name: v('dl-n'), kind, type: kind === 'LEND' ? 'RECEIVABLE' : 'PAYABLE', lender: v('dl-lender'), contact_id: v('dl-con'), principal_category_id: v('dl-pc'), interest_category_id: v('dl-ic'),
+                    original_amount: n('dl-orig'), start_balance: n('dl-bal'), start_date: v('dl-sd'), entity_id: v('dl-ent'), interest_rate: n('dl-rate'), rate_type: v('dl-rt'), installment_amount: n('dl-inst'), due_day: v('dl-due'), term_months: v('dl-term'), asset_ref: v('dl-asset'), note: v('dl-note') }); }
+                catch (e) { Swal.showValidationMessage(e.message); return false; }
+            } }).then(r => { if (r.isConfirmed) { window.showToast?.('✅ บันทึกแล้ว'); render(); } });
+    }
+    return { render };
+})();
+window.DebtUI = DebtUI;
 
 /* 👨‍👩‍👧 ครอบครัว & ธุรกิจ บนหน้าภาพรวม (2026-10-31 · North: ใช้ในครอบครัว · ดูรวม/เฉพาะของตัวเอง · ธุรกิจทำด้วยกันใช้ statement ร่วมกัน)
    ผู้ดูแล: ทั้งครอบครัว / ของฉัน / ธุรกิจ · user: ของฉัน / ธุรกิจที่ร่วม (เซิร์ฟเวอร์กรองตามสิทธิ์อยู่แล้ว) */

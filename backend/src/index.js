@@ -11,6 +11,7 @@ import { handleStmtReport, ensureStmtCols, stmtFields, cleanupStatementHeaders }
 import { handleRevenueChart } from './revenue-chart.js';
 import { handleAccOverview } from './acc-overview.js';
 import { handleFamily, ensureAdminScope } from './family.js';
+import { handleLoans } from './loans.js';
 import { handleDrive } from './drive.js';
 import { handleSimilar } from './similar.js';
 import { handleWepay } from './wepay.js';
@@ -147,7 +148,8 @@ export default {
       /* 👥 ผังเก็บรายได้ BKP → จับเงินเข้า (2026-10-30 · revenue-chart.js) */
       { const rc = await handleRevenueChart({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny }); if (rc) return rc; }
       { const ao = await handleAccOverview({ url, request, env, cors: corsHeaders, authUserId }); if (ao) return ao; }
-      { const fm = await handleFamily({ url, request, env, cors: corsHeaders, authUserId }); if (fm) return fm; }   // 👨‍👩‍👧 ภาพรวมครอบครัว (2026-10-31)
+      { const fm = await handleFamily({ url, request, env, cors: corsHeaders, authUserId }); if (fm) return fm; }
+      { const ln = await handleLoans({ url, request, env, cors: corsHeaders, authUserId }); if (ln) return ln; }   // 💸 หนี้สินที่ติดตาม (2026-10-31)   // 👨‍👩‍👧 ภาพรวมครอบครัว (2026-10-31)
       { const sm = await handleSimilar({ url, request, env, cors: corsHeaders, authUserId }); if (sm) return sm; }   // 🔎 รายการใกล้เคียง (2026-10-31)
       { const wp = await handleWepay({ url, request, env, cors: corsHeaders, authUserId }); if (wp) return wp; }   // 📱 wePAY (2026-10-31)
       { const dv = await handleDrive({ url, request, env, cors: corsHeaders, authUserId, canUseAccount, deny, fetchImpl: env.__fetch }); if (dv) return dv; }   // 📁 Google Drive (2026-10-31)   // 🏦 ภาพรวมตามบัญชี (2026-10-30)

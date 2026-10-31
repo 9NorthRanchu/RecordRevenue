@@ -4003,3 +4003,12 @@ frontend
   · ตัวอ่านข้อความไม่รู้จัก "01/11/2025 01:01:19 รับโอนเงิน" (วันที่+เวลา+รายการช่องเดียว) → ตกไปใช้ AI → ไม่มียอดยกไป · แก้: แยก 3 ช่อง → อ่านได้ 145 แถว ยอดเดินตรง 144/144 ยกไป 12,943.01 (= Total ในระบบพอดี)
   · statementPrecheck: ไม่มียอดยกไป → ใช้ยอดคงเหลือบรรทัดสุดท้าย (AI) · SCB เดิมยังอ่านได้ตรง
   · ข้อมูลเดิม A08: 143 รอตรวจ + 2 ยืนยัน จาก AI (ข้อความต่างจากตัวอ่านใหม่ → ถ้านำเข้าซ้ำจะซ้ำ) → แนะนำ North กด + Add bank balance 29/05/2026 = 12,943.01 แทน
+
+## v251 — 💸 หนี้สินที่ติดตาม (2026-10-31 · ตาม mockup debt.png)
+- backend/src/loans.js: ensureDebtCols (Debts + kind · lender · original_amount · interest_rate · rate_type · term_months · due_day · asset_ref · note · closed_date)
+  · GET /api/loans/overview (สัญญา · คงเหลือ · % · งวด · ดอกเบี้ย/เงินต้นปีนี้ · งวดถัดไป PAID/UPCOMING/DUE_SOON/OVERDUE (จ่ายในช่วง −20…+10 วันของวันครบกำหนด) · แบ่งงวดประมาณ (ลดต้นลดดอก/flat) · กำหนดจ่าย 60 วัน · ลดหย่อนดอกเบี้ยบ้าน ≤100,000)
+  · POST /api/loans/save (หมวดเงินต้นบังคับ · คู่ค้าไม่บังคับ · Company ต้องมีสิทธิ์) · GET /api/loans/detail · POST /api/loans/close (ปิด/เปิดใหม่)
+  · ใครเห็น: ผู้ดูแลทั้งหมด · user = Company ของหนี้อยู่ในสิทธิ์ + members เดิม
+- frontend DebtUI: แท็บแรก "💸 หนี้สินที่ติดตาม" ในหน้าลูกหนี้/เจ้าหนี้ (แท็บเดิมยังอยู่ · "สัญญาเงินกู้/ผ่อน" เปลี่ยนชื่อเป็น "ทะเบียนเดิม") · ฟอร์มเพิ่ม/แก้ (บ้าน/รถ/อื่น ๆ/ให้ยืม) · กดการ์ด = รายการจ่าย + ปิดหนี้
+- เทสต์ loans 14 ✅ · cards-loans/opening/endpoints/security/family/assets ✅ · Playwright debt.cjs ✅ · app.js?v=251 ui-a.css?v=37
+- ถัดไป: ทรัพย์สิน (ที่ตั้ง Chaiyapruk/Villaggio/Pattaya/Element/Condo) → ประกัน
