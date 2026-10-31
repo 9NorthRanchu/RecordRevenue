@@ -15709,3 +15709,7 @@ const DriveView = (() => {
     }
     return { open };
 })();
+
+/* 🔤 กราฟ Chart.js ใช้ฟอนต์ Mali เหมือนทั้งแอป (2026-10-31) */
+(function chartFont() { const set = () => { try { if (window.Chart?.defaults?.font) Chart.defaults.font.family = "'Mali','Noto Sans Thai',sans-serif"; } catch { /* */ } };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', set); else set(); })();

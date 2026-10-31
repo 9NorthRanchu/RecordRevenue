@@ -1,0 +1,15 @@
+/* ═══ ฟอนต์ Mali ทั้งแอป ทั้งไทยและอังกฤษ (2026-10-31 · North) ═══
+   ใช้ทุกตัวอักษร ยกเว้นไอคอน (Font Awesome ใช้ฟอนต์ของมันเอง) · Mali ตัวใหญ่และโค้งกว่า Anuphan → ลดน้ำหนักหัวข้อ/ระยะบรรทัดให้อ่านสบาย */
+:root { --font-thai:'Mali','Noto Sans Thai',sans-serif; --font-eng:'Mali','Noto Sans Thai',sans-serif; }
+body, body :where(*:not(i):not(.fa):not(.fas):not(.far):not(.fab):not(.fa-solid):not(.fa-regular):not(.fa-brands):not(.fa-light)) {
+  font-family:'Mali','Noto Sans Thai',sans-serif !important;
+}
+body { line-height:1.55; letter-spacing:.1px; -webkit-font-smoothing:antialiased; }
+/* ตัวเลขในตาราง: Mali ไม่มีตัวเลขความกว้างเท่ากัน → ชิดขวาอยู่แล้ว ใช้น้ำหนัก 500 ให้ตัวเลขชัด */
+td, .r, [class*="amt"], [class*="amount"] { font-weight:500; }
+h1, h2, h3, h4, h5 { font-weight:600; letter-spacing:0; }
+b, strong, th { font-weight:600; }
+input, select, textarea, button { font-size:inherit; }
+input::placeholder, textarea::placeholder { font-weight:300; }
+/* ตัวหนังสือเล็ก (ป้าย/คำอธิบาย) ไม่ให้เล็กเกิน 12px — Mali ตัวโค้ง ถ้าเล็กมากอ่านยาก */
+small, .av-pair small, .av-s h4 small, .av-bars-lbl, .av-rc-t small, .rb-dc small, .dv2-xs, .dv2-imeta { font-size:max(12px, .8em) !important; }

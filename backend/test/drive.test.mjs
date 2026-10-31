@@ -110,7 +110,7 @@ INSERT INTO LedgerDocLinks (doc_id,transaction_id,role) VALUES ('DOC1','TS1','MA
 r = await call('/api/drive/sync-slips', { user: '9North', method: 'POST' });
 check('ซิงก์สลิป: 1 ไฟล์ขึ้น Drive · 1 ไฟล์หมดอายุ', r.j.done === 1 && r.j.missing === 1 && r.j.remaining === 0, r.j);
 r = await call('/api/drive/sync-slips', { user: '9North', method: 'POST' }); check('ซิงก์ซ้ำ → ไม่มีงาน', r.j.done === 0 && r.j.remaining === 0, r.j);
-r = await call('/api/drive/files?ref_type=tx&ref_ids=TS1', { user: '9North' }); check('รายการมีไฟล์แนบ 1 (ไม่นับที่หมดอายุ)', r.j.files.length === 1 && store[r.j.files[0] ? 'G1' : 'x'].path[0] === 'Slip', [r.j, Object.keys(store)]);
+r = await call('/api/drive/files?ref_type=tx&ref_ids=TS1', { user: '9North' }); check('รายการมีไฟล์แนบ 1 (ไม่นับที่หมดอายุ)', r.j.files.length === 1 && store[r.j.files[0] ? 'G1' : 'x'].path.join('/') === 'Slip/[A02] BK KBANK/2026-10', [r.j, Object.keys(store)]);
 r = await call('/api/reports/statement-running?account_id=A02&from=2026-10-01&to=2026-10-31', { user: '9North' });
 check('รายงานยอดสะสม: n_files ต่อรายการ', r.j.rows.find(x => x.transaction_id === 'TS1')?.n_files === 1, r.j.rows);
 const tf = (await call('/api/drive/files?ref_type=tx&ref_ids=TS1', { user: '9North' })).j.files[0];

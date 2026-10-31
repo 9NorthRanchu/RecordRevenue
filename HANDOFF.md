@@ -3895,3 +3895,8 @@ frontend
 - หน้าเว็บ: เปิดแอป 8 วิ → DriveStore.syncSlips (เงียบ · ทีละชุดจนหมด) · ปุ่ม "🧾 สำเนาสลิป LINE ลง Drive" ในการ์ดตั้งค่า
 - หน้าต่างแก้รายการ (หน้ารายละเอียดบัญชี): 📎 หลักฐาน — ไฟล์เดิม (เปิด/✕ เลิกผูก) + แนบรูป/PDF หลายไฟล์ (ถ่ายรูปได้) → Drive Expense/<ปี-เดือน> · คอลัมน์หลักฐานแสดง 📎n
 - เทสต์ drive 18 · Playwright แนบ 2 ไฟล์ + เลิกผูก 1 ✅ · app.js?v=224 ui-a.css?v=22
+
+## 2026-10-31 · Drive แยกตาม Statement (บัญชี) + ฟอนต์ Mali ทั้งแอป
+- drive.js: Slip/<บัญชี>/<ปี-เดือน> · Expense/<บัญชี>/<ปี-เดือน> · Statement/<บัญชี>/<ปี> (North: "แยกตาม Statement") · ไฟล์ที่อัปไปก่อนหน้านี้อยู่ที่เดิม
+- frontend/font-mali.css (ลิงก์ Google Fonts Mali 300–700) ใส่ใน index.html · guest.html · ledger/quick.html · trip-unified-prototype (index/trips/join/map-compare) · ยกเว้นไอคอน Font Awesome · Chart.js ใช้ Mali · ตัวหนังสือเล็กไม่ต่ำกว่า 12px · print.html/PDF รายงานยังใช้ Sarabun (เอกสารพิมพ์)
+- ทดสอบ Playwright (ฟอนต์ Mali จริงจาก @fontsource): รายงาน · หน้าบัญชี (คอม/มือถือ) · หน้าต่างแก้รายการ อ่านชัด · app.js?v=225 font-mali.css?v=2

@@ -83,7 +83,9 @@ export async function handleDrive({ url, request, env, cors, authUserId, canUseA
       const kind = ['statement', 'slip', 'expense'].includes(b.kind) ? b.kind : 'statement';
       const acc = b.account_id ? await env.DB.prepare(`SELECT name FROM Accounts WHERE account_id = ?`).bind(String(b.account_id)).first() : null;
       const ym = /^\d{4}-\d{2}/.test(b.date || '') ? String(b.date).slice(0, 7) : new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
-      const path = kind === 'statement' ? ['Statement', acc?.name || b.account_id || 'ไม่ระบุบัญชี', ym.slice(0, 4)] : [kind === 'slip' ? 'Slip' : 'Expense', ym];
+      /* 2026-10-31 (North: "แยกตาม Statement"): ทุกชนิดแยกตามบัญชีก่อน แล้วตามปี (statement) / ปี-เดือน (สลิป · หลักฐาน) */
+      const accDir = acc?.name || b.account_id || 'ไม่ระบุบัญชี';
+      const path = kind === 'statement' ? ['Statement', accDir, ym.slice(0, 4)] : [kind === 'slip' ? 'Slip' : 'Expense', accDir, ym];
       let up; try { up = await gas({ action: 'upload', path, name: String(b.name).slice(0, 150), mime: b.mime || 'application/octet-stream', data: b.data, description: b.description || '' }); }
       catch (e) { return json({ error: 'อัปโหลดไป Drive ไม่สำเร็จ: ' + e.message }, cors, 502); }
       file = { file_id: 'DF-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), family_id: fam, drive_id: up.id, name: String(b.name).slice(0, 150), mime: b.mime || null,
@@ -117,10 +119,11 @@ export async function handleDrive({ url, request, env, cors, authUserId, canUseA
       const buf = new Uint8Array(await obj.arrayBuffer()); let bin = '';
       for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
       const ym = String(links[0]?.date || d.created_at || now).slice(0, 7);
+      const accName = links[0]?.account_id ? (await env.DB.prepare(`SELECT name FROM Accounts WHERE account_id = ?`).bind(links[0].account_id).first())?.name : null;
       const ext = /pdf/.test(d.mime || '') ? '.pdf' : /png/.test(d.mime || '') ? '.png' : '.jpg';
       const name = (d.file_name && /\.\w{2,4}$/.test(d.file_name) ? d.file_name : `${String(links[0]?.date || d.created_at || '').slice(0, 10)}_${d.doc_type || 'SLIP'}_${d.doc_id.slice(-6)}${ext}`);
       try {
-        const up = await gas({ action: 'upload', path: ['Slip', ym], name, mime: d.mime || 'image/jpeg', data: btoa(bin), description: `RecordRevenue ${d.doc_id}` });
+        const up = await gas({ action: 'upload', path: ['Slip', accName || 'ไม่ระบุบัญชี', ym], name, mime: d.mime || 'image/jpeg', data: btoa(bin), description: `RecordRevenue ${d.doc_id}` });
         const fid = 'DF-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         await env.DB.batch([env.DB.prepare(`INSERT INTO DriveFiles (file_id, family_id, drive_id, name, mime, size, kind, account_id, file_hash, url, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
             .bind(fid, fam, up.id, name, d.mime || null, up.size || null, 'slip', links[0]?.account_id || null, hash, up.url || null, authUserId, now),
