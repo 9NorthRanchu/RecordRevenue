@@ -3880,3 +3880,11 @@ frontend
 - ทดสอบไฟล์จริง 3 ไฟล์ (CardX ก.ค. · SCB ออม · KTC): จับบัญชีถูก · SCB ที่ตั้งบัญชีเป็นบัตร → ไม่นำเข้า · เทสต์ acc-overview 13
 - โหมดมืด (ข้อมูลจริงในเบราว์เซอร์ Claude ของ North · v214): การ์ดบัญชี + หน้ารายละเอียดอ่านได้ดี · แก้ป้าย ตรงกัน/ไม่ตรงกัน ในโหมดมืด · คืนธีมม่วงแล้ว
 - app.js?v=222 ui-a.css?v=20
+
+## 2026-10-31 · 📁 เก็บไฟล์ใน Google Drive ผ่าน Apps Script (North เลือก ก.)
+- gas/RecordRevenueDrive.gs (North วางเองใน script.google.com · SECRET · โฟลเดอร์ RecordRevenue/Statement/<บัญชี>/<ปี> · Slip/Expense/<ปี-เดือน> · get/trash เฉพาะไฟล์ใต้ RecordRevenue) + gas/วิธีตั้งค่า-Google-Drive.md
+- backend/src/drive.js: AppSettings (drive_url/secret ต่อครอบครัว · ไม่ส่งรหัสลับกลับ) · DriveFiles + DriveLinks · /api/drive/config (GET/POST admin + ping) · /test · /upload (hash เดิม = ผูกเพิ่ม ไม่อัปซ้ำ · ≤20MB) · /files · /file (เซิร์ฟเวอร์ดึงจาก Drive) · statement-running หัว statement มี files · เทสต์ drive.test.mjs 13 (Apps Script จำลองผ่าน env.__fetch)
+- app.js: DriveStore (การ์ดตั้งค่าใน Backup/Restore · อัปไฟล์ต้นฉบับหลังนำเข้า statement ทั้ง 3 ทาง · คิวทีละไฟล์) · DriveView (เปิดดู · PDF ล็อกรหัส → ลองรหัสบัญชี ปลดตอนดูเท่านั้น · ดาวน์โหลดต้นฉบับ) · ปุ่ม 📎 ในรายงานยอดสะสม + หน้ารายละเอียดบัญชี
+- importStatementRows คืน stmtId · importCardStatement รับ fileObj
+- ยังไม่ทำ: สลิป LINE/รูปค่าใช้จ่ายหลายรูปต่อรายการลง Drive (มีโครงแล้ว kind slip/expense + link tx)
+- app.js?v=223 ui-a.css?v=21

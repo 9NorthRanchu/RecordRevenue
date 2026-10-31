@@ -6285,6 +6285,7 @@ function setupSettingsEvents() {
             if (activeSec) {
                 if (targetTab === 'debts') renderDebtsSettings();
                 if (targetTab === 'opening-balances') OB.open();
+                if (targetTab === 'backup') DriveStore.renderCard();   // 📁 Google Drive (2026-10-31)
                 activeSec.classList.remove("hidden");
                 activeSec.classList.add("active");
             }
@@ -7211,7 +7212,7 @@ function cardCycle(stmtDate, txs) {
   const from = new Date(prev.getTime() + 864e5).toISOString().slice(0, 10), first = (txs || []).map(t => t.date).sort()[0];
   return { period_from: first && first < from ? first : from, period_to: stmtDate };
 }
-async function importCardStatement(card, selectedAccId, fileName, btn) {
+async function importCardStatement(card, selectedAccId, fileName, btn, fileObj = null) {
   const accs = AppState.accounts || [], f = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const guess = c => {
@@ -7244,6 +7245,7 @@ async function importCardStatement(card, selectedAccId, fileName, btn) {
     const res = await importStatementRows(useAcc, p.c.txs, (d, n) => { if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 💳 ${p.c.last4} ${d}/${n}`; },
       { opening: p.c.opening, closing: p.c.closing, source_kind: 'CREDIT_CARD', file_name: `${fileName} · ${p.c.masked}`, ...cardCycle(card.statementDate, p.c.txs),
         format: { kind: 'CARD', issuer: card.issuer, parser: 'card', read: p.c.masked }, walk: p.c.agree });
+    if (fileObj && res.stmtId) DriveStore.saveStatement(fileObj, useAcc, res.stmtId, card.statementDate);   // 📁 เก็บไฟล์ต้นฉบับใน Drive (2026-10-31)
     done.push(`💳 ${p.c.masked} → ${(accs.find(a => a.account_id === useAcc) || {}).name || useAcc}: นำเข้า ${res.importedCount}` + (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · มีอยู่แล้ว ${res.skippedCount}` : '') + (res.removedCount ? ` · 🧹 ลบที่ซ้ำ ${res.removedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : '') +
       (res.skippedCount && res.addedDetails?.length && res.addedDetails.length <= 10 ? `\n   ➕ ${res.addedDetails.join('\n   ➕ ')}` : ''));
   }
@@ -7582,7 +7584,7 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
         fetch(`${API_BASE}/api/accounts/import-format`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accId, format: fmt }) })
             .then(r => r.ok ? r.json() : null).then(j => { const a = (AppState.accounts || []).find(x => x.account_id === accId); if (a && j?.format) a.import_format = JSON.stringify(j.format); }).catch(() => {});
     }
-    return { importedCount, skippedCount, errorCount, mergedCount, autoCatCount, skippedDetails, removedCount, addedDetails };
+    return { importedCount, skippedCount, errorCount, mergedCount, autoCatCount, skippedDetails, removedCount, addedDetails, stmtId };
 }
 
 // batch_statement_import.js
@@ -7626,13 +7628,13 @@ async function batchImportStatements(files, btn) {
         const txs = bank.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00', type: l.amount > 0 ? 'INCOME' : 'EXPENSE',
           amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null }));
         const sum = r2(bank.lines.reduce((t, l) => t + l.amount, 0));
-        items.push({ file: file.name, kind: 'BANK', issuer: bank.issuer, read: bank.account_number || '', acc: findAcc(bank.account_number || '', '', false), txs, opening: bank.opening, closing: bank.closing,
+        items.push({ file: file.name, fileObj: file, kind: 'BANK', issuer: bank.issuer, read: bank.account_number || '', acc: findAcc(bank.account_number || '', '', false), txs, opening: bank.opening, closing: bank.closing,
           walk: bank.opening != null && bank.closing != null ? Math.abs(r2(bank.opening + sum) - r2(bank.closing)) < 0.01 : null, sign: 1 });
         continue;
       }
       const card = card0;
       if (card.ok) {
-        for (const c of card.cards) items.push({ file: file.name, kind: 'CARD', issuer: card.issuer, read: c.masked, label: c.type, acc: findAcc(c.masked, c.last4, true), txs: c.txs, opening: c.opening, closing: c.closing,
+        for (const c of card.cards) items.push({ file: file.name, fileObj: file, kind: 'CARD', issuer: card.issuer, read: c.masked, label: c.type, acc: findAcc(c.masked, c.last4, true), txs: c.txs, opening: c.opening, closing: c.closing,
           walk: c.agree, sign: -1, asOf: card.statementDate });
         continue;
       }
@@ -7722,6 +7724,7 @@ async function batchImportStatements(files, btn) {
     const res = await importStatementRows(it.acc, it.txs, (d, n) => setBtn(`ไฟล์ ${k + 1}/${todo.length} · ${d}/${n}`),
       { opening: it.opening, closing: it.closing, source_kind: it.kind === 'CARD' ? 'CREDIT_CARD' : 'BANK', file_name: it.kind === 'CARD' ? `${it.file} · ${it.read}` : it.file,
         ...(it.kind === 'CARD' ? cardCycle(it.asOf, it.txs) : {}), format: { kind: it.kind, issuer: it.issuer, parser: it.kind === 'CARD' ? 'card' : 'text', read: it.read }, walk: it.walk });
+    if (it.fileObj && res.stmtId) DriveStore.saveStatement(it.fileObj, it.acc, res.stmtId, it.asOf || it.to);   // 📁 Drive (2026-10-31)
     out.push(`${it.kind === 'CARD' ? '💳' : '🏦'} ${(accs.find(a => a.account_id === it.acc) || {}).name || it.acc} · ${dTh(it.from)}–${dTh(it.to)}: นำเข้า ${res.importedCount}` +
       (res.mergedCount ? ` · จับคู่ ${res.mergedCount}` : '') + (res.skippedCount ? ` · มีอยู่แล้ว ${res.skippedCount}` : '') + (res.removedCount ? ` · 🧹 ลบที่ซ้ำ ${res.removedCount}` : '') + (res.errorCount ? ` · ⚠️ ไม่สำเร็จ ${res.errorCount}` : '') +
       (res.skippedCount && res.addedDetails?.length && res.addedDetails.length <= 10 ? `\n     ➕ ${res.addedDetails.join('\n     ➕ ')}` : ''));
@@ -7814,7 +7817,7 @@ function bindPDFUpload() {
                 if (opened.pdf) {
                     /* 2026-10-30: ใบแจ้งยอดบัตรก่อน แล้วค่อย statement ธนาคาร (ดูเหตุผลที่ batchImportStatements) */
                     const card0 = await parseCardStatement(opened.pdf).catch(() => ({ ok: false }));
-                    if (card0.ok) { await importCardStatement(card0, selectedAccId, file.name, triggerUploadBtn); resetUploadBtn(); return; }
+                    if (card0.ok) { await importCardStatement(card0, selectedAccId, file.name, triggerUploadBtn, file); resetUploadBtn(); return; }
                     const parsed = await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
                     if (parsed.ok) {
                         const txs = parsed.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00',
@@ -7825,6 +7828,7 @@ function bindPDFUpload() {
                         const res = await importStatementRows(selectedAccId, txs, (d, n) => { triggerUploadBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก ${d}/${n}`; },
                             { opening: parsed.opening, closing: parsed.closing, source_kind: 'BANK', file_name: file.name,
                               format: { kind: 'BANK', issuer: parsed.issuer, parser: 'text', read: parsed.account_number }, walk: parsed.checkable ? parsed.agree === parsed.checkable : null });
+                        if (res.stmtId) DriveStore.saveStatement(file, selectedAccId, res.stmtId, txs.map(t => t.date).sort().pop());   // 📁 Drive (2026-10-31)
                         const sumIn = parsed.lines.filter(l => l.amount > 0).reduce((t, l) => t + l.amount, 0), sumOut = -parsed.lines.filter(l => l.amount < 0).reduce((t, l) => t + l.amount, 0);
                         let msg = `อ่านจากตัวหนังสือในไฟล์ (ไม่ใช้ AI) ${parsed.lines.length} รายการ\n` +
                             `ยอดยกมา ${Number(parsed.opening ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} · ยอดยกไป ${Number(parsed.closing ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}\n` +
@@ -7838,7 +7842,7 @@ function bindPDFUpload() {
                     }
                     /* 💳 ใบแจ้งยอดบัตรเครดิต (ไม่มียอดคงเหลือรายบรรทัด) · หลายบัตรในไฟล์เดียว → แยกบัญชีตามเลขบัตร (2026-10-30) */
                     const card = await parseCardStatement(opened.pdf).catch(() => ({ ok: false }));
-                    if (card.ok) { await importCardStatement(card, selectedAccId, file.name, triggerUploadBtn); resetUploadBtn(); return; }
+                    if (card.ok) { await importCardStatement(card, selectedAccId, file.name, triggerUploadBtn, file); resetUploadBtn(); return; }
                 }
             } catch (err) { console.warn('อ่านตัวหนังสือใน PDF ไม่ได้ → ใช้ AI', err); }
 
@@ -14738,7 +14742,7 @@ const StmtReport = (() => {
             ${rep.groups.map(g => `<details class="sr-grp ${g.flags || g.empty ? 'bad' : ''}"${g.flags ? ' open' : ''}><summary>
                 <b>📄 ${esc(g.label)}</b><span>${g.rows.length} รายการ${g.pending ? ` · ⏳ ${g.pending}` : ''}</span>
                 <span>ยกมา ${fmH(g.openSys)}${g.openBank != null ? ` / ธ. ${fmH(g.openBank)}` : ''}</span>
-                <span>ยกไป ${fmH(g.closeSys)}${g.closeBank != null ? ` / ธ. ${fmH(g.closeBank)}` : ''}</span><em>${esc(g.status)}${g.missingLines ? ` · ขาด ${g.missingLines} บรรทัด` : ''}</em>
+                <span>ยกไป ${fmH(g.closeSys)}${g.closeBank != null ? ` / ธ. ${fmH(g.closeBank)}` : ''}</span>${g.header?.files?.length ? `<span class="drv-row">${DriveStore.buttons(g.header.files, rep.account?.account_id)}</span>` : ''}<em>${esc(g.status)}${g.missingLines ? ` · ขาด ${g.missingLines} บรรทัด` : ''}</em>
                 ${g.empty && g.header ? `<button type="button" class="btn btn-sm btn-outline-danger sr-delhdr" data-stmt="${esc(g.header.stmt_id)}" title="นำเข้าผิดบัญชีแล้วลบรายการไปแล้ว → ลบหัว statement + ยอดธนาคารที่ค้าง">🗑️ ลบหัว statement นี้</button>` : ''}</summary>
                 ${!g.empty && g.header && g.pending ? `<button type="button" class="btn btn-sm btn-outline-danger sr-delstmt" data-stmt="${esc(g.header.stmt_id)}" data-n="${g.pending}" title="นำเข้าผิด (ผิดแบบ/ผิดบัญชี) → ลบรายการรอตรวจของ statement นี้ แล้วนำเข้าไฟล์ใหม่">🗑️ ลบ statement นี้ (รอตรวจ ${g.pending})</button>` : ''}
                 <div class="table-responsive"><table class="sr-tbl"><thead><tr>${COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
@@ -15333,6 +15337,8 @@ const AccView = (() => {
           <div class="av-txh"><h3>รายการเดินบัญชี <small>${rows.length} รายการ</small></h3>
             <div class="av-btns"><button class="av-xl" onclick="AccView.excel()"><i class="fa-solid fa-file-excel"></i> ส่งออก Excel</button>
               <button class="av-pdf" onclick="AccView.pdf()"><i class="fa-solid fa-file-pdf"></i> ส่งออก PDF</button></div></div>
+          ${(() => { const fl = (data.headers || []).flatMap(h => h.files || []).filter((f, i, a) => a.findIndex(x => x.file_id === f.file_id) === i);
+              return fl.length ? `<div class="drv-row av-files">📁 ไฟล์ statement: ${DriveStore.buttons(fl, o.account_id)}</div>` : ''; })()}
           <div class="av-tw"><table class="av-tx"><thead><tr><th>วันที่</th><th>รายละเอียด</th><th>หมวดหมู่</th><th class="r">${isCard ? 'ชำระ/คืน' : 'รายรับ'}</th><th class="r">${isCard ? 'ใช้จ่าย' : 'รายจ่าย'}</th>
               <th class="r">${isCard ? 'ยอดค้าง' : 'คงเหลือ'}<br><small>ในระบบ</small></th><th class="r">${isCard ? 'ยอดค้าง' : 'คงเหลือ'}<br><small>ธนาคาร</small></th><th class="r">ต่าง</th><th>หลักฐาน</th></tr></thead><tbody>
             <tr class="av-ob"><td>${dTh(from)}</td><td colspan="4"><b>ยอดยกมา</b></td><td class="r">${fm(openSys)}</td><td class="r">${fm(openBank)}</td><td class="r">${dOpen == null ? '' : fm(dOpen)}</td><td></td></tr>
@@ -15570,4 +15576,107 @@ td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.neg{
         } catch (e) { if (w) w.close(); alert('ส่งออกไม่สำเร็จ: ' + e.message); }
     }
     return { load, render, exp, open, shift, period: p => { S.period = p; load(); } };
+})();
+
+// ═══════════════════════════════════════════════════════════════════════
+// 📁 Google Drive (2026-10-31 · North: เก็บ statement · ใบแจ้งยอด · สลิป · รูปค่าใช้จ่าย · ผ่าน Apps Script)
+//  DriveStore: ตั้งค่า (หน้า ตั้งค่า → Backup/Restore) · อัปไฟล์ต้นฉบับหลังนำเข้า statement (ไม่บล็อกการนำเข้า · ไฟล์เดิมไม่อัปซ้ำ)
+//  DriveView: เปิดดูไฟล์ · PDF ที่ล็อกรหัส → ปลดด้วยรหัสของบัญชีตอนเปิด (ไฟล์ใน Drive ยังเป็นต้นฉบับ)
+// ═══════════════════════════════════════════════════════════════════════
+const DriveStore = (() => {
+    let cfg = null, queue = Promise.resolve();
+    const inflight = new Map();
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    async function config(force) {
+        if (cfg && !force) return cfg;
+        try { const r = await fetch(`${API_BASE}/api/drive/config`); cfg = r.ok ? await r.json() : { configured: false }; } catch { cfg = { configured: false }; }
+        return cfg;
+    }
+    const b64 = buf => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+    const sha = async buf => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', buf))).map(b => b.toString(16).padStart(2, '0')).join('');
+    /* อัปไฟล์ + ผูก (ทีละไฟล์ตามคิว · hash เดียวกันในรอบนี้ใช้ผลเดียวกัน) */
+    async function upload(file, { kind = 'statement', account_id = null, date = null, links = [] } = {}) {
+        if (!(await config()).configured) return { skipped: 'not-configured' };
+        const buf = await file.arrayBuffer(), hash = await sha(buf);
+        const job = async () => {
+            const body = { name: file.name || 'file', mime: file.type || (/\.pdf$/i.test(file.name || '') ? 'application/pdf' : 'application/octet-stream'), hash, kind, account_id, date, links };
+            const send = async withData => { const r = await fetch(`${API_BASE}/api/drive/upload`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(withData ? { ...body, data: b64(buf) } : body) }); return [r, await r.json().catch(() => ({}))]; };
+            let [r, j] = await send(false);              // ลองผูกกับไฟล์เดิมก่อน (ไม่ต้องส่งไฟล์)
+            if (!r.ok && /ไม่มีไฟล์/.test(j.error || '')) [r, j] = await send(true);
+            if (!r.ok || j.error) throw new Error(j.error || r.status);
+            return j;
+        };
+        const p = (queue = queue.then(job, job));
+        inflight.set(hash, p);
+        return p;
+    }
+    async function saveStatement(file, accId, stmtId, date) {
+        try {
+            const j = await upload(file, { kind: 'statement', account_id: accId, date, links: [{ type: 'stmt', id: stmtId }] });
+            if (j?.file && !j.reused) window.showToast?.(`📁 เก็บไฟล์ ${file.name} ใน Google Drive แล้ว`);
+        } catch (e) { window.showToast?.(`📁 เก็บไฟล์ใน Drive ไม่สำเร็จ: ${e.message}`, 'error'); }
+    }
+    /* การ์ดตั้งค่าในหน้า ตั้งค่า → Backup/Restore */
+    async function renderCard() {
+        const el = document.getElementById('drive-card-body'); if (!el) return;
+        const c = await config(true), admin = AppState.userRole === 'admin';
+        el.innerHTML = `<h5 style="color:#1a73e8;margin-bottom:6px"><i class="fa-brands fa-google-drive"></i> เก็บไฟล์ใน Google Drive</h5>
+          <p style="font-size:.82rem;margin:0 0 10px;color:var(--text-secondary)">statement · ใบแจ้งยอดบัตร (ไฟล์ต้นฉบับ รวมไฟล์ที่ล็อกรหัส) เก็บลงโฟลเดอร์ <b>RecordRevenue</b> ใน Drive ของคุณอัตโนมัติหลังนำเข้า · เปิดดูได้จากรายงานยอดสะสม / หน้ารายละเอียดบัญชี</p>
+          <div style="margin-bottom:10px">${c.configured ? `✅ เชื่อมต่อแล้ว <small style="color:var(--text-secondary)">${esc(c.url || '')}${c.last_ok ? ' · ตรวจล่าสุด ' + esc(String(c.last_ok).slice(0, 16).replace('T', ' ')) : ''}</small>` : '⚪ ยังไม่ได้เชื่อมต่อ'}</div>
+          ${admin ? `<div style="display:grid;gap:8px;max-width:640px">
+            <input id="drv-url" placeholder="URL ของ Apps Script (ลงท้ายด้วย /exec)" style="padding:9px 10px;border-radius:10px;border:1px solid var(--border-color,#ddd)">
+            <input id="drv-secret" type="password" placeholder="รหัสลับ (SECRET ในโค้ด Apps Script)${c.configured ? ' — เว้นว่าง = ใช้รหัสเดิม' : ''}" style="padding:9px 10px;border-radius:10px;border:1px solid var(--border-color,#ddd)">
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="drv-save" type="button">💾 บันทึก + ทดสอบ</button>
+              ${c.configured ? '<button class="btn btn-outline-primary" id="drv-test" type="button">🔌 ทดสอบการเชื่อมต่อ</button>' : ''}</div>
+            <div id="drv-msg" style="font-size:.85rem"></div></div>` : '<small>เฉพาะ Admin ตั้งค่าได้</small>'}`;
+        const msg = t => { const m = document.getElementById('drv-msg'); if (m) m.innerHTML = t; };
+        const sv = document.getElementById('drv-save');
+        if (sv) sv.onclick = async () => {
+            sv.disabled = true; msg('⏳ กำลังเชื่อมต่อ…');
+            try { const r = await fetch(`${API_BASE}/api/drive/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: document.getElementById('drv-url').value.trim(), secret: document.getElementById('drv-secret').value.trim() }) });
+                const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status);
+                await renderCard(); msg(`✅ เชื่อมต่อสำเร็จ · บัญชี ${esc(j.user || '')} · <a href="${esc(j.root)}" target="_blank" rel="noopener">เปิดโฟลเดอร์ RecordRevenue</a>`);
+            } catch (e) { msg(`<span style="color:#C92A2A">⚠️ ${esc(e.message)}</span>`); } finally { sv.disabled = false; }
+        };
+        const ts = document.getElementById('drv-test');
+        if (ts) ts.onclick = async () => { ts.disabled = true; msg('⏳ …');
+            try { const r = await fetch(`${API_BASE}/api/drive/test`, { method: 'POST' }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status);
+                msg(`✅ ใช้งานได้ · <a href="${esc(j.root)}" target="_blank" rel="noopener">เปิดโฟลเดอร์ RecordRevenue</a>`); } catch (e) { msg(`<span style="color:#C92A2A">⚠️ ${esc(e.message)}</span>`); } finally { ts.disabled = false; } };
+    }
+    /* ปุ่ม "📎 ไฟล์" สำหรับหัว statement */
+    const buttons = (files, accId) => (files || []).map(f => `<button type="button" class="drv-btn" onclick="event.preventDefault();event.stopPropagation();DriveView.open('${esc(f.file_id)}','${esc(accId || '')}','${esc(f.name || '')}')" title="เปิดไฟล์ต้นฉบับจาก Google Drive">📎 ${esc(f.name || 'ไฟล์')}</button>`).join('');
+    return { config, upload, saveStatement, renderCard, buttons };
+})();
+
+const DriveView = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    function shell(name) {
+        let ov = document.getElementById('drv-view'); if (ov) ov.remove();
+        ov = document.createElement('div'); ov.id = 'drv-view';
+        ov.innerHTML = `<div class="dv-bar"><b>${esc(name)}</b><span class="dv-sp"></span><a id="dv-dl" class="dv-b" href="#" download>⬇️ ต้นฉบับ</a><button class="dv-b" onclick="document.getElementById('drv-view').remove()">✕ ปิด</button></div><div class="dv-body" id="dv-body"><p>⏳ กำลังโหลดจาก Google Drive…</p></div>`;
+        document.body.appendChild(ov); return ov;
+    }
+    async function open(fileId, accId, name) {
+        shell(name || 'ไฟล์'); const body = document.getElementById('dv-body');
+        try {
+            const r = await fetch(`${API_BASE}/api/drive/file?id=${encodeURIComponent(fileId)}`);
+            if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || r.status); }
+            const blob = await r.blob(), url = URL.createObjectURL(blob);
+            const dl = document.getElementById('dv-dl'); dl.href = url; dl.download = name || 'file';
+            if (/^image\//.test(blob.type)) { body.innerHTML = `<img src="${url}" alt="">`; return; }
+            if (!/pdf/.test(blob.type) && !/\.pdf$/i.test(name || '')) { body.innerHTML = '<p>เปิดดูในหน้านี้ไม่ได้ — กด ⬇️ ต้นฉบับ</p>'; return; }
+            const buf = new Uint8Array(await blob.arrayBuffer());
+            /* PDF: ลองเปิดไม่ใส่รหัส → รหัสของบัญชีนี้ → รหัสบัญชีอื่นที่ตั้งไว้ (ปลดรหัสเฉพาะตอนดู) */
+            let pdf = null, tried = [null, ...statementPdfPasswords(accId)];
+            for (const pw of tried) { try { pdf = await pdfjsLib.getDocument({ data: buf.slice(), password: pw || undefined }).promise; break; } catch (e) { if (e?.name !== 'PasswordException') throw e; } }
+            if (!pdf) { body.innerHTML = '<p>🔒 ไฟล์ล็อกรหัส และรหัสที่ตั้งไว้ในบัญชีเปิดไม่ได้ — ตั้งรหัสที่ ตั้งค่า → Statement</p>'; return; }
+            body.innerHTML = '';
+            for (let i = 1; i <= Math.min(pdf.numPages, 30); i++) {
+                const page = await pdf.getPage(i), vp0 = page.getViewport({ scale: 1 }), scale = Math.min(2, (Math.min(body.clientWidth, 1100) - 24) / vp0.width) * (window.devicePixelRatio > 1 ? 1.5 : 1);
+                const vp = page.getViewport({ scale }), cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+                body.appendChild(cv); await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+            }
+        } catch (e) { body.innerHTML = `<p style="color:#C92A2A">เปิดไฟล์ไม่สำเร็จ: ${esc(e.message)}</p>`; }
+    }
+    return { open };
 })();

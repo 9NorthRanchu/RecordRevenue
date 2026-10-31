@@ -129,6 +129,14 @@ export async function handleStmtReport({ url, request, env, cors, authUserId, ca
       checkpoints = ((await env.DB.prepare(`SELECT as_of, balance, source FROM AccountCheckpoints WHERE account_id = ? AND as_of >= ? AND as_of <= ? ORDER BY as_of`)
         .bind(acc, from, to).all()).results) || [];
     } catch { /* ยังไม่มีตาราง */ }
+    /* 📁 ไฟล์ statement ที่เก็บใน Google Drive (2026-10-31) */
+    try {
+      if (headers.length) {
+        const ids = headers.map(h => h.stmt_id).slice(0, 90);
+        const fl = ((await env.DB.prepare(`SELECT l.ref_id, f.file_id, f.name, f.mime FROM DriveLinks l JOIN DriveFiles f ON f.file_id = l.file_id WHERE l.ref_type = 'stmt' AND l.ref_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results) || [];
+        for (const h of headers) h.files = fl.filter(x => x.ref_id === h.stmt_id).map(({ ref_id, ...x }) => x);
+      }
+    } catch { /* ยังไม่มีตาราง Drive */ }
     return json({ account, from, to, opening: before?.bal || 0, opening_count: before?.n || 0, rows, headers, checkpoints, truncated: rows.length >= 6000 }, cors);
   }
 
