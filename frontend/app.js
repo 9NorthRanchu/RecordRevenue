@@ -3671,27 +3671,33 @@ async function renderSharedStatusSummary() {
     let html = `
         <div class="sum-head bk-head" role="button" tabindex="0" onclick="if(event.target.closest('.sum-all'))return;toggleBalanceCheck()" title="กดเพื่อ${open ? 'ย่อ' : 'ขยาย'}">
           <b>⚖️ Balance Check</b>
-          <span class="bk-chips"><i class="bk-c ok">✓ ${nOk}</i>${nBad ? `<i class="bk-c bad">⚠ Diff ${nBad}</i>` : ''}${nNo ? `<i class="bk-c no">– ${nNo}</i>` : ''}<small class="bk-hint">${rows.length} accounts</small></span>
+          <span class="bk-chips"><i class="bk-c ok">✓ Match ${nOk}</i>${nBad ? `<i class="bk-c bad">✗ Mismatch ${nBad}</i>` : ''}${nNo ? `<i class="bk-c no">No bank ${nNo}</i>` : ''}<small class="bk-hint">${rows.length} accounts</small></span>
           ${!open ? '' : AppState._sumAll ? `<button type="button" class="sum-all" onclick="AppState._sumAll=false;renderSharedStatusSummary()">Active only</button>`
             : hiddenN ? `<button type="button" class="sum-all" onclick="AppState._sumAll=true;renderSharedStatusSummary()">➕ All (${hiddenN})</button>` : ''}
           <span class="bk-tog">${open ? '▴ ย่อ' : '▾ ขยาย'}</span></div>
         <div class="bk-grid"${open ? '' : ' hidden'}>`;
     if (open) rows.forEach(r => {
         const cp = r.cp, d = cp ? String(cp.as_of || '').split('-') : [], dd = d.length === 3 ? `${d[2]}/${d[1]}/${d[0].slice(2)}` : (cp?.as_of || '');
-        const chip = !cp ? '' : r.ok ? `<span class="bk-st ok" title="ตรงกับธนาคาร">✓</span>`
-            : `<span class="bk-st bad" title="ระบบ ณ ${dd}: ${formatCurrency(cp.system)} · ${Math.abs(cp.bank) > Math.abs(cp.system) ? 'ธนาคารมากกว่า' : 'ระบบมากกว่า'} — ขาดรายการ / ยอดยกมาไม่ครบ / นำเข้าซ้ำ">⚠ ${formatCurrency(Math.abs(cp.diff))}</span>`;
-        const bank = !cp ? `<button type="button" class="bk-btn" onclick="recordBankBalance('${r.accId}')" title="ใส่ยอดคงเหลือตามธนาคาร">+ Bank bal</button>`
-            : `<span>Bank ${dd}${cp.source === 'STATEMENT' ? '' : '✍️'}</span><b>${fc(cp.bank)}</b><button type="button" class="bk-ic" title="ใส่ยอดธนาคารใหม่" onclick="recordBankBalance('${r.accId}')">✏️</button>
-               ${r.ok ? '' : `<button type="button" class="bk-btn" onclick="reconcileAccount('${r.accId}', ${Number(cp.system) || 0}, ${Number(cp.bank) || 0})" title="ปรับยอดยกมาให้ยอดในระบบเท่าธนาคาร">⚖️ Fix</button>`}`;
+        /* 2026-10-31 รอบ 4 (North): ป้าย Recorded / Wait / Total / Bank · ไม่ต้องมีแถว "ระบบ" (มี Total แล้ว)
+           สถานะอยู่ล่างสุดตำแหน่งเดียวกันทุกการ์ด: ✓ Match (เขียว) / ✗ Mismatch + ผลต่าง (แดง) / ยังไม่มียอดธนาคาร → ปุ่มใส่ยอด */
+        const ln = (lab, val, cls = '', extra = '') => `<div class="bk-l ${cls}"><span>${lab}</span><b>${val}</b>${extra}</div>`;
+        /* ✏️ ใส่ยอดธนาคารเอง ใช้ไม่บ่อย → ย้ายไปมุมขวาบนของการ์ด (North 2026-10-31) */
+        const edit = `<button type="button" class="bk-ic bk-edit" title="ใส่ยอดธนาคารเอง (ปกติยอดมาจาก statement)" onclick="recordBankBalance('${r.accId}')">✏️</button>`;
+        const status = !cp ? `<button type="button" class="bk-stat none" onclick="recordBankBalance('${r.accId}')" title="ใส่ยอดคงเหลือตามธนาคาร เพื่อตรวจว่าข้อมูลครบไหม">+ Add bank balance</button>`
+            : r.ok ? `<div class="bk-stat ok">✓ Match</div>`
+            : `<div class="bk-stat bad" title="ระบบ ณ ${dd}: ${formatCurrency(cp.system)} · ${Math.abs(cp.bank) > Math.abs(cp.system) ? 'ธนาคารมากกว่า' : 'ระบบมากกว่า'} — ขาดรายการ / ยอดยกมาไม่ครบ / นำเข้าซ้ำ">
+                 <span>✗ Mismatch ${formatCurrency(Math.abs(cp.diff))}</span><button type="button" class="bk-fix" onclick="reconcileAccount('${r.accId}', ${Number(cp.system) || 0}, ${Number(cp.bank) || 0})" title="ปรับยอดยกมาให้ยอดในระบบเท่าธนาคาร">⚖️ Fix</button></div>`;
         html += `
           <div class="bk-card${r.ok === false ? ' is-bad' : ''}">
-            <div class="bk-t"><span class="bk-name" title="${String(r.name).replace(/"/g, '&quot;')}">${getBankIcon(r.acc?.bank_name || '')} ${r.name}</span>${chip}</div>
-            <div class="bk-now"><small>Now</small>${fc(r.now)}</div>
-            <div class="bk-sub"><span title="ยืนยันแล้ว">Conf ${fc(r.conf)}</span><span title="รอตรวจ">Pend ${r.pend ? fc(r.pend) : '0.00'}</span></div>
-            <div class="bk-bk">${bank}</div>
+            <div class="bk-t"><span class="bk-name" title="${String(r.name).replace(/"/g, '&quot;')}">${getBankIcon(r.acc?.bank_name || '')} ${r.name}</span>${edit}</div>
+            ${ln('Recorded', fc(r.conf))}
+            ${ln('Wait', r.pend ? fc(r.pend) : '<span class="bk-dim">0.00</span>', r.pend ? 'bk-pend' : '')}
+            ${ln('Total', fc(r.now), 'bk-sum')}
+            ${ln(`Bank${cp ? ` <small>${dd}${cp.source === 'STATEMENT' ? '' : ' ✍️'}</small>` : ''}`, cp ? fc(cp.bank) : '<span class="bk-dim">—</span>', 'bk-bankl')}
+            ${status}
           </div>`;
     });
-    if (open) html += `<div class="bk-foot">Now = ยืนยันแล้ว + รอตรวจ · Conf = ยืนยันแล้ว · Pend = รอตรวจ · Bank = ยอดธนาคาร (✍️ ใส่เอง) · ⚠ = ต่างจากธนาคาร</div>`;
+    if (open) html += `<div class="bk-foot">Recorded = บันทึกแล้ว · Wait = รอบันทึก · Total = รวม · Bank = ยอดธนาคาร ณ วันที่ (✍️ ใส่เอง) · Mismatch = Total ไม่เท่าธนาคาร</div>`;
     html += `</div>`;
     
     if (allAccIds.size === 0 && !totalAccs) {

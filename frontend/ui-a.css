@@ -563,3 +563,36 @@ body.ui-dark .py-q{background:#25213A;border-color:#3B3552;color:#EDE9FE}body.ui
 body.ui-dark .py-more{background:#2A2344;border-color:#6741D9;color:#D0BFFF}
 @media (max-width:600px){.py-tbl th:nth-child(5),.py-tbl td:nth-child(5){display:none}}
 @media (min-width:1181px){.rb-cards{grid-template-columns:repeat(5,minmax(0,1fr))}}
+
+/* การ์ด Balance Check รอบ 3: ครบดีเทลเดิม แต่บรรทัดแน่น (v233) */
+.bk-grid{grid-template-columns:repeat(auto-fill,minmax(225px,1fr))}
+.bk-card{gap:1px;padding:8px 11px}
+.bk-t{margin-bottom:3px;padding-bottom:4px;border-bottom:1px solid #F1EEF8}
+.bk-l{display:flex;align-items:baseline;gap:4px;font-size:.8rem;color:#5C5872;line-height:1.45}.bk-l span:first-child{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-l b{font-size:.9rem;font-weight:700;color:#1E293B;white-space:nowrap}
+.bk-l.bk-pend b{color:#0CA678}.bk-l.bk-sum{border-top:1px dashed #E9E5F5;padding-top:2px;margin-top:1px}.bk-l.bk-sum b{color:#4F46E5;font-size:.96rem}
+.bk-bk{display:block;border-top:1px solid #F1EEF8;padding-top:3px;margin-top:3px}.bk-bk .bk-l{font-size:.76rem}.bk-bk .bk-l b{font-size:.84rem;font-weight:600}
+.bk-sp{width:20px;flex:none}.bk-bk .bk-ic{width:20px;flex:none}
+.bk-diff{margin-top:3px;background:#FFF0F0;color:#C92A2A;border-radius:7px;padding:3px 7px;font-size:.74rem;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}.bk-diff .bk-btn{margin-left:auto}
+.bk-dim{color:#ADB5BD;font-weight:400}
+body.ui-dark .bk-t,body.ui-dark .bk-bk{border-color:#3B3552}body.ui-dark .bk-l{color:#B8B2D6}body.ui-dark .bk-l b{color:#EDE9FE}body.ui-dark .bk-l.bk-pend b{color:#63E6BE}
+body.ui-dark .bk-l.bk-sum b{color:#B197FC}body.ui-dark .bk-l.bk-sum{border-color:#3B3552}body.ui-dark .bk-diff{background:rgba(224,49,49,.18);color:#FFA8A8}
+@media (max-width:600px){.bk-grid{grid-template-columns:1fr 1fr}.bk-l{font-size:.74rem}.bk-l b{font-size:.82rem}.bk-l span:first-child{font-size:.72rem}}
+@media (max-width:380px){.bk-grid{grid-template-columns:1fr}}
+.bk-card{align-content:start}.bk-bk span{flex:none}.bk-bk .bk-l>span:first-child{flex:1;min-width:0}.bk-bk .bk-sp,.bk-bk .bk-ic{flex:none;width:20px;text-align:center}
+.bk-grid{grid-template-columns:repeat(auto-fill,minmax(245px,1fr))}.bk-card{overflow:hidden}.bk-bk .bk-ic{font-size:.72rem;padding:0}
+@media (max-width:600px){.bk-grid{grid-template-columns:1fr 1fr}}@media (max-width:380px){.bk-grid{grid-template-columns:1fr}}
+@media (max-width:600px){.bk-grid{grid-template-columns:1fr}.bk-head>.bk-chips,.bk-head>.bk-tog{display:flex}.bk-head .bk-hint{display:none}.bk-l{font-size:.8rem}.bk-l b{font-size:.9rem}}
+.bk-head>b{white-space:nowrap;flex:none}@media (max-width:600px){.bk-head{flex-wrap:wrap}.bk-head>.bk-chips{flex:1 1 auto}}
+/* การ์ด Balance Check รอบ 4: ป้ายสถานะล่างสุด ตำแหน่งเดียวกันทุกการ์ด (v234) */
+.bk-card{display:flex;flex-direction:column}
+.bk-l.bk-bankl{border-top:1px solid #F1EEF8;padding-top:3px;margin-top:2px}.bk-l small{font-size:.7rem;color:#868E96;font-weight:400}
+.bk-stat{margin-top:auto;display:flex;align-items:center;justify-content:center;gap:6px;min-height:26px;border-radius:8px;font-size:.8rem;font-weight:700;padding:2px 8px;width:100%;box-sizing:border-box}
+.bk-card>.bk-l:last-of-type{margin-bottom:6px}
+.bk-stat.ok{background:#E6FCF5;color:#087F5B}
+.bk-stat.bad{background:#FFE3E3;color:#C92A2A;justify-content:space-between;cursor:help}
+.bk-stat.none{background:#F8F5FF;color:#5F3DC4;border:1px dashed #B197FC;cursor:pointer;font-weight:600}
+.bk-fix{border:0;background:#fff;color:#C92A2A;border-radius:6px;padding:1px 8px;font-size:.74rem;font-weight:700;cursor:pointer}
+body.ui-dark .bk-l.bk-bankl{border-color:#3B3552}body.ui-dark .bk-stat.ok{background:rgba(12,166,120,.18);color:#63E6BE}body.ui-dark .bk-stat.bad{background:rgba(224,49,49,.22);color:#FFA8A8}
+body.ui-dark .bk-stat.none{background:#2A2344;border-color:#6741D9;color:#D0BFFF}body.ui-dark .bk-fix{background:#1E1B2E;color:#FFA8A8}
+.bk-t .bk-edit{margin-left:auto;flex:none;font-size:.72rem;opacity:.45}.bk-t .bk-edit:hover{opacity:1}

@@ -3937,3 +3937,10 @@ frontend
 - ฟอนต์ตัวเลข: ส่งภาพเทียบ Mali / Inter / IBM Plex / Sarabun ให้ North เลือกก่อน (ยังไม่เปลี่ยน)
 - drive.js: /upload รับ base64 ล้วน (text/plain + X-RR-Meta) ต่อสตริงเข้า body ไป Apps Script ไม่ JSON.parse ก้อนใหญ่ (กัน " และ \ ด้วย indexOf) · /file ส่ง body ของ Apps Script ผ่านตรง (X-RR-Enc: b64json) หน้าเว็บถอด base64 เอง · sync-slips ≤3MB ต่อครั้ง · CORS เพิ่ม X-RR-Meta / expose X-RR-Enc,X-RR-Mime
 - เทสต์ drive 20 ✅ · Playwright bk.cjs / dv.cjs ✅ · app.js?v=232 ui-a.css?v=28
+
+## v233 — การ์ด Balance Check ครบดีเทลเดิม แต่แน่น (2026-10-31)
+- North: "card เอาดีเทลแบบเดิมด้วย · ประหยัดพื้นที่ · ยังต้องเห็นว่าบันทึกแล้วและรอบันทึกเท่าไร" · ฟอนต์ตัวเลข: North เลือกคง Mali
+- การ์ด: ชื่อ + ชิป (✓ ตรง / ⚠ ยอดต่าง) · ✅ บันทึกแล้ว · ⏳ รอบันทึก · 💰 รวมตอนนี้ · 📄 ธนาคาร dd ✏️ · 🧮 ระบบ dd · ไม่ตรง → กล่องแดง + ⚖️ ปรับให้ตรง · ยังไม่มี → 📝 ใส่ยอดธนาคาร
+- ยังย่อ/ขยายได้ ค่าเริ่มต้นย่อ · มือถือ 1 คอลัมน์ · app.js?v=233 ui-a.css?v=29
+- v234 (North): ป้าย Recorded / Wait / Total / Bank (dd) · ตัดแถว "ระบบ" · สถานะล่างสุดตำแหน่งเดียวกันทุกการ์ด: ✓ Match (เขียว) / ✗ Mismatch + ผลต่าง + ⚖️ Fix (แดง) / + Add bank balance · ชิปหัว Match/Mismatch/No bank · app.js?v=234 ui-a.css?v=30
+- v235: ✏️ (ใส่ยอดธนาคารเอง ใช้ไม่บ่อย) ย้ายไปมุมขวาบนของการ์ด จางไว้ ชี้แล้วชัด · app.js?v=235 ui-a.css?v=31
