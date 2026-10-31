@@ -9799,7 +9799,7 @@ const DebtUI = (() => {
               <label>ค่างวด / เดือน<input id="dl-inst" inputmode="decimal" value="${l?.installment_amount ?? ''}"></label>
               <label>ครบกำหนดทุกวันที่<input id="dl-due" inputmode="numeric" value="${l?.due_day ?? ''}" placeholder="5"></label>
               <label>จำนวนงวดทั้งหมด<input id="dl-term" inputmode="numeric" value="${l?.term_months ?? ''}" placeholder="360"></label>
-              <label>ผูกกับทรัพย์สิน<input id="dl-asset" value="${esc(l?.asset_ref || '')}" placeholder="เช่น บ้าน Chaiyapruk"></label>
+              <label>ผูกกับทรัพย์สิน<input id="dl-asset" list="dl-asset-list" value="${esc(l?.asset_ref || '')}" placeholder="เช่น บ้าน Chaiyapruk (พิมพ์แล้วเลือกจากทะเบียน)"><datalist id="dl-asset-list"></datalist></label>
               <label class="w2">หมายเหตุ<input id="dl-note" value="${esc(l?.note || '')}"></label>
               <small class="w2">ระบบนับว่าจ่ายแล้วเท่าไรจากรายการที่ยืนยันใน "หมวดเงินต้น" (และคู่ค้า ถ้าเลือก) ตั้งแต่วันเริ่มนับ · ดอกเบี้ยนับจาก "หมวดดอกเบี้ย"</small></div>`,
             didOpen: () => { document.querySelectorAll('#dlk button').forEach(b => b.onclick = () => { document.querySelectorAll('#dlk button').forEach(x => x.classList.toggle('on', x === b)); const rt = document.getElementById('dl-rt'); if (b.dataset.k === 'CAR') rt.value = 'FLAT'; else if (b.dataset.k === 'HOME') rt.value = 'REDUCING'; }); },
@@ -10169,7 +10169,7 @@ const AssetsView = (() => {
   const $ = s => document.querySelector(s);
   const view = $('#as-view');
   const plain = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '').trim() || String(n || '');
-  const S = { tab: 'ACTIVE', data: null, meta: null, q: '', g: '*', asc: true, sel: new Set(), admin: false };
+  const S = { tab: 'ACTIVE', data: null, meta: null, q: '', g: '*', loc: '*', asc: true, sel: new Set(), admin: false };
   function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; ROOT().appendChild(d); setTimeout(() => d.remove(), 3000); }
   async function api(path, body) {
     const res = await fetch(API + path, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -10211,7 +10211,8 @@ const AssetsView = (() => {
     const q = S.q.toLowerCase();
     return S.data.items.filter(i => i.status === S.tab
       && (S.g === '*' || (S.g === '' ? !i.group_id : i.group_id === S.g))
-      && (!q || `${i.name} ${i.note} ${i.group_name || ''} ${i.category_name} ${i.account_name} ${i.entity_name} ${i.date} ${thd(i.date)} ${i.value}`.toLowerCase().includes(q)))
+      && (S.loc === '*' || (S.loc === '' ? !i.location : i.location === S.loc))
+      && (!q || `${i.name} ${i.note} ${i.location || ''} ${i.location_note || ''} ${i.group_name || ''} ${i.category_name} ${i.account_name} ${i.entity_name} ${i.date} ${thd(i.date)} ${i.value}`.toLowerCase().includes(q)))
       .sort((a, b) => (S.asc ? 1 : -1) * (a.date.localeCompare(b.date) || a.name.localeCompare(b.name, 'th')));
   }
   function render() {
@@ -10220,10 +10221,16 @@ const AssetsView = (() => {
     const cnt = g => inTab.filter(i => g === '' ? !i.group_id : i.group_id === g).length;
     const list = visible();
     const sum = list.reduce((s, i) => s + i.value, 0);
-    view.innerHTML = `<div class="kpis">
-        <div class="kpi"><small>🏷️ มูลค่าทรัพย์สินที่มีอยู่</small><b class="pos">${money(D.totals.value)}</b></div>
-        <div class="kpi"><small>📋 จำนวนรายการ</small><b>${D.totals.count}</b></div>
-        <div class="kpi"><small>📥 ในนั้นเป็นยอดยกมา</small><b>${money(D.totals.opening)}</b></div></div>
+    const T = D.totals, locs = D.locations || [], inTabL = l => inTab.filter(i => l === '' ? !i.location : i.location === l).length;
+    view.innerHTML = `<div class="kpis kpis4">
+        <div class="kpi"><small>🏷️ มูลค่ารวม (ราคาซื้อ)</small><b>${money(T.value)}</b><em>${T.count} รายการ</em></div>
+        <div class="kpi"><small>🔗 หนี้ที่ผูกอยู่</small><b class="neg">${T.debt_linked ? '(' + money(T.debt_linked) + ')' : '0.00'}</b><em>บ้าน · รถ · ผ่อน (จากหน้าหนี้สิน)</em></div>
+        <div class="kpi"><small>💚 ส่วนของเรา (สุทธิ)</small><b class="pos">${money(T.net ?? T.value)}</b><em>ทรัพย์สิน − หนี้</em></div>
+        <div class="kpi"><small>🛒 ได้มาปีนี้</small><b>${money(T.year_value || 0)}</b><em>${T.year_count || 0} รายการ · ตัดออก ${T.year_writeoff || 0}</em></div></div>
+      <div class="lchips" id="lchips"><button data-l="*" class="${S.loc === '*' ? 'on' : ''}">📍 ทุกที่<small>${inTab.length}</small></button>
+        ${locs.map(l => `<button data-l="${esc(l)}" class="${S.loc === l ? 'on' : ''}">${esc(l)}<small>${inTabL(l)}</small></button>`).join('')}
+        <button data-l="" class="${S.loc === '' ? 'on' : ''}">ไม่ระบุที่<small>${inTabL('')}</small></button>
+        <button class="lmgr" id="locmgr" title="เพิ่ม/แก้รายชื่อที่ตั้ง">✏️</button></div>
       <div class="catcard"><span class="lbl">🗂️ หมวดบัญชีที่นับเป็นทรัพย์สิน:</span>
         ${cats.length ? cats.map(c => `<span class="chip2">${esc(c.name)}</span>`).join('') : '<span class="neg">ยังไม่ได้เลือก</span>'}
         ${S.admin ? '<button class="b" id="cats" style="min-height:38px;padding:6px 12px;font-size:14px;margin-left:auto">⚙️ เลือกหมวด</button>' : ''}</div>
@@ -10249,6 +10256,7 @@ const AssetsView = (() => {
     $('#groups').onclick = groupMgr;
     $('#add').onclick = () => itemForm(null);
     $('#cats')?.addEventListener('click', catForm);
+    $('#lchips').onclick = e => { if (e.target.closest('#locmgr')) return locMgr(); const b = e.target.closest('button[data-l]'); if (!b) return; S.loc = b.dataset.l; S.sel.clear(); render(); };
     $('#gchips').onclick = e => { const b = e.target.closest('button[data-g]'); if (!b) return; S.g = b.dataset.g; S.sel.clear(); render(); };
     $('#all')?.addEventListener('change', e => { list.forEach(i => e.target.checked ? S.sel.add(i.asset_id) : S.sel.delete(i.asset_id)); render(); });
     view.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); render(); });
@@ -10261,6 +10269,7 @@ const AssetsView = (() => {
     const find = id => D.items.find(i => i.asset_id === id);
     view.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
       const i = find(b.dataset.id), a = b.dataset.act;
+      if (a === 'files') return filesOf(i);
       if (a === 'edit') itemForm(i); else if (a === 'wo') woForm(i); else if (a === 'del') del(i); else if (a === 'undo') undo(i); else if (a === 'restore') restore(i);
     });
   }
@@ -10274,9 +10283,10 @@ const AssetsView = (() => {
         : `<button class="b" data-act="restore" data-id="${id}">↩️ กู้คืน</button>`;
     return `<div class="arow">
       ${i.status !== 'REMOVED' ? `<input type="checkbox" data-sel="${id}" ${S.sel.has(i.asset_id) ? 'checked' : ''} aria-label="เลือก ${esc(i.name)}">` : ''}
-      <span class="t"><b>${esc(i.name)}</b>
+      <span class="t"><b>${esc(i.name)}</b>${i.location ? ` <span class="loc">📍 ${esc(i.location)}${i.location_note ? ' · ' + esc(i.location_note) : ''}</span>` : ''}
         <small>${i.source === 'OPENING' ? '<span class="tg op">ยอดยกมา</span>' : ''}${i.group_name ? `<span class="tg gr">${esc(i.group_name)}</span>` : ''}${meta}</small>
         ${i.note ? `<small>📝 ${esc(i.note)}</small>` : ''}
+        ${(i.debts || []).length || i.warranty_until || i.files ? `<small class="links">${(i.debts || []).map(d => `🔗 ${esc(d.name)} คงเหลือ ${money(d.outstanding)}`).join(' · ')}${i.warranty_until ? `${(i.debts || []).length ? ' · ' : ''}<span class="${i.warranty_until < todayTH() ? 'neg' : ''}">🛡️ รับประกันถึง ${thd(i.warranty_until)}</span>` : ''}${i.files ? ` · <button class="lnk" data-act="files" data-id="${id}">📎 ไฟล์ ${i.files}</button>` : ''}</small>` : ''}
         ${i.status === 'WRITTEN_OFF' ? `<small>📦 ตัดจำหน่าย ${thd(i.writeoff_date)} → ${esc(i.expense_category || '-')}${i.writeoff_note ? ' · ' + esc(i.writeoff_note) : ''}</small>` : ''}</span>
       <span class="v">${money(i.value)}</span>
       <span class="acts">${acts}</span></div>`;
@@ -10298,9 +10308,20 @@ const AssetsView = (() => {
       ${i?.source === 'TX' ? '<div class="mut" style="font-size:13px;margin-top:6px">วันที่/จำนวนเงิน มาจากรายการจริง — แก้ได้ที่หน้าประวัติรายการ</div>' : i?.status === 'WRITTEN_OFF' ? '<div class="mut" style="font-size:13px;margin-top:6px">ตัดจำหน่ายแล้ว — ยกเลิกตัดจำหน่ายก่อนจึงแก้วันที่/จำนวนเงินได้</div>' : ''}
       <label class="f" for="fG">กลุ่ม</label><select class="inp" id="fG">${groupOpts(i?.group_id || (S.g !== '*' ? S.g : ''))}<option value="__new">＋ สร้างกลุ่มใหม่…</option></select>
       ${(!i || i.source === 'OPENING') && cats.length > 1 ? `<label class="f" for="fC">หมวดบัญชี</label><select class="inp" id="fC" ${locked ? 'disabled' : ''}>${cats.map(c => `<option value="${esc(c.category_id)}" ${c.category_id === i?.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}
-      <label class="f" for="fM">หมายเหตุ (ไม่บังคับ)</label><input class="inp" id="fM" maxlength="300" value="${esc(i?.note || '')}" placeholder="เช่น ยี่ห้อ รุ่น เลขเครื่อง ที่ตั้ง">`,
+      <div class="g2">
+        <div><label class="f" for="fL">📍 อยู่ที่</label><select class="inp" id="fL"><option value="">— ไม่ระบุ —</option>${(S.data.locations || []).map(l => `<option ${l === (i ? i.location : (S.loc !== '*' ? S.loc : '')) ? 'selected' : ''}>${esc(l)}</option>`).join('')}<option value="__new">＋ ที่ใหม่…</option></select></div>
+        <div><label class="f" for="fLN">ห้อง / จุดที่วาง (ไม่บังคับ)</label><input class="inp" id="fLN" maxlength="120" value="${esc(i?.location_note || '')}" placeholder="เช่น ห้องนอนใหญ่ · ห้องทำงาน"></div>
+      </div>
+      <div class="g2">
+        <div><label class="f" for="fW">🛡️ รับประกันถึง (ไม่บังคับ)</label><input class="inp" id="fW" type="date" value="${esc(i?.warranty_until || '')}"></div>
+        <div><label class="f" for="fF">📎 แนบไฟล์ (ใบเสร็จ/โฉนด/เล่มทะเบียน)</label><input class="inp" id="fF" type="file" multiple accept="image/*,application/pdf" style="padding-top:9px"></div>
+      </div>
+      <label class="f" for="fM">หมายเหตุ (ไม่บังคับ)</label><input class="inp" id="fM" maxlength="300" value="${esc(i?.note || '')}" placeholder="เช่น ยี่ห้อ รุ่น เลขเครื่อง">`,
       `<button class="b main" data-save>${isNew ? 'เพิ่มเข้าทะเบียน' : 'บันทึก'}</button>`);
-    const gs = sh.el.querySelector('#fG');
+    const gs = sh.el.querySelector('#fG'), ls = sh.el.querySelector('#fL');
+    ls.onchange = () => { if (ls.value !== '__new') return; const n = (prompt('ชื่อที่ตั้งใหม่ (เช่น บ้านแม่ · โกดัง)') || '').trim(); if (!n) { ls.value = ''; return; }
+      if (!S.data.locations.includes(n)) { S.data.locations.push(n); A('/locations', { locations: S.data.locations }).catch(() => {}); }
+      ls.insertAdjacentHTML('afterbegin', ''); const o = document.createElement('option'); o.textContent = n; ls.insertBefore(o, ls.querySelector('option[value="__new"]')); ls.value = n; };
     gs.onchange = async () => {
       if (gs.value !== '__new') return;
       const name = (prompt('ชื่อกลุ่มใหม่ (เช่น อุปกรณ์ช่าง · เครื่องใช้ในบ้าน)') || '').trim();
@@ -10310,7 +10331,7 @@ const AssetsView = (() => {
     };
     onSave(sh, async () => {
       const name = sh.v('fN'); if (!name) throw new Error('ใส่ชื่อทรัพย์สิน');
-      const body = { name, group_id: gs.value === '__new' ? null : (gs.value || null), note: sh.v('fM') };
+      const body = { name, group_id: gs.value === '__new' ? null : (gs.value || null), note: sh.v('fM'), location: ls.value === '__new' ? null : (ls.value || null), location_note: sh.v('fLN'), warranty_until: sh.v('fW') || null };
       if (!locked) {
         const amount = Number(sh.v('fA').replace(/,/g, ''));
         if (!(amount > 0)) throw new Error('ใส่จำนวนเงินมากกว่า 0');
@@ -10318,10 +10339,31 @@ const AssetsView = (() => {
         Object.assign(body, { date: sh.v('fD'), amount });
         if (sh.el.querySelector('#fC')) body.category_id = sh.v('fC');
       }
-      if (isNew) await A('/opening', body); else await A('/' + encodeURIComponent(i.asset_id), body);
-      sh.close(); toast(isNew ? '✅ เพิ่มเข้าทะเบียนแล้ว' : '✅ บันทึกแล้ว'); await load();
+      const rr = isNew ? await A('/opening', body) : await A('/' + encodeURIComponent(i.asset_id), body);
+      const files = [...(sh.el.querySelector('#fF')?.files || [])], aid = isNew ? rr.asset_id : i.asset_id;
+      sh.close(); toast(isNew ? '✅ เพิ่มเข้าทะเบียนแล้ว' : '✅ บันทึกแล้ว');
+      if (files.length) { if (!(await DriveStore.config()).configured) toast('📎 ยังไม่ได้ตั้งค่า Google Drive (ตั้งค่า → Backup) — ไฟล์ยังไม่ถูกเก็บ');
+        else { let n = 0; for (const f of files) { try { await DriveStore.upload(f, { kind: 'asset', date: body.date || null, links: [{ type: 'asset', id: aid }] }); n++; } catch (e) { toast('📎 ' + f.name + ': ' + e.message); } } if (n) toast(`📎 แนบไฟล์แล้ว ${n} ไฟล์`); } }
+      await load();
     });
     setTimeout(() => sh.el.querySelector('#fN').focus(), 50);
+  }
+
+  /* ── 📍 รายชื่อที่ตั้ง (v258) ── */
+  function locMgr() {
+    const sh = sheet('📍 ที่ตั้งทรัพย์สิน', `<label class="f" for="lL">หนึ่งบรรทัดต่อหนึ่งที่ (เรียงตามที่ต้องการ)</label>
+      <textarea class="inp" id="lL" rows="8" style="height:auto;padding:10px 12px">${esc((S.data.locations || []).join('\n'))}</textarea>
+      <div class="note">ลบชื่อออกจากรายการได้ — ทรัพย์สินที่ยังระบุที่นั้นอยู่จะยังแสดงชื่อเดิม</div>`, `<button class="b main" data-save>บันทึก</button>`);
+    onSave(sh, async () => { const list = sh.v('lL').split('\n').map(x => x.trim()).filter(Boolean); await A('/locations', { locations: list }); sh.close(); toast('✅ บันทึกที่ตั้งแล้ว'); await load(); });
+  }
+  /* ── 📎 ไฟล์แนบของทรัพย์สิน ── */
+  async function filesOf(i) {
+    try {
+      const r = await fetch(`${API_BASE}/api/drive/files?ref_type=asset&ref_ids=${encodeURIComponent(i.asset_id)}`); const j = await r.json();
+      const fs = j.files || []; if (!fs.length) return toast('ไม่พบไฟล์');
+      const sh = sheet('📎 ไฟล์ของ ' + i.name, `<div class="glist">${fs.map(f => `<div><button class="b" style="flex:1;text-align:left" data-f="${esc(f.file_id)}" data-n="${esc(f.name || '')}">📄 ${esc(f.name || 'ไฟล์')}</button></div>`).join('')}</div>`, '');
+      sh.el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => DriveView.open(b.dataset.f, '', b.dataset.n));
+    } catch (e) { toast('⚠️ ' + e.message); }
   }
 
   /* ── จัดการกลุ่มย่อย ── */
@@ -10405,6 +10447,13 @@ const AssetsView = (() => {
     return { open() { if (started) return; started = true; init(); } };
 })();
 window.AssetsView = AssetsView;
+/* v258: ช่อง "ผูกกับทรัพย์สิน" ในฟอร์มหนี้ → แนะนำชื่อจากทะเบียนทรัพย์สิน (ชื่อตรงกัน = หน้าทรัพย์สินแสดงหนี้ที่ผูก) */
+document.addEventListener('focusin', async e => {
+    if (e.target?.id !== 'dl-asset') return;
+    const dl = document.getElementById('dl-asset-list'); if (!dl || dl.dataset.done) return; dl.dataset.done = '1';
+    try { const r = await fetch(`${API_BASE}/api/inbox/assets`); const j = await r.json();
+        dl.innerHTML = (j.items || []).filter(i => i.status === 'ACTIVE').map(i => `<option value="${String(i.name).replace(/"/g, '&quot;')}">${i.location ? '📍 ' + String(i.location).replace(/</g, '&lt;') : ''}</option>`).join(''); } catch { /* ไม่มีก็พิมพ์เองได้ */ }
+});
 
 
 

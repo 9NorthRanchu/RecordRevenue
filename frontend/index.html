@@ -815,6 +815,17 @@
 #view-assets .tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 #view-assets .tools { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+/* v258 📍 ที่ตั้ง · สรุป 4 ช่อง · ลิงก์หนี้/รับประกัน/ไฟล์ */
+#view-assets .kpis.kpis4 { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+@media (max-width: 760px) { #view-assets .kpis.kpis4 { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+#view-assets .kpis4 .kpi em { display:block; font-style:normal; color:var(--muted); font-size:12px; margin-top:2px; }
+#view-assets .lchips { display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; }
+#view-assets .lchips button { border:1.5px solid var(--line); background:#fff; color:var(--brand); border-radius:999px; padding:7px 14px; font-weight:700; cursor:pointer; min-height:40px; }
+#view-assets .lchips button small { margin-left:6px; color:var(--muted); font-weight:600; }
+#view-assets .lchips button.on { background:#2b1d63; color:#fff; border-color:#2b1d63; } #view-assets .lchips button.on small { color:#d0bfff; }
+#view-assets .lchips .lmgr { border-style:dashed; color:var(--muted); }
+#view-assets .loc { display:inline-block; font-size:12px; font-weight:700; color:#1971c2; background:#e7f5ff; border-radius:999px; padding:1px 8px; margin-left:6px; vertical-align:middle; }
+#view-assets .links { color:var(--muted); } #view-assets .lnk { border:0; background:none; color:var(--brand); font-weight:700; cursor:pointer; padding:0; font:inherit; }
 #view-assets .inp, #view-assets select.inp { width: 100%; height: 46px; border: 1.5px solid var(--line); border-radius: 12px; padding: 0 12px; background: #fff; font-size: 16px; }
 #view-assets .inp:focus { outline: none; border-color: var(--brand); }
 #view-assets .tools .inp { flex: 1; min-width: 180px; width: auto; }
@@ -1762,7 +1773,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script defer src="travel.js?v=105"></script>
-    <script defer src="app.js?v=257"></script>
+    <script defer src="app.js?v=258"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">

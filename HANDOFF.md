@@ -4058,3 +4058,11 @@ frontend
   · test/rules.test.mjs 12 ผ่าน
 - frontend AutoRules: ปุ่ม "⚡ กฎอัตโนมัติ" (แนะนำ → เพิ่มกฎ+ยืนยัน · เปิด/ปิด/ลบกฎ · ใช้กฎกับรอตรวจตอนนี้)
   · โหมดกลุ่ม: "⚡ ตั้งเป็นกฎ + ยืนยันทั้งกลุ่ม" · นำเข้า statement เสร็จ → เรียก /api/rules/apply อัตโนมัติ
+
+## v258 (2026-11-01) 🏡 ทรัพย์สิน: ที่ตั้ง · หนี้ที่ผูก · ไฟล์แนบ (ตาม mockup asset.png แบบ ก)
+- assets.js: AssetItems + location / location_note / warranty_until · รายชื่อที่ตั้ง AppSettings 'asset_locations' (เริ่มต้น Chaiyapruk, Villaggio, Pattaya, Element, Condo) · POST /api/inbox/assets/locations
+  · listAssets: debts (Debts.asset_ref = รหัสหรือชื่อทรัพย์สิน · loans.debtOutstanding) · files (DriveLinks ref_type 'asset') · totals.debt_linked / net / year_value / year_count / year_writeoff · locations
+- drive.js: ref_type เพิ่ม asset / debt / ins
+- AssetsView: สรุป 4 ช่อง · ชิปที่ตั้ง + ✏️ จัดการที่ตั้ง · แถว 📍 ที่ตั้ง · 🔗 หนี้ · 🛡️ รับประกัน (หมดแล้วสีแดง) · 📎 ไฟล์ · ฟอร์ม: ที่ตั้ง/ห้อง/รับประกัน/แนบไฟล์ (Drive)
+- ฟอร์มหนี้: ช่องผูกกับทรัพย์สินแนะนำชื่อจากทะเบียน (datalist)
+- test/assets.test.mjs 52 ผ่าน

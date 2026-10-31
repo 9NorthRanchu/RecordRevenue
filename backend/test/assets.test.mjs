@@ -184,5 +184,20 @@ check('ซ่อนแล้วไม่ถูกเพิ่มกลับเ�
 r = await post(`/${PEND}/restore`); check('กู้คืนได้', r.s === 200 && (await list()).totals.value === 66999, r);
 r = await post(`/${OP}/delete`); L = await list();
 check('ลบยอดยกมา = ลบจริง', r.s === 200 && r.j.deleted && !L.items.some(i => i.asset_id === OP), L.items);
+// 📍 v258 ที่ตั้ง · รับประกัน · หนี้ที่ผูก · สรุป
+L = await list(); check('ที่ตั้งเริ่มต้น 5 ที่', ['Chaiyapruk', 'Villaggio', 'Pattaya', 'Element', 'Condo'].every(x => L.locations.includes(x)), L.locations);
+r = await post('/opening', { name: 'แอร์ Daikin 18000', date: '2026-10-02', amount: 28900, location: 'Pattaya', location_note: 'ห้องนอนใหญ่', warranty_until: '2028-10-02' });
+const AIR = r.j.asset_id; L = await list(); let air = L.items.find(i => i.asset_id === AIR);
+check('บันทึกที่ตั้ง + รายละเอียด + รับประกัน', air.location === 'Pattaya' && air.location_note === 'ห้องนอนใหญ่' && air.warranty_until === '2028-10-02', air);
+r = await post('/' + AIR, { location: 'Villaggio' }); L = await list(); air = L.items.find(i => i.asset_id === AIR);
+check('แก้ที่ตั้ง (ช่องอื่นคงเดิม)', air.location === 'Villaggio' && air.warranty_until === '2028-10-02', air);
+r = await post('/locations', { locations: ['Chaiyapruk', 'Villaggio', 'บ้านแม่'] }); L = await list();
+check('แก้รายชื่อที่ตั้ง (ที่ใช้อยู่ยังแสดง)', L.locations.includes('บ้านแม่') && !L.locations.includes('Element'), L.locations);
+check('สรุปปีนี้นับรายการที่ได้มาปีนี้', L.totals.year_count >= 1 && L.totals.year_value >= 28900, L.totals);
+check('ยังไม่มีหนี้ผูก → ส่วนของเรา = มูลค่ารวม', L.totals.debt_linked === 0 && L.totals.net === L.totals.value, L.totals);
+await list();   // สร้างตาราง Debts ผ่าน ensureDebtCols
+db.exec(`INSERT INTO Debts (debt_id, family_id, name, type, principal_category_id, start_balance, start_date, asset_ref, status) VALUES ('DB1','Fam_Default','ผ่อนแอร์','PAYABLE','NOPE',10000,'2026-10-01','แอร์ Daikin','active')`);
+L = await list(); air = L.items.find(i => i.asset_id === AIR);
+check('หนี้ที่ผูก (asset_ref ตรงชื่อบางส่วน) → หนี้รวม + ส่วนของเรา', air.debts.length === 1 && air.debts[0].outstanding === 10000 && L.totals.debt_linked === 10000 && L.totals.net === Math.round((L.totals.value - 10000) * 100) / 100, [air.debts, L.totals]);
 console.log(`${bad ? '❌' : '✅'} ผ่าน ${ok} · ไม่ผ่าน ${bad}`);
 if (bad) process.exit(1);

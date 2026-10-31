@@ -46,6 +46,8 @@ async function lines(env, d, allowedEnts) {
       FROM TransactionDetails d JOIN Transactions t ON t.transaction_id = d.transaction_id JOIN Accounts a ON a.account_id = t.account_id
       WHERE ${where} ORDER BY t.date, t.transaction_id`).bind(...args).all()).results) || [];
 }
+/* คงเหลือของหนี้ 1 สัญญา (ใช้ในหน้าทรัพย์สิน: หนี้ที่ผูกอยู่) */
+export async function debtOutstanding(env, d) { return loanSummary(d, await lines(env, d, null)).outstanding; }
 export function loanSummary(d, ls, today = today0()) {
   const sameCat = d.interest_category_id && d.interest_category_id === d.principal_category_id;
   const sign = d.type === 'RECEIVABLE' ? 1 : -1, year = today.slice(0, 4);

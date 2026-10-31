@@ -90,7 +90,7 @@ export async function handleDrive({ url, request, env, cors, authUserId, canUseA
       try { b = JSON.parse(decodeURIComponent(request.headers.get('X-RR-Meta') || '%7B%7D')); } catch { b = {}; }
       data = await request.text();
     } else { b = await request.json().catch(() => ({})); data = b.data; }
-    const links = (Array.isArray(b.links) ? b.links : []).filter(l => ['stmt', 'tx'].includes(l?.type) && l.id).slice(0, 20);
+    const links = (Array.isArray(b.links) ? b.links : []).filter(l => ['stmt', 'tx', 'asset', 'debt', 'ins'].includes(l?.type) && l.id).slice(0, 20);
     if (b.account_id && !(await canUseAccount(String(b.account_id)))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
     const hash = String(b.hash || '').slice(0, 64) || null;
     let file = hash ? await env.DB.prepare(`SELECT * FROM DriveFiles WHERE family_id = ? AND file_hash = ?`).bind(fam, hash).first() : null;
@@ -166,7 +166,7 @@ export async function handleDrive({ url, request, env, cors, authUserId, canUseA
 
   if (p === '/api/drive/files' && request.method === 'GET') {
     const t = url.searchParams.get('ref_type'), ids = String(url.searchParams.get('ref_ids') || '').split(',').filter(Boolean).slice(0, 90);
-    if (!['stmt', 'tx'].includes(t) || !ids.length) return json({ files: [] }, cors);
+    if (!['stmt', 'tx', 'asset', 'debt', 'ins'].includes(t) || !ids.length) return json({ files: [] }, cors);
     const rows = ((await env.DB.prepare(`SELECT l.ref_id, f.file_id, f.name, f.mime, f.size, f.url, f.kind, f.created_at FROM DriveLinks l JOIN DriveFiles f ON f.file_id = l.file_id
         WHERE l.ref_type = ? AND l.ref_id IN (${ids.map(() => '?').join(',')}) AND f.family_id = ? AND f.drive_id != '' ORDER BY f.created_at`).bind(t, ...ids, fam).all()).results) || [];
     return json({ files: rows }, cors);

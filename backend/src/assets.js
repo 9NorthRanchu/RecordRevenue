@@ -17,6 +17,11 @@
 //  · หมวดทรัพย์สินถูกตัดออกจาก "รายจ่าย" ในรายงาน/ภาพรวม และจาก "ลูกหนี้" (ซื้อทรัพย์สินไม่ใช่ค่าใช้จ่าย)
 // ═══════════════════════════════════════════════════════════════════════════
 import { isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
+import { debtOutstanding, ensureDebtCols } from './loans.js';
+/* v258 (2026-11-01 · North เลือกแบบ ก จาก mockup asset.png): 📍 ที่ตั้ง (Chaiyapruk · Villaggio · Pattaya · Element · Condo + เพิ่มเองได้)
+   · รายละเอียดที่ตั้ง (เช่น ห้องนอนใหญ่) · รับประกันถึง · 🔗 หนี้ที่ผูก (Debts.asset_ref = รหัสหรือชื่อทรัพย์สิน) · 📎 ไฟล์แนบ (DriveLinks ref_type 'asset')
+   · สรุป: มูลค่ารวม · หนี้ที่ผูกอยู่ · ส่วนของเรา (ทรัพย์สิน − หนี้) · ซื้อเพิ่มปีนี้ / ตัดออกปีนี้ */
+export const DEFAULT_LOCATIONS = ['Chaiyapruk', 'Villaggio', 'Pattaya', 'Element', 'Condo'];
 
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const json = (data, cors, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -37,7 +42,24 @@ export const ASSET_SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_asset_items_family ON AssetItems (family_id, status)`,
 ];
 let ready = false;
-async function ensure(env) { if (ready) return; for (const s of ASSET_SCHEMA) await env.DB.prepare(s).run(); ready = true; }
+async function ensure(env) {
+  if (ready) return;
+  for (const s of ASSET_SCHEMA) await env.DB.prepare(s).run();
+  const have = new Set((((await env.DB.prepare(`PRAGMA table_info(AssetItems)`).all()).results) || []).map(c => c.name));
+  for (const c of ['location', 'location_note', 'warranty_until']) if (!have.has(c)) { try { await env.DB.prepare(`ALTER TABLE AssetItems ADD COLUMN ${c} TEXT`).run(); } catch { /* มีแล้ว */ } }
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS AppSettings (family_id TEXT NOT NULL, skey TEXT NOT NULL, svalue TEXT, updated_at TEXT, PRIMARY KEY (family_id, skey))`).run();
+  ready = true;
+}
+async function locationList(env, familyId) {
+  const r = await env.DB.prepare(`SELECT svalue FROM AppSettings WHERE family_id = ? AND skey = 'asset_locations'`).bind(familyId).first();
+  try { const a = JSON.parse(r?.svalue || 'null'); if (Array.isArray(a)) return a.map(String).filter(Boolean); } catch { /* ใช้ค่าเริ่มต้น */ }
+  return DEFAULT_LOCATIONS.slice();
+}
+const locFields = (body, i = {}) => ({
+  location: body.location !== undefined ? (clip(body.location, 60) || null) : (i.location ?? null),
+  location_note: body.location_note !== undefined ? (clip(body.location_note, 120) || null) : (i.location_note ?? null),
+  warranty_until: body.warranty_until !== undefined ? (validDate(body.warranty_until) ? body.warranty_until : null) : (i.warranty_until ?? null),
+});
 
 export async function assetCategorySet(env, familyId) {
   try { return new Set(((await env.DB.prepare(`SELECT rkey FROM LedgerRules WHERE family_id = ? AND kind = ?`).bind(familyId, ASSET_RULE).all()).results || []).map(r => r.rkey)); }
@@ -87,9 +109,28 @@ export async function listAssets(env, user) {
       account_id: isTx ? i.live_acc : i.account_id, account_name: plain(i.account_name || ''), entity_id: i.entity_id || null, entity_name: plain(i.entity_name || ''),
       note: i.note || '', status: i.status, writeoff_date: i.writeoff_date || null, expense_category_id: i.expense_category_id || null,
       expense_category: i.expense_category ? plain(i.expense_category) : null, writeoff_note: i.writeoff_note || null, writeoff_tx: i.writeoff_tx || null,
+      location: i.location || null, location_note: i.location_note || null, warranty_until: i.warranty_until || null,
     };
   }).sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name, 'th'));
   const act = items.filter(i => i.status === 'ACTIVE');
+  /* 🔗 หนี้ที่ผูก: Debts.asset_ref = รหัสทรัพย์สิน หรือชื่อ (ไม่สนตัวพิมพ์ · ชื่อหนึ่งอยู่ในอีกชื่อ) */
+  let debts = [];
+  try { await ensureDebtCols(env); debts = ((await env.DB.prepare(`SELECT * FROM Debts WHERE family_id = ? AND IFNULL(status,'active') = 'active' AND IFNULL(type,'PAYABLE') = 'PAYABLE' AND IFNULL(TRIM(asset_ref),'') != ''`).bind(user.family_id).all()).results) || []; } catch { debts = []; }
+  const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const debtLinks = new Map(); let debtTotal = 0;
+  for (const d of debts) {
+    const ref = norm(d.asset_ref), hit = items.filter(i => i.status === 'ACTIVE' && (i.asset_id.toLowerCase() === ref || (norm(i.name) && (norm(i.name) === ref || (ref.length >= 4 && (norm(i.name).includes(ref) || ref.includes(norm(i.name))))))));
+    if (!hit.length) continue;
+    const out = r2(await debtOutstanding(env, d)); debtTotal += Math.max(0, out);
+    for (const i of hit) { const l = debtLinks.get(i.asset_id) || []; l.push({ debt_id: d.debt_id, name: d.name, kind: d.kind || 'OTHER', outstanding: out }); debtLinks.set(i.asset_id, l); }
+  }
+  /* 📎 ไฟล์แนบ */
+  const files = new Map();
+  try { for (const r of ((await env.DB.prepare(`SELECT l.ref_id, COUNT(*) AS n FROM DriveLinks l JOIN DriveFiles f ON f.file_id = l.file_id WHERE l.ref_type = 'asset' AND f.family_id = ? GROUP BY l.ref_id`).bind(user.family_id).all()).results) || []) files.set(r.ref_id, r.n); } catch { /* ยังไม่ได้ตั้ง Drive */ }
+  for (const i of items) { i.debts = debtLinks.get(i.asset_id) || []; i.files = files.get(i.asset_id) || 0; }
+  const year = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 4);
+  const locations = await locationList(env, user.family_id);
+  for (const i of items) if (i.location && !locations.includes(i.location)) locations.push(i.location);
   const byGroup = {};
   for (const i of act) { const k = i.group_id || ''; byGroup[k] = byGroup[k] || { count: 0, value: 0 }; byGroup[k].count++; byGroup[k].value = r2(byGroup[k].value + i.value); }
   return {
@@ -99,7 +140,11 @@ export async function listAssets(env, user) {
     totals: { value: r2(act.reduce((s, i) => s + i.value, 0)), count: act.length,
       opening: r2(act.filter(i => i.source === 'OPENING').reduce((s, i) => s + i.value, 0)),
       written_off: items.filter(i => i.status === 'WRITTEN_OFF').length, removed: items.filter(i => i.status === 'REMOVED').length,
-      ungrouped: byGroup[''] || { count: 0, value: 0 } },
+      ungrouped: byGroup[''] || { count: 0, value: 0 },
+      debt_linked: r2(debtTotal), net: r2(act.reduce((s, i) => s + i.value, 0) - debtTotal),
+      year_value: r2(act.filter(i => i.date.startsWith(year)).reduce((s, i) => s + i.value, 0)), year_count: act.filter(i => i.date.startsWith(year)).length,
+      year_writeoff: items.filter(i => i.status === 'WRITTEN_OFF' && String(i.writeoff_date || '').startsWith(year)).length },
+    locations,
   };
 }
 
@@ -193,8 +238,9 @@ async function createOpening(env, user, body) {
   const ent = body.entity_id ? await env.DB.prepare(`SELECT e.entity_id FROM Entities e JOIN UserPermissions up ON up.entity_id = e.entity_id AND up.user_id = ? WHERE e.entity_id = ?`).bind(user.user_id, body.entity_id).first() : null;
   if (body.entity_id && !ent) return { error: 'ไม่มีสิทธิ์ในเจ้าของที่เลือก', status: 403 };
   const id = newId('AS-OP'), now = new Date().toISOString();
-  await env.DB.prepare(`INSERT INTO AssetItems (asset_id, family_id, source, detail_id, name, purchase_date, amount, category_id, group_id, entity_id, note, status, created_by, created_at, updated_at)
-      VALUES (?,?, 'OPENING', NULL, ?,?,?,?,?,?,?, 'ACTIVE', ?,?,?)`).bind(id, user.family_id, name, date, amount, category_id, gid, ent?.entity_id || null, clip(body.note, 300) || null, user.user_id, now, now).run();
+  const lf = locFields(body);
+  await env.DB.prepare(`INSERT INTO AssetItems (asset_id, family_id, source, detail_id, name, purchase_date, amount, category_id, group_id, entity_id, note, status, created_by, created_at, updated_at, location, location_note, warranty_until)
+      VALUES (?,?, 'OPENING', NULL, ?,?,?,?,?,?,?, 'ACTIVE', ?,?,?,?,?,?)`).bind(id, user.family_id, name, date, amount, category_id, gid, ent?.entity_id || null, clip(body.note, 300) || null, user.user_id, now, now, lf.location, lf.location_note, lf.warranty_until).run();
   return { ok: true, asset_id: id };
 }
 
@@ -217,8 +263,9 @@ async function editItem(env, user, id, body) {
     if (body.amount !== undefined) { amount = r2(body.amount); if (!(amount > 0) || amount > 1e11) return { error: 'จำนวนเงินต้องมากกว่า 0', status: 400 }; }
     if (body.category_id !== undefined) { if (!(await assetCategorySet(env, user.family_id)).has(body.category_id)) return { error: 'หมวดต้องเป็นหมวดทรัพย์สิน', status: 400 }; category_id = body.category_id; }
   }
-  await env.DB.prepare(`UPDATE AssetItems SET name = ?, group_id = ?, note = ?, purchase_date = ?, amount = ?, category_id = ?, updated_at = ? WHERE asset_id = ?`)
-    .bind(name, gid, note, purchase_date, amount, category_id, new Date().toISOString(), id).run();
+  const lf = locFields(body, i);
+  await env.DB.prepare(`UPDATE AssetItems SET name = ?, group_id = ?, note = ?, purchase_date = ?, amount = ?, category_id = ?, location = ?, location_note = ?, warranty_until = ?, updated_at = ? WHERE asset_id = ?`)
+    .bind(name, gid, note, purchase_date, amount, category_id, lf.location, lf.location_note, lf.warranty_until, new Date().toISOString(), id).run();
   return { ok: true };
 }
 
@@ -302,6 +349,11 @@ export async function handleAssets(request, env, url, cors, user) {
     const seg = p.slice('/api/inbox/assets/'.length).split('/').map(s => { try { return decodeURIComponent(s); } catch { return s; } });
     let out;
     if (seg[0] === 'categories' && seg.length === 1) out = await setCategories(env, user, body);
+    else if (seg[0] === 'locations' && seg.length === 1) {   // 📍 รายชื่อที่ตั้ง (v258)
+      const list = [...new Set((Array.isArray(body.locations) ? body.locations : []).map(x => clip(x, 60)).filter(Boolean))].slice(0, 50);
+      await env.DB.prepare(`INSERT OR REPLACE INTO AppSettings (family_id, skey, svalue, updated_at) VALUES (?, 'asset_locations', ?, ?)`).bind(user.family_id, JSON.stringify(list), new Date().toISOString()).run();
+      out = { ok: true, locations: list };
+    }
     else if (seg[0] === 'opening' && seg.length === 1) out = await createOpening(env, user, body);
     else if (seg[0] === 'move' && seg.length === 1) out = await moveItems(env, user, body);
     else if (seg[0] === 'groups') {
