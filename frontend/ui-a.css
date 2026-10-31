@@ -527,3 +527,6 @@ body.ui-a[data-view="reports"] .top-header{display:none}   /* หน้ารา
 .sim-pacc{color:#5C5872;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sim-pd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sim-pbtns{display:flex;gap:6px;flex-wrap:wrap}.sim-pmsg{font-size:.8rem;color:#2F9E44}
 @media (max-width:768px){.sim-prow{grid-template-columns:auto 1fr auto}.sim-prow .sim-pacc,.sim-prow .sim-pd{grid-column:2}}
 [data-theme="dark"] .sim-pend{background:#2A2216;border-color:#5A4520}
+/* ⚠️ อาจจ่ายซ้ำ (v230) */
+.sim-dup{background:#FFF0F0;border:1px solid #FFC9C9;color:#A61E1E;border-radius:8px;padding:6px 10px;font-size:.84rem;display:grid;gap:2px}.sim-dup>div{color:#5C2B2B}
+[data-theme="dark"] .sim-dup{background:#3A1E22;border-color:#6B2B33;color:#FFB3B8}[data-theme="dark"] .sim-dup>div{color:#F1C9CC}

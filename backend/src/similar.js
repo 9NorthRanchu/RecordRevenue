@@ -71,7 +71,23 @@ export async function handleSimilar({ url, request, env, cors, authUserId }) {
     pending = prow.map(r => ({ ...r, score: ps(r) })).filter(r => r.score >= need).sort((a, b) => b.score - a.score || b.date.localeCompare(a.date)).slice(0, 50)
       .map(({ score, ...r }) => ({ ...r, amount: r.total_amount }));
   }
+  /* ⚠️ อาจจ่ายซ้ำ (2026-10-31 ข้อ ค): รายการที่ยืนยันแล้ว ยอดเท่ากัน ทิศเดียวกัน วันห่างกันไม่เกิน 3 วัน
+     และ (ผู้รับเดียวกัน · หรือบัญชีเดียวกันวันใกล้กันและยอด ≥ 100 เช่น บันทึกจากสลิปแล้วมาซ้ำใน statement) — ยอดใช้เฉพาะตรงนี้ ไม่ใช้กับประวัติ */
+  let dup = [];
+  const dAmt = Math.abs(Number(url.searchParams.get('amount')) || 0), dDate = /^\d{4}-\d{2}-\d{2}/.exec(url.searchParams.get('date') || '')?.[0];
+  if (dAmt && dDate) {
+    const drow = ((await env.DB.prepare(`SELECT t.transaction_id, t.account_id, substr(t.date,1,10) AS date, t.total_amount, t.statement_desc, a.name AS account_name,
+          (SELECT d.note FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id LIMIT 1) AS note
+        FROM Transactions t JOIN Accounts a ON a.account_id = t.account_id JOIN UserPermissions up ON up.entity_id = a.entity_id
+        WHERE up.user_id = ? AND t.status = 'CONFIRMED' AND t.transaction_id != ? AND ABS(ABS(t.total_amount) - ?) < 0.01
+          AND substr(t.date,1,10) BETWEEN date(?, '-3 day') AND date(?, '+3 day') LIMIT 50`).bind(authUserId, exclude, dAmt, dDate, dDate).all()).results) || [];
+    const days = d => Math.abs((Date.parse(d) - Date.parse(dDate)) / 864e5);
+    dup = drow.filter(r => !(sign && Math.sign(r.total_amount) === -sign)).filter(r => {
+      const hay = `${simKey(r.statement_desc)} ${simKey(r.note)}`, payee = (key && simKey(r.statement_desc) === key) || toks.some(t => hay.includes(t));
+      return payee || (acc && r.account_id === acc && dAmt >= 100 && days(r.date) <= 1);
+    }).slice(0, 5).map(r => ({ transaction_id: r.transaction_id, date: r.date, amount: r.total_amount, statement_desc: r.statement_desc, account_name: r.account_name, note: r.note }));
+  }
   const pick = r => r && ({ category_id: r.category_id, category_name: r.category_name, caption_id: r.caption_id, entity_id: r.entity_id, entity_name: r.entity_name, contact_id: r.contact_id, contact_name: r.contact_name, note: r.note, type: r.type });
   return json({ items: items.map(r => ({ transaction_id: r.transaction_id, date: r.date, amount: r.total_amount, statement_desc: r.statement_desc, account_name: r.account_name, ...pick(r) })),
-    summary: top && top.n >= 2 ? { ...pick(top), n: top.n } : null, pending }, cors);
+    summary: top && top.n >= 2 ? { ...pick(top), n: top.n } : null, pending, dup }, cors);
 }

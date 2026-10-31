@@ -88,6 +88,14 @@ db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,s
 INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('d6','O5',-584.09,'T01','EXPENSE');`);
 r = await call('/api/transactions/similar?desc=' + encodeURIComponent('จ่ายบิล สำนักงานเขตประเวศ 5034109999') + '&amount=584.09&account_id=A02&exclude=P1', { user: '9North' });
 check('ยอดเท่ากันแต่คนละผู้รับ → ไม่ขึ้นในประวัติ', !r.j.items.some(x => x.transaction_id === 'O5'), r.j.items.map(x => x.transaction_id));
+db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES ('O6','A02','2026-10-27',-584.09,'CONFIRMED','PDF_IMPORT','9North','จ่ายบิล สำนักงานเขตประเวศ 5034109999'),('O7','A02','2026-10-28',-584.09,'CONFIRMED','WEB_GRID','9North','โอนเงิน'),('O8','A02','2026-10-28',-584.09,'CONFIRMED','WEB_GRID','9North','KFC'),('O9','A02','2026-10-28',584.09,'CONFIRMED','WEB_GRID','9North','จ่ายบิล สำนักงานเขตประเวศ');
+INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('d7','O6',-584.09,'T05','EXPENSE'),('d8','O7',-584.09,'T01','EXPENSE'),('d9','O8',-584.09,'T01','EXPENSE'),('d10','O9',584.09,'T01','INCOME');`);
+r = await call('/api/transactions/similar?sign=-1&date=2026-10-28&desc=' + encodeURIComponent('จ่ายบิล สำนักงานเขตประเวศ 5034109999') + '&amount=584.09&account_id=A02&exclude=P1', { user: '9North' });
+const dids = (r.j.dup || []).map(x => x.transaction_id);
+check('อาจซ้ำ: ผู้รับเดียวกันยอดเท่ากัน + บัญชีเดียวกันวันเดียวกัน · ไม่เอารายการรับ/วันไกล', dids.includes('O6') && dids.includes('O7') && !dids.includes('O9') && !dids.includes('O1') && !dids.includes('O5'), dids);
+r = await call('/api/transactions/similar?sign=-1&desc=' + encodeURIComponent('จ่ายบิล สำนักงานเขตประเวศ') + '&amount=584.09&account_id=A02&exclude=P1', { user: '9North' });
+check('ไม่ส่งวันที่ → ไม่เช็คซ้ำ', !(r.j.dup || []).length, r.j.dup);
+db.exec(`DELETE FROM Transactions WHERE transaction_id IN ('O6','O7','O8','O9'); DELETE FROM TransactionDetails WHERE detail_id IN ('d7','d8','d9','d10');`);
 r = await call('/api/transactions/similar?name=' + encodeURIComponent('สำนักงานเขตประเวศ'), { user: '9North' }); check('ค้นจากชื่อผู้รับในสลิป', r.j.items.length >= 2, r.j);
 r = await call('/api/transactions/similar?desc=xx', { user: '9North' }); check('ไม่มีคำค้น → ว่าง', r.j.items.length === 0, r.j);
 db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES

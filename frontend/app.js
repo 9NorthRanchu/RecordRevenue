@@ -15764,9 +15764,13 @@ const Similar = (() => {
         cache.set(qs, p); return p;
     }
     const line = x => [clean(x.category_name), x.entity_name, x.contact_name, x.note].filter(Boolean).map(esc).join(' · ') || '<i>ไม่มีรายละเอียด</i>';
+    /* ⚠️ อาจจ่ายซ้ำ: ยอดเท่ากัน ผู้รับเดียวกัน วันใกล้กัน (ยืนยันไปแล้ว) */
+    const dupHtml = r => r?.dup?.length ? `<div class="sim-dup"><span>⚠️ <b>อาจซ้ำ</b> — มีรายการยืนยันแล้วยอดเท่ากันในช่วงใกล้กัน ตรวจก่อนบันทึก:</span>
+          ${r.dup.map(x => `<div>${dTh(x.date)} · ${esc(clean(x.account_name))} · ${esc(x.statement_desc || x.note || '-')} · <b>${fm(x.amount)}</b></div>`).join('')}</div>` : '';
     function html(r, uid, compact) {
+        if (r?.dup?.length && !r?.items?.length && !r?.summary) return dupHtml(r);
         if (!r?.items?.length && !r?.summary) return `<div class="sim-none">${compact ? '🕘 ยังไม่เคยบันทึกผู้รับ/ร้านนี้' : 'ยังไม่เคยบันทึกรายการคล้ายกันนี้'}</div>`;
-        return `${r.summary ? `<div class="sim-top"><span>⭐ ใช้บ่อย (${r.summary.n} ครั้ง)</span><b>${line(r.summary)}</b><button type="button" class="sim-use" data-sim="${uid}" data-i="s">✓ ใช้อันนี้</button></div>` : ''}
+        return `${dupHtml(r)}${r.summary ? `<div class="sim-top"><span>⭐ ใช้บ่อย (${r.summary.n} ครั้ง)</span><b>${line(r.summary)}</b><button type="button" class="sim-use" data-sim="${uid}" data-i="s">✓ ใช้อันนี้</button></div>` : ''}
           <details class="sim-list"${r.summary || compact ? '' : ' open'}><summary>🕘 เคยบันทึก ${r.items.length} รายการที่คล้ายกัน</summary>
           ${r.items.map((x, i) => `<div class="sim-row"><div><small>${dTh(x.date)} · ${esc(clean(x.account_name))} · <span class="${x.amount < 0 ? 'sim-neg' : 'sim-pos'}">${fm(x.amount)}</span></small>
               <div class="sim-d">${esc(x.statement_desc || '-')}</div><div class="sim-l">${line(x)}</div></div>
@@ -15803,7 +15807,7 @@ const Similar = (() => {
         const tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === card.dataset.txid) || {};
         await Swal.fire({ title: '🔎 รายการที่เคยบันทึก', width: 640, showConfirmButton: false, showCloseButton: true,
             html: `<div class="sim-q">${esc(tx.statement_desc || card.dataset.desc || '')} · <b>${fm(tx.total_amount)}</b></div><div id="sim-pop"></div>`,
-            didOpen: () => inline(document.getElementById('sim-pop'), { desc: tx.statement_desc || card.dataset.desc || '', name: tx.details?.[0]?.note || '', amount: Math.abs(tx.total_amount || 0), account_id: tx.account_id, exclude: tx.transaction_id },
+            didOpen: () => inline(document.getElementById('sim-pop'), { desc: tx.statement_desc || card.dataset.desc || '', name: tx.details?.[0]?.note || '', amount: Math.abs(tx.total_amount || 0), date: String(tx.date || '').slice(0, 10), account_id: tx.account_id, exclude: tx.transaction_id },
                 v => { applyToCard(card, v); Swal.close(); }) });
     }
     /* 2026-10-31 (North: "แสดงประวัติ ค่าใช้จ่ายและรายรับทั้งหมด ที่จะบันทึกของทุก statement"):
@@ -15814,7 +15818,7 @@ const Similar = (() => {
         const card = e.target, tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === card.dataset.txid) || {};
         const strip = card.querySelector('.sim-strip'); if (!strip) return;
         inline(strip, { desc: tx.statement_desc || card.dataset.desc || '', name: tx.details?.[0]?.note || '', amount: Math.abs(tx.total_amount || 0), sign: Math.sign(Number(tx.total_amount) || 0) || '',
-            account_id: tx.account_id, exclude: tx.transaction_id }, v => applyToCard(card, v), true);
+            date: String(tx.date || '').slice(0, 10), account_id: tx.account_id, exclude: tx.transaction_id }, v => applyToCard(card, v), true);
     }), { rootMargin: '300px' }) : null;
     function watchCard(card) {
         if (!io || !card || card.querySelector('.sim-strip') || card.dataset.isNew === 'true') return;
@@ -15848,7 +15852,7 @@ const Similar = (() => {
         card.dataset.simOpen = '1';
         const tx = (AppState.pendingTransactions || []).find(t => t.transaction_id === card.dataset.txid) || {};
         const strip = card.querySelector('.sim-strip'); if (!strip) return;
-        const q = { desc: tx.statement_desc || '', name: tx.details?.[0]?.note || '', amount: Math.abs(tx.total_amount || 0), sign: Math.sign(Number(tx.total_amount) || 0) || '', account_id: tx.account_id, exclude: tx.transaction_id, include_pending: 1 };
+        const q = { desc: tx.statement_desc || '', name: tx.details?.[0]?.note || '', amount: Math.abs(tx.total_amount || 0), sign: Math.sign(Number(tx.total_amount) || 0) || '', date: String(tx.date || '').slice(0, 10), account_id: tx.account_id, exclude: tx.transaction_id, include_pending: 1 };
         const r = await inline(strip, q, v => applyToCard(card, v), false);
         const pend = (r?.pending || []).filter(x => x.transaction_id !== tx.transaction_id);
         if (!pend.length) return;
