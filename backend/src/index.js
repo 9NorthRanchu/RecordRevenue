@@ -22,7 +22,8 @@ export default {
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-user-id, X-RR-Meta',
+      'Access-Control-Expose-Headers': 'X-RR-Enc, X-RR-Mime',   // ไฟล์จาก Drive ส่ง base64 ให้หน้าเว็บถอดเอง (v232)
     };
 
     if (request.method === 'OPTIONS') {

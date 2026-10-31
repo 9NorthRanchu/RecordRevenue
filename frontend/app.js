@@ -3666,32 +3666,32 @@ async function renderSharedStatusSummary() {
         return { accId, acc, name: acc ? acc.name : 'Unknown', conf, pend, now: conf + pend, cp, ok, rank: ok === false ? 0 : ok === true ? 1 : 2 };
     }).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
     const nBad = rows.filter(r => r.ok === false).length, nOk = rows.filter(r => r.ok).length, nNo = rows.filter(r => r.ok == null).length;
+    /* 2026-10-31 รอบ 2 (North: "ให้เป็น card เหมือนเดิม แต่ประหยัดพื้นที่ · ย่อ/ขยายได้ · ค่าเริ่มต้นย่อไว้ เพราะส่วนสำคัญคือรายการรอบันทึก") */
+    let open = !!AppState._bkOpenMem; try { open = localStorage.getItem('rr_bk_open') === '1'; } catch { /* ไม่มี localStorage → จำในหน้า */ }
     let html = `
-        <div class="sum-head"><b>⚖️ Balance Check</b>
-          <span class="bk-chips"><i class="bk-c ok">✓ Match ${nOk}</i>${nBad ? `<i class="bk-c bad">⚠ Diff ${nBad}</i>` : ''}${nNo ? `<i class="bk-c no">– No bank bal ${nNo}</i>` : ''}</span>
-          ${AppState._sumAll ? `<button type="button" class="sum-all" onclick="AppState._sumAll=false;renderSharedStatusSummary()">Active only</button>`
-            : hiddenN ? `<button type="button" class="sum-all" onclick="AppState._sumAll=true;renderSharedStatusSummary()">➕ All accounts (${hiddenN})</button>` : ''}</div>
-        <div class="bk-tbl">
-          <div class="bk-row bk-hd"><span>Account</span><span title="ยืนยันแล้ว (รวมยอดยกมา)">Confirmed</span><span title="รอตรวจ">Pending</span><span title="ยืนยันแล้ว + รอตรวจ">Now</span><span title="ยอดธนาคาร ณ วันที่">Bank</span><span>Status</span></div>`;
-    rows.forEach(r => {
+        <div class="sum-head bk-head" role="button" tabindex="0" onclick="if(event.target.closest('.sum-all'))return;toggleBalanceCheck()" title="กดเพื่อ${open ? 'ย่อ' : 'ขยาย'}">
+          <b>⚖️ Balance Check</b>
+          <span class="bk-chips"><i class="bk-c ok">✓ ${nOk}</i>${nBad ? `<i class="bk-c bad">⚠ Diff ${nBad}</i>` : ''}${nNo ? `<i class="bk-c no">– ${nNo}</i>` : ''}<small class="bk-hint">${rows.length} accounts</small></span>
+          ${!open ? '' : AppState._sumAll ? `<button type="button" class="sum-all" onclick="AppState._sumAll=false;renderSharedStatusSummary()">Active only</button>`
+            : hiddenN ? `<button type="button" class="sum-all" onclick="AppState._sumAll=true;renderSharedStatusSummary()">➕ All (${hiddenN})</button>` : ''}
+          <span class="bk-tog">${open ? '▴ ย่อ' : '▾ ขยาย'}</span></div>
+        <div class="bk-grid"${open ? '' : ' hidden'}>`;
+    if (open) rows.forEach(r => {
         const cp = r.cp, d = cp ? String(cp.as_of || '').split('-') : [], dd = d.length === 3 ? `${d[2]}/${d[1]}/${d[0].slice(2)}` : (cp?.as_of || '');
-        const bank = cp ? `<span class="bk-bank">${fc(cp.bank)}<small>@ ${dd}${cp.source === 'STATEMENT' ? '' : ' ✍️'}</small></span>` : '<span class="bk-dim">—</span>';
-        const status = !cp ? `<button type="button" class="bk-btn" onclick="recordBankBalance('${r.accId}')" title="ใส่ยอดคงเหลือตามธนาคาร">+ Bank bal</button>`
-            : r.ok ? `<span class="bk-st ok">✓ Match</span><button type="button" class="bk-ic" title="ใส่ยอดธนาคารใหม่" onclick="recordBankBalance('${r.accId}')">✏️</button>`
-            : `<span class="bk-st bad" title="ระบบ ณ ${dd}: ${formatCurrency(cp.system)} · ${Math.abs(cp.bank) > Math.abs(cp.system) ? 'ธนาคารมากกว่า' : 'ระบบมากกว่า'} — ขาดรายการ / ยอดยกมาไม่ครบ / นำเข้าซ้ำ">⚠ Diff ${formatCurrency(Math.abs(cp.diff))}</span>
-               <button type="button" class="bk-btn" onclick="reconcileAccount('${r.accId}', ${Number(cp.system) || 0}, ${Number(cp.bank) || 0})" title="ปรับยอดยกมาให้ยอดในระบบเท่าธนาคาร">⚖️ Fix</button>
-               <button type="button" class="bk-ic" title="ใส่ยอดธนาคารใหม่" onclick="recordBankBalance('${r.accId}')">✏️</button>`;
+        const chip = !cp ? '' : r.ok ? `<span class="bk-st ok" title="ตรงกับธนาคาร">✓</span>`
+            : `<span class="bk-st bad" title="ระบบ ณ ${dd}: ${formatCurrency(cp.system)} · ${Math.abs(cp.bank) > Math.abs(cp.system) ? 'ธนาคารมากกว่า' : 'ระบบมากกว่า'} — ขาดรายการ / ยอดยกมาไม่ครบ / นำเข้าซ้ำ">⚠ ${formatCurrency(Math.abs(cp.diff))}</span>`;
+        const bank = !cp ? `<button type="button" class="bk-btn" onclick="recordBankBalance('${r.accId}')" title="ใส่ยอดคงเหลือตามธนาคาร">+ Bank bal</button>`
+            : `<span>Bank ${dd}${cp.source === 'STATEMENT' ? '' : '✍️'}</span><b>${fc(cp.bank)}</b><button type="button" class="bk-ic" title="ใส่ยอดธนาคารใหม่" onclick="recordBankBalance('${r.accId}')">✏️</button>
+               ${r.ok ? '' : `<button type="button" class="bk-btn" onclick="reconcileAccount('${r.accId}', ${Number(cp.system) || 0}, ${Number(cp.bank) || 0})" title="ปรับยอดยกมาให้ยอดในระบบเท่าธนาคาร">⚖️ Fix</button>`}`;
         html += `
-          <div class="bk-row ${r.ok === false ? 'is-bad' : ''}">
-            <span class="bk-name" title="${String(r.name).replace(/"/g, '&quot;')}">${getBankIcon(r.acc?.bank_name || '')} ${r.name}</span>
-            <span class="bk-n" data-l="Confirmed">${fc(r.conf)}</span>
-            <span class="bk-n" data-l="Pending">${r.pend ? fc(r.pend) : '<span class="bk-dim">0.00</span>'}</span>
-            <span class="bk-n bk-now" data-l="Now">${fc(r.now)}</span>
-            <span class="bk-n" data-l="Bank">${bank}</span>
-            <span class="bk-s">${status}</span>
+          <div class="bk-card${r.ok === false ? ' is-bad' : ''}">
+            <div class="bk-t"><span class="bk-name" title="${String(r.name).replace(/"/g, '&quot;')}">${getBankIcon(r.acc?.bank_name || '')} ${r.name}</span>${chip}</div>
+            <div class="bk-now"><small>Now</small>${fc(r.now)}</div>
+            <div class="bk-sub"><span title="ยืนยันแล้ว">Conf ${fc(r.conf)}</span><span title="รอตรวจ">Pend ${r.pend ? fc(r.pend) : '0.00'}</span></div>
+            <div class="bk-bk">${bank}</div>
           </div>`;
     });
-    html += `<div class="bk-foot">Confirmed = ยืนยันแล้ว · Pending = รอตรวจ · Now = รวมตอนนี้ · Bank = ยอดธนาคาร (✍️ ใส่เอง) · Diff = ต่างจากธนาคาร</div>`;
+    if (open) html += `<div class="bk-foot">Now = ยืนยันแล้ว + รอตรวจ · Conf = ยืนยันแล้ว · Pend = รอตรวจ · Bank = ยอดธนาคาร (✍️ ใส่เอง) · ⚠ = ต่างจากธนาคาร</div>`;
     html += `</div>`;
     
     if (allAccIds.size === 0 && !totalAccs) {
@@ -7356,6 +7356,10 @@ async function statementPrecheck(accId, info) {
 
 /* 📄 แถว "ยอดธนาคาร" ในการ์ดตรวจยอด (2026-10-30)
    มียอดธนาคาร → แสดงวันที่ + ✅ ตรง / ⚠️ ต่าง + ปุ่มปรับ · ยังไม่มี → ปุ่มใส่ยอดธนาคาร */
+function toggleBalanceCheck() {
+    let open = false; try { open = localStorage.getItem('rr_bk_open') === '1'; localStorage.setItem('rr_bk_open', open ? '0' : '1'); } catch { AppState._bkOpenMem = !AppState._bkOpenMem; }
+    renderSharedStatusSummary();
+}
 function bankCheckHtml(accId, cp, acc) {
     const isCredit = acc?.account_type === 'CREDIT';
     if (!cp) return `<button type="button" class="acc-recon" onclick="recordBankBalance('${accId}')" title="ใส่ยอดคงเหลือตามธนาคาร เพื่อตรวจว่าข้อมูลครบไหม">📝 ใส่ยอดธนาคาร</button>`;
@@ -15676,7 +15680,10 @@ const DriveStore = (() => {
         const buf = await file.arrayBuffer(), hash = await sha(buf);
         const job = async () => {
             const body = { name: file.name || 'file', mime: file.type || (/\.pdf$/i.test(file.name || '') ? 'application/pdf' : 'application/octet-stream'), hash, kind, account_id, date, links };
-            const send = async withData => { const r = await fetch(`${API_BASE}/api/drive/upload`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(withData ? { ...body, data: b64(buf) } : body) }); return [r, await r.json().catch(() => ({}))]; };
+            /* มีไฟล์: ส่ง base64 ล้วน + ข้อมูลไฟล์ใน header (เซิร์ฟเวอร์ไม่ต้องแยก JSON ก้อนใหญ่ · กันเกินเวลา CPU) */
+            const send = async withData => { const r = await fetch(`${API_BASE}/api/drive/upload`, withData
+                ? { method: 'POST', headers: { 'Content-Type': 'text/plain', 'X-RR-Meta': encodeURIComponent(JSON.stringify(body)) }, body: b64(buf) }
+                : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return [r, await r.json().catch(() => ({}))]; };
             let [r, j] = await send(false);              // ลองผูกกับไฟล์เดิมก่อน (ไม่ต้องส่งไฟล์)
             if (!r.ok && /ไม่มีไฟล์/.test(j.error || '')) [r, j] = await send(true);
             if (!r.ok || j.error) throw new Error(j.error || r.status);
@@ -15753,7 +15760,13 @@ const DriveView = (() => {
         try {
             const r = await fetch(`${API_BASE}/api/drive/file?id=${encodeURIComponent(fileId)}`);
             if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || r.status); }
-            const blob = await r.blob(), url = URL.createObjectURL(blob);
+            let blob;
+            if (r.headers.get('X-RR-Enc') === 'b64json' || /application\/json/i.test(r.headers.get('Content-Type') || '')) {   // เซิร์ฟเวอร์ส่ง base64 มาให้ถอดในเครื่อง (v232)
+                const j = await r.json(); if (j.error || !j.data) throw new Error(j.error || 'ไม่พบข้อมูลไฟล์');
+                const s = atob(j.data), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+                blob = new Blob([u], { type: j.mime || r.headers.get('X-RR-Mime') || 'application/octet-stream' });
+            } else blob = await r.blob();
+            const url = URL.createObjectURL(blob);
             const dl = document.getElementById('dv-dl'); dl.href = url; dl.download = name || 'file';
             if (/^image\//.test(blob.type)) { body.innerHTML = `<img src="${url}" alt="">`; return; }
             if (!/pdf/.test(blob.type) && !/\.pdf$/i.test(name || '')) { body.innerHTML = '<p>เปิดดูในหน้านี้ไม่ได้ — กด ⬇️ ต้นฉบับ</p>'; return; }

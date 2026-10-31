@@ -3930,3 +3930,10 @@ frontend
 - ข้อ ง: RepHome payeePanel (#py-wrap) จัดกลุ่มตามคู่ค้า → ไม่มีใช้ statementKey(desc) · ค้นหา · กดแถว → รายเดือน · การ์ดส่งออก 'payee' (xlsx 2 ชีต: สรุป + แยกเดือน / pdf)
 - backend dashboard/summary: แถว income/expense เพิ่ม desc (statement_desc)
 - app.js?v=231 ui-a.css?v=27 · Playwright rb.cjs / py.cjs ✅
+
+## v232 — Balance Check การ์ดเล็ก ย่อ/ขยาย + Drive ไม่กิน CPU (2026-10-31)
+- North: "Balance check ให้เป็น card เหมือนเดิม แต่ประหยัดพื้นที่ · ลดขยายได้ default ย่อ เพราะส่วนสำคัญคือรายการรอบันทึก" → หัวแถบเดียว (ชิป ✓/⚠/–) กดขยาย · จำใน localStorage rr_bk_open · การ์ด 4 บรรทัด (ชื่อ+สถานะ · Now · Conf/Pend · Bank+✏️/Fix) · toggleBalanceCheck()
+- PDF รายงาน: North ให้ใช้ฟอนต์รายงานปกติ → คง Sarabun (ไม่เปลี่ยน)
+- ฟอนต์ตัวเลข: ส่งภาพเทียบ Mali / Inter / IBM Plex / Sarabun ให้ North เลือกก่อน (ยังไม่เปลี่ยน)
+- drive.js: /upload รับ base64 ล้วน (text/plain + X-RR-Meta) ต่อสตริงเข้า body ไป Apps Script ไม่ JSON.parse ก้อนใหญ่ (กัน " และ \ ด้วย indexOf) · /file ส่ง body ของ Apps Script ผ่านตรง (X-RR-Enc: b64json) หน้าเว็บถอด base64 เอง · sync-slips ≤3MB ต่อครั้ง · CORS เพิ่ม X-RR-Meta / expose X-RR-Enc,X-RR-Mime
+- เทสต์ drive 20 ✅ · Playwright bk.cjs / dv.cjs ✅ · app.js?v=232 ui-a.css?v=28

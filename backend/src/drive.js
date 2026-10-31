@@ -40,6 +40,19 @@ export async function callGas(cfg, body, fetchImpl = fetch) {
   return j;
 }
 
+/* ⚡ ไฟล์ใหญ่ (2026-10-31 · กัน Worker แผนฟรีเกินเวลา CPU): ไม่ JSON.parse/ถอด base64 ในเซิร์ฟเวอร์
+   ต่อสตริง base64 เข้า body ตรง ๆ · base64 มีแค่ A-Z a-z 0-9 + / = จึงต่อเข้า JSON ได้เลย (เช็คว่าไม่มี " หรือ \ ด้วย indexOf กันแทรกคำสั่ง) */
+export async function callGasData(cfg, body, data, fetchImpl = fetch) {
+  if (!cfg.drive_url || !cfg.drive_secret) throw new Error('ยังไม่ได้ตั้งค่า Google Drive');
+  if (typeof data !== 'string' || data.indexOf('"') !== -1 || data.indexOf('\\') !== -1) throw new Error('ข้อมูลไฟล์ไม่ถูกต้อง');
+  const head = JSON.stringify({ ...body, secret: cfg.drive_secret });
+  const r = await fetchImpl(cfg.drive_url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: head.slice(0, -1) + ',"data":"' + data + '"}', redirect: 'follow' });
+  const t = await r.text();
+  let j; try { j = JSON.parse(t); } catch { throw new Error(/<html/i.test(t) ? 'Apps Script ตอบเป็นหน้าเว็บ — ตรวจว่า Deploy เป็น Web app และให้ "Anyone" เข้าถึงได้' : 'Apps Script ตอบไม่ถูกต้อง'); }
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+
 export async function handleDrive({ url, request, env, cors, authUserId, canUseAccount, deny, fetchImpl }) {
   const p = url.pathname;
   if (!p.startsWith('/api/drive/')) return null;
@@ -71,22 +84,27 @@ export async function handleDrive({ url, request, env, cors, authUserId, canUseA
   }
 
   if (p === '/api/drive/upload' && request.method === 'POST') {
-    const b = await request.json().catch(() => ({}));
+    /* แบบใหม่: body = base64 ล้วน (text/plain) + ข้อมูลไฟล์ใน header X-RR-Meta · แบบเดิม (JSON มี data) ยังใช้ได้ */
+    let b, data;
+    if (/^text\/plain/i.test(request.headers.get('Content-Type') || '')) {
+      try { b = JSON.parse(decodeURIComponent(request.headers.get('X-RR-Meta') || '%7B%7D')); } catch { b = {}; }
+      data = await request.text();
+    } else { b = await request.json().catch(() => ({})); data = b.data; }
     const links = (Array.isArray(b.links) ? b.links : []).filter(l => ['stmt', 'tx'].includes(l?.type) && l.id).slice(0, 20);
     if (b.account_id && !(await canUseAccount(String(b.account_id)))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
     const hash = String(b.hash || '').slice(0, 64) || null;
     let file = hash ? await env.DB.prepare(`SELECT * FROM DriveFiles WHERE family_id = ? AND file_hash = ?`).bind(fam, hash).first() : null;
     const reused = !!file;
     if (!file) {
-      if (!b.data || !b.name) return json({ error: 'ไม่มีไฟล์' }, cors, 400);
-      if (String(b.data).length > 28_000_000) return json({ error: 'ไฟล์ใหญ่เกิน 20MB' }, cors, 413);
+      if (!data || !b.name) return json({ error: 'ไม่มีไฟล์' }, cors, 400);
+      if (String(data).length > 28_000_000) return json({ error: 'ไฟล์ใหญ่เกิน 20MB' }, cors, 413);
       const kind = ['statement', 'slip', 'expense'].includes(b.kind) ? b.kind : 'statement';
       const acc = b.account_id ? await env.DB.prepare(`SELECT name FROM Accounts WHERE account_id = ?`).bind(String(b.account_id)).first() : null;
       const ym = /^\d{4}-\d{2}/.test(b.date || '') ? String(b.date).slice(0, 7) : new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
       /* 2026-10-31 (North: "แยกตาม Statement"): ทุกชนิดแยกตามบัญชีก่อน แล้วตามปี (statement) / ปี-เดือน (สลิป · หลักฐาน) */
       const accDir = acc?.name || b.account_id || 'ไม่ระบุบัญชี';
       const path = kind === 'statement' ? ['Statement', accDir, ym.slice(0, 4)] : [kind === 'slip' ? 'Slip' : 'Expense', accDir, ym];
-      let up; try { up = await gas({ action: 'upload', path, name: String(b.name).slice(0, 150), mime: b.mime || 'application/octet-stream', data: b.data, description: b.description || '' }); }
+      let up; try { up = await callGasData(cfg, { action: 'upload', path, name: String(b.name).slice(0, 150), mime: b.mime || 'application/octet-stream', description: b.description || '' }, String(data), fetchImpl); }
       catch (e) { return json({ error: 'อัปโหลดไป Drive ไม่สำเร็จ: ' + e.message }, cors, 502); }
       file = { file_id: 'DF-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), family_id: fam, drive_id: up.id, name: String(b.name).slice(0, 150), mime: b.mime || null,
         size: up.size || null, kind, account_id: b.account_id || null, file_hash: hash, url: up.url || null, created_by: authUserId, created_at: new Date().toISOString() };
@@ -106,8 +124,9 @@ export async function handleDrive({ url, request, env, cors, authUserId, canUseA
         AND EXISTS (SELECT 1 FROM LedgerDocLinks l WHERE l.doc_id = d.doc_id)
         AND NOT EXISTS (SELECT 1 FROM DriveFiles f WHERE f.family_id = d.family_id AND f.file_hash = 'r2:' || d.file_key)`;
     const docs = ((await env.DB.prepare(`SELECT d.doc_id, d.file_key, d.mime, d.file_name, d.doc_type, d.created_at ${pendingSql} ORDER BY d.created_at LIMIT 8`).bind(fam).all()).results) || [];
-    let done = 0, missing = 0; const errors = [];
+    let done = 0, missing = 0, bytes = 0; const errors = [];
     for (const d of docs) {
+      if (bytes > 3_000_000) break;   // ⚡ ต่อครั้งไม่เกิน ~3MB (แปลง base64 ใช้ CPU) · หน้าเว็บเรียกซ้ำจนหมดอยู่แล้ว
       const links = ((await env.DB.prepare(`SELECT l.transaction_id, t.account_id, t.date FROM LedgerDocLinks l JOIN Transactions t ON t.transaction_id = l.transaction_id WHERE l.doc_id = ?`).bind(d.doc_id).all()).results) || [];
       const obj = await env.ICONS.get(d.file_key);
       const hash = 'r2:' + d.file_key, now = new Date().toISOString();
@@ -116,7 +135,7 @@ export async function handleDrive({ url, request, env, cors, authUserId, canUseA
           .bind('DF-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), fam, '', d.file_name || d.doc_id, d.mime, 'missing', hash, authUserId, now).run();
         missing++; continue;
       }
-      const buf = new Uint8Array(await obj.arrayBuffer()); let bin = '';
+      const buf = new Uint8Array(await obj.arrayBuffer()); let bin = ''; bytes += buf.length;
       for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
       const ym = String(links[0]?.date || d.created_at || now).slice(0, 7);
       const accName = links[0]?.account_id ? (await env.DB.prepare(`SELECT name FROM Accounts WHERE account_id = ?`).bind(links[0].account_id).first())?.name : null;
@@ -157,10 +176,11 @@ export async function handleDrive({ url, request, env, cors, authUserId, canUseA
     const f = await env.DB.prepare(`SELECT * FROM DriveFiles WHERE file_id = ? AND family_id = ?`).bind(url.searchParams.get('id') || '', fam).first();
     if (!f) return json({ error: 'ไม่พบไฟล์' }, cors, 404);
     if (f.account_id && !(await canUseAccount(f.account_id))) return deny('ไม่มีสิทธิ์ใช้บัญชีนี้');
-    let g; try { g = await gas({ action: 'get', id: f.drive_id }); } catch (e) { return json({ error: 'ดึงไฟล์จาก Drive ไม่สำเร็จ: ' + e.message }, cors, 502); }
-    const bin = Uint8Array.from(atob(g.data), c => c.charCodeAt(0));
-    return new Response(bin, { headers: { ...cors, 'Content-Type': g.mime || f.mime || 'application/octet-stream', 'Cache-Control': 'private, max-age=300',
-      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(f.name || 'file')}` } });
+    /* ⚡ ส่งคำตอบของ Apps Script ({data base64, mime}) ผ่านไปตรง ๆ ไม่อ่าน/ไม่ถอดในเซิร์ฟเวอร์ — หน้าเว็บถอด base64 เอง (กันเกินเวลา CPU) */
+    if (!cfg.drive_url || !cfg.drive_secret) return json({ error: 'ยังไม่ได้ตั้งค่า Google Drive' }, cors, 400);
+    let gr; try { gr = await (fetchImpl || fetch)(cfg.drive_url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'get', id: f.drive_id, secret: cfg.drive_secret }), redirect: 'follow' }); }
+    catch (e) { return json({ error: 'ดึงไฟล์จาก Drive ไม่สำเร็จ: ' + e.message }, cors, 502); }
+    return new Response(gr.body, { status: gr.ok ? 200 : 502, headers: { ...cors, 'Content-Type': 'application/json', 'X-RR-Enc': 'b64json', 'X-RR-Mime': f.mime || '', 'Cache-Control': 'private, max-age=300' } });
   }
   return null;
 }

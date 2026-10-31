@@ -98,7 +98,14 @@ r = await call(`/api/drive/files?ref_type=stmt&ref_ids=${sid},S2`, { user: '9Nor
 r = await call(`/api/reports/statement-running?account_id=A02&from=2026-10-01&to=2026-10-31`, { user: '9North' });
 check('รายงานยอดสะสม: หัว statement มีไฟล์', r.j.headers.find(h => h.stmt_id === sid)?.files?.[0]?.file_id === fid, r.j.headers);
 const res = await worker.fetch(new Request('https://w.test/api/drive/file?id=' + fid, { headers: { Authorization: 'Bearer tok-9North' } }), env, {});
-check('เปิดไฟล์ → ได้ไฟล์จริง', res.status === 200 && (await res.text()) === 'PDF' && res.headers.get('Content-Type') === 'application/pdf', res.status);
+const fj = await res.json(); check('เปิดไฟล์ → ส่ง base64 ผ่านไปให้หน้าเว็บถอดเอง', res.status === 200 && Buffer.from(fj.data, 'base64').toString() === 'PDF' && fj.mime === 'application/pdf' && res.headers.get('X-RR-Enc') === 'b64json', [res.status, fj]);
+/* แบบใหม่: body = base64 ล้วน + X-RR-Meta */
+{ const meta = encodeURIComponent(JSON.stringify({ name: 'raw.pdf', mime: 'application/pdf', hash: 'h-raw', kind: 'statement', account_id: 'A02', links: [{ type: 'stmt', id: 'S3' }] }));
+  const rr = await worker.fetch(new Request('https://w.test/api/drive/upload', { method: 'POST', headers: { 'Content-Type': 'text/plain', 'X-RR-Meta': meta, Authorization: 'Bearer tok-9North' }, body: Buffer.from('RAW').toString('base64') }), env, {});
+  const rj = await rr.json(); const g = Object.values(store).find(x => x.name === 'raw.pdf');
+  check('อัปแบบ base64 ล้วน (ไม่ parse JSON ใหญ่)', rr.status === 200 && g && Buffer.from(g.data, 'base64').toString() === 'RAW' && g.action === 'upload', [rr.status, rj]);
+  const bad = await worker.fetch(new Request('https://w.test/api/drive/upload', { method: 'POST', headers: { 'Content-Type': 'text/plain', 'X-RR-Meta': encodeURIComponent(JSON.stringify({ name: 'evil.pdf', account_id: 'A02' })), Authorization: 'Bearer tok-9North' }, body: 'QUJD","action":"trash' }), env, {});
+  check('ข้อมูลไฟล์มี " → ไม่ส่งต่อ (กันแทรกคำสั่ง)', bad.status === 502 && !gasCalls.includes('trash'), bad.status); }
 const res2 = await worker.fetch(new Request('https://w.test/api/drive/file?id=' + fid, { headers: { Authorization: 'Bearer tok-Other' } }), env, {});
 check('ครอบครัวอื่นเปิดไม่ได้', res2.status === 404, res2.status);
 /* สลิปจาก LINE (R2) → Drive */
@@ -110,7 +117,7 @@ INSERT INTO LedgerDocLinks (doc_id,transaction_id,role) VALUES ('DOC1','TS1','MA
 r = await call('/api/drive/sync-slips', { user: '9North', method: 'POST' });
 check('ซิงก์สลิป: 1 ไฟล์ขึ้น Drive · 1 ไฟล์หมดอายุ', r.j.done === 1 && r.j.missing === 1 && r.j.remaining === 0, r.j);
 r = await call('/api/drive/sync-slips', { user: '9North', method: 'POST' }); check('ซิงก์ซ้ำ → ไม่มีงาน', r.j.done === 0 && r.j.remaining === 0, r.j);
-r = await call('/api/drive/files?ref_type=tx&ref_ids=TS1', { user: '9North' }); check('รายการมีไฟล์แนบ 1 (ไม่นับที่หมดอายุ)', r.j.files.length === 1 && store[r.j.files[0] ? 'G1' : 'x'].path.join('/') === 'Slip/[A02] BK KBANK/2026-10', [r.j, Object.keys(store)]);
+r = await call('/api/drive/files?ref_type=tx&ref_ids=TS1', { user: '9North' }); check('รายการมีไฟล์แนบ 1 (ไม่นับที่หมดอายุ)', r.j.files.length === 1 && store[r.j.files[0]?.url?.split('/').pop() || 'x'].path.join('/') === 'Slip/[A02] BK KBANK/2026-10', [r.j, Object.keys(store)]);
 r = await call('/api/reports/statement-running?account_id=A02&from=2026-10-01&to=2026-10-31', { user: '9North' });
 check('รายงานยอดสะสม: n_files ต่อรายการ', r.j.rows.find(x => x.transaction_id === 'TS1')?.n_files === 1, r.j.rows);
 const tf = (await call('/api/drive/files?ref_type=tx&ref_ids=TS1', { user: '9North' })).j.files[0];
