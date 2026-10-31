@@ -3881,12 +3881,12 @@ async function loadHistory() {
         }
         
         // Sort
-        history.sort((a, b) => {
-            const dateA = new Date(a.date);
-            const dateB = new Date(b.date);
-            return sortFilter === 'asc' ? dateA - dateB : dateB - dateA;
-        });
+        /* วัน + เวลา (2026-10-31 หน้าประวัติใหม่ แบ่งตามวัน · ในวันเรียงตามเวลา) */
+        history.sort((a, b) => { const ka = String(a.date).slice(0, 10) + ' ' + (a.time || ''), kb = String(b.date).slice(0, 10) + ' ' + (b.time || ''); return sortFilter === 'asc' ? ka.localeCompare(kb) : kb.localeCompare(ka); });
         
+        /* ⚡ ตัวกรองลัด (2026-10-31 หน้าประวัติแบบใหม่) */
+        HistUI.setAll(history);
+        history = HistUI.quickFilter(history);
         renderHistoryKpis(history);
         const listContainer = document.getElementById("history-master-list");
         if (!listContainer) return; 
@@ -3904,82 +3904,7 @@ async function loadHistory() {
             listContainer.innerHTML = '<div style="text-align:center;color:#64748b;font-size:.78rem;padding:8px 10px;background:#f1f5f9;border-radius:8px;margin-bottom:6px">แสดง 500 รายการล่าสุด · เลือกเดือนหรือช่วงวันที่เพื่อดูรายการเก่ากว่านี้</div>';
         }
 
-        history.forEach(tx => {
-            const item = document.createElement("div");
-            item.className = "history-master-item";
-            item.style.cssText = "padding: 8px 12px; margin-bottom: 4px; background: #ffffff; border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);";
-            
-            let totalFee = 0;
-            let totalWht = 0;
-            (tx.details || []).forEach(d => {
-                totalFee += (d.fee || 0);
-                totalWht += (d.wht || 0);
-            });
-
-            // Get unique category names from sub-transactions
-            const uniqueCats = [...new Set((tx.details || []).map(d => d.category_name || 'อื่นๆ'))];
-            const compactCatHtml = uniqueCats.map(c => getCompactCrystalCategoryHtml(c)).join('');
-
-            // Get unique company, customer, caption
-            const uniqueComps = [...new Set((tx.details || []).map(d => d.entity_name || (AppState.entities.find(e => String(e.entity_id) === String(d.entity_id))?.name)).filter(n => n))];
-            const compStr = uniqueComps.join(', ') || '-';
-            const uniqueCusts = [...new Set((tx.details || []).map(d => d.contact_name || ((AppState.contacts || []).find(c => String(c.contact_id) === String(d.contact_id))?.name)).filter(n => n))];
-            const custStr = uniqueCusts.join(', ') || '-';
-            const uniqueCaps = [...new Set((tx.details || []).map(d => {
-                const capId = d.caption_id || d.behavior;
-                const capObj = AppState.captions.find(c => c.type_id === capId || c.behavior === capId);
-                return capObj ? capObj.name : capId;
-            }).filter(n => n))];
-            const compactCapHtml = uniqueCaps.map(c => getCompactCrystalCategoryHtml(c)).join('') || '-';
-
-            const amountColor = tx.total_amount < 0 ? '#db2777' : '#0ea5e9';
-
-            item.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 8px;">
-                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1.5;">
-                        <span style="font-size: 0.75rem; color: #10b981; font-weight: 600; white-space: nowrap;">${tx.date.split(' ')[0]}</span>
-                        <div style="display: flex; flex-direction: column; min-width: 0; flex: 1;">
-                            <span style="font-weight: 600; color: #0369a1; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: none;" title="${tx.account_name || '-'}">${tx.account_name || '-'}</span>
-                            <div style="display: flex; gap: 6px; font-size: 0.75rem; color: #334155; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                <span style="color: #0f172a; font-weight: 700;">🏢 ${compStr}</span>
-                                <span style="color: #0f172a; font-weight: 700;">🧑‍💼 ${custStr}</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 0.75rem; white-space: nowrap; flex: 1; min-width: 0;">
-                        <div style="display: flex; flex-direction: column; gap: 2px; justify-content: center; flex: 1; color: #64748b; font-size: 0.7rem; overflow: hidden;">
-                            ${compactCapHtml}
-                            ${compactCatHtml}
-                        </div>
-                        <div style="display: flex; gap: 8px; flex-shrink: 0; align-items: center;">
-                            <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 2px; font-size: 12px; line-height: 1;">
-                                ${totalWht ? `<span style="color: #f97316;" title="WHT"><i class="fa-solid fa-file-invoice" style="opacity:0.6;"></i> ${formatCurrency(totalWht)}</span>` : ''}
-                                ${totalFee ? `<span style="color: #f97316;" title="Fee"><i class="fa-solid fa-bolt" style="opacity:0.6;"></i> ${formatCurrency(totalFee)}</span>` : ''}
-                            </div>
-                            <span style="font-weight: 700; color: ${amountColor}; font-size: 0.9rem; min-width: 80px; text-align: right;">${formatCurrency(tx.total_amount)}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            item.onmouseover = () => item.style.background = '#f0fdfa';
-            item.onmouseout = () => { if (!item.classList.contains('active')) item.style.background = '#ffffff'; };
-            
-            item.addEventListener("click", () => {
-                document.querySelectorAll(".history-master-item").forEach(el => {
-                    el.classList.remove('active');
-                    el.style.background = '#ffffff';
-                    el.style.borderLeft = 'none';
-                });
-                item.classList.add('active');
-                item.style.background = '#e0f2fe';
-                item.style.borderLeft = '4px solid #0ea5e9';
-                
-                renderHistoryDetail(tx);
-            });
-            listContainer.appendChild(item);
-        });
+        HistUI.renderList(listContainer, history);
 
     } catch (e) {
         console.error("History Load Error:", e);
@@ -4238,8 +4163,8 @@ function renderDraftHistoryDetail() {
 
     const inputStyle = "border: none; border-bottom: 1px dashed #94a3b8; border-radius: 0; padding: 0 0 2px 0; font-size: 0.8rem; background: transparent; color: inherit; outline: none; box-shadow: none;";
 
-    detailContent.innerHTML = `
-        <div style="margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #e2e8f0; background: #f1f5f9; border-radius: 10px; position: relative;">
+    detailContent.innerHTML = `${HistUI.detailTop(tx)}
+        <div class="hd-master" style="margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #e2e8f0; background: #f1f5f9; border-radius: 10px; position: relative;">
             
             <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: flex-start; margin-bottom: 12px; gap: 10px;">
                 <div>
@@ -4276,7 +4201,7 @@ function renderDraftHistoryDetail() {
                         ? `<button onclick="toggleMasterEdit()" style="border: none; background: #dcfce7; color: #16a34a; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px rgba(22,163,74,0.2); transition: all 0.2s;" title="Done"><i class="fa-solid fa-check" style="font-size: 0.8rem;"></i></button>`
                         : `<button onclick="toggleMasterEdit()" style="border: none; background: #e0f2fe; color: #0284c7; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px rgba(2,132,199,0.2); transition: all 0.2s;" title="Edit Statement"><i class="fa-solid fa-pencil" style="font-size: 0.8rem;"></i></button>`
                     }
-                    <button onclick="deleteHistoryTransaction(${tx.transaction_id})" style="border: none; background: #fee2e2; color: #ef4444; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px rgba(239,68,68,0.2); transition: all 0.2s;" title="Delete Entire Transaction"><i class="fa-solid fa-trash-can" style="font-size: 0.8rem;"></i></button>
+                    <button onclick="deleteHistoryTransaction('${String(tx.transaction_id).replace(/'/g, '')}')" style="border: none; background: #fee2e2; color: #ef4444; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px rgba(239,68,68,0.2); transition: all 0.2s;" title="Delete Entire Transaction"><i class="fa-solid fa-trash-can" style="font-size: 0.8rem;"></i></button>
                 </div>
             </div>
         </div>
@@ -4287,7 +4212,9 @@ function renderDraftHistoryDetail() {
         </h5>
         ${subTxHtml}
         ${globalActionButtons}
+        ${HistUI.detailBottom(tx)}
     `;
+    HistUI.afterDetail(tx);
 }
 
 // Inline editing functions
@@ -7320,6 +7247,9 @@ async function openStatementPdf(fileBytes, accId) {
 }
 /* เลขบัญชีในไฟล์ตรงกับบัญชีที่เลือกไหม (ไฟล์มักปิดบางหลัก) */
 function statementAccountMatches(read, mine) {
+    /* 2026-10-31 (North: "บัตรเครดิตเปลี่ยนเลขบัตรภายหลัง"): ใส่ได้หลายเลขในบัญชีเดียว คั่นด้วย , / ; หรือขึ้นบรรทัดใหม่ (เลขใหม่ + เลขเก่า) → ตรงเลขใดเลขหนึ่ง = บัญชีนี้ */
+    const parts = String(mine || '').split(/[,;\n/|]+/).map(x => x.trim()).filter(Boolean);
+    if (parts.length > 1) { const rs = parts.map(x => statementAccountMatches(read, x)); return rs.includes(true) ? true : rs.includes(false) ? false : null; }
     const norm = x => String(x || '').toLowerCase().replace(/\*/g, 'x').replace(/[^0-9x]/g, '');
     const groups = norm(read).split('x').filter(g => g.length >= 3), b = norm(mine).replace(/x/g, '');
     if (!groups.length || b.length < 4) return null;
@@ -7679,7 +7609,7 @@ async function batchImportStatements(files, btn) {
     /* 2026-10-30: เลขเดียวกันอยู่หลายบัญชี (เช่น เลขบัตรใส่ไว้ทั้งบัญชีบัตรและบัญชีธนาคาร) → บัตรเลือกบัญชีบัตร · statement ธนาคารเลือกบัญชีที่ไม่ใช่บัตร */
     if (hit.length > 1) { const t = hit.filter(a => (a.account_type === 'CREDIT') === !!credit); if (t.length) hit = t; }
     if (hit.length === 1) return hit[0].account_id;
-    if (credit && last4) { const t = accs.filter(a => a.account_type === 'CREDIT' && String(a.account_number || '').replace(/[^0-9]/g, '').endsWith(last4)); if (t.length === 1) return t[0].account_id; }
+    if (credit && last4) { const t = accs.filter(a => a.account_type === 'CREDIT' && String(a.account_number || '').split(/[,;\n/|]+/).some(x => x.replace(/[^0-9]/g, '').endsWith(last4))); if (t.length === 1) return t[0].account_id; }
     return '';
   };
   /* ── อ่านทุกไฟล์ ── */
@@ -9698,6 +9628,90 @@ const DebtorView = (() => {
     return { open };
 })();
 window.DebtorView = DebtorView;
+
+/* 📜 หน้าประวัติแบบใหม่ (2026-10-31 · North: "ออกแบบให้สวยงาม มีข้อมูลที่ต้องรู้จะได้แก้ไขได้" · เลือกแบบ ก.)
+   รายการแบ่งตามวัน · แถวมี เวลา · บัญชี · ข้อความธนาคาร · หมายเหตุ · Company · สลิป · หมวด · ยอด · ไม่มีหมวด = แดง
+   ตัวกรองลัด: ยังไม่มีหมวด / มีสลิป / จดเอง · แผงขวา: สรุป + หลักฐาน + ประวัติผู้รับ + กลับไปรอตรวจ */
+const HistUI = (() => {
+    let all = [], quick = '';
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fm = n => { const v = Math.round((Number(n) || 0) * 100) / 100, t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const DAY = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'], MTH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const dLong = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); if (!m) return d || ''; const dt = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); return `${DAY[dt.getUTCDay()]} ${+m[3]} ${MTH[+m[2] - 1]} ${(+m[1] + 543) % 100}`; };
+    const accCode = n => (/^\s*\[([^\]]+)\]/.exec(n || '') || [])[1] || '';
+    const accRest = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '');
+    const noCat = tx => !(tx.details || []).length || (tx.details || []).some(d => !d.category_id || /uncategor/i.test(d.category_id) || String(d.category_name || '').includes('รอการระบุ'));
+    const manual = tx => !tx.stmt_id && tx.source !== 'PDF_IMPORT';
+    const capName = d => { const c = (AppState.captions || []).find(x => x.type_id === d.caption_id || (d.behavior && x.behavior === d.behavior)); return c ? c.name : (d.caption_id || ''); };
+    function setAll(list) { all = list || []; }
+    function quickFilter(list) { return quick === 'NOCAT' ? list.filter(noCat) : quick === 'SLIP' ? list.filter(t => t.slip_image_url) : quick === 'MANUAL' ? list.filter(manual) : list; }
+    function chips() {
+        const n = all.filter(noCat).length, ns = all.filter(t => t.slip_image_url).length, nm = all.filter(manual).length;
+        const c = (k, t, cls = '') => `<button type="button" class="hq${quick === k ? ' on' : ''} ${cls}" onclick="HistUI.quick('${k}')">${t}</button>`;
+        return `<div class="hq-row">${c('NOCAT', `⚠️ ยังไม่มีหมวด ${n.toLocaleString('en-US')}`, n ? 'bad' : '')}${c('SLIP', `🧾 มีสลิป ${ns.toLocaleString('en-US')}`)}${c('MANUAL', `✍️ จดเอง (ไม่มี statement) ${nm.toLocaleString('en-US')}`)}${quick ? `<button type="button" class="hq clr" onclick="HistUI.quick('')">✕ ล้างตัวกรองลัด</button>` : ''}</div>`;
+    }
+    function row(tx) {
+        const ds = tx.details || [], d0 = ds[0] || {};
+        const notes = [...new Set(ds.map(d => d.note).filter(Boolean))].join(' · ');
+        const ents = [...new Set(ds.map(d => d.entity_name || (AppState.entities || []).find(e => String(e.entity_id) === String(d.entity_id))?.name).filter(Boolean))].join(', ');
+        const cons = [...new Set(ds.map(d => d.contact_name || (AppState.contacts || []).find(c => String(c.contact_id) === String(d.contact_id))?.name).filter(Boolean))].join(', ');
+        const cats = [...new Set(ds.map(d => String(d.category_name || '').replace(/^\s*\[[^\]]+\]\s*/, m => m)).filter(Boolean))];
+        const bad = noCat(tx), t = String(tx.time || '').slice(0, 5), fee = ds.reduce((s, d) => s + (+d.fee || 0), 0), wht = ds.reduce((s, d) => s + (+d.wht || 0), 0);
+        return `<div class="hr${bad ? ' bad' : ''}" data-id="${esc(tx.transaction_id)}">
+            <div class="hr-t">${t && t !== '00:00' ? t : '—'}</div>
+            <div class="hr-m"><div class="hr-l1"><span class="hr-acc" title="${esc(tx.account_name)}">${esc(accCode(tx.account_name) || accRest(tx.account_name).slice(0, 10))}</span><span class="hr-d" title="${esc(tx.statement_desc || '')}">${esc(tx.statement_desc || notes || accRest(tx.account_name) || '-')}</span></div>
+              <div class="hr-l2">${notes && tx.statement_desc ? `<span>📝 ${esc(notes)}</span>` : ''}${ents ? `<span>🏢 ${esc(ents)}</span>` : ''}${cons ? `<span>👤 ${esc(cons)}</span>` : ''}${tx.slip_image_url ? '<span class="hr-att">🧾 สลิป</span>' : ''}${ds.length > 1 ? `<span>🧩 ${ds.length} รายการย่อย</span>` : ''}${fee ? `<span>⚡ Fee ${fm(fee)}</span>` : ''}${wht ? `<span>🧾 WHT ${fm(wht)}</span>` : ''}${manual(tx) ? '<span class="hr-man">✍️ จดเอง</span>' : ''}</div></div>
+            <div class="hr-r"><div class="hr-a ${tx.total_amount < 0 ? 'neg' : 'pos'}">${fm(tx.total_amount)}</div>
+              <div class="hr-c">${bad ? '<span class="hr-chip bad">⚠️ ยังไม่มีหมวด</span>' : cats.slice(0, 2).map(c => `<span class="hr-chip" title="${esc(capName(d0))}">${esc(c)}</span>`).join('')}</div></div>
+            <button type="button" class="hr-e" title="แก้ไข">✏️</button></div>`;
+    }
+    function renderList(box, list) {
+        const kp = document.getElementById('history-kpis'); if (kp && !kp.querySelector('.hq-row')) kp.insertAdjacentHTML('beforeend', chips()); else if (kp) kp.querySelector('.hq-row').outerHTML = chips();
+        const groups = []; let cur = null;
+        for (const tx of list) { const d = String(tx.date || '').slice(0, 10); if (!cur || cur.d !== d) { cur = { d, rows: [] }; groups.push(cur); } cur.rows.push(tx); }
+        const html = groups.map(g => { const inn = g.rows.filter(t => t.total_amount > 0).reduce((s, t) => s + +t.total_amount, 0), out = g.rows.filter(t => t.total_amount < 0).reduce((s, t) => s + +t.total_amount, 0);
+            return `<div class="hd"><b>${dLong(g.d)}</b><span>${g.rows.length} รายการ</span>${inn ? `<span class="pos">เข้า ${fm(inn)}</span>` : ''}${out ? `<span class="neg">ออก ${fm(out)}</span>` : ''}</div>${g.rows.map(row).join('')}`; }).join('');
+        box.insertAdjacentHTML('beforeend', `<div class="hlist">${html}</div>`);
+        const byId = Object.fromEntries(list.map(t => [String(t.transaction_id), t]));
+        box.querySelectorAll('.hr').forEach(el => el.onclick = () => {
+            box.querySelectorAll('.hr.sel').forEach(x => x.classList.remove('sel')); el.classList.add('sel');
+            renderHistoryDetail(byId[el.dataset.id]);
+        });
+    }
+    function detailTop(tx) {
+        const src = tx.stmt_id || tx.source === 'PDF_IMPORT' ? '📄 จาก statement' : /LINE/.test(tx.source || '') ? '📲 จากสลิป LINE' : '✍️ จดเอง';
+        const t = String(tx.time || '').slice(0, 5);
+        return `<div class="hdt"><div class="hdt-d">${esc(tx.statement_desc || (tx.details || [])[0]?.note || 'ไม่มีข้อความธนาคาร')}</div>
+            <div class="hdt-s">${esc(tx.account_name || '')} · ${dLong(String(tx.date).slice(0, 10))}${t && t !== '00:00' ? ' ' + t : ''} · ${src}</div>
+            <div class="hdt-a ${tx.total_amount < 0 ? 'neg' : 'pos'}">${fm(tx.total_amount)}</div>
+            ${noCat(tx) ? '<div class="hdt-warn">⚠️ ยังไม่มีหมวด — กด ✏️ ที่รายการย่อยด้านล่างเพื่อเลือกหมวด</div>' : ''}
+            <div class="hdt-b"><button type="button" class="hb o" onclick="HistUI.unconfirm('${esc(tx.transaction_id)}')" title="ย้ายกลับไปหน้ารอตรวจ เพื่อแก้แล้วยืนยันใหม่">↩️ กลับไปรอตรวจ</button>
+              <button type="button" class="hb d" onclick="deleteHistoryTransaction('${esc(tx.transaction_id)}')">🗑️ ลบ</button></div></div>`;
+    }
+    function detailBottom(tx) {
+        return `<div class="hdb"><div class="hbx"><h4>📎 หลักฐาน</h4><div id="hd-files">${tx.slip_image_url ? `<a href="${esc(tx.slip_image_url)}" target="_blank" rel="noopener">🧾 เปิดสลิป</a>` : '<span class="mute">ยังไม่มี</span>'}</div></div>
+            <div class="hbx"><h4>🕘 ผู้รับ/ผู้จ่ายนี้เคยบันทึก</h4><div id="hd-hist"><span class="mute">กำลังโหลด…</span></div></div></div>`;
+    }
+    async function afterDetail(tx) {
+        const id = tx.transaction_id;
+        try { if (typeof DriveStore !== 'undefined' && (await DriveStore.config()).configured) { const fs = await DriveStore.txFiles(id); const box = document.getElementById('hd-files');
+            if (box && fs.length && AppState.currentHistoryTx?.transaction_id === id) box.innerHTML = (tx.slip_image_url ? `<a href="${esc(tx.slip_image_url)}" target="_blank" rel="noopener">🧾 เปิดสลิป</a> ` : '') + DriveStore.buttons(fs, tx.account_id); } } catch { /* */ }
+        try { const r = await Similar.fetch({ desc: tx.statement_desc || '', name: (tx.details || [])[0]?.note || '', sign: Math.sign(+tx.total_amount || 0) || '', account_id: tx.account_id, exclude: id });
+            const box = document.getElementById('hd-hist'); if (!box || AppState.currentHistoryTx?.transaction_id !== id) return;
+            const items = (r?.items || []).slice(0, 6);
+            box.innerHTML = items.length ? items.map(x => `<div class="hh"><span>${dLong(x.date)} · ${esc(String(x.category_name || '—'))}${x.note ? ` · ${esc(x.note)}` : ''}</span><b class="${x.amount < 0 ? 'neg' : 'pos'}">${fm(x.amount)}</b></div>`).join('') : '<span class="mute">ยังไม่เคยบันทึกผู้รับ/ร้านนี้</span>';
+        } catch { const box = document.getElementById('hd-hist'); if (box) box.innerHTML = '<span class="mute">—</span>'; }
+    }
+    async function unconfirm(id) {
+        if (!confirm('ย้ายรายการนี้กลับไปหน้ารอตรวจ?\n\nแก้หมวด/รายละเอียดแล้วกดยืนยันใหม่ที่หน้ารอตรวจ')) return;
+        try { const r = await fetch(`${API_BASE}/api/transactions/unconfirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transaction_id: id }) });
+            const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || r.status);
+            window.showToast?.('↩️ ย้ายกลับไปรอตรวจแล้ว'); loadHistory(); updatePendingBadge?.(); }
+        catch (e) { alert('ทำไม่สำเร็จ: ' + e.message); }
+    }
+    return { setAll, quickFilter, renderList, detailTop, detailBottom, afterDetail, unconfirm, quick: k => { quick = quick === k ? '' : k; loadHistory(); } };
+})();
+window.HistUI = HistUI;
 
 /* 📜 ประวัติ: สรุปผลค้นหา (จำนวน · รับ · จ่าย · สุทธิ) + ส่งออก Excel (mockup งาน 003) */
 let _historyShown = [];

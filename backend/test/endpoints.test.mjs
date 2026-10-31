@@ -185,6 +185,12 @@ const hkPayee = (await call('/api/transactions/category-hints', { user: '9North'
 check('category-hints: ผู้รับเดียวกันต่างธนาคาร (BAY/SCB) รวมเป็นคีย์ N: เดียว', hkPayee['N:OUT|โอนเงิน k plus โอนไป นาย สมชาย ใจดี']?.category_id === 'T03' && hkPayee['N:OUT|โอนเงิน k plus โอนไป นาย สมชาย ใจดี'].n === 2, Object.keys(hkPayee).filter(k => k.includes('สมชาย')));
 db.exec(`DELETE FROM Transactions WHERE transaction_id IN ('TX-PAYEE1','TX-PAYEE2'); DELETE FROM TransactionDetails WHERE detail_id IN ('D-PAYEE1','D-PAYEE2');`);
 
+/* ── ↩️ กลับไปรอตรวจ ── */
+r = await call('/api/transactions/unconfirm', { user: '9North', method: 'POST', body: { transaction_id: 'TX-H1' } });
+check('unconfirm: กลับไปรอตรวจได้', r.s === 200 && db.prepare(`SELECT status FROM Transactions WHERE transaction_id='TX-H1'`).get().status === 'PENDING_REVIEW', r);
+r = await call('/api/transactions/unconfirm', { user: '9North', method: 'POST', body: { transaction_id: 'TX-H3' } });
+check('unconfirm: รายการของครอบครัวอื่น → ไม่ได้', r.s === 404, r);
+db.exec(`UPDATE Transactions SET status='CONFIRMED' WHERE transaction_id='TX-H1'`);
 /* ── ยอด ณ วันที่ (ตรวจยอดยกมา statement) ── */
 db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id) VALUES ('TX-BA1','A09','2026-08-01',1000,'CONFIRMED','WEB_GRID','9North'),('TX-BA2','A09','2026-08-10',300,'PENDING_REVIEW','PDF_IMPORT','9North'),('TX-BA3','A09','2026-09-01',50,'CONFIRMED','WEB_GRID','9North');
  INSERT INTO TransactionDetails (detail_id,transaction_id,amount,category_id,type) VALUES ('DBA2','TX-BA2',300,'T01','EXPENSE');`);

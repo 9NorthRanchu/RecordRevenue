@@ -603,3 +603,38 @@ body.ui-dark .bk-stat.none{background:#2A2344;border-color:#6741D9;color:#D0BFFF
 /* ☑️ ลบบางรายการในรายงานยอดสะสม (v246) */
 .sr-ck{width:28px;text-align:center}.sr-ck input{width:16px;height:16px;cursor:pointer}
 .sr-selbar{display:flex;align-items:center;gap:10px;margin:6px 0}.sr-selbar small{color:#868E96}
+/* 📜 หน้าประวัติแบบใหม่ (v247) */
+.hq-row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 2px}
+.hq{border:1px solid #E0DBF2;background:#fff;color:#5F3DC4;border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:700;cursor:pointer}
+.hq.bad{background:#FFF0F0;border-color:#FFC9C9;color:#C92A2A}.hq.on{background:#7950F2;border-color:#7950F2;color:#fff}.hq.clr{border-style:dashed;color:#868E96}
+.hlist{display:flex;flex-direction:column}
+.hd{display:flex;align-items:center;gap:12px;padding:7px 14px;background:#F6F3FF;font-size:.8rem;color:#5C5872;border-top:1px solid #EEE9FB;position:sticky;top:0;z-index:1}
+.hd b{color:#3B2A7A;font-size:.88rem;flex:1}.hd .pos{color:#0CA678}.hd .neg{color:#DC2626}
+.hr{display:grid;grid-template-columns:46px minmax(0,1fr) minmax(120px,190px) 110px 24px;gap:10px;align-items:center;padding:8px 14px;border-top:1px solid #F4F1FB;cursor:pointer;background:#fff}
+.hr:hover{background:#FAF8FF}.hr.sel{background:#F3F0FF;box-shadow:inset 3px 0 #7950F2}.hr.bad{background:#FFF8F8}.hr.bad.sel{background:#FFEFEF}
+.hr-t{color:#868E96;font-size:.8rem}
+.hr-l1{display:flex;gap:7px;align-items:center;min-width:0}.hr-acc{background:#EDE9FE;color:#5F3DC4;border-radius:6px;padding:0 7px;font-size:.74rem;font-weight:700;flex:none;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hr-d{font-size:.88rem;font-weight:600;color:#1E293B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hr-l2{display:flex;gap:10px;font-size:.74rem;color:#868E96;margin-top:1px;flex-wrap:wrap}.hr-l2 span:first-child{color:#5C5872}.hr-att{color:#1971C2!important}.hr-man{color:#E67700!important}
+.hr-c{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:0}.hr-c small{font-size:.68rem;color:#868E96}
+.hr-chip{background:#E6FCF5;color:#087F5B;border-radius:999px;padding:0 9px;font-size:.76rem;font-weight:700;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hr-chip.bad{background:#FFE3E3;color:#C92A2A}
+.hr-a{text-align:right;font-weight:700;font-size:.92rem;white-space:nowrap}.hr-a.neg,.hdt-a.neg,.hh .neg{color:#DC2626}.hr-a.pos,.hdt-a.pos,.hh .pos{color:#0CA678}
+.hr-e{border:0;background:transparent;opacity:.35;cursor:pointer;font-size:.8rem;padding:0}.hr:hover .hr-e{opacity:.9}
+.hdt{padding:4px 2px 12px;border-bottom:1px solid #EEE9FB;margin-bottom:12px}.hdt-d{font-size:1.02rem;font-weight:700;color:#1E293B;line-height:1.35}
+.hdt-s{font-size:.76rem;color:#868E96;margin:2px 0 6px}.hdt-a{font-size:1.7rem;font-weight:700}
+.hdt-warn{background:#FFF0F0;color:#C92A2A;border-radius:8px;padding:5px 9px;font-size:.78rem;font-weight:600;margin:6px 0}
+.hdt-b{display:flex;gap:8px;margin-top:8px}.hb{border:0;border-radius:9px;padding:6px 12px;font-size:.8rem;font-weight:700;cursor:pointer}.hb.o{background:#F3F0FF;color:#5F3DC4}.hb.d{background:#FFF0F0;color:#C92A2A;margin-left:auto}
+.hdb{display:grid;gap:10px;margin-top:14px}.hbx{border:1px solid #EEE9FB;border-radius:12px;padding:9px 11px}.hbx h4{margin:0 0 6px;font-size:.82rem;color:#5F3DC4}
+.hbx .mute{color:#ADB5BD;font-size:.78rem}.hbx a{font-size:.8rem;font-weight:600}
+.hh{display:flex;justify-content:space-between;gap:8px;font-size:.78rem;color:#5C5872;padding:2px 0}.hh span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.ui-dark .hq{background:#25213A;border-color:#3B3552;color:#D0BFFF}body.ui-dark .hq.on{background:#7950F2;color:#fff}body.ui-dark .hq.bad{background:rgba(224,49,49,.18);color:#FFA8A8}
+body.ui-dark .hd{background:#25213A;border-color:#3B3552;color:#B8B2D6}body.ui-dark .hd b{color:#EDE9FE}
+body.ui-dark .hr{background:#1E1B2E;border-color:#2E2944}body.ui-dark .hr:hover,body.ui-dark .hr.sel{background:#262140}body.ui-dark .hr.bad{background:#2E1C24}
+body.ui-dark .hr-d,body.ui-dark .hdt-d{color:#EDE9FE}body.ui-dark .hr-acc{background:#2A2344;color:#D0BFFF}body.ui-dark .hr-chip{background:rgba(12,166,120,.18);color:#63E6BE}
+body.ui-dark .hbx,body.ui-dark .hdt{border-color:#3B3552}body.ui-dark .hb.o{background:#2A2344;color:#D0BFFF}
+@media (max-width:760px){.hr{grid-template-columns:40px minmax(0,1fr) 92px;row-gap:3px}.hr-c{grid-column:2/3;flex-direction:row;align-items:center;gap:6px}.hr-a{grid-row:1;grid-column:3}.hr-e{display:none}}
+/* ประวัติ: 3 คอลัมน์ (เวลา · ข้อความ · ยอด+หมวด) ให้ข้อความธนาคารยาวพอ */
+.hr{grid-template-columns:44px minmax(0,1fr) auto 22px}.hd{position:static}
+.hr-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-width:200px}.hr-r .hr-c{align-items:flex-end;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:3px}
+.hr-l2{flex-wrap:nowrap;overflow:hidden;white-space:nowrap}.hr-l2 span{flex:none}
+@media (max-width:760px){.hr{grid-template-columns:38px minmax(0,1fr) auto}.hr-r .hr-c,.hr-c{grid-column:auto}.hr-a{grid-row:auto;grid-column:auto}.hr-l2{flex-wrap:wrap}}

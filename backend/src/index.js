@@ -652,6 +652,15 @@ export default {
         return new Response(JSON.stringify({ success: true, deleted, requested: ids.length, headers_removed: headersRemoved }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
+      /* ↩️ กลับไปรอตรวจ (2026-10-31 · หน้าประวัติแบบใหม่): รายการที่ยืนยันแล้ว → PENDING_REVIEW เพื่อแก้แล้วยืนยันใหม่ · เดือนที่ปิดแล้วทำไม่ได้ */
+      if (url.pathname === '/api/transactions/unconfirm' && request.method === 'POST') {
+        const { transaction_id } = await request.json().catch(() => ({}));
+        if (!(await ownTx(transaction_id))) return new Response(JSON.stringify({ error: 'ไม่พบรายการ หรือไม่มีสิทธิ์' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const t = await env.DB.prepare(`SELECT account_id, date, status FROM Transactions WHERE transaction_id = ?`).bind(transaction_id).first();
+        if (await isMonthClosed(env, t.account_id, t.date)) return deny(PERIOD_CLOSED_MSG, 409);
+        await env.DB.prepare(`UPDATE Transactions SET status = 'PENDING_REVIEW' WHERE transaction_id = ?`).bind(transaction_id).run();
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
       if (url.pathname === '/api/transactions/delete' && request.method === 'POST') {
         const { transaction_id } = await request.json();
         if (!(await ownTx(transaction_id))) return new Response(JSON.stringify({ error: 'ไม่พบรายการ หรือไม่มีสิทธิ์' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

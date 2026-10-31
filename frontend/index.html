@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=129">
-    <link rel="stylesheet" href="ui-a.css?v=34">
+    <link rel="stylesheet" href="ui-a.css?v=35">
     <!-- ⚡ 2026-10-30: ไลบรารีทั้งหมดย้ายไปท้ายหน้า + defer → หน้าขึ้นก่อน ไม่ต้องรอดาวน์โหลด ~2MB -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Mali:wght@300;400;500;600;700&display=swap" rel="stylesheet">   <!-- ฟอนต์ Mali ทั้งแอป (2026-10-31) -->
@@ -1562,7 +1562,7 @@
                         <!-- Extra: Account Number (Only for Account) -->
                         <div class="input-group hidden" id="group-setting-accnum">
                             <label for="setting-account-number">เลขที่บัญชี</label>
-                            <input type="text" id="setting-account-number" placeholder="เลขที่บัญชี (ถ้ามี)">
+                            <input type="text" id="setting-account-number" placeholder="เลขที่บัญชี / เลขบัตร (ถ้ามี)" title="เปลี่ยนบัตรใหม่: ใส่ได้หลายเลข คั่นด้วย , เช่น 4304-45XX-XXXX-3128, 4304-45XX-XXXX-9912 — statement ของเลขไหนก็เข้าบัญชีนี้"><small style="display:block;color:#868E96;font-size:.72rem;margin-top:2px">เปลี่ยนบัตร/บัญชีใหม่: ใส่หลายเลขคั่นด้วย , (เลขใหม่, เลขเก่า)</small>
                         </div>
 
                         <!-- Extra: PDF Password (Only for Account) -->
@@ -1755,7 +1755,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script defer src="travel.js?v=105"></script>
-    <script defer src="app.js?v=246"></script>
+    <script defer src="app.js?v=247"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">
