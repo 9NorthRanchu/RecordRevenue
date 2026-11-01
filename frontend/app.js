@@ -7916,13 +7916,17 @@ function bindPDFUpload() {
                 if (opened.pdf) {
                     /* 2026-10-30: ใบแจ้งยอดบัตรก่อน แล้วค่อย statement ธนาคาร (ดูเหตุผลที่ batchImportStatements) */
                     const card0 = await parseCardStatement(opened.pdf).catch(() => ({ ok: false }));
-                    if (card0.ok) { await importCardStatement(card0, selectedAccId, file.name, triggerUploadBtn, file); resetUploadBtn(); return; }
-                    const parsed = await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
-                    if (parsed.ok) {
+                    /* v269 (North: "ระบบไม่อ่านภาษีอีกแล้ว" — ไฟล์กรุงไทย 06–08/69 ถูก AI อ่านแทน): อ่านไฟล์เองได้แล้ว แต่ขั้นตรวจ/บันทึกผิดพลาด
+                       → เดิมตกไปส่ง AI อ่านซ้ำเงียบ ๆ (ได้ข้อความ/ยอดแบบ AI · ภาษีหาย) · ตอนนี้แจ้งข้อผิดพลาด ไม่ส่ง AI */
+                    const noAi = async (what, fn) => { try { await fn(); } catch (e) { console.error(what, e);
+                        alert(`อ่านไฟล์ได้ครบแล้ว แต่${what}ไม่สำเร็จ: ${e?.message || e}\n\nระบบไม่ได้ส่งให้ AI อ่านแทน — ลองนำเข้าไฟล์เดิมอีกครั้ง (รายการที่บันทึกไปแล้วจะถูกข้าม) หรือส่งข้อความนี้ให้ผู้ดูแล`); } resetUploadBtn(); };
+                    if (card0.ok) return noAi('บันทึกใบแจ้งยอดบัตร', () => importCardStatement(card0, selectedAccId, file.name, triggerUploadBtn, file));
+                    const parsed = await parseTextStatement(opened.pdf).catch(e => { console.error('parseTextStatement', e); return { ok: false }; });
+                    if (parsed.ok) return noAi('บันทึกรายการ', async () => {
                         const txs = parsed.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00',
                             type: l.amount > 0 ? 'INCOME' : 'EXPENSE', amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null, wht: l.wht || 0 }));
                         const useAcc = await statementPrecheck(selectedAccId, { account_number: parsed.account_number, rows: txs, opening: parsed.opening, closing: parsed.closing });
-                        if (!useAcc) { resetUploadBtn(); return; }
+                        if (!useAcc) return;
                         selectedAccId = useAcc;
                         const res = await importStatementRows(selectedAccId, txs, (d, n) => { setUploadBtnBusy(triggerUploadBtn, `กำลังบันทึก ${d}/${n}`); },
                             { opening: parsed.opening, closing: parsed.closing, source_kind: 'BANK', file_name: file.name,
@@ -7937,11 +7941,10 @@ function bindPDFUpload() {
                         if (res.errorCount) msg += `\n⚠️ บันทึกไม่สำเร็จ ${res.errorCount} รายการ — นำเข้าไฟล์เดิมอีกครั้งได้ (รายการที่มีแล้วจะถูกข้าม)`;
                         alert(msg);
                         loadPending();
-                        resetUploadBtn(); return;
-                    }
+                    });
                     /* 💳 ใบแจ้งยอดบัตรเครดิต (ไม่มียอดคงเหลือรายบรรทัด) · หลายบัตรในไฟล์เดียว → แยกบัญชีตามเลขบัตร (2026-10-30) */
                     const card = await parseCardStatement(opened.pdf).catch(() => ({ ok: false }));
-                    if (card.ok) { await importCardStatement(card, selectedAccId, file.name, triggerUploadBtn, file); resetUploadBtn(); return; }
+                    if (card.ok) return noAi('บันทึกใบแจ้งยอดบัตร', () => importCardStatement(card, selectedAccId, file.name, triggerUploadBtn, file));
                 }
             } catch (err) { console.warn('อ่านตัวหนังสือใน PDF ไม่ได้ → ใช้ AI', err); }
 

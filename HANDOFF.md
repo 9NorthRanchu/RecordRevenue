@@ -4134,3 +4134,10 @@ frontend
 - rowCells: คอมเมนต์ // ท้ายบรรทัดไปปิดยอด เข้า/ออก ที่อยู่บรรทัดเดียวกัน → ยอดสะสมไปอยู่ช่อง "เข้า" · ธนาคารไปช่อง "ออก" · ช่องยอดสะสมเป็น "ต่าง" (0.00)
 - เปลี่ยนเป็น /* */ · ตรวจด้วย Playwright: หัวตาราง 13 ช่อง = ข้อมูล 13 ช่อง ตรงตำแหน่ง
 - บทเรียน: ห้ามใส่ // ท้ายบรรทัดที่มีโค้ดต่อ (check-frontend ไม่จับเพราะ syntax ยังถูก)
+
+## v269 (2026-11-01) นำเข้าไฟล์เดียว: อ่านได้แล้วไม่ส่ง AI อ่านซ้ำ
+- อาการ: statement กรุงไทย 2606_2608 (4TNJL) ใน A15 เข้ามาเป็นแถวแบบ AI (IIPS 20.2 ภาษี 0) ทั้งที่ parser อ่านถูก (25/25, IIPS 20 + wht 0.2 ทั้ง Node และ Chromium)
+- สาเหตุที่เป็นไปได้: ใน pdfInput change handler ถ้าขั้นหลังอ่าน (precheck/import/alert) โยน error ออกมา โค้ดเดิมตกไปทางส่ง AI อ่านเงียบๆ
+- แก้: wrapper `noAi(what, fn)` ครอบ importCardStatement / importStatementRows → error แสดง alert แทน ไม่ fallback AI
+- ทดสอบ Playwright end-to-end ไฟล์จริง: POST 25 แถว, IIPS total 20 · detail 20.2 · wht 0.2, ไม่มีการเรียก AI
+- North ต้องลบ statement 06/01–08/13 (4TNJL) ของ A15 แล้วนำเข้า 2606_2608 ใหม่
