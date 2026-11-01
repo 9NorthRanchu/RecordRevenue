@@ -7076,7 +7076,7 @@ async function parseTextStatement(pdf) {
   const r2 = n => Math.round(n * 100) / 100;
   const isoDate = (d, m, y) => { let yy = +y; if (yy < 100) yy = yy >= 40 ? yy + 2500 - 543 : yy + 2000; if (yy > 2400) yy -= 543;
     if (+m < 1 || +m > 12 || +d < 1 || +d > 31) return null; return `${yy}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
-  const rows = []; let opening = null, closing = null, accountNumber = null, textChars = 0, allTxt = '';
+  const rows = []; let opening = null, closing = null, accountNumber = null, textChars = 0, allTxt = '', taxX = null;
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
@@ -7098,6 +7098,8 @@ async function parseTextStatement(pdf) {
     for (const it of items) { const L = lines.find(l => Math.abs(l.y - it.y) <= 2.5); if (L) L.items.push(it); else lines.push({ y: it.y, items: [it] }); }
     lines.sort((a, b) => b.y - a.y);
     let prevRow = null;
+    /* v265 · กรุงไทย: คอลัมน์ "ภาษี" (ภาษีหัก ณ ที่จ่ายของดอกเบี้ย) → ไม่ใช่ยอดรายการ · ยอดที่เข้าจริง = ยอด − ภาษี */
+    { const th = items.find(it => /^ภาษี$|^Tax$/i.test(it.s)); if (th) taxX = th.x; }
     for (const L of lines) {
       L.items.sort((a, b) => a.x - b.x);
       const first = L.items[0], dm = first.s.match(DATE);
@@ -7119,9 +7121,10 @@ async function parseTextStatement(pdf) {
         if (OPEN_RE.test(all)) { if (opening == null) opening = num(balIt.s); prevRow = null; continue; }
         if (CLOSE_RE.test(all)) { closing = num(balIt.s); prevRow = null; continue; }
         if (money.length < 2) { prevRow = null; continue; }
-        const amtIt = money.filter(m => m !== balIt && num(m.s) !== 0).pop() || money[money.length - 2];
+        const taxIt = taxX != null ? money.find(m => m !== balIt && Math.abs(m.x - taxX) < 30) : null;
+        const amtIt = money.filter(m => m !== balIt && m !== taxIt && num(m.s) !== 0).pop() || money.filter(m => m !== balIt && m !== taxIt).pop() || money[money.length - 2];
         const left = text.filter(t => t.x < amtIt.x), right = text.filter(t => t.x > balIt.x);
-        const row = { date, time, amountAbs: Math.abs(num(amtIt.s)), balance: num(balIt.s), desc: left.map(t => t.s).join(' '), tail: right.map(t => t.s), tailX: right.length ? right[right.length - 1].x : null, y: L.y };
+        const row = { date, time, amountAbs: Math.abs(num(amtIt.s)), tax: taxIt ? Math.abs(num(taxIt.s)) : 0, balance: num(balIt.s), desc: left.map(t => t.s).join(' '), tail: right.map(t => t.s), tailX: right.length ? right[right.length - 1].x : null, y: L.y };
         rows.push(row); prevRow = row;
       } else if (prevRow && prevRow.tailX != null && L.items.every(it => !MONEY.test(it.s)) && Math.abs(L.items[0].x - prevRow.tailX) < 6 && prevRow.y - L.y < 30) {
         prevRow.tail[prevRow.tail.length - 1] += ' ' + L.items.map(it => it.s).join(' ');   // ข้อความต่อบรรทัด
@@ -7135,15 +7138,18 @@ async function parseTextStatement(pdf) {
   let prev = opening ?? r2(rows[0].balance - 0);   // ไม่มียอดยกมา → แถวแรกตัดสินไม่ได้
   let agree = 0, firstUnknown = opening == null;
   const out = rows.map((r, i) => {
-    let amount;
+    let amount, wht = 0;
     /* ไม่มียอดยกมา: แถวแรกดูจากคำ (ฝาก/รับ/Deposit = เข้า) แทนการเดาว่าออกเสมอ */
     if (i === 0 && firstUnknown) amount = /deposit|รับโอน|รับเงิน|ฝาก|เงินเข้า|transfer\s*in|interest|ดอกเบี้ย/i.test([r.desc, ...r.tail].join(' ')) && !/withdraw|ถอน|โอนไป|จ่าย/i.test(r.desc) ? r.amountAbs : -r.amountAbs;
     else {
       const diff = r2(r.balance - prev);
-      if (Math.abs(Math.abs(diff) - r.amountAbs) < 0.005) { amount = diff; agree++; } else amount = -r.amountAbs;
+      if (Math.abs(Math.abs(diff) - r.amountAbs) < 0.005) { amount = diff; agree++; }
+      /* มีภาษีหัก: เงินเข้า = ยอด − ภาษี · เงินออก = ยอด + ภาษี */
+      else if (r.tax && (Math.abs(diff - (r.amountAbs - r.tax)) < 0.005 || Math.abs(diff + r.amountAbs + r.tax) < 0.005)) { amount = diff; wht = r.tax; agree++; }
+      else amount = -r.amountAbs;
     }
     prev = r.balance;
-    return { date: r.date, time: r.time, description: [r.desc, ...r.tail].filter(Boolean).join(' · '), amount, balance: r.balance };
+    return { date: r.date, time: r.time, description: [r.desc, ...r.tail].filter(Boolean).join(' · '), amount, balance: r.balance, ...(wht ? { wht } : {}) };
   });
   const checkable = out.length - (firstUnknown ? 1 : 0);
   const rate = checkable ? agree / checkable : 0;
@@ -7628,6 +7634,8 @@ async function importStatementRows(accId, transactions, onProgress, meta = null)
                 dup_idx: dupIdx.get(tx) || 0,
                 details: [(() => { const k = statementKey(tx.statement_desc), h = k && hints[(tx.type === 'EXPENSE' ? 'OUT' : 'IN') + '|' + k];
                     const d = { amount: tx.type === 'EXPENSE' ? -Math.abs(tx.amount) : Math.abs(tx.amount), fee: 0, wht: 0, category_id: null, entity_id: AccDefaults.of(accId) || null /* 🏢 v256: ว่าง ยกเว้นบัญชีที่ตั้ง Company เริ่มต้น */, note: tx.note || stmtDetailNote(tx.statement_desc) || null, type: tx.type };   // v255: Detail = ข้อความ statement
+                    /* v265 ภาษีหัก ณ ที่จ่าย (กรุงไทย ดอกเบี้ย 38.26 หัก 0.38 → เข้าจริง 37.88): หัว = ยอดเข้าจริง · บรรทัดย่อย = ยอดเต็ม + WHT */
+                    if (Number(tx.wht) > 0) { d.amount = Math.round((d.amount + Number(tx.wht)) * 100) / 100; d.wht = Number(tx.wht); if (!d.note) d.note = (d.note || '') + ''; }
                     if (tx.category_id) { d.category_id = tx.category_id; if (tx.detail_type) d.type = tx.detail_type; d._hint = 1; }   // หมวดที่กำหนดมาจากตัวนำเข้า (wePAY · 2026-10-31)
                     else if (h) { d.category_id = h.category_id; d.contact_id = h.contact_id; if (h.type) d.type = h.type; d._hint = 1; }   // v256: Company ไม่เดาจากประวัติ (ใช้ค่าเริ่มต้นของบัญชี)
                     /* 💳 ชำระบัตร (ใบแจ้งยอดบัตร) = โอนระหว่างบัญชี ไม่ใช่รายรับ (2026-10-30) */
@@ -7710,7 +7718,7 @@ async function batchImportStatements(files, btn) {
       const bank = card0.ok ? { ok: false } : await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
       if (bank.ok) {
         const txs = bank.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00', type: l.amount > 0 ? 'INCOME' : 'EXPENSE',
-          amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null }));
+          amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null, wht: l.wht || 0 }));
         const sum = r2(bank.lines.reduce((t, l) => t + l.amount, 0));
         items.push({ file: file.name, fileObj: file, kind: 'BANK', issuer: bank.issuer, read: bank.account_number || '', acc: findAcc(bank.account_number || '', '', false), txs, opening: bank.opening, closing: bank.closing,
           walk: bank.opening != null && bank.closing != null ? Math.abs(r2(bank.opening + sum) - r2(bank.closing)) < 0.01 : null, sign: 1 });
@@ -7912,7 +7920,7 @@ function bindPDFUpload() {
                     const parsed = await parseTextStatement(opened.pdf).catch(() => ({ ok: false }));
                     if (parsed.ok) {
                         const txs = parsed.lines.map(l => ({ date: l.date, time: l.time ? (l.time.length === 5 ? l.time + ':00' : l.time) : '00:00:00',
-                            type: l.amount > 0 ? 'INCOME' : 'EXPENSE', amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null }));
+                            type: l.amount > 0 ? 'INCOME' : 'EXPENSE', amount: Math.abs(l.amount), ref_code: null, statement_desc: l.description, note: null, balance: l.balance ?? null, wht: l.wht || 0 }));
                         const useAcc = await statementPrecheck(selectedAccId, { account_number: parsed.account_number, rows: txs, opening: parsed.opening, closing: parsed.closing });
                         if (!useAcc) { resetUploadBtn(); return; }
                         selectedAccId = useAcc;
@@ -15158,6 +15166,9 @@ const StmtReport = (() => {
             g.from = h?.period_from || rows[0]?.date || ''; g.to = h?.period_to || rows[rows.length - 1]?.date || '';
             g.label = h ? `${dTh(g.from)} – ${dTh(g.to)}` : `${g.key.slice(2)} (ไม่ได้นำเข้าเป็น statement)`;
             g.openBank = h?.opening == null ? null : r2(h.opening);
+            /* v265 (North: "ยอดยกมาใส่ไม่ถูกต้อง"): statement ที่ช่วงวันทับกับฉบับก่อน (กรุงไทย 01–03/69 เริ่ม 22/01 แต่รายการ 22/01–31/01 เป็นของฉบับก่อน)
+               → ยกมาของระบบ = ยอด ณ วันเริ่มต้นของ statement (รวมทุกรายการก่อนวันนั้น) ให้เทียบวันเดียวกับยกมาของธนาคาร */
+            if (h?.period_from) g.openSys = r2(sg * r2(Number(data.opening || 0) + (data.rows || []).filter(r => r.date < h.period_from).reduce((t, r) => t + Number(r.amount || 0), 0)));
             const cp = cps.filter(c => c.as_of === g.to).pop();
             g.closeBank = h?.closing != null ? r2(h.closing) : (cp ? cp.bank : null);
             g.openDiff = g.openBank == null || g.openSys == null ? null : r2(g.openSys - g.openBank);
