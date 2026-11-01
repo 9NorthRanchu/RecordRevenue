@@ -224,3 +224,33 @@ body[data-theme="dark"] .neg { color:#FF8787; } body[data-theme="dark"] .pos { c
   .modal .modal-footer { position:sticky; bottom:calc(-14px - env(safe-area-inset-bottom)); z-index:3; background:var(--mcard); padding:12px 0 calc(12px + env(safe-area-inset-bottom)) !important; margin-bottom:0 !important; }
   .modal .modal-header .close-modal, .modal .modal-header [class*="close"] { font-size:28px !important; min-width:44px; min-height:44px; display:grid; place-items:center; }
 }
+
+/* ═══ v278 ตรวจ iPhone ทั้งระบบ (สคริปต์วัด: ล้นจอ · ปุ่มเล็กกดยาก · ช่องกรอก <16px ทำให้ iPhone ซูม · ตัวหนังสือ <13px) ═══ */
+@media (max-width:768px) {
+  /* iPhone ซูมเองเมื่อแตะช่องที่ตัวเล็กกว่า 16px → ทุกช่องกรอก 16px (รวมการ์ดรอตรวจที่ v270 ตั้ง 15px) */
+  #pending-cards-container input, #pending-cards-container select, #pending-cards-container textarea,
+  .content-view input:not([type=checkbox]):not([type=radio]), .content-view select, .content-view textarea,
+  #more-sheet select, #theme-pop select, .modal input, .modal select, .modal textarea { font-size:16px !important; }
+  /* ภาพรวม: รายการบัญชีกว้างเกินจอ */
+  #acc-home.mh-accs { width:auto !important; max-width:100% !important; box-sizing:border-box; overflow:hidden; display:block !important; }
+  .mh-list, .mh-li { max-width:100%; } .mh-li .av-ico { width:38px; height:38px; }
+  .mh-sech a { padding:10px 0 10px 12px; }
+  /* ปุ่มเล็กกดยาก → สูงอย่างน้อย 40px */
+  .content-view .dv2-zoombtn, .content-view .hq, .content-view .pg-x, .content-view .pg-chip, .content-view .sim-use, .content-view .fv-tabs button,
+  .content-view .dl-tabs button, .content-view [class*="-chips"] > button, .pr-adds button, #view-debtor button { min-height:40px !important; }
+  .content-view .dv2-zoombtn { min-width:40px !important; }
+  .content-view .dv2-chip { min-height:38px; display:inline-flex; align-items:center; }
+  .rr-dwrap .rr-dcal { width:36px !important; height:36px !important; font-size:1.05rem !important; right:2px; }
+  .rb-nav button, .av-mnav button, .content-view .av-head button { min-width:40px; min-height:40px; }
+  /* ตัวหนังสือเล็ก → ≥13px */
+  #pending-hero .ph-act .ph-at b, #pending-hero .dv2-kpi .dv2-klab { font-size:13.5px !important; }
+  .av-warn, .av-pend, .av-ok, .av-tag, .av-li-d, .hr-acc, .hr-chip, #view-debtor i, #view-account small, .content-view .hr-chip, .content-view span.hr-acc { font-size:13.5px !important; }
+  #view-history span[style*="font-size"], #view-history .hr-row span { font-size:13.5px !important; }
+  /* ป้ายเวอร์ชัน: ไม่ทับเมนูล่าง */
+  #app-ver { bottom:calc(86px + env(safe-area-inset-bottom)) !important; right:10px !important; opacity:.8; }
+  /* ยอดสะสม statement: วันที่เริ่ม-ถึง วางคู่กันในบรรทัดเดียว */
+  #report-stmt-section .sr-filter { display:grid !important; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); gap:8px !important; align-items:center; }
+  #report-stmt-section .sr-filter > select, #report-stmt-section .sr-filter > #sr-run { grid-column:1 / -1; width:100% !important; }
+  #report-stmt-section .sr-filter > .rr-dwrap, #report-stmt-section .sr-filter > input[type=date] { width:100% !important; min-width:0 !important; flex:none !important; }
+  #report-stmt-section .sr-filter > span { text-align:center; }
+}
