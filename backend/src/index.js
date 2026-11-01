@@ -1,6 +1,6 @@
 import { parseAiJson } from './ai-json.js';
-import { handleUnifiedTrip } from './unified-trip.js';
-import { handleLegacyTrip } from './legacy-trip.js';
+import { handleTripPurge } from './trip-purge.js';   /* v271 ระบบทริปปิดแล้ว — unified-trip.js / legacy-trip.js ไม่ถูกเรียกอีก */
+import { handleLineInfo } from './line-info.js';   /* v271 QR บอท LINE */
 import { handleLedgerInbox, geminiGenerate, processQueue } from './ledger-inbox.js';
 import { planSettlementKeep } from './settle-keep.js';
 import { isMonthClosed, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
@@ -55,13 +55,9 @@ export default {
     catch (err) { return dbErrorResponse(err, corsHeaders); }
 
     try {
-      // Unified Trip (โมดูลแยก) — คืน null ถ้าไม่ใช่ path ของตัวเอง จึงไม่กระทบ route เดิม
-      const unified = await handleUnifiedTrip(request, env, url, corsHeaders, authUserId);
-      if (unified) return unified;
-
-      // ทริปรุ่นเก่า (หน้าเว็บเก่า) — แยกไฟล์แล้ว คืน null ถ้าไม่ใช่ path ของตัวเอง
-      const legacyTrip = await handleLegacyTrip(request, env, url, corsHeaders, authUserId);
-      if (legacyTrip) return legacyTrip;
+      // 🧳 v271 ระบบทริปปิดแล้ว: API ทริปทั้งหมดตอบ 410 · /api/admin/trip-purge ล้างข้อมูลทริป (สำรองให้ก่อน)
+      { const tp = await handleTripPurge({ url, request, env, cors: corsHeaders, authUserId }); if (tp) return tp; }
+      { const li = await handleLineInfo({ url, env, cors: corsHeaders, authUserId }); if (li) return li; }   // 📱 v271 ID บอท LINE จริงสำหรับ QR
 
       // กล่องรับเอกสาร + LINE Bot รุ่นใหม่ (ledger-inbox.js) — รับ /api/line-webhook และ /api/inbox/*
       // คำสั่งสรุป (วันนี้/เมื่อวาน/รายวัน/เดือน) ยังใช้โค้ดเดิมในไฟล์นี้ผ่าน hooks.summary

@@ -7,11 +7,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=129">
-    <link rel="stylesheet" href="ui-a.css?v=45">
+    <link rel="stylesheet" href="ui-a.css?v=46">
     <!-- ⚡ 2026-10-30: ไลบรารีทั้งหมดย้ายไปท้ายหน้า + defer → หน้าขึ้นก่อน ไม่ต้องรอดาวน์โหลด ~2MB -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Mali:wght@300;400;500;600;700&display=swap" rel="stylesheet">   <!-- ฟอนต์ Mali ทั้งแอป (2026-10-31) -->
-    <link rel="stylesheet" href="font-mali.css?v=4">
+    <link rel="stylesheet" href="font-mali.css?v=5">
 </head>
 <body>
     <!-- App Container -->
@@ -38,6 +38,7 @@
                         <i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบ
                     </button>
                     
+                    <div class="trip-retired" hidden style="display:none"><!-- v271 ระบบทริปปิดแล้ว: ซ่อนช่องเข้าสู่ระบบเพื่อนร่วมทริป -->
                     <div style="margin: 25px 0; display: flex; align-items: center; justify-content: center; gap: 10px;">
                         <hr style="flex: 1; border: 0; border-top: 1px solid #cbd5e1;">
                         <span style="font-size: 0.85rem; color: #64748b;">สำหรับเพื่อนร่วมทริป</span>
@@ -52,6 +53,7 @@
                         <i class="fa-solid fa-users"></i> เข้าสู่หน้ากองกลาง
                     </button>
                     <div id="guest-login-error" class="validation-warning hidden" style="margin-top: 15px; text-align: center; color: var(--danger-color); font-weight: bold;"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -93,15 +95,12 @@
                     <a href="#" class="nav-item nav-minor" data-target="cards"><i class="fa-solid fa-credit-card"></i> <span>บัตร & เงินกู้</span></a>
                     <a href="#" class="nav-item nav-minor" data-target="assets"><i class="fa-solid fa-box-archive"></i> <span>ทรัพย์สิน</span></a>
                     <a href="#" class="nav-item nav-minor" data-target="insurance"><i class="fa-solid fa-shield-halved"></i> <span>ประกัน</span></a>
-                    <a href="trip-unified-prototype/trips.html" class="hunsa-menu-link nav-minor"><i class="fa-solid fa-plane"></i> <span>ทริป</span></a>
                 </nav>
-                <!-- QR Code Box in Sidebar -->
-                <div class="sidebar-qr-box admin-only hidden" style="margin: 20px 15px; padding: 12px; background: rgba(255, 255, 255, 0.4); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.5); text-align: center; font-size: 0.85rem;">
-                    <p style="font-weight: bold; color: var(--primary-dark); margin-bottom: 8px; font-size: 0.85rem;"><i class="fa-solid fa-qrcode"></i> LINE BOT SLIP OCR</p>
-                    <div class="qr-code-placeholder" style="margin-bottom: 8px; display: flex; justify-content: center;">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://line.me/R/ti/p/@recordrevenue" alt="LINE Bot QR Code" style="border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                    </div>
-                    <span style="color: var(--text-secondary); display: block; font-size: 0.75rem; line-height: 1.2;">สแกนแอดไลน์เพื่อส่งรูปสลิป</span>
+                <!-- QR Code Box in Sidebar · v271: ID บอทจริงจาก /api/line/bot-info (เดิมเขียนตายตัว @recordrevenue ซึ่งไม่ใช่บอทจริง) — โค้ด app.js "LineQR" -->
+                <div class="sidebar-qr-box" id="line-qr-box" hidden>
+                    <p class="lq-t"><i class="fa-solid fa-qrcode"></i> LINE BOT ส่งสลิป</p>
+                    <a id="line-qr-link" href="#" target="_blank" rel="noopener" class="lq-img"><img id="line-qr-img" alt="QR เพิ่มเพื่อนบอท LINE" width="120" height="120"></a>
+                    <span id="line-qr-cap" class="lq-cap">สแกนเพื่อเพิ่มเพื่อน แล้วส่งรูปสลิปเข้าแชท</span>
                 </div>
                 <div class="sidebar-footer">
                     <!-- Theme Switcher moved here -->
@@ -479,73 +478,14 @@
                     </div>
                 </section>
 
-                <!-- Trip workspace: the previous split dashboard is retired in favour of this responsive UI. -->
-                <section id="view-travel" class="content-view hidden travel-page trip-workspace">
-                    <aside class="trip-sidebar">
-                        <div class="trip-sidebar-head">
-                            <div><span class="trip-eyebrow">MY JOURNEYS</span><h2>ทริปของฉัน</h2></div>
-                            <button class="trip-round-action" onclick="openNewTripModal()" aria-label="สร้างทริปใหม่"><i class="fa-solid fa-plus"></i></button>
-                        </div>
-                        <div class="trip-filter-tabs" role="tablist">
-                            <button id="tab-trip-ongoing" onclick="switchTripTab('ONGOING')" class="active">กำลังไป</button>
-                            <button id="tab-trip-incoming" onclick="switchTripTab('INCOMING')">กำลังจะไป</button>
-                            <button id="tab-trip-memory" onclick="switchTripTab('MEMORY')">ความทรงจำ</button>
-                        </div>
-                        <div id="travel-trips-list" class="trip-list" aria-live="polite"></div>
-                    </aside>
-                    <main id="travel-details-panel" class="trip-canvas" aria-live="polite" style="display:none">
-                        <div class="trip-detail-content"></div>
-                    </main>
-                    <div id="travel-empty-state" class="trip-empty-state">
-                        <div class="trip-empty-art">🧳</div>
-                        <h3>เลือกทริปเพื่อเริ่มวางแผน</h3>
-                        <p>จัดแผน จุดแวะ กระเป๋าเงิน และบิลไว้ในที่เดียว</p>
-                        <button onclick="openNewTripModal()">+ สร้างทริปใหม่</button>
-                    </div>
-                </section>
-
-                <!-- ===== MODAL: New Trip ===== -->
-                <div id="new-trip-modal" class="travel-modal-overlay hidden">
-                    <div class="travel-modal-wrap travel-modal-sm">
-                        <div class="travel-modal-header" style="justify-content: space-between; padding-bottom: 5px; border-bottom: 1px solid #e2e8f0; margin-bottom: 5px;">
-                            <h2 style="margin: 0; display: flex; align-items: center; gap: 10px; color: #1e293b;"><span style="font-size: 20px;">✈️</span> New Trip</h2>
-                            <button class="travel-modal-close" onclick="closeNewTripModal()" style="font-size: 18px; color: #64748b; background: none; border: none; cursor: pointer;">✕</button>
-                        </div>
-                        <div class="travel-modal-body" id="new-trip-modal-body" style="padding-top: 0; padding-bottom: 0;">
-                            <!-- Injected by JS -->
-                        </div>
-                        <div class="travel-modal-footer" style="justify-content: center; gap: 20px; padding-top: 5px; border-top: 1px solid #e2e8f0; margin-top: 5px;">
-                            <button class="btn-travel-secondary" onclick="closeNewTripModal()" style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; background: #f8fafc; color: #ef4444; border: 1px solid #f1f5f9; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">✖</button>
-                            <button class="btn-travel-primary" onclick="saveNewTrip()" style="border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; background: #10b981; border: none; box-shadow: 0 4px 6px rgba(16,185,129,0.3);">✔️</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ===== MODAL: Add Expense ===== -->
-                <div id="add-expense-modal" class="travel-modal-overlay hidden">
-                    <div class="travel-modal-wrap travel-modal-sm">
-                        <div class="travel-modal-header">
-                            <h2>📸 บันทึกค่าใช้จ่าย</h2>
-                            <button class="travel-modal-close" onclick="closeAddExpenseModal()">✕</button>
-                        </div>
-                        <div class="travel-modal-body" id="add-expense-modal-body">
-                            <!-- Injected by JS -->
-                        </div>
-                        <div class="travel-modal-footer">
-                            <button class="btn-travel-secondary" onclick="closeAddExpenseModal()">ยกเลิก</button>
-                            <button class="btn-travel-primary" onclick="saveExpense()">✅ บันทึก</button>
-                        </div>
-                    </div>
-                </div>
-
+                <!-- v271 ระบบทริปปิดแล้ว: ลบหน้า view-travel และ modal ทริป (สำเนาเดิมอยู่ archive/trip-frontend-v271) -->
 
                 <!-- 6. Reports View -->
                 <section id="view-reports" class="content-view hidden">
-                    <div id="rep-home"></div>   <!-- 📊 รายงานแบบ B: โดนัท + ตาราง + การ์ดรายงาน 4 ใบ (2026-10-30) -->
-                    <div class="reports-tabs">
+                    <div id="rep-home"></div>   <!-- 📊 v271 รายงานแบบ ข.: เมนูซ้าย + ช่องขวา — โค้ดอยู่ app.js ส่วน "RepHome" -->
+                    <div class="reports-tabs" hidden>
                         <button class="report-tab active" data-report="wht"><span class="rt-ic" style="background:rgba(240,82,82,.12);color:#E03131">%</span><span class="rt-tx"><b>ภาษีหัก ณ ที่จ่าย</b><small>สรุปรายการภาษี (WHT)</small></span></button>
                         <button class="report-tab" data-report="tb"><span class="rt-ic" style="background:rgba(121,80,242,.13);color:#6D4AE0"><i class="fa-solid fa-scale-balanced"></i></span><span class="rt-tx"><b>งบทดลอง</b><small>ยอดคงเหลือทุกบัญชี (Trial Balance)</small></span></button>
-                        <button class="report-tab" data-report="project"><span class="rt-ic" style="background:rgba(245,159,0,.15);color:#E67700"><i class="fa-solid fa-suitcase"></i></span><span class="rt-tx"><b>ทริป / โปรเจกต์</b><small>สรุปรับ-จ่ายแต่ละทริป</small></span></button>
                         <button class="report-tab" data-report="stmt"><span class="rt-ic" style="background:rgba(12,166,120,.13);color:#087F5B"><i class="fa-solid fa-file-invoice-dollar"></i></span><span class="rt-tx"><b>ยอดสะสม statement</b><small>หารายการขาด · ยอดคงเหลือรายบรรทัด</small></span></button>
                     </div>
 
@@ -616,8 +556,7 @@
                         </div>
                     </div>
 
-                    <!-- Project / Trip Report -->
-                    <!-- 📒 ยอดสะสมต่อ statement (2026-10-30) — โค้ดอยู่ app.js ส่วน "StmtReport" -->
+                                        <!-- 📒 ยอดสะสมต่อ statement (2026-10-30) — โค้ดอยู่ app.js ส่วน "StmtReport" -->
                     <div id="report-stmt-section" class="report-section hidden card glass">
                         <div class="card-body">
                             <div class="filter-row sr-filter">
@@ -632,47 +571,7 @@
                         </div>
                     </div>
 
-                    <div id="report-project-section" class="report-section hidden card glass">
-                        <div class="card-body">
-                            <div class="filter-row">
-                                <label>เลือกทริป / โปรเจกต์:</label>
-                                <select id="report-project-select">
-                                    <!-- Dynamic projects option -->
-                                </select>
-                                <button id="btn-run-project" class="btn btn-primary">ดูรายงานกำไร/ขาดทุนทริป</button>
-                            </div>
-                            <div class="project-summary-box">
-                                <div class="p-summary-item">
-                                    <span>รายรับรวม:</span>
-                                    <h4 id="project-total-income" class="text-success">0.00 ฿</h4>
-                                </div>
-                                <div class="p-summary-item">
-                                    <span>รายจ่ายรวม:</span>
-                                    <h4 id="project-total-expense" class="text-danger">0.00 ฿</h4>
-                                </div>
-                                <div class="p-summary-item">
-                                    <span>ดุลเงินคงเหลือ:</span>
-                                    <h4 id="project-net-balance">0.00 ฿</h4>
-                                </div>
-                            </div>
-                            <div class="table-responsive">
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th>วันที่</th>
-                                            <th>หมวดรายการ</th>
-                                            <th>ผู้จ่าย (Entity)</th>
-                                            <th>รายละเอียด</th>
-                                            <th>ยอดเงิน</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="project-report-body">
-                                        <!-- Dynamic Project/Trip rows -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- v271 รายงานทริป/โปรเจกต์ถูกเอาออก (ระบบทริปปิดแล้ว) -->
                 </section>
 
                 <!-- 7. Settings View -->
@@ -996,7 +895,6 @@
                                 <button class="settings-tab" data-settings-tab="captions">🏷️ Caption</button>
                                 <button class="settings-tab" data-settings-tab="categories">🗂️ Categories</button>
                                 <button class="settings-tab" data-settings-tab="accounts">💳 Statement</button>
-                                <button class="settings-tab" data-settings-tab="projects">✈️ Trip</button>
                                 <button class="settings-tab admin-only hidden" data-settings-tab="users">👨‍👩‍👧‍👦 Member</button>
                                 <button class="settings-tab" data-settings-tab="debts">📝 ทะเบียนหนี้สิน</button>
                                 <button class="settings-tab" data-settings-tab="opening-balances">⚖️ ยอดยกมา</button>
@@ -1067,6 +965,16 @@
                             <div id="settings-backup" class="settings-section-content hidden">
                                 <div class="settings-section-header">
                                     <h4>💾 สำรอง / กู้คืน / โครงสร้างฐานข้อมูล</h4>
+                                </div>
+
+                                <!-- 🧳 v271 ล้างข้อมูลทริป (ระบบทริปปิดแล้ว) — โค้ดอยู่ app.js ส่วน "TripPurge" -->
+                                <div class="card admin-only hidden" id="trip-purge-card" style="border:1px solid #FFC9C9;background:#FFF5F5;margin-bottom:16px;">
+                                    <div class="card-body">
+                                        <h5 style="color:#C92A2A;margin:0 0 6px;">🧳 ล้างข้อมูลทริป</h5>
+                                        <p class="tp-note">ระบบทริปปิดใช้งานแล้ว ปุ่มนี้ลบข้อมูลทริปทั้งหมด (ทริป · จุดแวะ · ค่าใช้จ่ายในทริป · สมาชิกทริป · กระเป๋าทริป) ระบบจะดาวน์โหลดไฟล์สำรองให้ก่อนลบ · <b>รายการในสมุดบัญชีไม่ถูกลบ</b></p>
+                                        <div id="trip-purge-info" class="tp-note"></div>
+                                        <button class="btn btn-outline-danger" type="button" onclick="TripPurge.check()"><i class="fa-solid fa-magnifying-glass"></i> ตรวจข้อมูลทริป</button>
+                                    </div>
                                 </div>
 
                                 <!-- 📁 GOOGLE DRIVE (2026-10-31) -->
@@ -1447,8 +1355,8 @@
                     <a href="#" class="nav-item ms-item" data-target="cards"><i class="fa-solid fa-credit-card"></i>บัตร & เงินกู้</a>
                     <a href="#" class="nav-item ms-item" data-target="assets"><i class="fa-solid fa-box-archive"></i>ทรัพย์สิน</a>
                     <a href="#" class="nav-item ms-item" data-target="insurance"><i class="fa-solid fa-shield-halved"></i>ประกัน</a>
-                    <a href="trip-unified-prototype/trips.html" class="ms-item"><i class="fa-solid fa-plane"></i>ทริป</a>
                     <a href="#" class="nav-item ms-item" data-target="reports"><i class="fa-solid fa-chart-pie"></i>รายงาน</a>
+                    <a href="#" id="ms-line-add" class="ms-item" target="_blank" rel="noopener" hidden><i class="fa-brands fa-line"></i>บอท LINE</a>
                     <a href="#" class="nav-item ms-item" data-target="settings"><i class="fa-solid fa-gear"></i>ตั้งค่า</a>
                 </div>
             </div>
@@ -1778,7 +1686,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script defer src="travel.js?v=105"></script>
-    <script defer src="app.js?v=269"></script>
+    <script defer src="app.js?v=271"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">
@@ -1874,153 +1782,6 @@
         </div>
     </div>
     <!-- /Debt Profile Modal -->
-
-    <!-- ========================
-         Trip Create/Edit Modal
-         ======================== -->
-    <div id="trip-modal-overlay" class="travel-modal-overlay hidden" onclick="if(event.target===this)closeTripModal()">
-        <div class="travel-modal-box">
-            <div class="travel-modal-title">
-                <span id="trip-modal-icon">🛸</span>
-                <span id="trip-modal-heading">สร้างทริปใหม่</span>
-                <button onclick="closeTripModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:#888;">✕</button>
-            </div>
-            <form id="trip-form" onsubmit="submitTripForm(event)">
-                <input type="hidden" id="trip-edit-id" value="">
-                <div class="travel-form-grid">
-                    <div class="travel-form-group full-width">
-                        <label>🏷️ ชื่อทริป</label>
-                        <input type="text" id="trip-name" placeholder="เช่น ทริปฮอกไกโด 2026" required>
-                    </div>
-                    <div class="travel-form-group full-width">
-                        <label>📍 ปลายทาง / จังหวัด</label>
-                        <input type="text" id="trip-destination" placeholder="เช่น Hokkaido, Japan">
-                    </div>
-                    <!-- Highlights selection -->
-                    <div class="travel-form-group full-width">
-                        <label>🌟 ไฮไลท์ของทริป (เลือกได้หลายอัน)</label>
-                        <div id="trip-highlights-container" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; max-height: 150px; overflow-y: auto; padding: 4px;">
-                            <!-- Inserted by JS -->
-                        </div>
-                    </div>
-                    <div class="travel-form-group">
-                        <label>📅 วันเริ่มต้น</label>
-                        <input type="date" id="trip-start-date">
-                    </div>
-                    <div class="travel-form-group">
-                        <label>📅 วันสิ้นสุด</label>
-                        <input type="date" id="trip-end-date">
-                    </div>
-                    <div class="travel-form-group">
-                        <label>💰 งบประมาณ (฿)</label>
-                        <input type="number" id="trip-budget" placeholder="0.00" min="0" step="0.01">
-                    </div>
-                    <div class="travel-form-group">
-                        <label>🏷️ สกุลเงินต่างประเทศ</label>
-                        <select id="trip-currency">
-                            <option value="JPY">🇯🇵 JPY (เยน)</option>
-                            <option value="CNY">🇨🇳 CNY (หยวน)</option>
-                            <option value="USD">🇺🇸 USD (ดอลล่าร์)</option>
-                            <option value="EUR">🇪🇺 EUR (ยูโร)</option>
-                            <option value="KRW">🇰🇷 KRW (วอน)</option>
-                            <option value="HKD">🇭🇰 HKD</option>
-                            <option value="SGD">🇸🇬 SGD</option>
-                            <option value="THB" selected>🇹🇭 THB (บาท)</option>
-                        </select>
-                    </div>
-                    <div class="travel-form-group full-width">
-                        <label>👥 สมาชิก (พิมพ์ชื่อแล้วกด Enter)</label>
-                        <input type="text" id="trip-member-input" placeholder="ชื่อสมาชิก แล้วกด Enter" onkeydown="addTripMember(event)">
-                        <div id="trip-members-container" style="margin-top:6px;min-height:28px;"></div>
-                    </div>
-                    <div class="travel-form-group full-width">
-                        <label>📝 หมายเหตุ</label>
-                        <textarea id="trip-notes" rows="2" placeholder="รายละเอียดเพิ่มเติม..."></textarea>
-                    </div>
-                </div>
-                <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="closeTripModal()">ยกเลิก</button>
-                    <button type="submit" class="btn btn-primary" id="trip-submit-btn"><i class="fa-solid fa-rocket"></i> บันทึกทริป</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- ========================
-         Expense Log Modal
-         ======================== -->
-    <div id="expense-modal-overlay" class="travel-modal-overlay hidden" onclick="if(event.target===this)closeExpenseModal()">
-        <div class="travel-modal-box">
-            <div class="travel-modal-title">
-                <span>💸</span>
-                <span>บันทึกค่าใช้จ่าย</span>
-                <button onclick="closeExpenseModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:#888;">✕</button>
-            </div>
-            <form id="expense-form" onsubmit="submitExpenseForm(event)">
-                <input type="hidden" id="expense-trip-id" value="">
-                <div class="travel-form-grid">
-                    <div class="travel-form-group full-width">
-                        <label>📝 รายการ</label>
-                        <input type="text" id="exp-description" placeholder="เช่น ข้าวอาหารเช้า, โรงแรม" required>
-                    </div>
-                    <div class="travel-form-group">
-                        <label>💴 จำนวน (สกุลเงินท้องถิ่น)</label>
-                        <input type="number" id="exp-amount-local" placeholder="0" min="0" step="0.01" oninput="autoConvertCurrency()">
-                    </div>
-                    <div class="travel-form-group">
-                        <label>💰 จำนวน (THB)</label>
-                        <input type="number" id="exp-amount-thb" placeholder="0.00" min="0" step="0.01" required>
-                    </div>
-                    <div class="travel-form-group">
-                        <label>📂 ประเภท</label>
-                        <select id="exp-category">
-                            <option value="food">🍜 อาหาร/เครื่องดื่ม</option>
-                            <option value="hotel">🏨 ที่พัก</option>
-                            <option value="transport">✈️ การเดินทาง</option>
-                            <option value="shop">🛍️ ช็อปปิ้ง</option>
-                            <option value="activity">🎡 กิจกรรม</option>
-                            <option value="other">📦 อื่นๆ</option>
-                        </select>
-                    </div>
-                    <div class="travel-form-group">
-                        <label>👤 บันทึกโดย (สมาชิก)</label>
-                        <select id="exp-member">
-                            <option value="">-- ไม่ระบุ --</option>
-                        </select>
-                    </div>
-                    <div class="travel-form-group">
-                        <label>📅 วันที่</label>
-                        <input type="date" id="exp-date" required>
-                    </div>
-                    <div class="travel-form-group full-width" style="flex-direction:row;align-items:center;gap:10px;">
-                        <button type="button" class="btn-gps" id="btn-get-location" onclick="captureGPS()">
-                            <i class="fa-solid fa-location-dot"></i> บันทึก GPS
-                        </button>
-                        <input type="hidden" id="exp-lat" value="">
-                        <input type="hidden" id="exp-lng" value="">
-                        <span id="gps-status-text" style="font-size:0.8rem;color:#888;"></span>
-                    </div>
-                    <div class="travel-form-group full-width">
-                        <label>📝 หมายเหตุ</label>
-                        <input type="text" id="exp-notes" placeholder="หมายเหตุเพิ่มเติม...">
-                    </div>
-                </div>
-                <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="closeExpenseModal()">ยกเลิก</button>
-                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> บันทึก</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- ========================
-         Trip Detail Modal
-         ======================== -->
-    <div id="trip-detail-modal-overlay" class="travel-modal-overlay hidden" onclick="if(event.target===this)closeTripDetailModal()" style="align-items:flex-start;padding-top:30px;">
-        <div class="travel-modal-box" style="max-width:800px;width:96%;">
-            <div id="trip-detail-modal-content"><!-- filled by JS --></div>
-        </div>
-    </div>
 
     <!-- ========================
          Dashboard v2: Planned Expense Modal (แผนรายจ่ายล่วงหน้า)

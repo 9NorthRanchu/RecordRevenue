@@ -5392,12 +5392,8 @@ function loadReports() {
     }
 
     // Populate projects select
-    const projSelect = document.getElementById("report-project-select");
-    projSelect.innerHTML = '';
-    projSelect.innerHTML += AppState.projects.map(p => `<option value="${p.project_id}">${p.name}</option>`).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
-
-    // Default load WHT
-    runWhtReport();
+    { const wm = document.getElementById('report-wht-month'); if (wm && (!wm.value || wm.value === '2025-09')) wm.value = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7); }   /* v271 เดือนเริ่มต้น = เดือนนี้ (เดิมค้าง ก.ย. 2025) */
+    /* v271: รายงานทริปถูกเอาออก · รายงานที่เปิดอยู่โหลดผ่าน RepHome.select() แล้ว ไม่ต้องโหลด WHT ล่วงหน้า */
 }
 
 async function runWhtReport() {
@@ -5469,7 +5465,7 @@ async function runTrialBalanceReport() {
 }
 
 async function runProjectReport() {
-    const projectId = document.getElementById("report-project-select").value;
+    const projectId = document.getElementById("report-project-select")?.value; if (!projectId) return;
     try {
         // Fetch all transactions for this user
         const res = await fetch(`${API_BASE}/api/transactions`, {
@@ -5523,7 +5519,7 @@ async function runProjectReport() {
 // Bind report actions
 document.getElementById("btn-run-wht").addEventListener("click", runWhtReport);
 document.getElementById("btn-run-tb").addEventListener("click", runTrialBalanceReport);
-document.getElementById("btn-run-project").addEventListener("click", runProjectReport);
+document.getElementById("btn-run-project")?.addEventListener("click", runProjectReport);   /* v271 รายงานทริปถูกเอาออก */
 
 const reportTabs = document.querySelectorAll(".report-tab");
 reportTabs.forEach(tab => {
@@ -16455,43 +16451,74 @@ const RepHome = (() => {
     const payeeTable = () => [['ผู้รับ/ผู้จ่าย', 'จำนวนรายการ', 'จ่าย (บาท)', 'รับ (บาท)', 'หมวดที่ใช้บ่อย'], ...payees().map(g => [g.name, String(g.n), g.out ? fm(-g.out) : '', g.inc ? fm(g.inc) : '', g.cat])];
     const payeeMonthTable = () => { const rows = [['ผู้รับ/ผู้จ่าย', 'เดือน', 'จำนวนรายการ', 'จ่าย (บาท)', 'รับ (บาท)']];
         payees().forEach(g => Object.entries(g.months).sort((a, b) => a[0].localeCompare(b[0])).forEach(([mo, v]) => rows.push([g.name, mo, String(v.n), v.out ? fm(-v.out) : '', v.inc ? fm(v.inc) : '']))); return rows; };
-    const CARDS = [
-        { k: 'stmt', ico: 'fa-book', cls: 'c1', t: 'ยอดสะสม statement', d: 'ยอดคงเหลือรายบรรทัด เทียบธนาคาร หารายการที่ขาด' },
-        { k: 'wht', ico: 'fa-percent', cls: 'c2', t: 'ภาษีหัก ณ ที่จ่าย', d: 'สรุปรายการภาษีหัก ณ ที่จ่ายรายเดือน' },
-        { k: 'tb', ico: 'fa-scale-balanced', cls: 'c3', t: 'งบทดลอง', d: 'ยอดคงเหลือทุกบัญชีแยกประเภท' },
-        { k: 'ie', ico: 'fa-chart-column', cls: 'c4', t: 'รายรับ-รายจ่าย', d: 'สรุปรายรับและรายจ่ายตามหมวด ช่วงที่เลือก' },
-        { k: 'payee', ico: 'fa-users', cls: 'c1', t: 'ผู้รับ / ผู้จ่าย', d: 'จ่ายให้ใคร รับจากใคร รวมเท่าไร แยกรายเดือน' }];
+    /* v271 📊 หน้ารายงานแบบ ข. (North 2026-11-01): เมนูซ้าย · ข้อมูลขึ้นทันทีด้านขวา · ดูทีละรายงาน
+       รายงานเดิม (statement / ภาษี / งบทดลอง) ยังใช้โค้ดเดิม — แค่ย้าย .report-section มาวางในช่องขวา */
+    const MENU = [
+        { k: 'ie', e: '📊', t: 'ภาพรวม', d: 'รายรับ-รายจ่ายตามหมวด', per: true },
+        { k: 'payee', e: '👥', t: 'ผู้รับ / ผู้จ่าย', d: 'จ่ายให้ใคร รับจากใคร', per: true },
+        { sep: true },
+        { k: 'stmt', e: '📒', t: 'ยอดสะสม statement', d: 'เทียบยอดธนาคาร หารายการขาด' },
+        { k: 'wht', e: '％', t: 'ภาษีหัก ณ ที่จ่าย', d: 'สรุปรายเดือน' },
+        { k: 'tb', e: '⚖️', t: 'งบทดลอง', d: 'ยอดคงเหลือทุกบัญชี' }];
+    const VKEY = 'rr_rep_view_v271';
+    let view = (() => { try { const v = localStorage.getItem(VKEY); return MENU.some(m => m.k === v) ? v : 'ie'; } catch { return 'ie'; } })();
+    function shell(el) {
+        if (el.querySelector('.rp-lay')) return;
+        el.innerHTML = `<div class="rp-lay"><nav class="rp-side" aria-label="เลือกรายงาน">${MENU.map(m => m.sep ? '<div class="rp-sep"></div>'
+            : `<button type="button" class="rp-si" data-rv="${m.k}" onclick="RepHome.select('${m.k}')"><i>${m.e}</i><span><b>${m.t}</b><small>${m.d}</small></span></button>`).join('')}</nav>
+            <div class="rp-main"><div class="rp-bar" id="rp-bar"></div><div id="rp-dyn"></div><div id="rp-slot"></div></div></div>`;
+    }
     function render() {
         const el = document.getElementById('rep-home'); if (!el) return;
-        const d = S.data || {}, out = groups(d.expense, -1), inc = groups(d.income, 1);
+        shell(el);
+        const m = MENU.find(x => x.k === view) || MENU[0];
+        el.querySelectorAll('.rp-si').forEach(b => b.classList.toggle('on', b.dataset.rv === view));
         const chip = (k, t) => `<button class="${S.period === k ? 'on' : ''}" onclick="RepHome.period('${k}')">${t}</button>`;
-        el.innerHTML = `<div class="rb-top"><h2>รายงาน</h2><div class="rb-per">${chip('month', 'รายเดือน')}${chip('year', 'รายปี')}${chip('all', 'ทั้งหมด')}
-            ${S.period === 'all' ? '' : `<span class="rb-nav"><button onclick="RepHome.shift(-1)" aria-label="ก่อนหน้า"><i class="fa-solid fa-chevron-left"></i></button><b>${label()}</b><button onclick="RepHome.shift(1)" aria-label="ถัดไป"><i class="fa-solid fa-chevron-right"></i></button></span>`}</div></div>
-          <div class="rb-two">${panel('รายจ่ายตามหมวดหมู่', 'fa-arrow-up', 'out', out, OUT)}${panel('รายรับตามหมวดหมู่', 'fa-arrow-down', 'in', inc, INC)}</div>
-          <div id="py-wrap">${payeePanel()}</div>
-          <div class="rb-cards">${CARDS.map(c => `<div class="rb-card"><div class="rb-ch"><span class="rb-ci ${c.cls}"><i class="fa-solid ${c.ico}"></i></span><b>${c.t}</b></div>
-            <p>${c.d}</p><div class="rb-btns"><button class="rb-x" onclick="RepHome.exp('${c.k}','xlsx')"><i class="fa-solid fa-file-excel"></i> Excel</button>
-            <button class="rb-p" onclick="RepHome.exp('${c.k}','pdf')"><i class="fa-solid fa-file-pdf"></i> PDF</button></div>
-            <a href="#" class="rb-open" onclick="RepHome.open('${c.k}');return false">ดูในหน้า ›</a></div>`).join('')}</div>`;
+        document.getElementById('rp-bar').innerHTML = `<div class="rp-ttl"><b>${m.e} ${m.t}</b><small>${m.d}</small></div>
+          ${m.per ? `<div class="rb-per">${chip('month', 'รายเดือน')}${chip('year', 'รายปี')}${chip('all', 'ทั้งหมด')}
+            ${S.period === 'all' ? '' : `<span class="rb-nav"><button onclick="RepHome.shift(-1)" aria-label="ก่อนหน้า"><i class="fa-solid fa-chevron-left"></i></button><b>${label()}</b><button onclick="RepHome.shift(1)" aria-label="ถัดไป"><i class="fa-solid fa-chevron-right"></i></button></span>`}</div>` : ''}
+          ${view === 'stmt' ? '' : `<div class="rp-exp"><button class="rp-x" onclick="RepHome.exp('${view}','xlsx')"><i class="fa-solid fa-file-excel"></i> Excel</button><button class="rp-p" onclick="RepHome.exp('${view}','pdf')"><i class="fa-solid fa-file-pdf"></i> PDF</button></div>`}`;
+        const dyn = document.getElementById('rp-dyn');
+        if (view === 'ie') {
+            const d = S.data || {}, out = groups(d.expense, -1), inc = groups(d.income, 1), net = r2(inc.tot + out.tot);
+            const n = (d.expense || []).length + (d.income || []).length;
+            dyn.innerHTML = `<div class="rp-kpi"><div><small>รายรับรวม</small><b class="rb-pos">${fm(inc.tot)}</b></div><div><small>รายจ่ายรวม</small><b class="rb-neg">${fm(out.tot)}</b></div>
+                <div><small>รายรับ − รายจ่าย</small><b class="${net < 0 ? 'rb-neg' : 'rb-pos'}">${fm(net)}</b></div><div><small>จำนวนรายการ</small><b>${n.toLocaleString('en-US')}</b></div></div>
+              <div class="rb-two">${panel('รายจ่ายตามหมวดหมู่', 'fa-arrow-up', 'out', out, OUT)}${panel('รายรับตามหมวดหมู่', 'fa-arrow-down', 'in', inc, INC)}</div>`;
+        } else if (view === 'payee') dyn.innerHTML = `<div id="py-wrap">${payeePanel()}</div>`;
+        else dyn.innerHTML = '';
+        /* ย้าย section เดิมเข้า/ออกช่องขวา (ไม่สร้างใหม่ — ค่าที่กรองไว้และ event เดิมยังอยู่) */
+        const slot = document.getElementById('rp-slot'), store = document.getElementById('view-reports');
+        document.querySelectorAll('.report-section').forEach(sec => {
+            const mine = sec.id === `report-${view}-section`;
+            if (mine && sec.parentElement !== slot) slot.appendChild(sec);
+            if (!mine && sec.parentElement === slot) store.appendChild(sec);
+            sec.classList.toggle('hidden', !mine); sec.classList.toggle('active', mine);
+        });
+    }
+    function select(k) {
+        if (!MENU.some(m => m.k === k)) return;
+        const first = view !== k; view = k; try { localStorage.setItem(VKEY, k); } catch { }
+        render();
+        if (['stmt', 'wht', 'tb'].includes(k)) {
+            if (k === 'stmt') StmtReport.init(); else if (k === 'wht') runWhtReport(); else runTrialBalanceReport();
+            document.querySelectorAll('.report-tab').forEach(t => t.classList.toggle('active', t.dataset.report === k));
+        }
+        if (first && window.innerWidth < 900) document.getElementById('rp-bar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     async function load() {
         const el = document.getElementById('rep-home'); if (!el) return;
         if (!S.month) S.month = DashState?.year && DashState?.month ? `${DashState.year}-${DashState.month}` : new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
-        if (!S.data) el.innerHTML = '<div class="rb-mute" style="padding:20px">กำลังโหลด…</div>';
+        if (!S.data && !el.querySelector('.rp-lay')) el.innerHTML = '<div class="rb-mute" style="padding:20px">กำลังโหลด…</div>';
         try {
             const r = await fetch(`${API_BASE}/api/dashboard/summary?month=${S.month}&period=${S.period}&member=ALL`, { headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) } });
             const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status);
             S.data = j; if (j.month && /^\d{4}-\d{2}$/.test(j.month)) S.month = j.month;
-            render();
+            if (!document.querySelector('#rep-home .rp-lay')) select(view); else render();
         } catch (e) { el.innerHTML = `<div class="rb-mute" style="padding:20px">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; }
     }
-    /* เปิดแท็บรายงานเดิมข้างล่าง */
-    function open(k) {
-        if (k === 'ie') { document.getElementById('rep-home')?.scrollIntoView({ behavior: 'smooth' }); return; }
-        if (k === 'payee') { document.getElementById('py-wrap')?.scrollIntoView({ behavior: 'smooth' }); return; }
-        document.querySelector(`.report-tab[data-report="${k}"]`)?.click();
-        document.querySelector('.reports-tabs')?.scrollIntoView({ behavior: 'smooth' });
-    }
+    /* เปิดรายงาน (เดิม: เลื่อนลงไปหาแท็บข้างล่าง · v271: เลือกจากเมนูซ้าย) */
+    function open(k) { select(k); }
     /* ── ส่งออกตาราง HTML เป็น Excel / PDF ── */
     function tableRows(tbl) { return [...tbl.querySelectorAll('tr')].map(tr => [...tr.children].map(td => td.innerText.replace(/\s+/g, ' ').trim())); }
     function toXlsx(sheets, file) {
@@ -16539,12 +16566,12 @@ td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.neg{
                 open('stmt'); StmtReport.init();
                 document.getElementById(kind === 'xlsx' ? 'sr-xlsx' : 'sr-pdf')?.click();
             } else if (k === 'wht') {
-                document.querySelector('.report-tab[data-report="wht"]')?.click(); await runWhtReport();
+                await runWhtReport();
                 const tbl = document.getElementById('wht-report-body')?.closest('table'), month = document.getElementById('report-wht-month')?.value || '';
                 const rows = tbl ? tableRows(tbl) : [];
                 if (kind === 'xlsx') toXlsx([['ภาษีหัก ณ ที่จ่าย', rows]], `WHT_${month || 'report'}.xlsx`); else toPdf(w, 'รายงานภาษีหัก ณ ที่จ่าย', 'เดือน ' + month, [['รายการ', rows]]);
             } else if (k === 'tb') {
-                document.querySelector('.report-tab[data-report="tb"]')?.click(); await runTrialBalanceReport();
+                await runTrialBalanceReport();
                 const tbl = document.getElementById('tb-report-body')?.closest('table'), ent = document.getElementById('report-tb-entity');
                 const rows = tbl ? tableRows(tbl) : [], who = ent?.selectedOptions?.[0]?.text || '';
                 if (kind === 'xlsx') toXlsx([['งบทดลอง', rows]], `trial-balance_${new Date().toISOString().slice(0, 10)}.xlsx`); else toPdf(w, 'งบทดลอง', who, [['งบทดลอง', rows]]);
@@ -16553,7 +16580,7 @@ td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.neg{
     }
     const rePayee = () => { const w = document.getElementById('py-wrap'); if (!w) return; const f = document.activeElement?.classList.contains('py-q'); w.innerHTML = payeePanel();
         if (f) { const i = w.querySelector('.py-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); } };
-    return { load, render, exp, open, shift, period: p => { S.period = p; S.pOpen = null; load(); },
+    return { load, render, exp, open, select, shift, period: p => { S.period = p; S.pOpen = null; load(); },
         pq: v => { S.pq = v; S.pOpen = null; rePayee(); }, pAll: () => { S.pAll = !S.pAll; rePayee(); }, pOpen: i => { S.pOpen = S.pOpen === i ? null : i; rePayee(); } };
 })();
 
@@ -16920,4 +16947,62 @@ const WePay = (() => {
         if (typeof loadPending === 'function') loadPending();
     }
     return { run, merge, toTx };
+})();
+
+/* ═══ 🧳 v271 ล้างข้อมูลทริป (ตั้งค่า › Backup) ═══════════════════════
+   GET  /api/admin/trip-purge → จำนวนแถว · POST { confirm:'ลบทริป' } → ลบ + ส่งข้อมูลที่ลบกลับมา → ดาวน์โหลดเป็นไฟล์สำรอง */
+const TripPurge = (() => {
+    const H = () => ({ 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) });
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    async function check() {
+        const box = document.getElementById('trip-purge-info'); if (!box) return;
+        box.textContent = 'กำลังตรวจ…';
+        try {
+            const r = await fetch(`${API_BASE}/api/admin/trip-purge`, { headers: H() }); const j = await r.json();
+            if (!r.ok) throw new Error(j.error || r.status);
+            const rows = Object.entries(j.counts || {}).filter(([, n]) => n > 0);
+            if (!j.total) { box.innerHTML = '✅ ไม่มีข้อมูลทริปเหลืออยู่แล้ว'; return; }
+            box.innerHTML = `<div class="tp-list">${rows.map(([t, n]) => `<span>${esc(t)} <b>${n}</b></span>`).join('')}</div>
+                ${(j.projects || []).length ? `<div>ทริป: ${j.projects.map(p => `<b>${esc(p.name)}</b>`).join(' · ')}</div>` : ''}
+                ${j.linked_details ? `<div>มีรายการในสมุดบัญชีผูกทริปอยู่ ${j.linked_details} แถว — จะถูกตัดการผูกทริปออกเท่านั้น ยอดเงินไม่เปลี่ยน</div>` : ''}
+                <button class="btn btn-danger" type="button" style="margin-top:10px" onclick="TripPurge.run(${j.total})"><i class="fa-solid fa-trash"></i> ลบข้อมูลทริป ${j.total} แถว</button>`;
+        } catch (e) { box.textContent = 'ตรวจไม่สำเร็จ: ' + (e.message || e); }
+    }
+    async function run(total) {
+        const t = window.prompt(`ลบข้อมูลทริป ${total} แถว (ไม่ลบรายการในสมุดบัญชี)\nระบบจะดาวน์โหลดไฟล์สำรองให้\n\nพิมพ์คำว่า  ลบทริป  เพื่อยืนยัน`);
+        if (t == null) return;
+        if (t.trim() !== 'ลบทริป') { alert('พิมพ์ไม่ตรง — ยังไม่ได้ลบ'); return; }
+        const box = document.getElementById('trip-purge-info'); if (box) box.textContent = 'กำลังลบ…';
+        try {
+            const r = await fetch(`${API_BASE}/api/admin/trip-purge`, { method: 'POST', headers: H(), body: JSON.stringify({ confirm: 'ลบทริป' }) });
+            const j = await r.json(); if (!r.ok || !j.success) throw new Error(j.error || r.status);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([JSON.stringify(j.backup, null, 1)], { type: 'application/json' }));
+            a.download = `trip-backup-${new Date().toISOString().slice(0, 10)}.json`; document.body.appendChild(a); a.click(); a.remove();
+            if (box) box.innerHTML = `✅ ลบแล้ว ${j.total} แถว · ดาวน์โหลดไฟล์สำรอง trip-backup-….json แล้ว (เก็บไว้ในเครื่อง)`;
+        } catch (e) { if (box) box.textContent = 'ลบไม่สำเร็จ: ' + (e.message || e); }
+    }
+    return { check, run };
+})();
+window.TripPurge = TripPurge;
+
+/* ═══ 📱 v271 QR บอท LINE (เมนูซ้าย) — ถาม ID จริงจาก /api/line/bot-info ═══ */
+const LineQR = (() => {
+    let done = false;
+    async function load() {
+        if (done || !AppState?.userId) return; done = true;
+        const box = document.getElementById('line-qr-box'); if (!box) return;
+        try {
+            const r = await fetch(`${API_BASE}/api/line/bot-info`, { headers: { 'x-user-id': encodeURIComponent(getUserIdHeader()) } });
+            const j = await r.json();
+            if (!j.ok) { console.warn('LINE bot-info:', j.error); return; }
+            document.getElementById('line-qr-img').src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=' + encodeURIComponent(j.addUrl);
+            document.getElementById('line-qr-link').href = j.addUrl;
+            document.getElementById('line-qr-cap').textContent = `${j.displayName || 'บอท'} · ${j.basicId} — สแกน หรือแตะเพื่อเพิ่มเพื่อน แล้วส่งรูปสลิปเข้าแชท`;
+            box.hidden = false;
+            const ms = document.getElementById('ms-line-add'); if (ms) { ms.href = j.addUrl; ms.hidden = false; }
+        } catch (e) { done = false; console.warn('LINE bot-info', e); }
+    }
+    const t = setInterval(() => { if (AppState?.userId) { clearInterval(t); load(); } }, 1500);
+    return { load };
 })();

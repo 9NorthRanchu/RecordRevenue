@@ -4146,3 +4146,19 @@ frontend
 - ui-a.css (v=45) ท้ายไฟล์ บล็อก "v270": ช่องในแถวย่อย 15px สูง 34px, label 12px, หัวการ์ด 16px ยอดเงิน 17px
 - grid (จอ ≥769px): 92px · Company .65fr · Customer .55fr (เดิม 1.3/1.1) · Category 1fr · Amount minmax(150px,.75fr) · 84 · 92 · 84
 - วันที่หัวการ์ดเดิมถูกตัด ("30/10/202") → .rr-dwrap/.rr-date กว้าง 150px
+
+## v271 (2026-11-01) ปิดระบบทริป · หน้ารายงานแบบ ข. · อ่านง่ายทุกหน้า · QR บอท LINE จริง
+- 🧳 ทริป: index.js ไม่เรียก unified-trip.js / legacy-trip.js แล้ว → backend/src/trip-purge.js ตอบ 410 ทุก /api/trips* /api/travel /api/trip-* /api/wallets* /api/unified-trip
+  · GET/POST /api/admin/trip-purge (admin · ยืนยัน "ลบทริป") ลบทุกตาราง Trip* + Projects ที่เป็นทริป + บัญชี TRIP_HOLDING ที่ไม่มีรายการ + ผู้ใช้ TRIP_ONLY ที่ไม่เคยบันทึก · ตัด project_id ทริปออกจาก TransactionDetails (ไม่ลบรายการ) · คืน backup ทุกแถว → หน้าเว็บดาวน์โหลด trip-backup-YYYY-MM-DD.json
+  · ปุ่ม: ตั้งค่า › Backup/Restore › 🧳 ล้างข้อมูลทริป (app.js "TripPurge") · ข้อมูลจริงก่อนลบ: 2 ทริป (Hokkaido 2026, สวิตเซอร์แลนด์) 2 จุดแวะ · รายการในสมุดบัญชีที่ผูกทริป = 0
+  · หน้าเว็บ: เอาเมนูทริป (ซ้าย/มือถือ) · แท็บ Trip ในตั้งค่า · ช่องเข้าระบบเพื่อนร่วมทริป (ซ่อน) · view-travel + modal ทริป · รายงานทริป ออก
+  · ย้ายไป archive/trip-frontend-v271/: trip-unified-prototype, hunsa-prototype, puppup-prototype, guest.html, เทส money/slice-engine, สคริปต์ตรวจหน้าเว็บเดิม
+  · travel.js ยังโหลดอยู่ (มี getUserIdHeader ซ้ำกับ app.js — app.js โหลดทีหลังจึงชนะ) ฟังก์ชันทริปใน app.js ยังอยู่แต่ไม่มีทางเรียก
+- ✅ check-frontend.mjs / check-frontend-runtime.mjs เขียนใหม่: เดิมตรวจแค่หน้าทริป (ไม่เคยตรวจแอปหลัก!) ตอนนี้ตรวจ index.html+app.js: syntax · ฟังก์ชันที่เรียกแต่ไม่มี · onclick เรียกชื่อที่ไม่มี · ไฟล์อ้างอิง · ปีกกา CSS · รันใน jsdom แล้วเปิดทุกหน้า (ทดสอบแล้วว่าจับ error ได้จริง)
+- 📊 รายงานแบบ ข. (RepHome): เมนูซ้าย (ภาพรวม · ผู้รับ/ผู้จ่าย · ยอดสะสม statement · ภาษีหัก ณ ที่จ่าย · งบทดลอง) + ช่องขวา · ย้าย .report-section เดิมเข้า #rp-slot (โค้ดเดิมทำงานต่อ) · จำรายงานล่าสุด localStorage rr_rep_view_v271 · จอ <900px เมนูเป็นแถบเลื่อนด้านบน · .reports-tabs ซ่อน · เดือน WHT เริ่ม = เดือนนี้
+- 🔠 อ่านง่าย (font-mali.css v=5 ท้ายไฟล์ "v271 รอบ 3" + โหมดมืด): ตัวเล็กสุด 14px · สีจางใน style="" → เข้ม · ช่องกรอก ≥40px, มือถือ 16px (กัน iPhone ซูม) · ui-a.css #868E96 (38 จุด) → var(--ui-mute) ตามธีม
+  · ⚠️ ธีมตั้งที่ <body data-theme> ไม่ใช่ <html> → กฎ "เฉพาะธีมสว่าง" ต้องใช้ body:not([data-theme="dark"])
+  · ตรวจด้วยสคริปต์วัดขนาด/คอนทราสต์ (3 ขนาดจอ): สว่าง ตัวเล็ก 3,841→~13 · สีจาง 287→~3
+  · .top-header มี style="display:flex" → กฎซ่อนหัวหน้าใน ui-a.css (dashboard/reports) ไม่เคยทำงาน — หัวหน้าแสดงทุกหน้า
+- 📱 QR บอท LINE: เดิมเขียนตายตัว @recordrevenue (ไม่ใช่บอทจริง) → backend/src/line-info.js GET /api/line/bot-info ถาม LINE /v2/bot/info ได้ basicId จริง (cache 6 ชม.) · เมนูซ้ายแสดงทุกคน (เดิม admin) · มือถือ: "บอท LINE" ในเมนูเพิ่มเติม
+- เทส: backend/test/trip-purge.test.mjs (30) · ทุกไฟล์ผ่าน
