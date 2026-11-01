@@ -786,3 +786,22 @@ body.ui-dark .dl-k>div,body.ui-dark .dl-c,body.ui-dark .dl-tbl{background:#1E1B2
 /* v260 📥 คิวอ่านรูป */
 .ph-queue { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:#FFF9DB; color:#E67700; font-weight:700; font-size:.82rem; border:1px solid #FFE066; }
 .ph-queue[hidden] { display:none; }
+
+/* v270 🔠 การ์ดรอตรวจ: ตัวอักษรใหญ่ขึ้น · Company/Customer แคบลงครึ่งหนึ่ง · ยอดเงินกว้างขึ้น */
+#pending-cards-container .sub-row-item select,
+#pending-cards-container .sub-row-item input { height:34px !important; font-size:15px !important; line-height:26px !important; }
+#pending-cards-container .sub-row-label { font-size:12px !important; letter-spacing:.4px; margin-bottom:3px; }
+#pending-cards-container .sub-row-item { min-height:34px; }
+#pending-cards-container .tx-card-header input,
+#pending-cards-container .tx-card-header select,
+#pending-cards-container .tx-card-header .stmt-account-name { font-size:16px !important; }
+#pending-cards-container .tx-card-header .input-stmt-amount { font-size:17px !important; font-weight:700; }
+#pending-cards-container .tx-card-body, #pending-cards-container .tx-card-footer { font-size:15px; }
+@media (min-width:769px) {
+  #pending-cards-container .sub-row-grid { grid-template-columns:92px minmax(0,.65fr) minmax(0,.55fr) minmax(0,1fr) minmax(150px,.75fr) 84px 92px 84px; }
+  #pending-cards-container .sub-row-grid .input-amount, #pending-cards-container .sub-row-grid input[class*="amount"] { font-size:16px !important; font-weight:700; }
+}
+#pending-cards-container .tx-card-header input, #pending-cards-container .tx-card-header select { height:34px !important; }
+#pending-cards-container .tx-card-header .rr-dwrap { width:150px !important; min-width:150px !important; flex-shrink:0; }
+#pending-cards-container .tx-card-header .rr-date { width:150px !important; min-width:150px !important; }
+#pending-cards-container .tx-card-header .input-stmt-amount { width:150px !important; }

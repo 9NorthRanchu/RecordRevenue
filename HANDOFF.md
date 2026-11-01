@@ -4141,3 +4141,8 @@ frontend
 - แก้: wrapper `noAi(what, fn)` ครอบ importCardStatement / importStatementRows → error แสดง alert แทน ไม่ fallback AI
 - ทดสอบ Playwright end-to-end ไฟล์จริง: POST 25 แถว, IIPS total 20 · detail 20.2 · wht 0.2, ไม่มีการเรียก AI
 - North ต้องลบ statement 06/01–08/13 (4TNJL) ของ A15 แล้วนำเข้า 2606_2608 ใหม่
+
+## v270 (2026-11-01) การ์ดรอตรวจ: ตัวใหญ่ขึ้น + สัดส่วนช่องใหม่
+- ui-a.css (v=45) ท้ายไฟล์ บล็อก "v270": ช่องในแถวย่อย 15px สูง 34px, label 12px, หัวการ์ด 16px ยอดเงิน 17px
+- grid (จอ ≥769px): 92px · Company .65fr · Customer .55fr (เดิม 1.3/1.1) · Category 1fr · Amount minmax(150px,.75fr) · 84 · 92 · 84
+- วันที่หัวการ์ดเดิมถูกตัด ("30/10/202") → .rr-dwrap/.rr-date กว้าง 150px
