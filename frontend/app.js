@@ -7082,7 +7082,7 @@ async function parseTextStatement(pdf) {
     const tc = await page.getTextContent();
     const items = tc.items.filter(it => it.str && it.str.trim() && !/^[lI|]{1,4}$/.test(it.str.trim())).map(it => { const [a, b] = it.transform, rot = Math.abs(b) > Math.abs(a);
       /* 2026-10-31 · กรุงไทย Business (JasperReports): หน้าแนวนอนที่ตัวหนังสือหมุน 90° → แถว = แกน x · คอลัมน์ = แกน y → สลับแกนกลับให้เป็นแนวปกติ */
-      return { x: rot ? (b > 0 ? it.transform[5] : -it.transform[5]) : it.transform[4], y: rot ? (b > 0 ? -it.transform[4] : it.transform[4]) : it.transform[5], s: it.str.trim(), w: it.width || 0 }; });   // ตัดขีดขอบกระดาษ "l"/"ll" (2026-10-30)
+      return { x: rot ? (b > 0 ? it.transform[5] : -it.transform[5]) : it.transform[4], y: rot ? (b > 0 ? -it.transform[4] : it.transform[4]) : it.transform[5], s: it.str.trim().replace(/[\u0158-\u0161]/g, c => String(c.charCodeAt(0) - 0x158)), w: it.width || 0 }; });   /* v266 กรุงไทย: ตัวเลขในฟอนต์ฝังแสดงเป็น Ř–š (U+0158…0161 = 0…9) เช่น /řŘŠŞŠŚ = /108682 */   // ตัดขีดขอบกระดาษ "l"/"ll" (2026-10-30)
     textChars += items.reduce((n, it) => n + it.s.length, 0);
     if (allTxt.length < 20000) allTxt += items.map(it => it.s).join(' ') + '\n';
     /* 2026-10-30 · SCB: วันที่กับเวลาอยู่ช่องเดียว "05/01/26 22:02" → แยกเป็น 2 ช่อง (เดิมไม่เจอวันที่ → "ไม่พบตารางรายการ") */
