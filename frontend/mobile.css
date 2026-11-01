@@ -259,3 +259,30 @@ body[data-theme="dark"] .neg { color:#FF8787; } body[data-theme="dark"] .pos { c
   #view-pending #pending-cards-container .tx-card textarea, #view-pending #pending-cards-container .tx-card .rr-dwrap .rr-date { font-size:16px !important; }
   #view-history .content-view span, #view-history span { font-size:max(13.5px, 1em); }
 }
+
+/* v279 ภาพรวม › ครอบครัว & ธุรกิจ (มือถือ): การ์ดกว้างเกินจอและเลื่อนดูไม่ได้ → บีบให้พอดีจอ ข้อความขึ้นบรรทัดใหม่ */
+@media (max-width:768px) {
+  .mh-accb, .mh-accb > *, #fam-home, #fam-home * { min-width:0 !important; max-width:100%; box-sizing:border-box; }
+  #fam-home .fv { padding:10px !important; border:0 !important; background:transparent !important; }
+  .mh-accb #fam-home .fv-h > b { display:none; }   /* หัวซ้ำกับหัวที่พับ */
+  #fam-home .fv-h { flex-wrap:wrap !important; }
+  #fam-home .fv-tabs { width:100%; } #fam-home .fv-tabs button { flex:1; min-height:40px; font-size:14px !important; }
+  #fam-home .fv-k { grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important; gap:8px !important; }
+  #fam-home .fv-k > div { padding:9px 10px !important; }
+  #fam-home .fv-k b { font-size:1.05rem !important; overflow-wrap:anywhere; }
+  #fam-home .fv-k small, #fam-home .fv-k i { white-space:normal !important; overflow-wrap:anywhere; }
+  #fam-home .fv-mem { grid-template-columns:minmax(0,1fr) !important; }
+  #fam-home .fv-m * { white-space:normal !important; overflow-wrap:anywhere; }
+  #fam-home .fv-tbl { overflow-x:auto !important; }
+  #fam-home .fv-tr { grid-template-columns:minmax(0,1fr) auto !important; }
+  #fam-home .fv-tr > :nth-child(n+3):not(:last-child) { display:none !important; }
+  #fam-home li, #fam-home .fv-l, #fam-home .fv-l * , #fam-home [class*="fv-log"], #fam-home [class*="fv-act"] { white-space:normal !important; overflow-wrap:anywhere; text-overflow:clip !important; }
+}
+@media (max-width:768px) { #fam-home .fv-tabs button { white-space:nowrap; font-size:13.5px !important; padding:6px 4px !important; } }
+
+/* v279 มือถือ: เนื้อหาท้ายหน้าไม่ถูกแถบเมนูล่างบัง — เว้นที่ว่างท้ายหน้า = ความสูงเมนูล่าง + แถบโฮมของ iPhone */
+@media (max-width:768px) {
+  .main-content { padding-bottom:calc(110px + env(safe-area-inset-bottom)) !important; scroll-padding-bottom:calc(110px + env(safe-area-inset-bottom)); }
+  .content-view { padding-bottom:0 !important; }
+  body.st-in #view-settings .settings-section-content.active, body.st-in #view-settings .settings-section-content:not(.hidden) { padding-bottom:24px !important; }
+}
