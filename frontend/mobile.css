@@ -254,3 +254,8 @@ body[data-theme="dark"] .neg { color:#FF8787; } body[data-theme="dark"] .pos { c
   #report-stmt-section .sr-filter > .rr-dwrap, #report-stmt-section .sr-filter > input[type=date] { width:100% !important; min-width:0 !important; flex:none !important; }
   #report-stmt-section .sr-filter > span { text-align:center; }
 }
+@media (max-width:768px) {
+  #view-pending #pending-cards-container .tx-card input:not([type=checkbox]):not([type=radio]), #view-pending #pending-cards-container .tx-card select,
+  #view-pending #pending-cards-container .tx-card textarea, #view-pending #pending-cards-container .tx-card .rr-dwrap .rr-date { font-size:16px !important; }
+  #view-history .content-view span, #view-history span { font-size:max(13.5px, 1em); }
+}

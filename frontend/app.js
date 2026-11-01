@@ -17424,3 +17424,19 @@ function PendHeroPhone() {
 (() => { try { let last = null; window.matchMedia('(max-width:768px)').addEventListener('change', e => { if (last === e.matches) return; last = e.matches;
     if (AppState?.activeView === 'pending') { PendReview.mount(); PendCardA.scan(); PendHeroPhone(); } }); } catch { /* */ } })();
 try { new MutationObserver(() => { if (isPhone()) { clearTimeout(window._phT); window._phT = setTimeout(PendHeroPhone, 50); } }).observe(document.getElementById('pending-hero') || document.body, { childList: true }); } catch { /* */ }
+
+/* v278 (North: "หน้าเพิ่มรายการค่าใช้จ่าย พิมพ์ตัวเลขแล้วมี 0 แสดงเพิ่มมา")
+   ช่องยอดเงิน/ค่าธรรมเนียม/ภาษี ขึ้นต้นเป็น "0.00" → แตะแล้วพิมพ์ ตัวเลขไปต่อท้าย 0.00 · ตอนนี้: ช่องที่เป็น 0 แตะแล้วว่างให้พิมพ์ใหม่ · ช่องที่มีตัวเลขแตะแล้วเลือกทั้งหมด (พิมพ์ทับได้เลย) */
+document.addEventListener('focusin', e => {
+    const t = e.target;
+    if (!t?.matches?.('.input-stmt-amount, .input-amount, .input-fee, .input-wht, .grid-tx-amount, .grid-fee, .grid-wht, .pr-f input[inputmode="decimal"]')) return;
+    const v = typeof parseAmountInput === 'function' ? parseAmountInput(t.value || '0') : Number(String(t.value).replace(/[,()]/g, ''));
+    if (!v) t.value = '';
+    else { t._selAll = true; setTimeout(() => { try { t.select(); t.setSelectionRange(0, t.value.length); } catch { /* */ } }, 0); }
+});
+/* แตะ/คลิกครั้งแรกหลังโฟกัส เบราว์เซอร์ย้ายเคอร์เซอร์ไปจุดที่แตะ → คงการเลือกทั้งหมดไว้ (เหมือนช่องวันที่ v255) */
+['mouseup', 'touchend'].forEach(ev => document.addEventListener(ev, e => {
+    const t = e.target; if (!t?._selAll) return; t._selAll = false;
+    if (ev === 'mouseup') e.preventDefault();
+    setTimeout(() => { try { t.setSelectionRange(0, t.value.length); } catch { /* */ } }, 0);
+}, true));
