@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Prompt:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Mitr:wght@400;500;600;700&family=Nunito+Sans:wght@400;600;700;800&family=Anuphan:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=129">
-    <link rel="stylesheet" href="ui-a.css?v=48">
+    <link rel="stylesheet" href="ui-a.css?v=50">
     <!-- ⚡ 2026-10-30: ไลบรารีทั้งหมดย้ายไปท้ายหน้า + defer → หน้าขึ้นก่อน ไม่ต้องรอดาวน์โหลด ~2MB -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Mali:wght@300;400;500;600;700&display=swap" rel="stylesheet">   <!-- ฟอนต์ Mali ทั้งแอป (2026-10-31) -->
@@ -116,6 +116,7 @@
                             <option value="ghibli">🌿 Ghibli (ฟ้า · เขียว · ครีม)</option>
                         </select>
                     </div>
+                    <button type="button" class="sb-theme-btn" onclick="document.getElementById('theme-pop').hidden=!document.getElementById('theme-pop').hidden" aria-label="เปลี่ยนธีม" title="เปลี่ยนธีม">🎨</button>
                     <button id="btn-logout" class="btn btn-danger btn-block"><i class="fa-solid fa-power-off"></i> <span>ออกจากระบบ</span></button>
                 </div>
             </aside>
@@ -884,11 +885,7 @@
                                 <span id="settings-view-label" style="font-size:0.75rem; color:var(--text-secondary,#94a3b8);">แสดงข้อมูลทั้งหมดในระบบ</span>
                             </div>
 
-                            <!-- ธีม (2026-10-15) — บนมือถือไม่มีเมนูซ้าย จึงเลือกธีมที่นี่ได้ด้วย -->
-                            <div class="st-theme"><span>🎨 ธีม</span>
-                                <button type="button" data-th="purple">💜 ม่วงนุ่ม</button><button type="button" data-th="dark">🌙 โหมดมืด</button>
-                                <select aria-label="ธีมอื่น" data-th-sel><option value="">ธีมอื่น…</option><option value="kawaii">🎀 Kawaii</option><option value="sakura">🌸 Sakura</option><option value="fuji">🗻 Fuji</option><option value="hokkaido">❄️ Hokkaido</option><option value="anime">🍃 Anime</option><option value="ghibli">🌿 Ghibli</option></select>
-                            </div>
+                            <!-- v274 ธีมย้ายไปอยู่ในเมนู (มือถือ: เมนูเพิ่มเติม · iPad: ปุ่ม 🎨 เมนูซ้าย · PC: ท้ายเมนูซ้าย) -->
                             <div class="settings-tabs" style="display: flex; flex-wrap: nowrap; gap: 4px; padding-bottom: 8px;">
                                 <button class="settings-tab active" data-settings-tab="entities">👑 Company</button>
                                 <button class="settings-tab" data-settings-tab="contacts">👥 Customer</button>
@@ -1347,6 +1344,9 @@
             <a href="#" class="nav-item" data-target="history"><i class="fa-solid fa-clock-rotate-left"></i><span>ประวัติ</span></a>
             <a href="#" class="nav-more nav-item-more" onclick="document.getElementById('more-sheet').hidden=false;return false" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:.66rem;font-weight:bold;color:var(--text-secondary);text-decoration:none"><i class="fa-solid fa-ellipsis" style="font-size:1.2rem"></i><span>เพิ่มเติม</span></a>
         </nav>
+        <div id="theme-pop" hidden onclick="if(event.target===this)this.hidden=true"><div class="tp-box"><div class="st-theme"><span>🎨 ธีม</span><button type="button" data-th="purple">💜 ม่วงนุ่ม</button><button type="button" data-th="dark">🌙 โหมดมืด</button>
+                                <select aria-label="ธีมอื่น" data-th-sel><option value="">ธีมอื่น…</option><option value="kawaii">🎀 Kawaii</option><option value="sakura">🌸 Sakura</option><option value="fuji">🗻 Fuji</option><option value="hokkaido">❄️ Hokkaido</option><option value="anime">🍃 Anime</option><option value="ghibli">🌿 Ghibli</option></select>
+                            </div></div></div>
         <div id="more-sheet" hidden onclick="if(event.target===this)this.hidden=true">
             <div class="ms-box">
                 <div class="ms-head"><span>เมนูทั้งหมด</span><button type="button" onclick="document.getElementById('more-sheet').hidden=true" aria-label="ปิด">✕</button></div>
@@ -1359,6 +1359,9 @@
                     <a href="#" id="ms-line-add" class="ms-item" target="_blank" rel="noopener" hidden><i class="fa-brands fa-line"></i>บอท LINE</a>
                     <a href="#" class="nav-item ms-item" data-target="settings"><i class="fa-solid fa-gear"></i>ตั้งค่า</a>
                 </div>
+                <div class="st-theme ms-theme"><span>🎨 ธีม</span><button type="button" data-th="purple">💜 ม่วงนุ่ม</button><button type="button" data-th="dark">🌙 โหมดมืด</button>
+                                <select aria-label="ธีมอื่น" data-th-sel><option value="">ธีมอื่น…</option><option value="kawaii">🎀 Kawaii</option><option value="sakura">🌸 Sakura</option><option value="fuji">🗻 Fuji</option><option value="hokkaido">❄️ Hokkaido</option><option value="anime">🍃 Anime</option><option value="ghibli">🌿 Ghibli</option></select>
+                            </div>
             </div>
         </div>
 
@@ -1614,63 +1617,51 @@
         </div>
 
         <!-- User Registration Modal -->
+        <!-- v273 👥 หน้าแก้ไขสมาชิก/สิทธิ์ (North: "ออกแบบให้สวยงาม ใช้งานง่าย") — id เดิมทั้งหมด saveUserItem() ใช้ต่อได้ · โค้ด app.js openUserModal / UserForm -->
         <div id="user-modal" class="modal hidden">
-            <div class="modal-content glass modal-md">
-                <div class="modal-header">
-                    <h3 id="user-modal-title">ลงทะเบียนสมาชิกครอบครัว</h3>
-                    <span class="close-user-modal">&times;</span>
+            <div class="modal-content um-box">
+                <div class="um-head">
+                    <div class="um-av" id="um-av">?</div>
+                    <div class="um-ht"><h3 id="user-modal-title">ลงทะเบียนสมาชิกครอบครัว</h3><small id="um-sub">กรอกข้อมูลแล้วเลือก Company ที่ให้เข้าถึง</small></div>
+                    <button type="button" class="close-user-modal um-x" aria-label="ปิด">&times;</button>
                 </div>
-                <div class="modal-body">
-                    <form id="user-form">
-                        <input type="hidden" id="user-old-id-input">
-                        <div class="grid-two-cols">
-                            <div class="input-group">
-                                <label for="user-id-input">Username / User ID</label>
-                                <input type="text" id="user-id-input" required placeholder="เช่น Usr_C">
+                <form id="user-form" class="um-form" autocomplete="off">
+                    <input type="hidden" id="user-old-id-input">
+                    <div class="um-body">
+                        <section class="um-sec">
+                            <h4><span>1</span> ข้อมูลเข้าใช้งาน</h4>
+                            <div class="um-grid">
+                                <label class="um-f"><span>ชื่อผู้ใช้ (ใช้เข้าระบบ)</span><input type="text" id="user-id-input" required placeholder="เช่น Puii" autocapitalize="off"></label>
+                                <label class="um-f"><span>ชื่อที่แสดง</span><input type="text" id="user-name-input" required placeholder="เช่น ปุ้ย"></label>
+                                <label class="um-f"><span>อีเมล</span><input type="email" id="user-email-input" required placeholder="member@example.com"></label>
+                                <label class="um-f"><span>รหัสผ่าน</span><span class="um-pw"><input type="password" id="user-password-input" required placeholder="รหัสผ่านเข้าใช้" autocomplete="new-password"><button type="button" class="um-eye" onclick="UserForm.eye()" aria-label="แสดงรหัสผ่าน"><i class="fa-solid fa-eye"></i></button></span></label>
                             </div>
-                            <div class="input-group">
-                                <label for="user-name-input">ชื่อสมาชิก</label>
-                                <input type="text" id="user-name-input" required placeholder="เช่น นาย ค">
+                        </section>
+                        <section class="um-sec">
+                            <h4><span>2</span> ระดับสิทธิ์</h4>
+                            <select id="user-role-select" hidden><option value="member">member</option><option value="admin">admin</option></select>
+                            <div class="um-roles" role="radiogroup">
+                                <button type="button" class="um-role" data-role="member" role="radio" onclick="UserForm.role('member')"><i>👤</i><b>สมาชิก</b><small>เห็นและบันทึกได้เฉพาะ Company ที่เลือกด้านล่าง</small></button>
+                                <button type="button" class="um-role" data-role="admin" role="radio" onclick="UserForm.role('admin')"><i>👑</i><b>ผู้ดูแลระบบ</b><small>เห็นและแก้ไขได้ทุกอย่าง · ตั้งค่า · จัดการสมาชิก</small></button>
                             </div>
-                        </div>
-                        <div class="grid-two-cols">
-                            <div class="input-group">
-                                <label for="user-email-input">อีเมล</label>
-                                <input type="email" id="user-email-input" required placeholder="member@example.com">
-                            </div>
-                            <div class="input-group">
-                                <label for="user-password-input">รหัสผ่าน</label>
-                                <input type="text" id="user-password-input" required placeholder="รหัสผ่านเข้าใช้">
-                            </div>
-                        </div>
-                        <div class="grid-two-cols">
-                            <div class="input-group">
-                                <label for="user-role-select">สิทธิ์การใช้งานระบบ</label>
-                                <select id="user-role-select">
-                                    <option value="member">สมาชิกครอบครัวทั่วไป (Member)</option>
-                                    <option value="admin">ผู้ดูแลระบบ (Admin)</option>
-                                </select>
-                            </div>
-                            <div class="input-group">
-                                <label for="user-line-id-input">LINE User ID (ถ้ามี)</label>
-                                <input type="text" id="user-line-id-input" placeholder="เช่น U1234567890abcdef...">
-                            </div>
-                        </div>
-                        
-                        <!-- Entity Access Checkboxes -->
-                        <div class="input-group">
-                            <label style="margin-bottom:10px; display:block;">กำหนดสิทธิ์การเข้าถึงบัญชีคุมหลัก (Company Permissions)</label>
-                            <div id="user-permissions-checkboxes" style="background: rgba(255,255,255,0.5); padding:15px; border-radius:10px; max-height:150px; overflow-y:auto; border:1px solid rgba(0,0,0,0.05);">
-                                <!-- checkboxes rendered dynamically -->
-                            </div>
-                        </div>
-
-                        <div class="modal-footer" style="margin-top:20px;">
-                            <button type="button" class="btn btn-secondary close-user-btn">ยกเลิก</button>
-                            <button type="submit" class="btn btn-primary">บันทึกข้อมูลสมาชิก</button>
-                        </div>
-                    </form>
-                </div>
+                        </section>
+                        <section class="um-sec">
+                            <h4><span>3</span> Company ที่เข้าถึงได้ <em id="um-count"></em></h4>
+                            <div class="um-admin-note" id="um-admin-note" hidden>👑 ผู้ดูแลระบบเข้าถึงทุก Company อัตโนมัติ ไม่ต้องเลือก</div>
+                            <div class="um-tools" id="um-tools"><input type="search" id="um-q" placeholder="🔍 ค้นหา Company" oninput="UserForm.filter(this.value)"><button type="button" onclick="UserForm.all(true)">เลือกทั้งหมด</button><button type="button" onclick="UserForm.all(false)">ล้าง</button></div>
+                            <div id="user-permissions-checkboxes" class="um-ents"></div>
+                        </section>
+                        <section class="um-sec">
+                            <h4><span>4</span> เชื่อม LINE <em id="um-line-st"></em></h4>
+                            <label class="um-f"><span>LINE User ID</span><input type="text" id="user-line-id-input" placeholder="U1234567890abcdef…" autocapitalize="off" oninput="UserForm.lineSt()"></label>
+                            <p class="um-help">ให้สมาชิกสแกน QR บอท LINE (เมนูซ้าย) แล้วส่งข้อความอะไรก็ได้ บอทจะตอบรหัสที่ขึ้นต้นด้วย U กลับมา — นำมาวางช่องนี้ จากนั้นส่งสลิปเข้าแชทได้เลย</p>
+                        </section>
+                    </div>
+                    <div class="modal-footer um-foot">
+                        <button type="button" class="btn btn-secondary close-user-btn">ยกเลิก</button>
+                        <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> บันทึก</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -1686,7 +1677,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script defer src="travel.js?v=105"></script>
-    <script defer src="app.js?v=272"></script>
+    <script defer src="app.js?v=274"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">

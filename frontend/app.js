@@ -311,7 +311,7 @@ function bindSettingsTheme() {
     const set = t => { if (!t || !sel) return; sel.value = t; sel.dispatchEvent(new Event('change')); mark(); };
     const mark = () => document.querySelectorAll('.st-theme [data-th]').forEach(b => b.classList.toggle('on', b.dataset.th === document.body.dataset.theme));
     document.querySelectorAll('.st-theme [data-th]').forEach(b => b.onclick = () => set(b.dataset.th));
-    const s2 = document.querySelector('.st-theme [data-th-sel]'); if (s2) s2.onchange = () => { set(s2.value); s2.value = ''; };
+    document.querySelectorAll('.st-theme [data-th-sel]').forEach(s2 => s2.onchange = () => { set(s2.value); s2.value = ''; });   /* v274 ธีมอยู่หลายที่ (เมนูมือถือ / ป๊อปอัป iPad) */
     mark();
 }
 function initTheme() {
@@ -1357,7 +1357,7 @@ function switchView(viewName) {
 
     // หน้า Settings: ล็อกไม่ให้ main-content เลื่อน (เลื่อนเฉพาะกรอบข้อมูลด้านใน)
     const _mc = document.querySelector('.main-content');
-    if (_mc) _mc.style.overflowY = (viewName === 'settings') ? 'hidden' : 'auto';
+    if (_mc) _mc.style.overflowY = (viewName === 'settings' && window.innerWidth > 768) ? 'hidden' : 'auto';   /* v274 มือถือ: หน้าตั้งค่าเลื่อนทั้งหน้าได้ */
     
     // Update active nav items
     const navItems = document.querySelectorAll(".nav-item");
@@ -6764,16 +6764,7 @@ function openUserModal(userId = '') {
     const idInput = document.getElementById("user-id-input");
     const title = document.getElementById("user-modal-title");
 
-    const permsContainer = document.getElementById("user-permissions-checkboxes");
-    permsContainer.innerHTML = '';
-    
-    permsContainer.innerHTML += AppState.settings.entities.map(ent => `
-            <div style="margin-bottom:6px;">
-                <label style="font-weight:normal; cursor:pointer;">
-                    <input type="checkbox" class="user-perm-checkbox" value="${ent.entity_id}"> ${ent.name}
-                </label>
-            </div>
-        `).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
+    UserForm.renderEnts();   /* v273 การ์ด Company แยก ส่วนตัว / ธุรกิจ */
 
     if (userId) {
         title.innerText = `แก้ไขสิทธิ์สมาชิก: ${userId}`;
@@ -6798,6 +6789,7 @@ function openUserModal(userId = '') {
                 }
             });
         }
+        UserForm.after(u);
     } else {
         title.innerText = "ลงทะเบียนสมาชิกครอบครัวใหม่";
         idInput.value = '';
@@ -6810,8 +6802,58 @@ function openUserModal(userId = '') {
         document.getElementById("user-password-input").placeholder = 'รหัสผ่านเข้าใช้';
         document.getElementById("user-role-select").value = 'member';
         document.getElementById("user-line-id-input").value = '';
+        UserForm.after(null);
     }
 }
+
+/* ═══ 👥 v273 หน้าแก้ไขสมาชิก: การ์ดระดับสิทธิ์ · การ์ด Company · ค้นหา · นับที่เลือก · สถานะ LINE ═══ */
+const UserForm = (() => {
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const split = n => { const m = /^\s*\[([^\]]+)\]\s*(.*)$/.exec(n || ''); return m ? [m[1], m[2] || n] : ['', n || '']; };
+    function renderEnts() {
+        const box = $('user-permissions-checkboxes'); if (!box) return;
+        const ents = AppState.settings?.entities || [];
+        const card = e => { const [code, name] = split(e.name);
+            return `<label class="um-ent" data-q="${esc((e.name + ' ' + e.entity_id).toLowerCase())}"><input type="checkbox" class="user-perm-checkbox" value="${esc(e.entity_id)}" onchange="UserForm.count()">
+              <span class="um-ck"><i class="fa-solid fa-check"></i></span><span class="um-en">${code ? `<em>${esc(code)}</em>` : ''}<b>${esc(name)}</b></span></label>`; };
+        const per = ents.filter(e => !Number(e.is_company)), biz = ents.filter(e => Number(e.is_company));
+        box.innerHTML = (per.length ? `<div class="um-grp">👤 ส่วนตัว</div><div class="um-egrid">${per.map(card).join('')}</div>` : '')
+            + (biz.length ? `<div class="um-grp">🏢 ธุรกิจ</div><div class="um-egrid">${biz.map(card).join('')}</div>` : '')
+            || '<div class="um-help">ยังไม่มี Company — เพิ่มได้ที่ ตั้งค่า › Company</div>';
+    }
+    function count() {
+        const all = document.querySelectorAll('.user-perm-checkbox'), on = document.querySelectorAll('.user-perm-checkbox:checked');
+        const el = $('um-count'); if (el) el.textContent = `เลือก ${on.length} จาก ${all.length}`;
+    }
+    function role(r) {
+        const sel = $('user-role-select'); if (sel) sel.value = r;
+        document.querySelectorAll('.um-role').forEach(b => { const on = b.dataset.role === r; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+        const admin = r === 'admin';
+        $('um-admin-note').hidden = !admin; $('um-tools').hidden = admin;
+        $('user-permissions-checkboxes').classList.toggle('um-dim', admin);
+    }
+    function lineSt() {
+        const v = ($('user-line-id-input')?.value || '').trim(), el = $('um-line-st'); if (!el) return;
+        el.className = v ? (/^U[0-9a-f]{32}$/i.test(v) ? 'ok' : 'bad') : '';
+        el.textContent = v ? (/^U[0-9a-f]{32}$/i.test(v) ? '✓ เชื่อมแล้ว' : '⚠️ รูปแบบไม่ถูก (ต้องขึ้นต้น U ตามด้วย 32 ตัว)') : 'ยังไม่เชื่อม';
+    }
+    function after(u) {
+        const name = u?.name || '', av = $('um-av');
+        if (av) av.textContent = (name || '+').trim().slice(0, 2).toUpperCase();
+        const sub = $('um-sub'); if (sub) sub.textContent = u ? `รหัสผู้ใช้ ${u.user_id}${u.email ? ' · ' + u.email : ''}` : 'กรอกข้อมูลแล้วเลือก Company ที่ให้เข้าถึง';
+        if (u) $('user-modal-title').textContent = `แก้ไขสมาชิก: ${name || u.user_id}`;
+        const q = $('um-q'); if (q) { q.value = ''; filter(''); }
+        const pw = $('user-password-input'); if (pw) pw.type = 'password';
+        role($('user-role-select')?.value || 'member'); count(); lineSt();
+    }
+    function filter(v) { const q = String(v || '').trim().toLowerCase();
+        document.querySelectorAll('#user-permissions-checkboxes .um-ent').forEach(l => { l.hidden = !!q && !l.dataset.q.includes(q); }); }
+    function all(on) { document.querySelectorAll('#user-permissions-checkboxes .um-ent:not([hidden]) .user-perm-checkbox').forEach(c => { c.checked = on; }); count(); }
+    function eye() { const pw = $('user-password-input'); if (pw) pw.type = pw.type === 'password' ? 'text' : 'password'; }
+    return { renderEnts, count, role, lineSt, after, filter, all, eye };
+})();
+window.UserForm = UserForm;
 
 async function saveUserItem(e) {
     e.preventDefault();
