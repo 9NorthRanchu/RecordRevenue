@@ -4092,3 +4092,9 @@ frontend
   · /api/inbox/{id}/link {transaction_id, order_index} → แนบทีละ order
 - findCandidates รับ ev.from / ev.to · SlipReview: แสดงรายการ order ในรูป + ปุ่มเลือกรายการให้ order ที่ยอดซ้ำ · TYPES + ORDER_LIST
 - test/ledger-inbox.test.mjs 216 ผ่าน
+
+## v262 (2026-11-01) ปรับตามรูปตัวอย่างจริงของ North (LINE MAN ประวัติสั่งอาหาร · Lazada order ที่ยกเลิก)
+- prompt ORDER_LIST: รวมแอปอาหาร/เรียกรถ (LINE MAN · Grab · Robinhood · foodpanda) · merchant = ชื่อแอป · orders[].status completed/cancelled · ข้าม order ที่ยอดถูกตัดขอบ · แปลงเดือนไทย/พ.ศ. · รูปถ่ายจอเอียงก็อ่าน
+- order ยกเลิก (CANCELLED): หาทั้งรายการตัดเงิน (−) และเงินคืน (+) ยอดเดียวกันใน 45 วัน → แนบทั้งคู่ · Detail "… · ยกเลิก/คืนเงิน" · ไม่นับเป็นงานค้าง
+- fillOrderNote ไม่ใส่ "Shopee" เป็นค่าเริ่มต้นแล้ว (ใช้ชื่อแอปจากรูป)
+- test/ledger-inbox.test.mjs 220 ผ่าน

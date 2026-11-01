@@ -336,9 +336,13 @@ Return ONLY JSON:
 For SLIP keep masked account numbers exactly as printed (e.g. "xxx-x-x1234-x"). amount is positive.
 E-wallet (TrueMoney, ShopeePay, Rabbit LINE Pay) payment/transfer receipts are "SLIP" (sender = the wallet owner when paying out).
 A single Shopee/Lazada order screenshot = "ORDER" with amount = total paid.
-If the image shows SEVERAL Shopee/Lazada/online ORDERS (order list "การซื้อของฉัน", several order cards, or one checkout with several shops), set doc_type to "ORDER_LIST",
-amount to null, and add "orders":[{"date":"YYYY-MM-DD or null if no date is printed","amount":0,"shop":"shop name","items":"short product names (max 80 chars)","order_no":"or null"}]
-— one entry per order, amount = that order's total paid ("รวมการสั่งซื้อ / ยอดคำสั่งซื้อทั้งหมด / Order Total"), never the price of a single item. Also add "merchant":"Shopee" / "Lazada".
+If the image shows SEVERAL online ORDERS — shopping apps (Shopee, Lazada, TikTok Shop) or food/ride apps (LINE MAN, Grab, Robinhood, foodpanda): order list "การซื้อของฉัน / รายการสั่งซื้อ / ประวัติ",
+several order cards, or one checkout with several shops — set doc_type to "ORDER_LIST", amount to null, and add
+"merchant":"the APP name (Shopee / Lazada / LINE MAN / Grab / Robinhood / foodpanda …) — not the shop",
+"orders":[{"date":"YYYY-MM-DD or null if no date is printed","amount":0,"shop":"shop/restaurant name","items":"short product names (max 80 chars)","order_no":"or null","status":"completed | cancelled"}]
+— one entry per order, amount = that order's total paid ("รวมการสั่งซื้อ / รวมทั้งสิ้น / ยอดคำสั่งซื้อทั้งหมด / Order Total", or the order price shown on the card), never the price of a single item.
+status "cancelled" when the order says ยกเลิกแล้ว / คืนเงินเรียบร้อย / Cancelled / Refunded. SKIP an order whose total is cut off or not visible (do not guess).
+Thai dates: convert month names (ต.ค. = 10 …); a year above 2400 is Buddhist Era → subtract 543. The photo may be taken of a phone screen at an angle — read it anyway.
 If the image shows a LIST of many bank/wallet transactions (wallet history, statement page), set doc_type to "LIST" and amount to null.
 amount = the money that actually left/entered the account ("จำนวนเงินที่ชำระ", "Amount"), NOT the price before a government co-payment or discount
 (ไทยช่วยไทย, คนละครึ่ง, coupons). Put the breakdown in "subsidy_note", e.g. "ค่าสินค้า 200 · สิทธิไทยช่วยไทยพลัส -120".
@@ -649,6 +653,16 @@ async function processOrderList(env, user, doc, ex) {
     const amt = round2(Math.abs(Number(o.amount) || 0)); if (!(amt > 0)) { results.push({ ...o, status: 'SKIP' }); continue; }
     const hasDate = /^\d{4}-\d{2}-\d{2}$/.test(o.date || '');
     const ev = { signedAmount: -amt, date: hasDate ? o.date : up, time: null, ref: null, ...(hasDate ? {} : { from: shiftDate(up, -120), to: shiftDate(up, 7) }) };
+    /* v261b: order ที่ยกเลิก/คืนเงิน → ไม่ใช่ค่าใช้จ่าย · ถ้าเจอทั้งรายการตัดเงินและเงินคืน (ยอดเดียวกัน ภายใน 45 วัน) ตัวละรายการเดียว → แนบรูปให้ทั้งคู่ไว้เป็นหลักฐาน */
+    if (/cancel|refund|ยกเลิก|คืนเงิน/i.test(String(o.status || ''))) {
+      const win = { from: hasDate ? shiftDate(o.date, -3) : shiftDate(up, -120), to: hasDate ? shiftDate(o.date, 45) : shiftDate(up, 7) };
+      const pay = (await findCandidates(env, accounts, { ...ev, ...win })).filter(c => !used.has(c.transaction_id));
+      const back = (await findCandidates(env, accounts, { ...ev, signedAmount: amt, ...win })).filter(c => !used.has(c.transaction_id));
+      const got = [pay.length === 1 ? pay[0] : null, back.length === 1 ? back[0] : null].filter(Boolean);
+      for (const t of got) { used.add(t.transaction_id); await linkDoc(env, doc.doc_id, t.transaction_id, 'SUPPORT'); await fillOrderNote(env, t.transaction_id, { ...o, merchant: ex.merchant, items: `ยกเลิก/คืนเงิน · ${o.items || ''}` }); }
+      results.push({ ...o, amount: amt, status: 'CANCELLED', transaction_ids: got.map(t => t.transaction_id) });
+      continue;
+    }
     let cands = (await findCandidates(env, accounts, ev)).filter(c => !used.has(c.transaction_id));
     if (cands.length > 1) {   // มีรูปคำสั่งซื้อแนบอยู่แล้ว = ของ order อื่น
       const taken = new Set(((await env.DB.prepare(`SELECT l.transaction_id FROM LedgerDocLinks l JOIN LedgerDocs d ON d.doc_id = l.doc_id WHERE l.transaction_id IN (${cands.map(() => '?').join(',')}) AND d.doc_id != ? AND d.doc_type IN ('ORDER','ORDER_LIST','RECEIPT')`)
@@ -662,15 +676,15 @@ async function processOrderList(env, user, doc, ex) {
       results.push({ ...o, amount: amt, status: 'ATTACHED', transaction_id: t.transaction_id, tx_date: String(t.date).slice(0, 10) });
     } else results.push({ ...o, amount: amt, status: cands.length ? 'CHOOSE' : 'WAIT', choices: cands.slice(0, 5).map(c => ({ transaction_id: c.transaction_id, date: c.date, total_amount: c.total_amount })) });
   }
-  const n = results.filter(r => r.status === 'ATTACHED').length, all = results.filter(r => r.status !== 'SKIP').length;
-  const done = n === all && n > 0;
+  const n = results.filter(r => r.status === 'ATTACHED').length, all = results.filter(r => !['SKIP', 'CANCELLED'].includes(r.status)).length, nc = results.filter(r => r.status === 'CANCELLED').length;
+  const done = n === all && (n > 0 || nc > 0);
   await setDoc(env, doc.doc_id, { status: done ? 'DONE' : 'STORED', transaction_id: results.find(r => r.transaction_id)?.transaction_id || null,
-    suggestion: JSON.stringify({ note: `📦 ${all} คำสั่งซื้อ · แนบกับรายการแล้ว ${n}${done ? '' : ` · ที่เหลือรอ statement/เลือกเอง`}`, orders: results }) });
+    suggestion: JSON.stringify({ note: `📦 ${all} คำสั่งซื้อ · แนบกับรายการแล้ว ${n}${nc ? ` · ยกเลิก ${nc}` : ''}${done || !all ? '' : ` · ที่เหลือรอ statement/เลือกเอง`}`, orders: results }) });
   return { doc: publicDoc(await getDoc(env, user, doc.doc_id)), outcome: n ? 'ATTACHED' : 'STORED', attached: n, orders: all };
 }
 /* ใส่ร้าน/สินค้าใน Detail ของรายการ (เฉพาะบรรทัดย่อยเดียวที่ Detail ว่าง หรือยังเป็นข้อความ statement ที่เติมอัตโนมัติ) */
 async function fillOrderNote(env, txId, o) {
-  const text = [o.merchant || 'Shopee', o.shop, o.items].map(x => String(x || '').trim()).filter(Boolean).join(' · ').slice(0, 200);
+  const text = [o.merchant, o.shop, o.items].map(x => String(x || '').trim()).filter(Boolean).join(' · ').slice(0, 200);
   if (!o.shop && !o.items) return;
   const t = await env.DB.prepare(`SELECT t.statement_desc, (SELECT COUNT(*) FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id) AS nd,
       (SELECT d.note FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id LIMIT 1) AS note FROM Transactions t WHERE t.transaction_id = ?`).bind(txId).first();
@@ -809,7 +823,7 @@ export async function runAction(env, user, docId, action, body = {}) {
       await linkDoc(env, docId, body.transaction_id, 'SUPPORT');
       await fillOrderNote(env, body.transaction_id, { ...o, merchant: ex.merchant });
       Object.assign(o, { status: 'ATTACHED', transaction_id: body.transaction_id, choices: undefined });
-      const all = sug.orders.filter(x => x.status !== 'SKIP'), n = all.filter(x => x.status === 'ATTACHED').length, done = n === all.length;
+      const all = sug.orders.filter(x => !['SKIP', 'CANCELLED'].includes(x.status)), n = all.filter(x => x.status === 'ATTACHED').length, done = n === all.length;
       sug.note = `📦 ${all.length} คำสั่งซื้อ · แนบกับรายการแล้ว ${n}${done ? '' : ' · ที่เหลือรอ statement/เลือกเอง'}`;
       await setDoc(env, docId, { status: done ? 'DONE' : 'STORED', suggestion: JSON.stringify(sug) });
       return { ok: true, status: done ? 'DONE' : 'STORED', attached: n, orders: all.length };

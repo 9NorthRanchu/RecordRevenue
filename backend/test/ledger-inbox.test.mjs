@@ -920,5 +920,26 @@ console.log('\n── 📦 รูปเดียวหลายคำสั่�
   check('Detail ที่พิมพ์เองไม่ถูกทับ', lines('TX-O1')[0].note === 'ของขวัญแม่', lines('TX-O1')[0].note);
 }
 
+console.log('\n── 🍜 แอปส่งอาหาร + order ที่ยกเลิก (v261b · ตามรูปตัวอย่างของ North) ──');
+{
+  insertStatementTx('TX-F1', 'A01', '2026-10-06', -177, { desc: 'LINEMAN' });
+  insertStatementTx('TX-F2', 'A01', '2026-10-05', -143, { desc: 'LINEMAN' });
+  insertStatementTx('TX-F3', 'A01', '2026-10-04', -686, { desc: 'LINEMAN' });
+  const r = await ingest({ doc_type: 'ORDER_LIST', amount: null, merchant: 'LINE MAN', orders: [
+    { date: '2026-10-06', amount: 177, shop: 'จิมจุ่มศิวะ&อาหารอีสาน', items: 'นมหมูย่าง, ก้อยเนื้อมะนาว', status: 'completed' },
+    { date: '2026-10-05', amount: 143, shop: 'Shinkanzen sushi (ทรี วิลลา)', items: 'SF Sushi Set, ข้าวหน้าไก่ย่าง', status: 'completed' },
+    { date: '2026-10-03', amount: 686, shop: 'Shinkanzen sushi (โรบินสัน)', items: '7 รายการ', status: 'completed' } ] });
+  const d = db.prepare(`SELECT * FROM LedgerDocs WHERE doc_id=?`).get(r.doc.doc_id);
+  check('แอปส่งอาหาร: แนบครบ 3 order (ตัดบัตรวันถัดไปก็ได้) → เสร็จ', d.status === 'DONE' && db.prepare(`SELECT COUNT(*) n FROM LedgerDocLinks WHERE doc_id=?`).get(r.doc.doc_id).n === 3, d.status);
+  check('Detail ใช้ชื่อแอป ไม่ใช่ Shopee', lines('TX-F1')[0].note === 'LINE MAN · จิมจุ่มศิวะ&อาหารอีสาน · นมหมูย่าง, ก้อยเนื้อมะนาว', lines('TX-F1')[0].note);
+  insertStatementTx('TX-L1', 'A01', '2026-10-10', -1250.11, { desc: 'LAZADA' });
+  insertStatementTx('TX-L2', 'A01', '2026-10-15', 1250.11, { desc: 'LAZADA REFUND' });
+  const r2 = await ingest({ doc_type: 'ORDER_LIST', amount: null, merchant: 'Lazada', orders: [
+    { date: null, amount: 1250.11, shop: 'ฉันสวย sea7', items: 'สินค้า 2 ชิ้น', status: 'cancelled' } ] });
+  const d2 = db.prepare(`SELECT * FROM LedgerDocs WHERE doc_id=?`).get(r2.doc.doc_id), o2 = JSON.parse(d2.suggestion).orders[0];
+  check('order ยกเลิก: แนบทั้งรายการตัดเงินและเงินคืน · ไม่ค้างรอ', o2.status === 'CANCELLED' && o2.transaction_ids.length === 2 && d2.status === 'DONE', [o2, d2.status]);
+  check('Detail บอกว่ายกเลิก/คืนเงิน', /ยกเลิก\/คืนเงิน/.test(lines('TX-L1')[0].note), lines('TX-L1')[0].note);
+}
+
 console.log(`\n${fail ? '❌' : '✅'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 process.exit(fail ? 1 : 0);
