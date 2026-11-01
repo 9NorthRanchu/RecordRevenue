@@ -4223,3 +4223,12 @@ frontend
 - frontend only (debtCatsBy / debtFillDropdowns) · app.js?v=280
 
 ## v281 — หมวดเงินต้นของหนี้ แสดงเฉพาะ Liability เท่านั้น (ตัด ⚠️ หมวดนอกกลุ่มออก · หนี้เดิมที่ผูกหมวดอื่นจะขึ้นว่าง ให้เลือกใหม่)
+
+## 📘 2026-11-01 — วิธีทำงานหนี้สิน (อธิบาย North แล้ว · อ้างอิงเวลาตอบคำถาม)
+- ตั้งหนี้: ตั้งค่า › 📝 ทะเบียนหนี้สิน · เจ้าหนี้ = Contacts (ตั้งค่า › Customer) · หมวดเงินต้น = LIABILITY เท่านั้น (v281) · ดอกเบี้ย = EXPENSE
+- บันทึกจ่าย: รายการปกติ แยก 2 บรรทัดย่อย (เงินต้น + ดอกเบี้ย) · คู่ค้า = เจ้าหนี้เดียวกัน · ต้อง CONFIRMED · วันที่ ≥ start_date
+- loans.js lines(): นับเฉพาะ category ∈ {principal, interest} + contact_id (ถ้าตั้ง) + CONFIRMED + date ≥ start_date · ไม่นับ DT-OB-*
+- คงเหลือ = start_balance − เงินต้นที่จ่าย · งวดถือว่าจ่ายเมื่อมีรายการ −20…+10 วันรอบ due_day · DUE_SOON ≤ 7 วัน
+- ข้อเสนอที่ยังไม่ทำ: เลือกหมวดเงินต้นในหน้ารอตรวจแล้วแยกต้น/ดอกอัตโนมัติจาก splitInstallment()
+- 2026-11-01: North สั่งสรุปโครงการทั้งหมดเป็นพิมพ์เขียว → PROJECT.md (root)
+- PROJECT.md (root) เขียนแล้ว 1,547 บรรทัด · สำเนาอยู่ใน Claude Project "RecordRevenue-PROJECT-พิมพ์เขียว"
