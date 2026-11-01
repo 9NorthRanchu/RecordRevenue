@@ -1678,7 +1678,7 @@
     <!-- xlsx-js-style: SheetJS fork with cell style support (blue headers etc.) -->
     <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <script defer src="travel.js?v=105"></script>
-    <script defer src="app.js?v=278"></script>
+    <script defer src="app.js?v=280"></script>
 
     <!-- Debt Profile Modal -->
     <div id="debt-modal" class="modal hidden" style="z-index: 1000;">
@@ -1713,8 +1713,8 @@
                             <div class="form-group" style="min-width: 0;">
                                 <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Type</label>
                                 <select id="debt-type" class="form-control" style="background-color: rgba(255,255,255,0.8);" required>
-                                    <option value="PAYABLE">Payable</option>
-                                    <option value="RECEIVABLE">Receivable</option>
+                                    <option value="PAYABLE">หนี้ที่ต้องจ่าย (เรากู้มา)</option>
+                                    <option value="RECEIVABLE">เงินให้กู้ยืม (เราให้ยืม)</option>
                                 </select>
                             </div>
                             <div class="form-group" style="min-width: 0;">
@@ -1730,7 +1730,7 @@
 
                         <div class="debt-form-grid-1-1">
                             <div class="form-group" style="min-width: 0;">
-                                <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Contact</label>
+                                <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;" id="debt-contact-label">เจ้าหนี้</label>
                                 <select id="debt-contact" class="form-control" style="background-color: rgba(255,255,255,0.8);" required></select>
                             </div>
                             <div class="form-group" style="min-width: 0;">
@@ -1754,11 +1754,11 @@
                             <h4 style="margin: 0 0 6px 0; font-size: 0.8rem; font-weight: 600; color: #475569;"><i class="fa-solid fa-link"></i> Category Mapping</h4>
                             <div class="debt-form-grid-1-1">
                                 <div class="form-group" style="margin-bottom: 0; min-width: 0;">
-                                    <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Principal</label>
+                                    <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;" id="debt-principal-label">หมวดเงินต้น (หนี้สิน · Liability)</label>
                                     <select id="debt-principal-category" class="form-control" style="background-color: rgba(255,255,255,0.8);" required></select>
                                 </div>
                                 <div class="form-group" style="margin-bottom: 0; min-width: 0;">
-                                    <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;">Interest</label>
+                                    <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px;" id="debt-interest-label">หมวดดอกเบี้ยจ่าย (Expense)</label>
                                     <select id="debt-interest-category" class="form-control" style="background-color: rgba(255,255,255,0.8);"></select>
                                 </div>
                             </div>

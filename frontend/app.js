@@ -10715,6 +10715,38 @@ async function renderDebtsSettings() {
     });
 }
 
+function debtCatsBy(behaviors) {
+    return (AppState.categories || []).filter(c => {
+        const cap = (AppState.captions || []).find(x => x.type_id === c.caption_id);
+        return cap && behaviors.includes(cap.behavior) && cap.sub_behavior !== 'INVESTMENT';
+    });
+}
+function debtFillDropdowns(type, keep) {
+    const pay = type !== 'RECEIVABLE';
+    const lab = (i, t) => { const e = document.getElementById(i); if (e) e.textContent = t; };
+    lab('debt-contact-label', pay ? 'เจ้าหนี้ (ธนาคาร / ไฟแนนซ์ / ผู้ให้กู้)' : 'ลูกหนี้ (ผู้ยืมเงิน)');
+    lab('debt-principal-label', pay ? 'หมวดเงินต้น (หนี้สิน · Liability)' : 'หมวดเงินต้น (ลูกหนี้ · Asset)');
+    lab('debt-interest-label', pay ? 'หมวดดอกเบี้ยจ่าย (Expense)' : 'หมวดดอกเบี้ยรับ (Revenue)');
+    const contactSel = document.getElementById('debt-contact');
+    contactSel.innerHTML = '<option value="">-- เลือก' + (pay ? 'เจ้าหนี้' : 'ลูกหนี้') + ' --</option>' +
+        (AppState.contacts || []).map(c => `<option value="${c.contact_id}">${c.name}</option>`).join('');
+    const opts = (list, keepId) => {
+        const ids = new Set(list.map(c => c.category_id));
+        const extra = keepId && !ids.has(keepId) ? (AppState.categories || []).filter(c => c.category_id === keepId) : [];
+        return '<option value="">-- ไม่ระบุ --</option>' + list.map(c => `<option value="${c.category_id}">${c.name}</option>`).join('') +
+            extra.map(c => `<option value="${c.category_id}">⚠️ ${c.name} (ไม่ใช่หมวด${pay ? 'หนี้สิน' : 'ลูกหนี้'})</option>`).join('');
+    };
+    const prin = debtCatsBy(pay ? ['LIABILITY'] : ['ASSET']);
+    const intr = debtCatsBy(pay ? ['EXPENSE'] : ['REVENUE']);
+    const prinSel = document.getElementById('debt-principal-category');
+    const intSel = document.getElementById('debt-interest-category');
+    prinSel.innerHTML = opts(prin, keep && keep.principal_category_id);
+    intSel.innerHTML = opts(intr, keep && keep.interest_category_id);
+    let hint = document.getElementById('debt-prin-hint');
+    if (!hint) { hint = document.createElement('small'); hint.id = 'debt-prin-hint'; hint.style.cssText = 'display:block;margin-top:4px;color:#B45309;font-size:.8rem;'; prinSel.after(hint); }
+    hint.textContent = prin.length ? '' : (pay ? 'ยังไม่มีหมวดที่เป็นหนี้สิน (Liability) — เพิ่มที่ ตั้งค่า › Caption/Category ก่อน' : 'ยังไม่มีหมวดลูกหนี้ (Asset) — เพิ่มที่ ตั้งค่า › Caption/Category ก่อน');
+}
+
 function showDebtModal(id = null) {
     document.getElementById('debt-modal').classList.remove('hidden');
     setTimeout(() => { document.getElementById('icon-grid')?.focus(); }, 100);
@@ -10731,26 +10763,18 @@ function showDebtModal(id = null) {
             `).join('');   // ⚡ 2026-10-30 ต่อครั้งเดียว (เดิม += ในลูป ช้ามากเมื่อรายการเยอะ)
     }
 
-    // Populate dropdowns
-    const contactSel = document.getElementById('debt-contact');
-    let contactHtml = '<option value="">-- ไม่ระบุ --</option>';
-    AppState.contacts.forEach(c => {
-        contactHtml += `<option value="${c.contact_id}">${c.name}</option>`;
-    });
-    contactSel.innerHTML = contactHtml;
-    
-    const prinSel = document.getElementById('debt-principal-category');
-    const intSel = document.getElementById('debt-interest-category');
-    let prinHtml = '<option value="">-- ไม่ระบุ --</option>';
-    let intHtml = '<option value="">-- ไม่ระบุ --</option>';
-    
-    AppState.categories.forEach(c => {
-        const opt = `<option value="${c.category_id}">${c.name}</option>`;
-        prinHtml += opt;
-        intHtml += opt;
-    });
-    prinSel.innerHTML = prinHtml;
-    intSel.innerHTML = intHtml;
+    // v280 · North: "หนี้สินต้องเป็นเจ้าหนี้ ผูกกับ Liability" → เงินต้นเลือกได้เฉพาะหมวด LIABILITY (ให้ยืม = ASSET) · ดอกเบี้ย = EXPENSE (ให้ยืม = REVENUE)
+    const curDebt = id ? (AppState.debts || []).find(x => x.debt_id === id || x.id === id) : null;
+    debtFillDropdowns(curDebt ? curDebt.type : 'PAYABLE', curDebt);
+    const typeSel = document.getElementById('debt-type');
+    if (typeSel && !typeSel._dfBound) {
+        typeSel._dfBound = true;
+        typeSel.addEventListener('change', () => {
+            const keepC = document.getElementById('debt-contact').value;
+            debtFillDropdowns(typeSel.value, null);
+            document.getElementById('debt-contact').value = keepC;
+        });
+    }
 
     if (id) {
         const d = AppState.debts.find(x => x.debt_id === id || x.id === id);

@@ -4213,3 +4213,11 @@ frontend
 - North (ภาพ iPhone): การ์ดครอบครัวกว้างเกินจอ เลื่อนดูไม่ได้ (v277 ตัดส่วนเกินทิ้ง) · สาเหตุ: .mh-accb เป็น flex column ลูกไม่มี min-width:0 → กว้างตามข้อความยาว
 - mobile.css "v279": #fam-home ทุกชั้น min-width:0/max-width:100% · สรุป 2 คอลัมน์ · สมาชิก 1 คอลัมน์ · ซ่อนหัวซ้ำ · ข้อความขึ้นบรรทัดใหม่ · ทดสอบ 390px ไม่มีส่วนล้นจอ
 - ท้ายหน้าถูกเมนูล่างบัง ("แสดงข้อมูลสุดท้ายไม่เห็น") → .main-content padding-bottom 110px + safe-area · ทดสอบเลื่อนสุดทุกหน้า: เนื้อหาสุดท้ายอยู่เหนือเมนูล่าง
+
+## v280 (2026-11-01) — ตั้งค่าหนี้สิน ผูกกับ Liability
+- North: "หนี้สินต้องเป็นเจ้าหนี้ ให้ไปผูกกับ Liability"
+- debt-modal: Contact → "เจ้าหนี้" (Payable) / "ลูกหนี้" (Receivable) · ประเภทเป็นภาษาไทย
+- หมวดเงินต้น: Payable แสดงเฉพาะหมวด LIABILITY · Receivable เฉพาะ ASSET (ไม่รวม INVESTMENT)
+- หมวดดอกเบี้ย: Payable = EXPENSE · Receivable = REVENUE · เปลี่ยนประเภทแล้วรายการเปลี่ยนตาม
+- หนี้เดิมที่ผูกหมวดผิดกลุ่ม ยังแสดงพร้อม ⚠️ (ไม่หายตอนแก้ไข) · ไม่มีหมวด Liability → ขึ้นคำแนะนำ
+- frontend only (debtCatsBy / debtFillDropdowns) · app.js?v=280
