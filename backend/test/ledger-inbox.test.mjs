@@ -879,5 +879,46 @@ console.log('\n── ตรวจยอดทุกรายการที่�
   check(`ทุกรายการลงตัว (${all.length} รายการ)`, bad.length === 0, bad.map(b => b.transaction_id).join(', '));
 }
 
+console.log('\n── 📥 อัปไว้ก่อน อ่านทีหลัง (v260) ──');
+{
+  insertStatementTx('TX-Q1', 'A01', '2026-10-20', -777.5, { desc: 'SHOPEE BANGKOK' });
+  const q1 = await inbox.ingestFile(env, user, { bytes: fakeFile(), mime: 'image/jpeg', source: 'WEB', defer: true });
+  const q2 = await inbox.ingestFile(env, user, { bytes: fakeFile(), mime: 'image/jpeg', source: 'WEB', defer: true });
+  check('อัปแบบคิว: ตอบทันที ยังไม่อ่าน (QUEUED)', q1.outcome === 'QUEUED' && q1.doc.status === 'QUEUED' && extractQueue.length === 0);
+  let st = await inbox.queueStatus(env, user.family_id); check('นับคิว 2', st.queued >= 2, st);
+  extractQueue.push({ doc_type: 'ORDER', date: '2026-10-19', amount: 777.5, merchant: 'Shopee' }, new Error('อ่านไม่ออก'));
+  const r = await inbox.processQueue(env, user.family_id, 4);
+  const d1 = db.prepare(`SELECT * FROM LedgerDocs WHERE doc_id=?`).get(q1.doc.doc_id), d2 = db.prepare(`SELECT * FROM LedgerDocs WHERE doc_id=?`).get(q2.doc.doc_id);
+  check('อ่านคิว: ใบสั่งซื้อ Shopee แนบกับรายการบัตรที่ยอดตรง', d1.status === 'DONE' && db.prepare(`SELECT 1 FROM LedgerDocLinks WHERE doc_id=? AND transaction_id='TX-Q1'`).get(q1.doc.doc_id), d1);
+  check('รูปที่อ่านไม่ได้ → ERROR (ไม่ค้างในคิว)', d2.status === 'ERROR' && r.processed === 2 && r.remaining === 0, [d2.status, r]);
+  db.prepare(`UPDATE LedgerDocs SET status='READING', updated_at='2000-01-01T00:00:00Z' WHERE doc_id=?`).run(q2.doc.doc_id);
+  extractQueue.push(slip({ amount: 41 }));
+  const r2b = await inbox.processQueue(env, user.family_id, 4);
+  check('ค้าง READING นาน → กลับเข้าคิวแล้วอ่านใหม่', r2b.processed === 1 && db.prepare(`SELECT status FROM LedgerDocs WHERE doc_id=?`).get(q2.doc.doc_id).status !== 'READING', r2b);
+  const dup = await inbox.ingestFile(env, user, { bytes: r2.get(db.prepare(`SELECT file_key FROM LedgerDocs WHERE doc_id=?`).get(q1.doc.doc_id).file_key), mime: 'image/jpeg', source: 'WEB', defer: true });
+  check('อัปรูปเดิมซ้ำ → ไม่เพิ่มคิว', dup.duplicate === true, dup);
+}
+
+console.log('\n── 📦 รูปเดียวหลายคำสั่งซื้อ (v261) ──');
+{
+  insertStatementTx('TX-O1', 'A01', '2026-10-21', -159.25, { desc: 'SHOPEE BANGKOK' });
+  insertStatementTx('TX-O2', 'A01', '2026-09-02', -88.5, { desc: 'SHOPEE BANGKOK' });
+  db.prepare(`UPDATE TransactionDetails SET note = 'SHOPEE BANGKOK' WHERE transaction_id = 'TX-O2'`).run();
+  insertStatementTx('TX-O3a', 'A01', '2026-10-05', -99, { desc: 'SHOPEE BANGKOK' }); insertStatementTx('TX-O3b', 'A01', '2026-10-06', -99, { desc: 'SHOPEE BANGKOK' });
+  const r = await ingest({ doc_type: 'ORDER_LIST', amount: null, merchant: 'Shopee', orders: [
+    { date: '2026-10-20', amount: 159.25, shop: 'ร้าน A', items: 'สายชาร์จ USB-C' },
+    { date: null, amount: 88.5, shop: 'ร้าน B', items: 'ปากกา' },
+    { date: null, amount: 99, shop: 'ร้าน C', items: 'แก้วน้ำ' },
+    { date: null, amount: 12345.67, shop: 'ร้าน D', items: 'ไม่มีในบัตร' } ] });
+  const d = db.prepare(`SELECT * FROM LedgerDocs WHERE doc_id=?`).get(r.doc.doc_id), sug = JSON.parse(d.suggestion);
+  const linked = db.prepare(`SELECT transaction_id FROM LedgerDocLinks WHERE doc_id=?`).all(r.doc.doc_id).map(x => x.transaction_id).sort();
+  check('แนบ 2 order (มีวันที่ + ไม่มีวันที่แต่ยอดไม่ซ้ำ) กับคนละรายการ', JSON.stringify(linked) === JSON.stringify(['TX-O1', 'TX-O2']), linked);
+  check('ยอดซ้ำหลายรายการ → ให้เลือก · ไม่เจอ → รอ · สถานะ STORED', sug.orders[2].status === 'CHOOSE' && sug.orders[3].status === 'WAIT' && d.status === 'STORED', sug.orders.map(o => o.status));
+  check('Detail = Shopee · ร้าน · สินค้า (แทนข้อความ statement ที่เติมอัตโนมัติ)', lines('TX-O2')[0].note === 'Shopee · ร้าน B · ปากกา' && lines('TX-O1')[0].note === 'Shopee · ร้าน A · สายชาร์จ USB-C', [lines('TX-O1')[0].note, lines('TX-O2')[0].note]);
+  db.prepare(`UPDATE TransactionDetails SET note = 'ของขวัญแม่' WHERE transaction_id = 'TX-O1'`).run();
+  await inbox.handleLedgerInbox(new Request(`https://x/api/inbox/${r.doc.doc_id}/rematch`, { method: 'POST', body: '{}' }), env, new URL(`https://x/api/inbox/${r.doc.doc_id}/rematch`), {}, '9North').catch(() => {});
+  check('Detail ที่พิมพ์เองไม่ถูกทับ', lines('TX-O1')[0].note === 'ของขวัญแม่', lines('TX-O1')[0].note);
+}
+
 console.log(`\n${fail ? '❌' : '✅'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 process.exit(fail ? 1 : 0);

@@ -782,3 +782,7 @@ body.ui-dark .dl-k>div,body.ui-dark .dl-c,body.ui-dark .dl-tbl{background:#1E1B2
 @media (max-width:1100px) { .ins-g { grid-template-columns:1fr; } .ins-cal { position:static; } }
 @media (max-width:760px) { .ins-k { grid-template-columns:1fr 1fr; } .ins-list { grid-template-columns:1fr; } }
 [data-theme="dark"] .ins-k > div, [data-theme="dark"] .ins-c, [data-theme="dark"] .ins-cal, [data-theme="dark"] .ins-empty { background:#1E1B2E; }
+
+/* v260 📥 คิวอ่านรูป */
+.ph-queue { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:#FFF9DB; color:#E67700; font-weight:700; font-size:.82rem; border:1px solid #FFE066; }
+.ph-queue[hidden] { display:none; }

@@ -14,5 +14,10 @@
       "binding": "ICONS",
       "bucket_name": "record-revenue-icons"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  }
 }

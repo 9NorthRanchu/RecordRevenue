@@ -4074,3 +4074,21 @@ frontend
   · taxDeduction: สุขภาพ ≤25k · ชีวิต+สุขภาพ ≤100k · พ่อแม่ ≤15k · บำนาญ ≤200k · GET /api/insurance/overview · POST save / close (reopen) / delete
   · test/insurance.test.mjs 15 ผ่าน
 - frontend InsView (#view-insurance · เมนู "ประกัน" ทั้งแถบข้างและเมนูมือถือ): สรุป 4 ช่อง · แท็บ ทั้งหมด/บุคคล/ทรัพย์สิน/ใกล้ครบกำหนด/หมดอายุ · การ์ด + แถบสถานะ · ปฏิทิน 12 เดือน · ฟอร์ม (เลือกทรัพย์สินจากทะเบียน)
+
+## v260 (2026-11-01) 📥 อัปรูปไว้ก่อน อ่านทีหลัง (สลิป / ใบเสร็จ / order Shopee)
+- ledger-inbox.js: ingestFile({defer}) → เก็บไฟล์ R2 + LedgerDocs status 'QUEUED' (ไม่เรียก AI) · /api/inbox/upload รับ field defer=1
+  · processQueue(env, family|null, limit): คืน READING ที่ค้าง >15 นาที → QUEUED · จองทีละรูป (QUEUED→READING) · retryDoc (อ่าน + processDoc) · POST /api/inbox/process-queue {limit ≤4} · GET /api/inbox/queue
+  · processSupporting: ใบเสร็จ/order ที่มีรายการยอดตรงเพียงรายการเดียวในช่วง −3…+4 วัน → แนบเลย (เดิมต้องวันใกล้กันมากถึง auto)
+- index.js: export scheduled() → processQueue(env, null, 6) · wrangler.json triggers.crons "*/5 * * * *" (อ่านต่อแม้ปิดแอป)
+- frontend SlipQueue: เลือก >3 รูป → ย่อ ≤2000px อัป 4 ทางพร้อมกัน (defer) · ป้าย "🧾 กำลังอ่านรูป · เหลือ N" · อ่านต่อ 2 ทางระหว่างเปิดแอป · เสร็จ → สรุป + syncSlips เข้า Drive
+  · loadPending เรียก SlipQueue.check() · ≤3 รูปอ่านทันทีแบบเดิม
+- test/ledger-inbox.test.mjs 212 ผ่าน
+
+## v261 (2026-11-01) 📦 รูปเดียวหลายคำสั่งซื้อ (North: "รูป order มีหลาย order รวมกันอยู่")
+- prompt: doc_type "ORDER_LIST" + orders[{date|null, amount (ยอดรวมของ order), shop, items, order_no}] + merchant
+- processOrderList: ทีละ order · มีวันที่ = −3…+4 วัน · ไม่มีวันที่ = 120 วันก่อนวันอัป ถึง +7 · ยอดตรงทุกสตางค์ + รายการเดียว (ตัดรายการที่มีรูป order อื่นแนบแล้ว) → แนบ (SUPPORT)
+  · status: ครบทุก order = DONE · ไม่ครบ = STORED (rematch หลังนำเข้า statement) · suggestion.orders[] = ATTACHED/CHOOSE(choices)/WAIT/SKIP
+  · fillOrderNote: Detail = "Shopee · ร้าน · สินค้า" เฉพาะบรรทัดย่อยเดียวที่ Detail ว่าง/เป็นข้อความ statement (ไม่ทับที่พิมพ์เอง) — ใช้กับ ORDER เดี่ยวด้วย
+  · /api/inbox/{id}/link {transaction_id, order_index} → แนบทีละ order
+- findCandidates รับ ev.from / ev.to · SlipReview: แสดงรายการ order ในรูป + ปุ่มเลือกรายการให้ order ที่ยอดซ้ำ · TYPES + ORDER_LIST
+- test/ledger-inbox.test.mjs 216 ผ่าน

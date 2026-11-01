@@ -2335,7 +2335,7 @@ function renderPendingHero() {
         <button type="button" class="ph-act" id="ph-add"><span class="dv2-kic" style="background:rgba(121,80,242,.13);color:#6D4AE0"><i class="fa-solid fa-plus"></i></span>
           <span class="ph-at"><b>เพิ่มรายการเอง</b><small>บันทึกด้วยมือ</small></span></button>
         <label class="ph-act" id="ph-slip"><span class="dv2-kic" style="background:rgba(245,159,0,.15);color:#E67700"><i class="fa-solid fa-receipt"></i></span>
-          <span class="ph-at"><b>สลิป / ใบเสร็จ</b><small>เลือกได้หลายไฟล์ · จับคู่ให้อัตโนมัติ</small></span><span class="ph-go" id="ph-slip-go" style="display:grid;place-items:center">อัปโหลด</span>
+          <span class="ph-at"><b>สลิป / ใบเสร็จ / Order</b><small>เลือกทีละหลายร้อยรูปได้ · อัปไว้ก่อน ระบบทยอยอ่านและแนบให้เอง</small></span><span class="ph-go" id="ph-slip-go" style="display:grid;place-items:center">อัปโหลด</span>
           <input type="file" id="ph-slip-in" accept="image/*,application/pdf" multiple hidden></label>
       </div>
       <div class="ph-tools">${list.length ? `<button type="button" id="ph-autofill" class="pt-ok" title="รายการที่ยังไม่มีหมวด และผู้รับ/ร้านนี้เคยบันทึกหมวดเดิมสม่ำเสมอ → เติมให้ (ยังไม่ยืนยัน)">🪄 เติมหมวดจากประวัติ</button><button type="button" id="ph-bulkcat" class="pt-ok">🏷️ ใส่หมวดหลายรายการ</button><button type="button" id="ph-saveall" class="pt-ok">💾 บันทึกทั้งหมดที่พร้อม</button><button type="button" id="ph-group" class="pt-ok${AppState.pendingGroupMode ? ' on' : ''}" title="รวมรายการผู้รับ/ร้านเดียวกันเป็นกลุ่ม → ใส่หมวด/Company ทีเดียวทั้งกลุ่ม">👥 จัดกลุ่มผู้รับ/ร้าน</button><button type="button" id="ph-rules" class="pt-ok" title="ร้าน/ผู้รับที่ยืนยันหมวดเดิมซ้ำ → ยืนยันให้อัตโนมัติ">⚡ กฎอัตโนมัติ</button>` : ''}
@@ -2343,7 +2343,7 @@ function renderPendingHero() {
             return `<button type="button" class="ph-slipf${f === 'SLIP' ? ' on' : ''}" data-f="SLIP">📎 มีสลิป ${n.toLocaleString('en-US')}</button><button type="button" class="ph-slipf${f === 'NOSLIP' ? ' on' : ''}" data-f="NOSLIP">ไม่มีสลิป ${(all.length - n).toLocaleString('en-US')}</button>`; })()}
         ${DupPairs.count() ? `<button type="button" class="ph-slipf ph-dup${(AppState.pendingSlipFilter || '') === 'DUP' ? ' on' : ''}" data-f="DUP">🔁 อาจซ้ำ ${DupPairs.count().toLocaleString('en-US')}</button><button type="button" id="ph-dupall" class="pt-ok">🔁 รวมรายการซ้ำทั้งหมด</button>` : ''}
         ${TransferPairs.count() ? `<button type="button" class="ph-slipf ph-trf${(AppState.pendingSlipFilter || '') === 'TRF' ? ' on' : ''}" data-f="TRF" title="รายการออกจากบัญชีหนึ่ง กับเข้าอีกบัญชีของเรา ยอดเท่ากัน ห่างไม่เกิน 2 วัน">⇄ น่าจะเป็นโอน ${TransferPairs.count().toLocaleString('en-US')} คู่</button><button type="button" id="ph-trfall" class="pt-ok">⇄ ยืนยันโอนทั้งหมด</button>` : ''}
-        <button type="button" id="ph-slipreview" class="pt-ok">🧾 สลิปที่ยังไม่จับคู่</button>
+        <button type="button" id="ph-slipreview" class="pt-ok">🧾 สลิปที่ยังไม่จับคู่</button><span id="ph-queue" class="ph-queue"${SlipQueue.remaining() ? '' : ' hidden'}>${SlipQueue.label()}</span>
         <button type="button" id="ph-revchart" class="pt-ok">👥 ผังรายได้</button>
         ${pendingImportBatches().length ? `<button type="button" id="ph-delbatch">🗑️ ลบทั้งชุดที่นำเข้า</button>` : ''}</div>
       <div id="ph-status"></div>
@@ -3295,6 +3295,7 @@ async function loadPending() {
 
         /* ⚡ 2026-10-30: ไม่รอเช็กรายการซ้ำก่อนวาด — วาดการ์ดก่อน เช็กเสร็จค่อยวาดใหม่ถ้ามีคู่ซ้ำ */
         DupPairs.load().then(() => { if (DupPairs.count && DupPairs.count()) { renderPendingTransactions(); renderPendingHero(); } }).catch(() => {});
+        SlipQueue.check();   // 📥 v260 มีรูปค้างในคิว → อ่านต่อ
         TransferPairs.load().then(() => { if (TransferPairs.count()) { renderPendingTransactions(); renderPendingHero(); } }).catch(() => {});   // ⇄ คู่โอน (2026-10-31)
         /* 📝 ครั้งแรกต่อการเปิดแอป: เติมเบอร์ใน detail รายการ wePAY ที่รอตรวจ (นำเข้าก่อน v243) → มีที่แก้ค่อยโหลดใหม่ */
         /* 📝 v255 (North: "นำ detail/หมายเหตุใน statement มาใส่ช่อง Detail โดยไม่ต้องโหลดไฟล์ใหม่") — ครั้งแรกต่อการเปิดแอป: รายการรอตรวจที่ Detail ว่าง → ใช้ข้อความ statement */
@@ -7542,6 +7543,7 @@ async function deleteImportBatch() {
    ส่งทีละไฟล์ (พร้อมกัน 2) เพื่อไม่ให้คำขอเดียวนานเกิน */
 async function uploadSlipFiles(files) {
     files = [...(files || [])]; if (!files.length) return;
+    if (files.length > 3) return SlipQueue.upload(files);   // 📥 v260 หลายรูป → อัปไว้ก่อน ระบบทยอยอ่านเอง
     const go = document.getElementById('ph-slip-go'); const orig = go ? go.innerHTML : '';
     let done = 0, matched = 0, created = 0, waiting = 0, failed = 0, dup = 0; const ids = [];
     const q = files.slice();
@@ -15392,7 +15394,7 @@ const SlipReview = (() => {
     const fm = n => { if (n == null || n === '' || !isFinite(n)) return '-'; const v = Math.round(Number(n) * 100) / 100, t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `<span class="srv-neg">(${t})</span>` : t; };
     const dTh = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${m[3]}/${m[2]}/${(+m[1] + 543) % 100}` : (d || '-'); };
     const accName = id => String((AppState.accounts || []).find(a => a.account_id === id)?.name || id || '').replace(/^\s*\[[^\]]+\]\s*/, '');
-    const TYPES = ['SLIP', 'RECEIPT', 'ORDER'], WAIT = ['READING', 'NEEDS_ACCOUNT', 'NEEDS_CHOICE', 'SUGGESTED', 'STORED', 'ERROR'];
+    const TYPES = ['SLIP', 'RECEIPT', 'ORDER', 'ORDER_LIST'], WAIT = ['READING', 'NEEDS_ACCOUNT', 'NEEDS_CHOICE', 'SUGGESTED', 'STORED', 'ERROR'];   // v261 + รูปหลายคำสั่งซื้อ
     const S = { docs: [], i: 0, url: null, only: null };
     const toast = (t, type) => { try { window.showToast(t, type || 'success'); } catch { alert(t); } };
     async function post(path, body) {
@@ -15463,6 +15465,10 @@ const SlipReview = (() => {
               <div>📅 ${dTh(ex.date)} ${esc(String(ex.time || '').slice(0, 5))}${Number(ex.fee) ? ` · ค่าธรรมเนียม ${fm(ex.fee)}` : ''}</div>
               <div>${esc(ex.sender?.name || '-')} <span class="srv-arr">→</span> ${esc(ex.receiver?.name || ex.merchant || '-')}${ex.shop_category ? ` <small>(${esc(ex.shop_category)})</small>` : ''}</div>
               ${ex.memo ? `<div>📝 <b>${esc(ex.memo)}</b></div>` : ''}${ex.subsidy_note ? `<div class="srv-sub">🎟️ ${esc(ex.subsidy_note)}</div>` : ''}</div>
+            ${ex.doc_type === 'ORDER_LIST' && Array.isArray(sug.orders) ? `<div class="srv-card"><h5>📦 ${sug.orders.length} คำสั่งซื้อในรูปนี้</h5>${sug.orders.map((o, i) => `<div class="srv-ord ${o.status === 'ATTACHED' ? 'ok' : ''}">
+                <div><b>${fm(o.amount)}</b> · ${esc(o.shop || '-')}${o.items ? ` <small>${esc(o.items)}</small>` : ''}${o.date ? ` <small>· ${dTh(o.date)}</small>` : ''}</div>
+                <div class="srv-sub">${o.status === 'ATTACHED' ? `✅ แนบกับรายการ ${dTh(o.tx_date || '')}` : o.status === 'CHOOSE' ? '❓ ยอดตรงหลายรายการ — เลือก:' : o.status === 'SKIP' ? 'ไม่มียอด' : '⏳ ยังไม่เจอรายการที่ยอดตรง (นำเข้า statement แล้วระบบลองใหม่เอง)'}</div>
+                ${o.status === 'CHOOSE' ? `<div class="srv-acts">${(o.choices || []).map(c => `<button type="button" class="btn btn-sm btn-outline-primary" data-olink="${i}" data-tx="${esc(c.transaction_id)}">🔗 ${dTh(c.date)} · ${fm(c.total_amount)}</button>`).join('')}</div>` : ''}</div>`).join('')}</div>` : ''}
             <div class="srv-card"><h5>🔗 จับคู่กับรายการ</h5>
               ${legs.length ? legs.map(l => legBlock(d, l)).join('') : (d.transactions || []).map(t => legBlock(d, { kind: 'MATCHED', transaction_id: t.transaction_id, account_id: t.account_id })).join('') || '<div class="srv-sub">ยังไม่มีรายการ</div>'}
               ${d.status === 'NEEDS_ACCOUNT' ? `<div class="srv-acts">${(sug.options || []).map(o => `<button type="button" class="btn btn-sm btn-outline-primary" data-acc="${esc(o.account_id)}" data-side="${esc(o.side)}">${o.side === 'IN' ? '⬇️ เข้า' : '⬆️ ออก'} · ${esc(accName(o.account_id))}</button>`).join('')}</div>` : ''}</div>
@@ -15502,6 +15508,7 @@ const SlipReview = (() => {
             run(e.currentTarget, () => post(`/api/inbox/${d.doc_id}/fields`, b), '💾 แก้แล้ว จับคู่ใหม่');
         });
         B.querySelectorAll('[data-unmatch]').forEach(b => b.onclick = () => run(b, () => post(`/api/inbox/${d.doc_id}/unmatch`, { transaction_id: b.dataset.unmatch }), 'ตัดคู่แล้ว'));
+        B.querySelectorAll('[data-olink]').forEach(b => b.onclick = () => run(b, () => post(`/api/inbox/${d.doc_id}/link`, { transaction_id: b.dataset.tx, order_index: +b.dataset.olink }), '📦 แนบ order แล้ว'));
         B.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => run(b, () => post(`/api/inbox/${d.doc_id}/pick`, { transaction_id: b.dataset.pick }), '🔗 จับคู่แล้ว'));
         B.querySelectorAll('[data-acc]').forEach(b => b.onclick = () => run(b, () => post(`/api/inbox/${d.doc_id}/account`, { account_id: b.dataset.acc, side: b.dataset.side }), '✅ ระบบจำบัญชีนี้แล้ว'));
         $('#srv-ok').onclick = e => {
@@ -15542,7 +15549,7 @@ const SlipReview = (() => {
 .srv-tx{color:var(--text-secondary)}.srv-acts{display:flex;flex-wrap:wrap;gap:6px}.srv-acts .btn{min-height:36px}
 .srv-b{display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:999px;margin-left:4px}.srv-b.ok{background:#E6FCF5;color:#087F5B}.srv-b.new{background:#FFF3BF;color:#8a5a00}.srv-b.ask{background:#FFE3E3;color:#C92A2A}
 .srv-neg{color:var(--danger-color,#C92A2A)}
-.srv-sum{gap:4px;font-size:.92rem}.srv-amt{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums}.srv-amt small{font-size:.8rem;font-weight:400;color:var(--text-secondary)}.srv-arr{color:var(--primary-color)}
+.srv-ord{border-top:1px dashed var(--border-color,#eee);padding:6px 0;font-size:.86rem}.srv-ord.ok{opacity:.7}.srv-ord small{color:var(--text-secondary,#868e96)}.srv-sum{gap:4px;font-size:.92rem}.srv-amt{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums}.srv-amt small{font-size:.8rem;font-weight:400;color:var(--text-secondary)}.srv-arr{color:var(--primary-color)}
 .srv-edit summary{cursor:pointer;list-style:none}.srv-edit summary::-webkit-details-marker{display:none}.srv-edit[open] summary{margin-bottom:6px}
 .srv-card select#srv-cat{font-weight:600}
 .srv-foot{position:sticky;bottom:0;display:grid;grid-template-columns:56px 1fr 1.4fr 56px;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--card-bg,#fff);border-top:1px solid var(--border-color,#E9E3FA);margin:12px -16px 0}
@@ -15949,6 +15956,62 @@ const AutoRules = (() => {
     return { open, save, apply };
 })();
 window.AutoRules = AutoRules;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   📥 v260 อัปรูปไว้ก่อน อ่านทีหลัง (North: "อัพรูปทั้งหมดไว้ก่อน แล้วระบบค่อยทยอยประมวลผล · เปิดดูแล้วเห็นภาพ เช่น order Shopee / สลิป")
+   · เลือกมากกว่า 3 รูป → ย่อรูป (≤ 2000px) แล้วอัปเก็บอย่างเดียว (เร็ว) · เซิร์ฟเวอร์อ่านทีละรูปจากคิว
+   · ระหว่างเปิดแอป: หน้าเว็บเรียกอ่านต่อเรื่อย ๆ (2 ทางพร้อมกัน) · ปิดแอป: ตัวตั้งเวลาเซิร์ฟเวอร์อ่านต่อทุก 5 นาที
+   · อ่านแล้ว: ยอด/วันที่ตรงกับรายการ → แนบรูปให้รายการนั้น (เห็น 📎 ในรอตรวจ/ประวัติ · สำเนาเข้า Google Drive) · ไม่เจอ → เก็บรอ statement / ปุ่ม 🧾
+   ═══════════════════════════════════════════════════════════════════════ */
+const SlipQueue = (() => {
+    let left = 0, running = false, sum = { matched: 0, created: 0, waiting: 0, failed: 0, processed: 0 }, errs = 0;
+    const label = () => `<i class="fa-solid fa-spinner fa-spin"></i> 🧾 กำลังอ่านรูป · เหลือ ${left.toLocaleString('en-US')}`;
+    const paint = () => { const el = document.getElementById('ph-queue'); if (el) { el.hidden = !left; el.innerHTML = label(); } };
+    const shrink = f => new Promise(ok => { if (!/^image\/(jpeg|png|webp)$/i.test(f.type)) return ok(f);
+        const img = new Image(), url = URL.createObjectURL(f);
+        img.onload = () => { const k = Math.min(1, 2000 / Math.max(img.width, img.height)); if (k === 1 && f.size < 900e3) { URL.revokeObjectURL(url); return ok(f); }
+            const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+            URL.revokeObjectURL(url); c.toBlob(b => ok(b ? new File([b], (f.name || 'image').replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : f), 'image/jpeg', 0.85); };
+        img.onerror = () => { URL.revokeObjectURL(url); ok(f); }; img.src = url; });
+    async function upload(files) {
+        const go = document.getElementById('ph-slip-go'), orig = go ? go.innerHTML : '';
+        let done = 0, ok = 0, dup = 0, fail = 0; const q = files.slice();
+        const worker = async () => { while (q.length) { const f = q.shift();
+            try { const fd = new FormData(); fd.append('file', await shrink(f), f.name); fd.append('defer', '1');
+                const r = await fetch(`${API_BASE}/api/inbox/upload`, { method: 'POST', body: fd }); const j = await r.json().catch(() => ({})); const o = j.results?.[0] || {};
+                if (!r.ok || o.error) fail++; else if (o.duplicate) dup++; else ok++; } catch { fail++; }
+            done++; if (go) go.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> ${done}/${files.length}`; } };
+        await Promise.all([worker(), worker(), worker(), worker()]);
+        if (go) go.innerHTML = orig;
+        window.showToast?.(`📥 อัปไว้ ${ok.toLocaleString('en-US')} รูป${dup ? ` · ซ้ำ ${dup}` : ''}${fail ? ` · ไม่สำเร็จ ${fail}` : ''} — ระบบทยอยอ่านและแนบกับรายการให้เอง ปิดแอปได้`);
+        await check(true);
+    }
+    async function check(force) {
+        try { const r = await fetch(`${API_BASE}/api/inbox/queue`); if (!r.ok) return; const j = await r.json(); left = j.remaining || 0; paint(); if (left && (force || !running)) start(); } catch { /* */ }
+    }
+    async function start() {
+        if (running) return; running = true; errs = 0;
+        const worker = async () => {
+            while (left > 0 && errs < 6) {
+                try { const r = await fetch(`${API_BASE}/api/inbox/process-queue`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"limit":1}' });
+                    const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || r.status);
+                    for (const k of Object.keys(sum)) sum[k] += j[k] || 0; left = j.remaining || 0; errs = 0; paint();
+                    if (!j.processed && left) await new Promise(ok => setTimeout(ok, 8000));   // อีกทางกำลังอ่านรูปที่เหลือ
+                } catch { errs++; await new Promise(ok => setTimeout(ok, 10000)); }
+            }
+        };
+        await Promise.all([worker(), worker()]);
+        running = false; paint();
+        if (sum.processed) {
+            window.showToast?.(`🧾 อ่านรูปครบแล้ว ${sum.processed} รูป · แนบกับรายการ ${sum.matched}${sum.created ? ` · สร้างรอตรวจ ${sum.created}` : ''}${sum.waiting ? ` · รอ statement/เลือกเอง ${sum.waiting}` : ''}${sum.failed ? ` · อ่านไม่ได้ ${sum.failed}` : ''}`);
+            sum = { matched: 0, created: 0, waiting: 0, failed: 0, processed: 0 };
+            if (!document.getElementById('view-pending')?.classList.contains('hidden')) loadPending();
+            setTimeout(() => { try { DriveStore.syncSlips(false); } catch { /* */ } }, 3000);   // สำเนารูปที่แนบแล้วเข้า Drive
+        }
+    }
+    return { upload, check, start, remaining: () => left, label };
+})();
+window.SlipQueue = SlipQueue;
 /* ใส่ หมวด/Company/คู่ค้า ให้แถวรายการย่อย (โหมดกลุ่ม) · ent "__clear" = ล้าง */
 function applyRowValues(row, v) {
     if (v.cat) { const cat = row.querySelector('.select-category'), cap = row.querySelector('.select-caption'), catObj = (AppState.categories || []).find(x => x.category_id === v.cat);

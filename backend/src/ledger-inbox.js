@@ -53,7 +53,7 @@ import {
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'application/pdf': 'pdf' };
-const OPEN_STATUSES = ['READING', 'NEEDS_ACCOUNT', 'NEEDS_CHOICE', 'SUGGESTED', 'STORED', 'ERROR'];
+const OPEN_STATUSES = ['QUEUED', 'READING', 'NEEDS_ACCOUNT', 'NEEDS_CHOICE', 'SUGGESTED', 'STORED', 'ERROR'];
 const UNCATEGORIZED = 'Cat_Uncategorized';
 const TRANSFER_CATEGORY = 'Bank_Transfer';
 const SUMMARY_WORDS = /^(สรุป|ยอด|วันนี้|เมื่อวาน|รายวัน|เดือน|today|yesterday|daily|month|help|เมนู)/i;
@@ -95,10 +95,17 @@ export async function handleLedgerInbox(request, env, url, cors, userId, hooks =
       const results = [];
       for (const file of files) {
         const bytes = new Uint8Array(await file.arrayBuffer());
-        results.push(await ingestFile(env, user, { bytes, mime: file.type, name: file.name, source: 'WEB', forced }));
+        results.push(await ingestFile(env, user, { bytes, mime: file.type, name: file.name, source: 'WEB', forced, defer: form.get('defer') === '1' }));
       }
       return json({ results }, cors, 201);
     }
+
+    /* 📥 v260 คิวรูป: ทยอยอ่านทีละไม่กี่รูป (หน้าเว็บเรียกซ้ำระหว่างเปิดแอป · ตัวตั้งเวลาทุก 5 นาทีอ่านต่อแม้ปิดแอป) */
+    if (path === '/api/inbox/process-queue' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      return json(await processQueue(env, user.family_id, Math.min(4, Math.max(1, Number(body.limit) || 2))), cors);
+    }
+    if (path === '/api/inbox/queue' && request.method === 'GET') return json(await queueStatus(env, user.family_id), cors);
 
     if (path === '/api/inbox/cash' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
@@ -263,7 +270,7 @@ function toBase64(bytes) {
   return btoa(out);
 }
 
-export async function ingestFile(env, user, { bytes, mime, name, source, forced }) {
+export async function ingestFile(env, user, { bytes, mime, name, source, forced, defer = false }) {
   mime = String(mime || '').split(';')[0].trim().toLowerCase() || 'image/jpeg';
   if (!MIME_EXT[mime]) return { error: `ยังไม่รองรับไฟล์ชนิด ${mime} (รับ JPG · PNG · WEBP · HEIC · PDF)` };
   if (bytes.length > MAX_FILE_BYTES) return { error: 'ไฟล์ใหญ่เกิน 15 MB' };
@@ -280,8 +287,10 @@ export async function ingestFile(env, user, { bytes, mime, name, source, forced 
   if (env.ICONS) await env.ICONS.put(fileKey, bytes, { httpMetadata: { contentType: mime } });
   await env.DB.prepare(`
     INSERT INTO LedgerDocs (doc_id, family_id, uploaded_by, source, file_key, file_hash, mime, file_name, status, created_at)
-    VALUES (?,?,?,?,?,?,?,?, 'READING', ?)`)
-    .bind(docId, user.family_id, user.user_id, source, env.ICONS ? fileKey : null, hash, mime, name || null, nowIso()).run();
+    VALUES (?,?,?,?,?,?,?,?, ?, ?)`)
+    .bind(docId, user.family_id, user.user_id, source, env.ICONS ? fileKey : null, hash, mime, name || null, defer && env.ICONS ? 'QUEUED' : 'READING', nowIso()).run();
+  /* 📥 v260 อัปไว้ก่อน อ่านทีหลัง (North: "อัพรูปทั้งหมดไว้ก่อน แล้วระบบค่อยทยอยประมวลผล") → เก็บไฟล์แล้วตอบทันที · processQueue อ่านต่อ */
+  if (defer && env.ICONS) return { doc: publicDoc(await getDoc(env, user, docId)), outcome: 'QUEUED' };
 
   let extracted;
   try {
@@ -327,7 +336,10 @@ Return ONLY JSON:
 For SLIP keep masked account numbers exactly as printed (e.g. "xxx-x-x1234-x"). amount is positive.
 E-wallet (TrueMoney, ShopeePay, Rabbit LINE Pay) payment/transfer receipts are "SLIP" (sender = the wallet owner when paying out).
 A single Shopee/Lazada order screenshot = "ORDER" with amount = total paid.
-If the image shows a LIST of many transactions or orders (wallet history, order list, statement page), set doc_type to "LIST" and amount to null.
+If the image shows SEVERAL Shopee/Lazada/online ORDERS (order list "การซื้อของฉัน", several order cards, or one checkout with several shops), set doc_type to "ORDER_LIST",
+amount to null, and add "orders":[{"date":"YYYY-MM-DD or null if no date is printed","amount":0,"shop":"shop name","items":"short product names (max 80 chars)","order_no":"or null"}]
+— one entry per order, amount = that order's total paid ("รวมการสั่งซื้อ / ยอดคำสั่งซื้อทั้งหมด / Order Total"), never the price of a single item. Also add "merchant":"Shopee" / "Lazada".
+If the image shows a LIST of many bank/wallet transactions (wallet history, statement page), set doc_type to "LIST" and amount to null.
 amount = the money that actually left/entered the account ("จำนวนเงินที่ชำระ", "Amount"), NOT the price before a government co-payment or discount
 (ไทยช่วยไทย, คนละครึ่ง, coupons). Put the breakdown in "subsidy_note", e.g. "ค่าสินค้า 200 · สิทธิไทยช่วยไทยพลัส -120".
 Paying a credit card bill: receiver.name = card issuer, receiver.bank = issuer (e.g. "CardX", "KTC", "Krungsri Card"),
@@ -400,7 +412,7 @@ async function extractDocument(env, bytes, mime) {
 export async function retryDoc(env, user, docId) {
   const doc = await getDoc(env, user, docId);
   if (!doc) return { error: 'ไม่พบเอกสารนี้', status: 404 };
-  if (!['READING', 'ERROR'].includes(doc.status)) return { doc: publicDoc(doc), outcome: 'ALREADY', status: 409 };
+  if (!['READING', 'ERROR', 'QUEUED'].includes(doc.status)) return { doc: publicDoc(doc), outcome: 'ALREADY', status: 409 };
   const obj = doc.file_key && env.ICONS ? await env.ICONS.get(doc.file_key) : null;
   if (!obj) return { error: 'ไม่พบไฟล์ต้นฉบับ (ระบบลบไฟล์อัตโนมัติหลัง 30 วัน) — ส่งรูปใหม่อีกครั้ง', status: 404 };
   const bytes = new Uint8Array(await obj.arrayBuffer());
@@ -413,6 +425,30 @@ export async function retryDoc(env, user, docId) {
   }
   await setDoc(env, docId, { doc_type: String(extracted.doc_type || 'OTHER').toUpperCase(), extracted: JSON.stringify(extracted), error: null });
   return processDoc(env, user, docId, {});
+}
+
+/* 📥 v260 อ่านรูปในคิว: จองทีละรูป (QUEUED → READING) กันอ่านซ้ำ · รูปที่ค้าง READING เกิน 15 นาที (เครื่องตัดกลางทาง) กลับเข้าคิว */
+export async function processQueue(env, familyId = null, limit = 2) {
+  const stale = new Date(Date.now() - 15 * 60e3).toISOString();
+  await env.DB.prepare(`UPDATE LedgerDocs SET status = 'QUEUED' WHERE status = 'READING' AND file_key IS NOT NULL AND IFNULL(updated_at, created_at) < ?${familyId ? ' AND family_id = ?' : ''}`)
+    .bind(...[stale, ...(familyId ? [familyId] : [])]).run();
+  const rows = ((await env.DB.prepare(`SELECT doc_id, family_id, uploaded_by FROM LedgerDocs WHERE status = 'QUEUED'${familyId ? ' AND family_id = ?' : ''} ORDER BY created_at LIMIT ?`)
+    .bind(...(familyId ? [familyId] : []), limit).all()).results) || [];
+  const out = { processed: 0, matched: 0, created: 0, waiting: 0, failed: 0 };
+  for (const r of rows) {
+    const claim = await env.DB.prepare(`UPDATE LedgerDocs SET status = 'READING', updated_at = ? WHERE doc_id = ? AND status = 'QUEUED'`).bind(nowIso(), r.doc_id).run();
+    if (!((claim?.meta?.changes ?? claim?.changes) > 0)) continue;
+    const user = await env.DB.prepare(`SELECT * FROM Users WHERE user_id = ?`).bind(r.uploaded_by).first();
+    if (!user) { await setDoc(env, r.doc_id, { status: 'ERROR', error: 'ไม่พบผู้อัปโหลด' }); out.failed++; continue; }
+    let o; try { o = await retryDoc(env, user, r.doc_id); } catch (e) { o = { error: e.message }; await setDoc(env, r.doc_id, { status: 'ERROR', error: String(e.message).slice(0, 500) }); }
+    out.processed++;
+    if (o?.error) out.failed++; else if (['MATCHED', 'ATTACHED'].includes(o?.outcome)) out.matched++; else if (o?.outcome === 'SUGGESTED') out.created++; else out.waiting++;
+  }
+  return { ...out, ...(familyId ? await queueStatus(env, familyId) : {}) };
+}
+export async function queueStatus(env, familyId) {
+  const r = await env.DB.prepare(`SELECT SUM(CASE WHEN status = 'QUEUED' THEN 1 ELSE 0 END) AS queued, SUM(CASE WHEN status = 'READING' THEN 1 ELSE 0 END) AS reading FROM LedgerDocs WHERE family_id = ?`).bind(familyId).first();
+  return { remaining: (r?.queued || 0) + (r?.reading || 0), queued: r?.queued || 0, reading: r?.reading || 0 };
 }
 
 export function normalizeExtract(out) {
@@ -431,6 +467,7 @@ async function processDoc(env, user, docId, { forced } = {}) {
     return processSlip(env, user, doc, ex, forced);
   }
   if ((type === 'RECEIPT' || type === 'ORDER') && ex.amount) return processSupporting(env, user, doc, ex);
+  if (type === 'ORDER_LIST' && Array.isArray(ex.orders) && ex.orders.length) return processOrderList(env, user, doc, ex);   // 📦 v261
   const note = ['BANK_STATEMENT', 'CARD_STATEMENT', 'LIST'].includes(type)
     ? 'ภาพนี้มีหลายรายการ — ใช้ปุ่ม "นำเข้า Statement" (รับ PDF และภาพแคป) แล้วเลือกบัญชี/บัตร/กระเป๋าเงิน' : 'เก็บไว้แล้ว · ยังไม่รู้ว่าเป็นรายการเงินไหน';
   await setDoc(env, docId, { status: 'STORED', suggestion: JSON.stringify({ note }) });
@@ -454,7 +491,7 @@ async function findCandidates(env, accountIds, ev) {
     WHERE t.account_id IN (${marks}) AND t.date >= ? AND t.date < ? AND (ABS(t.total_amount - ?) < 0.005
       OR (t.source = 'PDF_IMPORT' AND t.status = 'PENDING_REVIEW' AND t.total_amount > 0 AND ? < 0 AND ABS(t.total_amount + ?) < 0.005
           AND EXISTS (SELECT 1 FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id AND d.type = 'EXPENSE')))`)
-    .bind(...accountIds, shiftDate(ev.date, -3), shiftDate(ev.date, 4), ev.signedAmount, ev.signedAmount, ev.signedAmount).all();
+    .bind(...accountIds, ev.from || shiftDate(ev.date, -3), ev.to || shiftDate(ev.date, 4), ev.signedAmount, ev.signedAmount, ev.signedAmount).all();
   const list = rows.results || [];
   if (ev.ref) {
     const byRef = await env.DB.prepare(`SELECT ${CANDIDATE_COLS} FROM Transactions t
@@ -586,8 +623,11 @@ async function processSupporting(env, user, doc, ex) {
   const all = await findCandidates(env, accounts.map(a => a.account_id), ev);
   // ใบเสร็จผูกซ้อนกับรายการที่มีสลิปแล้วได้ — ไม่นับว่า "ถูกใช้ไปแล้ว"
   const decision = decideMatch(all.map(c => ({ ...c, linked: false })));
+  /* v260: ใบสั่งซื้อ/ใบเสร็จเป็นแค่หลักฐานประกอบ → ยอดตรงทุกสตางค์และมีรายการเดียวในช่วง −3…+4 วัน = แนบเลย (เช่น Shopee ตัดบัตรวันถัดไป) */
+  if (decision.kind === 'choose' && decision.list.length === 1 && all.filter(c => c.score > 0).length === 1) { decision.kind = 'auto'; decision.best = decision.list[0]; }
   if (decision.kind === 'auto') {
     await linkDoc(env, doc.doc_id, decision.best.transaction_id, 'SUPPORT');
+    await fillOrderNote(env, decision.best.transaction_id, ex);
     await setDoc(env, doc.doc_id, { status: 'DONE', transaction_id: decision.best.transaction_id,
       suggestion: JSON.stringify({ attached_to: decision.best.transaction_id }) });
     return { doc: publicDoc(await getDoc(env, user, doc.doc_id)), outcome: 'ATTACHED', transaction_id: decision.best.transaction_id };
@@ -596,6 +636,48 @@ async function processSupporting(env, user, doc, ex) {
     note: 'เก็บไว้แล้ว · จะผูกกับรายการจ่ายเมื่อเจอยอดที่ตรง',
     choices: (decision.list || []).map(c => ({ transaction_id: c.transaction_id, date: c.date, total_amount: c.total_amount })) }) });
   return { doc: publicDoc(await getDoc(env, user, doc.doc_id)), outcome: 'STORED' };
+}
+
+/* 📦 v261 (North: "รูป order มีหลาย order รวมกันอยู่") — รูปเดียวหลายคำสั่งซื้อ → จับคู่ทีละ order
+   · มีวันที่: ช่วง −3…+4 วัน · ไม่มีวันที่ (หน้ารายการ order ของ Shopee มักไม่พิมพ์วัน): 120 วันก่อนวันอัปโหลด ถึง 7 วันหลัง
+   · แนบเมื่อยอดตรงทุกสตางค์และมีรายการเดียว (ยังไม่มีรูปคำสั่งซื้ออื่นแนบอยู่) · ใส่ร้าน/สินค้าใน Detail ถ้ายังว่างหรือเป็นข้อความ statement
+   · ที่ยังไม่เจอ → เก็บรอ (นำเข้า statement แล้วลองใหม่เอง) */
+async function processOrderList(env, user, doc, ex) {
+  const accounts = (await permittedAccounts(env, user)).map(a => a.account_id);
+  const up = String(doc.created_at || nowIso()).slice(0, 10), results = [], used = new Set();
+  for (const o of ex.orders.slice(0, 40)) {
+    const amt = round2(Math.abs(Number(o.amount) || 0)); if (!(amt > 0)) { results.push({ ...o, status: 'SKIP' }); continue; }
+    const hasDate = /^\d{4}-\d{2}-\d{2}$/.test(o.date || '');
+    const ev = { signedAmount: -amt, date: hasDate ? o.date : up, time: null, ref: null, ...(hasDate ? {} : { from: shiftDate(up, -120), to: shiftDate(up, 7) }) };
+    let cands = (await findCandidates(env, accounts, ev)).filter(c => !used.has(c.transaction_id));
+    if (cands.length > 1) {   // มีรูปคำสั่งซื้อแนบอยู่แล้ว = ของ order อื่น
+      const taken = new Set(((await env.DB.prepare(`SELECT l.transaction_id FROM LedgerDocLinks l JOIN LedgerDocs d ON d.doc_id = l.doc_id WHERE l.transaction_id IN (${cands.map(() => '?').join(',')}) AND d.doc_id != ? AND d.doc_type IN ('ORDER','ORDER_LIST','RECEIPT')`)
+        .bind(...cands.map(c => c.transaction_id), doc.doc_id).all()).results || []).map(r => r.transaction_id));
+      cands = cands.filter(c => !taken.has(c.transaction_id));
+    }
+    if (cands.length === 1) {
+      const t = cands[0]; used.add(t.transaction_id);
+      await linkDoc(env, doc.doc_id, t.transaction_id, 'SUPPORT');
+      await fillOrderNote(env, t.transaction_id, { ...o, merchant: ex.merchant });
+      results.push({ ...o, amount: amt, status: 'ATTACHED', transaction_id: t.transaction_id, tx_date: String(t.date).slice(0, 10) });
+    } else results.push({ ...o, amount: amt, status: cands.length ? 'CHOOSE' : 'WAIT', choices: cands.slice(0, 5).map(c => ({ transaction_id: c.transaction_id, date: c.date, total_amount: c.total_amount })) });
+  }
+  const n = results.filter(r => r.status === 'ATTACHED').length, all = results.filter(r => r.status !== 'SKIP').length;
+  const done = n === all && n > 0;
+  await setDoc(env, doc.doc_id, { status: done ? 'DONE' : 'STORED', transaction_id: results.find(r => r.transaction_id)?.transaction_id || null,
+    suggestion: JSON.stringify({ note: `📦 ${all} คำสั่งซื้อ · แนบกับรายการแล้ว ${n}${done ? '' : ` · ที่เหลือรอ statement/เลือกเอง`}`, orders: results }) });
+  return { doc: publicDoc(await getDoc(env, user, doc.doc_id)), outcome: n ? 'ATTACHED' : 'STORED', attached: n, orders: all };
+}
+/* ใส่ร้าน/สินค้าใน Detail ของรายการ (เฉพาะบรรทัดย่อยเดียวที่ Detail ว่าง หรือยังเป็นข้อความ statement ที่เติมอัตโนมัติ) */
+async function fillOrderNote(env, txId, o) {
+  const text = [o.merchant || 'Shopee', o.shop, o.items].map(x => String(x || '').trim()).filter(Boolean).join(' · ').slice(0, 200);
+  if (!o.shop && !o.items) return;
+  const t = await env.DB.prepare(`SELECT t.statement_desc, (SELECT COUNT(*) FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id) AS nd,
+      (SELECT d.note FROM TransactionDetails d WHERE d.transaction_id = t.transaction_id LIMIT 1) AS note FROM Transactions t WHERE t.transaction_id = ?`).bind(txId).first();
+  if (!t || t.nd !== 1) return;
+  const auto = String(t.statement_desc || '').split(' · ').map(x => x.trim().replace(/\+\+$/, '')).filter(x => x && x !== '-' && !/^DESC\s*:?$/i.test(x)).join(' · ').slice(0, 200);
+  if (t.note && String(t.note).trim() && String(t.note).trim() !== auto && String(t.note).trim() !== String(t.statement_desc || '').trim()) return;
+  await env.DB.prepare(`UPDATE TransactionDetails SET note = ? WHERE transaction_id = ?`).bind(text, txId).run();
 }
 
 async function linkDoc(env, docId, txId, role) {
@@ -720,6 +802,18 @@ export async function runAction(env, user, docId, action, body = {}) {
       JOIN UserPermissions up ON up.entity_id=a.entity_id WHERE t.transaction_id=? AND up.user_id=?`)
       .bind(body.transaction_id, user.user_id).first();
     if (!tx) return { error: 'ไม่พบรายการที่เลือก', status: 404 };
+    /* 📦 v261 รูปหลายคำสั่งซื้อ: เลือกรายการให้ทีละ order (order_index) · ครบทุก order แล้วจึงถือว่าเสร็จ */
+    if (doc.doc_type === 'ORDER_LIST' && Number.isInteger(body.order_index)) {
+      const sug = parse(doc.suggestion, {}) || {}, ex = parse(doc.extracted, {}) || {}, o = (sug.orders || [])[body.order_index];
+      if (!o) return { error: 'ไม่พบคำสั่งซื้อนี้ในรูป', status: 404 };
+      await linkDoc(env, docId, body.transaction_id, 'SUPPORT');
+      await fillOrderNote(env, body.transaction_id, { ...o, merchant: ex.merchant });
+      Object.assign(o, { status: 'ATTACHED', transaction_id: body.transaction_id, choices: undefined });
+      const all = sug.orders.filter(x => x.status !== 'SKIP'), n = all.filter(x => x.status === 'ATTACHED').length, done = n === all.length;
+      sug.note = `📦 ${all.length} คำสั่งซื้อ · แนบกับรายการแล้ว ${n}${done ? '' : ' · ที่เหลือรอ statement/เลือกเอง'}`;
+      await setDoc(env, docId, { status: done ? 'DONE' : 'STORED', suggestion: JSON.stringify(sug) });
+      return { ok: true, status: done ? 'DONE' : 'STORED', attached: n, orders: all.length };
+    }
     for (const l of createdPending) await deleteTx(env, l.transaction_id);
     await env.DB.prepare(`DELETE FROM LedgerDocLinks WHERE doc_id=? AND role='CREATED'`).bind(docId).run();
     await linkDoc(env, docId, body.transaction_id, ['SLIP', 'CASH'].includes(doc.doc_type) ? 'MATCHED' : 'SUPPORT');

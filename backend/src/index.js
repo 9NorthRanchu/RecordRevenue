@@ -1,7 +1,7 @@
 import { parseAiJson } from './ai-json.js';
 import { handleUnifiedTrip } from './unified-trip.js';
 import { handleLegacyTrip } from './legacy-trip.js';
-import { handleLedgerInbox, geminiGenerate } from './ledger-inbox.js';
+import { handleLedgerInbox, geminiGenerate, processQueue } from './ledger-inbox.js';
 import { planSettlementKeep } from './settle-keep.js';
 import { isMonthClosed, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
 import { IS_ASSET_SQL, assetCategorySet } from './assets.js';
@@ -23,6 +23,10 @@ import { handleWepay } from './wepay.js';
 // backend/src/index.js
 
 export default {
+  /* 📥 v260 ตัวตั้งเวลา (wrangler.json triggers.crons ทุก 5 นาที): อ่านรูปที่อัปไว้ในคิวต่อ แม้ไม่ได้เปิดแอป */
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(processQueue(env, null, 6).catch(e => console.log('processQueue', e?.message)));
+  },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
