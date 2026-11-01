@@ -4177,3 +4177,22 @@ frontend
 - สาเหตุเลื่อนไม่ได้: switchView ล็อก .main-content overflow hidden ตอนหน้าตั้งค่า + style.css ให้เลื่อนเฉพาะกรอบด้านใน (สูงคงที่) → มือถือกรอบเตี้ย เลื่อนไม่ได้ · แก้: ล็อกเฉพาะจอ >768px · มือถือให้ทั้งหน้าเลื่อนปกติ (ui-a.css "v274")
 - ธีม (.st-theme) เอาออกจากหน้าตั้งค่า → มือถือ: ท้ายเมนู "เพิ่มเติม" · iPad: ปุ่ม 🎨 เมนูซ้าย เปิด #theme-pop · PC: ช่องเลือกธีมท้ายเมนูซ้ายเหมือนเดิม · bindSettingsTheme รองรับหลายจุด
 - แถม: มือถือปุ่ม "เพิ่มสมาชิกใหม่" ทับการ์ดสมาชิก (หัวแท็บสูงคงที่) · โหมดมืดการ์ดสมาชิกพื้นขาว → แก้แล้ว
+
+## v275 (2026-11-01) เปลี่ยนรหัส ID ตามไปทุกตาราง · ปุ่ม "+ เพิ่ม" ไม่สร้างรายการว่าง
+- 🔁 backend/src/id-cascade.js + index.js /api/settings/save (account/entity/caption/category/contact):
+  · เดิม ID เปลี่ยน = INSERT แถวใหม่ (คัดลอกบางคอลัมน์) + ลบแถวเก่า → คอลัมน์ที่เพิ่มทีหลังหาย (เช่น Accounts.tx_entity_id) และตารางใหม่ ๆ ยังชี้รหัสเก่า
+  · ตอนนี้: batch เดียว = PRAGMA defer_foreign_keys + UPDATE ทุกตาราง/คอลัมน์ที่เก็บรหัสชนิดนั้น (sqlite_master + PRAGMA table_info · ข้าม Trip*) + OpeningSets.lines (JSON) + UPDATE PK แถวเดิม → แล้วแก้ชื่อ/ค่าอื่นแบบปกติ (ตัวแปร oid)
+  · รหัสใหม่ซ้ำ → 400 ไม่เปลี่ยนอะไร · คำตอบมี cascade: [ตาราง.คอลัมน์] · project ยังใช้ทางเดิม · เทส backend/test/id-cascade.test.mjs (22, เปิด foreign_keys จริง)
+- ➕ createNewPendingCard: เดิม POST รายการว่างทันที → การ์ดร่างในเครื่อง (tx._draft / data-draft="1") · autoSaveCard ข้ามถ้ายอดเงินทุกช่อง = 0 · บันทึกครั้งแรก → draftSaved() · ปุ่มบันทึกเตือนถ้าว่าง · ลบการ์ดร่าง = ลบในเครื่อง
+- มือถือ: North เลือก ภาพรวมแบบ ก · ตั้งค่าแบบ ข · รอตรวจรอเลือก (ดู mockup หลายรายการย่อย)
+
+## v276 (2026-11-01) มือถือ: ภาพรวมแบบ ก · ตั้งค่าแบบ ข · รอตรวจแบบ ข (+ การ์ดแบบ ก)
+- North เลือกจาก mockup (scratchpad mobile-mockup / -B / pending-subs) · มีผลเฉพาะจอ ≤768px · ไฟล์ใหม่ frontend/mobile.css (โหลดท้ายสุด)
+- ภาพรวม: dv2RenderPhone() (เรียกจาก dv2Render เมื่อ isPhone()) — การ์ดสุทธิ · แถบรอตรวจ · AccView.home มือถือ = รายการสั้น 3 บัญชี + ดูทั้งหมด · โดนัทรายจ่าย · หัวข้อรองเป็น <details>
+- ตั้งค่า: StHome (เมนูแบบ iPhone, กดแท็บเดิมให้, ปุ่ม ‹ ตั้งค่า) · decorate(): ตารางเป็นการ์ด (td[data-label], td.st-title = คอลัมน์ "ชื่อ…") · ช่องค้นหา · ปุ่ม ⋯ รวมปุ่ม Excel (.st-x) · MutationObserver มีลายเซ็นกันวาดวน
+- รอตรวจ: PendReview แถบโหมด (ทีละรายการ / ทั้งหมด / ตามร้าน = pendingGroupMode เดิม) · จำโหมด rr_pend_mode_v276
+  · ทีละรายการ: Similar.fetch summary · ปุ่มลัดหมวด (นับการใช้ rr_rv_use_v276 + Bank_Transfer) / Company (AccDefaults.of ก่อน) · แยกหลายส่วน rebalance() = ส่วนสุดท้ายรับยอดที่เหลือ + ค่าธรรมเนียม/ภาษีของตัวเอง
+  · บันทึก: payload รูปเดียวกับ getCardPayload → POST /api/transactions + /confirm → dropLocal (removePendingCardLocal)
+  · ทั้งหมด: PendCardA — รายการย่อย >1 = บรรทัดสรุป (.pa-sum) เปิดแก้ทีละอัน + .pa-meter · PendHeroPhone: ปุ่มนำเข้า 4 ช่อง · "🧰 เครื่องมือ" รวมปุ่ม
+  · "+ เพิ่ม" บนมือถือสลับไปโหมดทั้งหมดให้
+- ทดสอบ Playwright 390px: ทีละรายการ แยก 2 ส่วน (292.04 + 292.05 = 584.09) บันทึก POST+confirm ถูก · 200→199 · การ์ด 3 รายการย่อย · PC ไม่เปลี่ยน

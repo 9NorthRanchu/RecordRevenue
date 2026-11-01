@@ -1440,7 +1440,7 @@ function switchView(viewName) {
     // grid-input redirected to pending (no loadGridInput needed)
     else if (viewName === 'debtor') DebtorView.open();   // 2026-10-15 ลูกหนี้/เจ้าหนี้ตามรายการจริง · แท็บสัญญาเงินกู้ = หน้าเดิม
     else if (viewName === 'reports') loadReports();
-    else if (viewName === 'settings') { loadSettings(); fitSettingsHeight(); }
+    else if (viewName === 'settings') { loadSettings(); fitSettingsHeight(); try { StHome.enter(); } catch (e) { console.warn(e); } }   // 📱 v276 มือถือ: เมนูตั้งค่าแบบ ข
     else if (viewName === 'travel') loadTrips();
     else if (viewName === 'puppup') { if (typeof loadPuppupTrip === 'function') loadPuppupTrip(); }
 }
@@ -2598,9 +2598,43 @@ function dv2ZoomToggle(row) {
     items.hidden = !items.hidden;
     row.classList.toggle('open', !items.hidden);
 }
+/* 📱 v276 มือถือ (≤768px) — ภาพรวมแบบ ก (North 2026-11-01 เลือกจาก mockup)
+   การ์ดยอดสุทธิใบเดียว · แถบรอตรวจ · บัญชีแบบสั้น · รายจ่ายตามหมวด · หัวข้อรองย่อไว้ (แตะเพื่อเปิด) */
+const isPhone = () => window.matchMedia('(max-width:768px)').matches;
+function dv2RenderPhone(root) {
+    const d = DashState.data, p = DashState.period;
+    const sIn = dv2Sum(d.income), sOut = dv2Sum(d.expense, x => Math.abs(x.amount)), net = sIn - sOut, pend = DashState.pendingCount;
+    const mem = [`<option value="ALL"${DashState.member === 'ALL' ? ' selected' : ''}>👥 ทุกคน</option>`].concat((d.members || []).map(m => `<option value="${m.user_id}"${DashState.member === m.user_id ? ' selected' : ''}>👤 ${m.name}</option>`)).join('');
+    const per = [['month', 'รายเดือน'], ['year', 'รายปี'], ['all', 'ทั้งหมด']].map(([k, t]) => `<option value="${k}"${p === k ? ' selected' : ''}>${t}</option>`).join('');
+    const lbl = p === 'month' ? 'เดือนนี้' : p === 'year' ? 'ปีนี้' : 'ทั้งหมด';
+    const sec = (ic, title, right, body) => `<details class="mh-acc"><summary><span>${ic} ${title}</span><em>${right || ''}</em></summary><div class="mh-accb">${body}</div></details>`;
+    root.innerHTML = `<div class="mh-top"><h2>ภาพรวม</h2><select class="mh-sel" onchange="dv2SetMember(this.value)" aria-label="สมาชิก">${mem}</select></div>
+      <div class="mh-per"><select class="mh-sel" onchange="dv2SetPeriod(this.value)" aria-label="ช่วงเวลา">${per}</select>
+        ${p === 'all' ? '' : `<button onclick="dv2ChangeMonth(-1)" aria-label="ก่อนหน้า"><i class="fa-solid fa-chevron-left"></i></button><b>${dv2PeriodLabel()}</b><button onclick="dv2ChangeMonth(1)" aria-label="ถัดไป"><i class="fa-solid fa-chevron-right"></i></button>`}
+        <button onclick="loadDashboard()" aria-label="โหลดใหม่"><i class="fa-solid fa-rotate-right"></i></button></div>
+      <div class="mh-hero"><small>คงเหลือสุทธิ${lbl}</small><div class="mh-net ${net < 0 ? 'dv2-neg' : 'dv2-pos'}">${dv2F(net)}</div>
+        <div class="mh-two"><div><small>↗ รายรับ · ${(d.income || []).length} รายการ</small><b class="dv2-pos">${dv2F(sIn)}</b></div>
+          <div><small>↘ รายจ่าย · ${(d.expense || []).length} รายการ</small><b class="dv2-neg">${dv2F(-sOut)}</b></div></div>
+        ${DashState.range?.last_date ? `<div class="mh-thru">📅 ข้อมูลถึง ${dv2DateTH(DashState.range.last_date)}</div>` : ''}</div>
+      ${pend ? `<button class="mh-alert" onclick="switchView('pending')">⏰ <span>รอตรวจ ${pend.toLocaleString('en-US')} รายการ</span><i>ไปตรวจ ›</i></button>` : ''}
+      <div class="dv2-sec mh-accs" id="acc-home"><div class="av-mute" style="padding:14px">กำลังโหลดบัญชี…</div></div>
+      <div class="mh-donut">${dv2Donut('expense')}</div>
+      ${sec('👨‍👩‍👧', 'ครอบครัว & ธุรกิจ', 'แตะเพื่อดู', '<div class="dv2-sec" id="fam-home"></div>')}
+      ${sec('📥', 'รายรับตามหมวด', dv2F(sIn), dv2Donut('income'))}
+      ${sec('🏦', 'Statement · บัตร · ลงทุน', '', `${dv2Stmt()}${dv2Credit()}${dv2Invest()}`)}
+      ${sec('🎯', 'เงินไปไหน · งบประมาณ', '', `${dv2Top5()}${dv2Budget()}`)}
+      ${sec('📊', 'เฉลี่ย · ลูกหนี้ · เจ้าหนี้', '', `${dv2Avg()}${dv2AR()}${dv2AP()}`)}
+      ${sec('🧾', 'ภาษีหัก ณ ที่จ่าย', '', `${dv2WhtCard('received','ถูกหัก ณ ที่จ่าย','เครดิตภาษีขอคืนได้','ถูกหัก')}${dv2WhtCard('withheld','หัก ณ ที่จ่ายไว้','ต้องนำส่งสรรพากร','หักไว้')}`)}
+      ${sec('📅', 'แผนรายจ่ายล่วงหน้า', '', dv2Plan())}`;
+}
+(() => { try { let last = null; window.matchMedia('(max-width:768px)').addEventListener('change', e => {
+    if (last === e.matches) return; last = e.matches;
+    if (AppState?.activeView === 'dashboard' && DashState?.data) { dv2Render(); AccView.home(); FamView.load(); } }); } catch { /* */ } })();
+
 function dv2Render() {
     const root = document.getElementById('dv2-root');
     if (!root || !DashState.data) return;
+    if (isPhone()) return dv2RenderPhone(root);
     root.innerHTML = `${dv2TopBar()}
       ${dv2Kpis()}
       <div class="dv2-sec" id="fam-home"></div>
@@ -2765,12 +2799,14 @@ async function autoSaveCard(cardEl) {
         details
     };
 
+    if (isEmptyDraftCard(cardEl)) return;   // v275 การ์ดร่างยังว่าง → ยังไม่บันทึก
     try {
-        await fetch(`${API_BASE}/api/transactions`, {
+        const _r = await fetch(`${API_BASE}/api/transactions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
             body: JSON.stringify(payload)
         });
+        if (_r.ok) draftSaved(cardEl);
         // Refresh status summary so pending totals reflect latest typed values
         updatePendingStatusSummary();
     } catch (_) { /* silent fail */ }
@@ -3196,43 +3232,32 @@ async function createNewPendingCard() {
         return;
     }
 
+    try { if (isPhone() && document.body.dataset.prMode !== 'list') PendReview.mode('list'); } catch { /* */ }   // 📱 v276 การ์ดร่างอยู่ในโหมดรายการทั้งหมด
     const today = new Date().toLocaleDateString('en-CA');
     const nowTime = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ':00';
     const firstAccId = AppState.accounts[0].account_id;
     const txId = generateTxId(today, firstAccId, 0, 'WEB_GRID');
 
-    const payload = {
-        transaction_id: txId,
-        date: today,
-        time: nowTime,
-        account_id: firstAccId,
-        total_amount: 0,
-        note: '',
-        status: 'PENDING_REVIEW',
-        source: 'WEB_GRID',
-        details: [{ amount: 0, fee: 0, wht: 0, note: '', type: 'EXPENSE' }]
-    };
-
-    try {
-        const res = await fetch(`${API_BASE}/api/transactions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) },
-            body: JSON.stringify(payload)
-        });
-        if (res.ok) {
-            await loadPending();
-            // Scroll new card into view (sorted desc = today first)
-            const firstCard = container.querySelector('.tx-card');
-            if (firstCard) firstCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } else {
-            const errText = await res.text().catch(() => res.statusText);
-            let errMsg = errText;
-            try { const j = JSON.parse(errText); errMsg = j.error || j.message || errText; } catch {}
-            alert(`❌ สร้างรายการไม่สำเร็จ (HTTP ${res.status})\n${errMsg}`);
-        }
-    } catch (e) {
-        alert("Network Error: " + e.message);
-    }
+    /* v275 (North: "ปุ่มเพิ่ม กดมาแล้ว หากไม่ได้ใส่ข้อมูลอะไรยังไม่ต้องให้บันทึก ข้อมูลจะไปค้างรอตรวจสอบเป็นขยะ")
+       เดิมส่งรายการว่างเข้าเซิร์ฟเวอร์ทันที → ตอนนี้สร้างการ์ดร่างในเครื่องก่อน · บันทึกจริงเมื่อมียอดเงิน (บันทึกอัตโนมัติ) หรือกดบันทึก
+       ไม่กรอกอะไรแล้วออก/รีเฟรช = การ์ดร่างหายไปเอง ไม่ค้างในรอตรวจ */
+    const draft = { transaction_id: txId, date: today, time: nowTime, account_id: firstAccId, total_amount: 0, statement_desc: '', status: 'PENDING_REVIEW',
+        source: 'WEB_GRID', _draft: true, details: [{ detail_id: txId + '-D0', amount: 0, fee: 0, wht: 0, note: '', type: 'EXPENSE' }] };
+    AppState.pendingTransactions = [draft, ...(AppState.pendingTransactions || [])];
+    renderPendingTransactions();
+    const card = container.querySelector(`.tx-card[data-txid="${txId}"]`);
+    if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.querySelector('.input-stmt-amount')?.focus({ preventScroll: true }); }
+}
+/* v275 การ์ดร่างที่ยังว่าง (ยอดเงิน 0 ทุกช่อง) */
+function isEmptyDraftCard(cardEl) {
+    if (!cardEl || cardEl.dataset.draft !== '1') return false;
+    const n = sel => [...cardEl.querySelectorAll(sel)].some(i => Math.abs(parseAmountInput(i.value || '0')) > 0);
+    return !n('.input-stmt-amount') && !n('.grid-tx-amount') && !n('.input-amount');
+}
+function draftSaved(cardEl) {
+    if (!cardEl || cardEl.dataset.draft !== '1') return;
+    delete cardEl.dataset.draft;
+    const t = (AppState.pendingTransactions || []).find(x => x.transaction_id === cardEl.dataset.txid); if (t) delete t._draft;
 }
 
 async function loadPending() {
@@ -3310,6 +3335,7 @@ async function loadPending() {
         renderPendingTransactions();
         renderPendingHero();
         LineSlips.load();   // 📲 สลิป LINE ที่ต้องเลือกก่อน (2026-10-15)
+        try { PendReview.mount(); PendCardA.scan(); PendHeroPhone(); } catch (e) { console.warn(e); }   // 📱 v276 มือถือ
 
         // If triggered from dashboard quick-action, create blank card AFTER render
         if (AppState._createNewAfterLoad) {
@@ -3391,6 +3417,7 @@ function renderPendingTransactions() {
         cardEl.className = "tx-card";
         cardEl.dataset.txid = tx.transaction_id;
         cardEl.dataset.accid = tx.account_id;
+        if (tx._draft) cardEl.dataset.draft = '1';   // v275 การ์ดร่าง (ยังไม่ส่งเข้าเซิร์ฟเวอร์)
         cardEl.dataset.ref = tx.ref_code || '';
         cardEl.dataset.source = tx.source;
         cardEl.dataset.slip = tx.slip_image_url || '';
@@ -3536,6 +3563,7 @@ function renderPendingTransactions() {
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
             btn.disabled = true;
             
+            if (isEmptyDraftCard(cardEl)) { alert('ยังไม่ได้กรอกยอดเงิน — กรอกข้อมูลก่อนบันทึก'); btn.innerHTML = originalHTML; btn.disabled = false; return; }   // v275
             const payload = getCardPayload(cardEl);
             if (!payload) {
                 btn.innerHTML = originalHTML;
@@ -3582,6 +3610,7 @@ function renderPendingTransactions() {
         });
 
         cardEl.querySelector(".btn-delete-pending").addEventListener("click", async () => {
+            if (cardEl.dataset.draft === '1') { removePendingCardLocal(cardEl, tx.transaction_id); return; }   // v275 การ์ดร่าง: ยังไม่อยู่ในเซิร์ฟเวอร์ ลบในเครื่องได้เลย
             if (confirm("คุณแน่ใจว่าต้องการลบรายการนี้ใช่หรือไม่?")) {
                 const res = await fetch(`${API_BASE}/api/transactions/delete`, {
                     method: 'POST',
@@ -16222,6 +16251,16 @@ const AccView = (() => {
             S.data = d; S.month = d.month;
             const accs = d.accounts.filter(a => a.n || a.close_sys || a.bank);
             const tot = { pend: accs.reduce((s, a) => s + a.n_pending, 0), bad: accs.filter(a => (a.diff != null && Math.abs(a.diff) >= 0.01) || a.missing_lines).length };
+            if (typeof isPhone === 'function' && isPhone()) {   /* 📱 v276 มือถือ: รายการบัญชีแบบสั้น 3 บัญชีแรก + ดูทั้งหมด */
+                const order = [...accs].sort((a, b) => ((b.diff != null && Math.abs(b.diff) >= 0.01) || b.missing_lines ? 1 : 0) - ((a.diff != null && Math.abs(a.diff) >= 0.01) || a.missing_lines ? 1 : 0) || Math.abs(disp(b, b.close_sys) || 0) - Math.abs(disp(a, a.close_sys) || 0));
+                const st = a => (a.diff != null && Math.abs(a.diff) >= 0.01) ? `<span class="av-warn">⚠️ ต่าง ${fm(Math.abs(a.diff))}</span>` : a.missing_lines ? `<span class="av-warn">⚠️ ขาด ${a.missing_lines}</span>` : a.n_pending ? `<span class="av-pend">⏳ รอตรวจ ${a.n_pending}</span>` : a.bank ? '<span class="av-ok">✓ ตรงธนาคาร</span>' : '';
+                const row = a => { const k = kindOf(a), bal = disp(a, a.close_sys);
+                    return `<button class="mh-li" onclick="AccView.open('${esc(a.account_id)}')"><span class="av-ico ${k.cls}"><i class="fa-solid ${k.ico}"></i></span>
+                      <span class="mh-lt"><b>${esc(a.name || a.account_id)}</b><small>${esc(a.bank_name || k.lbl)} ${st(a)}</small></span><span class="mh-lv ${bal < 0 ? 'av-neg' : ''}">${fm(bal)}</span></button>`; };
+                el.innerHTML = `<div class="mh-sech"><b>💳 บัญชีของฉัน</b>${order.length > 3 ? `<a href="#" onclick="this.closest('#acc-home').classList.toggle('all');this.textContent=this.closest('#acc-home').classList.contains('all')?'ย่อ ‹':'ดูทั้งหมด ${order.length} ›';return false">ดูทั้งหมด ${order.length} ›</a>` : ''}</div>
+                  <div class="mh-list">${order.map((a, i) => i < 3 ? row(a) : row(a).replace('class="mh-li"', 'class="mh-li mh-more"')).join('') || '<div class="av-mute" style="padding:12px">ยังไม่มีบัญชีที่มีรายการ</div>'}</div>`;
+                return;
+            }
             el.innerHTML = `<div class="av-head"><h3>บัญชีของฉัน <small>${mLabel(d.month)} · ${accs.length} บัญชี${tot.pend ? ` · รอตรวจ ${tot.pend}` : ''}${tot.bad ? ` · <span class="av-neg">ต้องตรวจ ${tot.bad} บัญชี</span>` : ''}</small></h3>
                 <div class="av-mnav"><button onclick="AccView.home(AccView._shift(-1))" aria-label="เดือนก่อน"><i class="fa-solid fa-chevron-left"></i></button><span>${mLabel(d.month)}</span>
                 <button onclick="AccView.home(AccView._shift(1))" aria-label="เดือนถัดไป"><i class="fa-solid fa-chevron-right"></i></button></div></div>
@@ -17049,3 +17088,333 @@ const LineQR = (() => {
     const t = setInterval(() => { if (AppState?.userId) { clearInterval(t); load(); } }, 1500);
     return { load };
 })();
+
+
+/* ═══ 📱 v276 มือถือ: หน้าตั้งค่าแบบ ข (เมนูแบบตั้งค่า iPhone → แตะเข้าไปทีละหัวข้อ) ═══
+   ใช้แท็บ/ตาราง/ปุ่มเดิมทั้งหมด (กดแท็บเดิมให้) · ตารางแสดงเป็นการ์ด (CSS mobile.css + ป้ายชื่อคอลัมน์ data-label)
+   ค้นหาในหัวข้อ · ปุ่ม Excel ย้ายไปไว้ใต้ปุ่ม ⋯ · PC/iPad ไม่เปลี่ยน */
+const StHome = (() => {
+    const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const S = () => AppState.settings || {};
+    const ITEMS = [
+        ['ข้อมูลหลัก', 'entities', '👑', '#FFF3BF', 'Company', 'บริษัท / บุคคล', () => (S().entities || []).length],
+        ['ข้อมูลหลัก', 'accounts', '💳', '#E7F5FF', 'Statement', 'บัญชีธนาคาร · บัตร · เงินสด', () => (S().accounts || []).length],
+        ['ข้อมูลหลัก', 'contacts', '👥', '#EBFBEE', 'Customer', 'ลูกค้า · ผู้ขาย · คู่ค้า', () => (S().contacts || []).length],
+        ['ข้อมูลหลัก', 'captions', '🏷️', '#FFF0F6', 'Caption', 'ประเภทหลัก (รายรับ · รายจ่าย · ทรัพย์สิน)', () => (S().captions || []).length],
+        ['ข้อมูลหลัก', 'categories', '🗂️', '#F3F0FF', 'Categories', 'หมวดย่อย', () => (S().categories || []).length],
+        ['สมาชิก & การเงิน', 'users', '👨‍👩‍👧', '#FFF0F6', 'สมาชิก', 'สิทธิ์ · เชื่อม LINE', () => (S().users || []).length, true],
+        ['สมาชิก & การเงิน', 'debts', '📝', '#FFF4E6', 'ทะเบียนหนี้สิน', 'สัญญากู้ · ผ่อน', () => ''],
+        ['สมาชิก & การเงิน', 'opening-balances', '⚖️', '#E6FCF5', 'ยอดยกมา', 'ยอดเริ่มต้นของแต่ละคน', () => ''],
+        ['ระบบ', 'backup', '💾', '#F1F3F5', 'สำรอง / Google Drive', 'Backup · Restore · ล้างข้อมูลทริป', () => ''],
+    ];
+    const box = () => document.getElementById('st-home');
+    function ensure() {
+        let el = box(); if (el) return el;
+        const body = document.querySelector('#view-settings .settings-container > .card-body'); if (!body) return null;
+        el = document.createElement('div'); el.id = 'st-home'; body.prepend(el);
+        const bar = document.createElement('div'); bar.id = 'st-back'; body.prepend(bar);
+        return el;
+    }
+    let sig = '';
+    function render(force) {
+        const el = ensure(); if (!el) return;
+        const isAdmin = AppState.userRole === 'admin', mode = AppState.settingsViewMode || 'admin';
+        const now = [AppState.userName, isAdmin, mode, ...ITEMS.map(i => i[6]())].join('|');
+        if (!force && now === sig && el.firstChild) return;   // ไม่มีอะไรเปลี่ยน → ไม่วาดใหม่ (กันวนกับ MutationObserver)
+        sig = now;
+        const groups = [...new Set(ITEMS.map(i => i[0]))];
+        el.innerHTML = `<div class="st-me"><div class="st-av">${esc((AppState.userName || '?').slice(0, 2).toUpperCase())}</div>
+            <div class="st-mt"><b>${esc(AppState.userName || '')}</b><small>${isAdmin ? 'ผู้ดูแลระบบ' : 'สมาชิก'}${isAdmin ? ` · มุมมอง: ${mode === 'admin' ? 'ทั้งหมด' : 'เฉพาะของฉัน'}` : ''}</small></div>
+            ${isAdmin ? `<button type="button" onclick="setSettingsViewMode('${mode === 'admin' ? 'user' : 'admin'}');StHome.render(true)">${mode === 'admin' ? '👤 ดูเฉพาะฉัน' : '👑 ดูทั้งหมด'}</button>` : ''}</div>
+          ${groups.map(g => `<div class="st-grp">${g}</div><div class="st-lst">${ITEMS.filter(i => i[0] === g && (!i[7] || isAdmin)).map(i => { const n = i[6]();
+            return `<button type="button" class="st-row" onclick="StHome.open('${i[1]}')"><span class="st-ic" style="background:${i[3]}">${i[2]}</span><span class="st-tx"><b>${i[4]}</b><small>${i[5]}</small></span>${n !== '' ? `<span class="st-n">${n}</span>` : ''}<span class="st-c">›</span></button>`; }).join('')}</div>`).join('')}
+          <div class="st-grp">ธีม</div><div class="st-theme st-thm"><button type="button" data-th="purple">💜 ม่วงนุ่ม</button><button type="button" data-th="dark">🌙 มืด</button>
+            <select aria-label="ธีมอื่น" data-th-sel><option value="">ธีมอื่น…</option><option value="kawaii">🎀 Kawaii</option><option value="sakura">🌸 Sakura</option><option value="fuji">🗻 Fuji</option><option value="hokkaido">❄️ Hokkaido</option></select></div>`;
+        try { bindSettingsTheme(); } catch { /* */ }
+    }
+    function enter() { document.body.classList.remove('st-in'); if (!isPhone()) return; render(true); }
+    function open(key) {
+        const tab = document.querySelector(`.settings-tab[data-settings-tab="${key}"]`); if (!tab) return;
+        tab.click();
+        const it = ITEMS.find(i => i[1] === key);
+        const bar = document.getElementById('st-back');
+        if (bar) bar.innerHTML = `<button type="button" onclick="StHome.back()">‹ ตั้งค่า</button><b>${it ? it[2] + ' ' + it[4] : ''}</b>`;
+        document.body.classList.add('st-in');
+        setTimeout(() => { decorate(); document.querySelector('.main-content')?.scrollTo(0, 0); window.scrollTo(0, 0); }, 50);
+    }
+    function back() { document.body.classList.remove('st-in'); render(true); document.querySelector('.main-content')?.scrollTo(0, 0); window.scrollTo(0, 0); }
+    /* ตาราง → การ์ด: ใส่ชื่อคอลัมน์ให้ทุกช่อง · ช่องค้นหา · ปุ่ม ⋯ รวมปุ่ม Excel */
+    function decorate() {
+        if (!isPhone()) return;
+        const sec = document.querySelector('#view-settings .settings-section-content:not(.hidden)'); if (!sec) return;
+        sec.querySelectorAll('table').forEach(t => {
+            const heads = [...t.querySelectorAll('thead th')].map(th => th.innerText.replace(/\s+/g, ' ').trim());
+            let ti = heads.findIndex(h => /^ชื่อ/.test(h)); if (ti < 0) ti = heads.findIndex(h => /^Company$/i.test(h)); if (ti < 0) ti = 1;
+            t.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => { if (heads[i] && !td.dataset.label) td.dataset.label = heads[i]; if (i === ti) td.classList.add('st-title'); }));
+        });
+        const hdr = sec.querySelector('.settings-section-header');
+        if (hdr && !hdr.dataset.stDone) {
+            hdr.dataset.stDone = '1';
+            const btns = [...hdr.querySelectorAll('.btn, label.btn')];
+            const extra = btns.filter(b => /excel|นำเข้า|ส่งออก|template|csv/i.test(b.textContent + ' ' + (b.className || '')));
+            if (extra.length) {
+                const more = document.createElement('button'); more.type = 'button'; more.className = 'btn st-more'; more.textContent = '⋯'; more.setAttribute('aria-label', 'นำเข้า / ส่งออก Excel');
+                more.onclick = () => hdr.classList.toggle('st-open');
+                extra.forEach(b => b.classList.add('st-x'));
+                (btns.find(b => !extra.includes(b))?.parentElement || hdr).appendChild(more);
+            }
+            if (sec.querySelector('tbody')) {
+                const q = document.createElement('input'); q.type = 'search'; q.className = 'st-q'; q.placeholder = '🔍 ค้นหา';
+                q.oninput = () => { const v = q.value.trim().toLowerCase(); sec.querySelectorAll('tbody tr').forEach(tr => { tr.style.display = !v || tr.innerText.toLowerCase().includes(v) ? '' : 'none'; }); };
+                hdr.after(q);
+            }
+        }
+    }
+    /* ตารางถูกวาดใหม่ภายหลัง (โหลดข้อมูลเสร็จ / แก้ไข) → ใส่ป้ายชื่อคอลัมน์อีกครั้ง */
+    try { new MutationObserver(() => { if (document.body.classList.contains('st-in')) { clearTimeout(StHome._t); StHome._t = setTimeout(decorate, 60); } else if (isPhone() && AppState?.activeView === 'settings' && box()) { clearTimeout(StHome._r); StHome._r = setTimeout(render, 120); } })
+        .observe(document.getElementById('view-settings') || document.body, { childList: true, subtree: true }); } catch { /* */ }
+    return { enter, render, open, back, decorate };
+})();
+window.StHome = StHome;
+
+/* ═══ 📱 v276 มือถือ: หน้ารอตรวจแบบ ข (North 2026-11-01 เลือก "แบบ ข โดยยังสลับไปดูรายการทั้งหมดได้ ซึ่งจะแสดงการ์ดแบบ ก")
+   แถบโหมด: ทีละรายการ (PendReview) · รายการทั้งหมด (การ์ดเดิม จัดแบบ ก) · ตามร้าน (โหมดจัดกลุ่มเดิม)
+   ทีละรายการ: ยอดใหญ่ · ประวัติร้านนี้ (Similar) · ปุ่มลัดหมวด/Company · แยกหลายส่วน (ส่วนสุดท้ายเติมยอดที่เหลือ)
+   บันทึกด้วย API เดิม (POST /api/transactions แล้ว /confirm) — payload รูปเดียวกับ getCardPayload() ═══ */
+const PendReview = (() => {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+    const fm = n => { const v = r2(n), t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const clean = n => String(n || '').replace(/^\s*\[[^\]]+\]\s*/, '');
+    const MKEY = 'rr_pend_mode_v276', UKEY = 'rr_rv_use_v276';
+    const S = { mode: (() => { try { return localStorage.getItem(MKEY) || 'one'; } catch { return 'one'; } })(), id: null, splits: [], open: 0, skip: new Set(), sim: null, more: false, busy: false };
+    const signed = tx => { let a = Number(tx.total_amount) || 0; if (a > 0 && (tx.details || []).some(d => d.type === 'EXPENSE')) a = -a; return r2(a); };
+    const use = () => { try { return JSON.parse(localStorage.getItem(UKEY) || '{}'); } catch { return {}; } };
+    const bump = (kind, id) => { if (!id) return; try { const u = use(); u[kind] = u[kind] || {}; u[kind][id] = (u[kind][id] || 0) + 1; localStorage.setItem(UKEY, JSON.stringify(u)); } catch { /* */ } };
+    const list = () => { let l = (AppState.pendingTransactions || []).filter(t => !t._draft);
+        const f = document.getElementById('pending-account-filter')?.value; if (f && f !== 'ALL') l = l.filter(t => String(t.account_id) === String(f)); return l; };
+    const queue = () => list().filter(t => !S.skip.has(t.transaction_id));
+    const cur = () => list().find(t => t.transaction_id === S.id);
+    function pick() { const q = queue(); if (!q.length) { S.id = null; return null; } if (!S.id || !q.some(t => t.transaction_id === S.id)) S.id = q[0].transaction_id; return cur(); }
+    function load(tx) {
+        const tot = signed(tx), ds = (tx.details || []).filter(d => d);
+        S.splits = (ds.length ? ds : [{}]).map(d => ({ amount: r2(d.amount != null && Number(d.amount) !== 0 ? (Number(d.amount) * (tot < 0 && Number(d.amount) > 0 ? -1 : 1)) : tot), fee: Math.abs(Number(d.fee) || 0), wht: Math.abs(Number(d.wht) || 0),
+            category_id: d.category_id && d.category_id !== 'Cat_Uncategorized' ? d.category_id : '', entity_id: d.entity_id || '', contact_id: d.contact_id || '', note: d.note || '' }));
+        if (S.splits.length === 1) rebalance(tx);   // ส่วนเดียว = ยอด statement + ค่าธรรมเนียม/ภาษีของตัวเอง (เช่น ดอกเบี้ย 20.20 หักภาษี 0.20)
+        S.open = S.splits.findIndex(s => !s.category_id); if (S.open < 0) S.open = 0;
+        S.sim = null; S.more = false;
+        if (!S.splits.some(s => s.category_id) || !S.splits[0].entity_id) {
+            const ad = typeof AccDefaults !== 'undefined' ? AccDefaults.of?.(tx.account_id) : null;
+            if (ad && !S.splits[0].entity_id) S.splits[0].entity_id = ad;
+        }
+        Similar.fetch({ desc: tx.statement_desc || '', name: tx.details?.[0]?.note || '', sign: Math.sign(tot) || '', account_id: tx.account_id, exclude: tx.transaction_id })
+            .then(r => { if (S.id === tx.transaction_id) { S.sim = r; render(); } }).catch(() => { });
+    }
+    const cats = () => AppState.categories || [];
+    const catName = id => clean(cats().find(c => c.category_id === id)?.name || '');
+    const entName = id => clean((AppState.entities || []).find(e => e.entity_id === id)?.name || '');
+    const conName = id => clean((AppState.contacts || []).find(c => c.contact_id === id)?.name || '');
+    function topCats(sign, sel) {
+        const u = use().cat || {}, sum = S.sim?.summary?.category_id;
+        const beh = sign < 0 ? ['EXPENSE'] : ['REVENUE', 'INCOME'];
+        const pool = cats().filter(c => !c.caption_behavior || beh.includes(c.caption_behavior) || u[c.category_id] || c.category_id === 'Bank_Transfer');
+        const ranked = pool.map(c => [c, (u[c.category_id] || 0) + (c.category_id === sum ? 1000 : 0)]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+        const out = []; for (const c of [cats().find(c => c.category_id === sel), ...ranked]) if (c && !out.includes(c) && out.length < 6) out.push(c);
+        if (!out.some(c => c.category_id === 'Bank_Transfer')) { const t = cats().find(c => c.category_id === 'Bank_Transfer'); if (t) out.push(t); }
+        return out;
+    }
+    function topEnts(sel, accId) {
+        const u = use().ent || {}, d = typeof AccDefaults !== 'undefined' ? AccDefaults.of?.(accId) : null;
+        const all = AppState.entities || [];
+        const ranked = [...all].sort((a, b) => ((b.entity_id === d) * 1000 + (u[b.entity_id] || 0)) - ((a.entity_id === d) * 1000 + (u[a.entity_id] || 0)));
+        const out = []; for (const e of [all.find(e => e.entity_id === sel), ...ranked]) if (e && !out.includes(e) && out.length < 4) out.push(e);
+        return out;
+    }
+    const remaining = tx => r2(signed(tx) - S.splits.reduce((t, x) => { const sg = x.amount < 0 ? -1 : 1; return t + r2(x.amount) - sg * (Math.abs(x.fee) + Math.abs(x.wht)); }, 0));
+    function splitHtml(tx, s, i) {
+        const sign = signed(tx) < 0 ? -1 : 1;
+        if (i !== S.open) return `<button type="button" class="pr-sr" onclick="PendReview.openSplit(${i})"><span class="pr-no">${i + 1}</span><span class="pr-mid"><b>${esc(catName(s.category_id) || 'ยังไม่เลือกหมวด')}</b><small>${esc([entName(s.entity_id), conName(s.contact_id)].filter(Boolean).join(' · ') || '—')}</small></span><span class="pr-v ${s.amount < 0 ? 'neg' : 'pos'}">${fm(s.amount)}</span></button>`;
+        const chip = (on, label, fn) => `<button type="button" class="pr-chip${on ? ' on' : ''}" onclick="${fn}">${label}</button>`;
+        const catSel = `<select class="pr-other" onchange="PendReview.set(${i},'category_id',this.value)"><option value="">🔍 อื่น…</option>${cats().map(c => `<option value="${esc(c.category_id)}"${c.category_id === s.category_id ? ' selected' : ''}>${esc(clean(c.name))}</option>`).join('')}</select>`;
+        const entSel = `<select class="pr-other" onchange="PendReview.set(${i},'entity_id',this.value)"><option value="">อื่น…</option>${(AppState.entities || []).map(e => `<option value="${esc(e.entity_id)}"${e.entity_id === s.entity_id ? ' selected' : ''}>${esc(clean(e.name))}</option>`).join('')}</select>`;
+        const many = S.splits.length > 1;
+        return `<div class="pr-sr open">${many ? `<div class="pr-srh"><span class="pr-no">${i + 1}</span><b>ส่วนที่ ${i + 1}</b>${i === S.splits.length - 1 ? '<small>ยอดที่เหลือเติมให้อัตโนมัติ</small>' : ''}<button type="button" class="pr-x" onclick="PendReview.delSplit(${i})" aria-label="ลบส่วนนี้">✕</button></div>` : ''}
+          ${many ? `<label class="pr-f"><span>ยอดเงิน</span><input inputmode="decimal" value="${fm(s.amount).replace(/[()]/g, '')}" onchange="PendReview.set(${i},'amount',this.value)"></label>` : ''}
+          <div class="pr-lbl">หมวด</div><div class="pr-chips">${topCats(sign, s.category_id).map(c => chip(c.category_id === s.category_id, esc(clean(c.name)), `PendReview.set(${i},'category_id','${esc(c.category_id)}')`)).join('')}${catSel}</div>
+          <div class="pr-lbl">Company</div><div class="pr-chips">${topEnts(s.entity_id, tx.account_id).map(e => chip(e.entity_id === s.entity_id, esc(clean(e.name)), `PendReview.set(${i},'entity_id','${esc(e.entity_id)}')`)).join('')}${entSel}</div>
+          ${S.more || s.contact_id || s.fee || s.wht ? `<div class="pr-more">
+            <label class="pr-f"><span>คู่ค้า (Customer)</span><input list="pr-contacts" value="${esc(conName(s.contact_id))}" placeholder="พิมพ์ชื่อเพื่อค้นหา" onchange="PendReview.setContact(${i},this.value)"></label>
+            <div class="pr-two"><label class="pr-f"><span>ค่าธรรมเนียม</span><input inputmode="decimal" value="${s.fee ? fm(s.fee) : ''}" placeholder="0.00" onchange="PendReview.set(${i},'fee',this.value)"></label>
+              <label class="pr-f"><span>ภาษีหัก ณ ที่จ่าย</span><input inputmode="decimal" value="${s.wht ? fm(s.wht) : ''}" placeholder="0.00" onchange="PendReview.set(${i},'wht',this.value)"></label></div>
+            <label class="pr-f"><span>รายละเอียด</span><input value="${esc(s.note)}" onchange="PendReview.set(${i},'note',this.value)"></label></div>` : ''}
+        </div>`;
+    }
+    function render() {
+        const root = document.getElementById('pr-root'); if (!root) return;
+        const modes = [['one', '🎯 ทีละรายการ'], ['list', '📋 ทั้งหมด'], ['shop', '🏪 ตามร้าน']];
+        let html = `<div class="pr-modes">${modes.map(([k, t]) => `<button type="button" class="${S.mode === k ? 'on' : ''}" onclick="PendReview.mode('${k}')">${t}</button>`).join('')}</div>`;
+        if (S.mode === 'one') {
+            const all = list(), tx = pick();
+            if (!tx) html += `<div class="pr-done">🎉 ${all.length ? `ข้ามไว้ ${S.skip.size} รายการ <button type="button" onclick="PendReview.reset()">เริ่มดูรายการที่ข้ามอีกครั้ง</button>` : 'ไม่มีรายการรอตรวจแล้ว'}</div>`;
+            else {
+                if (!S.splits.length || S._for !== tx.transaction_id) { S._for = tx.transaction_id; load(tx); }
+                const idx = all.indexOf(tx) + 1, tot = signed(tx), rem = remaining(tx), acc = (AppState.accounts || []).find(a => a.account_id === tx.account_id);
+                const sum = S.sim?.summary;
+                html += `<div class="pr-prog"><div><i style="width:${Math.max(2, Math.round(idx / Math.max(all.length, 1) * 100))}%"></i></div><small>${idx.toLocaleString('en-US')} / ${all.length.toLocaleString('en-US')}</small></div>
+                  <div class="pr-big"><div class="pr-d">${esc(String(tx.date || '').slice(0, 10).split('-').reverse().join('/'))}${tx.time && tx.time !== '00:00:00' ? ' · ' + esc(String(tx.time).slice(0, 5)) : ''} · <b>${esc(acc?.name || tx.account_id)}</b></div>
+                    <div class="pr-amt ${tot < 0 ? 'neg' : 'pos'}">${fm(tot)}</div>
+                    <div class="pr-desc">${esc([tx.statement_desc, tx.details?.[0]?.note].filter((v, i, a) => v && a.indexOf(v) === i).join(' · ') || '-')}</div>
+                    ${tx.slip_image_url ? `<button type="button" class="pr-link" onclick="showSlip('${String(tx.slip_image_url).replace(/[^\w/.:-]/g, '')}')">📎 ดูสลิป</button>` : ''}
+                    ${sum ? `<button type="button" class="pr-sug" onclick="PendReview.useSim()">💡 เคยบันทึก ${sum.n} ครั้ง: <b>${esc([clean(sum.category_name), sum.entity_name, sum.contact_name].filter(Boolean).join(' · '))}</b> — แตะเพื่อใช้</button>` : ''}
+                    ${S.splits.length > 1 ? `<div class="pr-lbl pr-sh">แยก ${S.splits.length} ส่วน <span class="${Math.abs(rem) < 0.01 ? 'pos' : 'warn'}">${Math.abs(rem) < 0.01 ? 'แบ่งครบแล้ว ✓' : 'ยังเหลือ ' + fm(rem)}</span></div>` : ''}
+                    <div class="pr-splits">${S.splits.map((s, i) => splitHtml(tx, s, i)).join('')}</div>
+                    <div class="pr-adds"><button type="button" onclick="PendReview.addSplit()">＋ แยกหลายรายการ</button>${S.more ? '' : `<button type="button" onclick="PendReview.showMore()">＋ คู่ค้า · ค่าธรรมเนียม · ภาษี</button>`}</div>
+                    <div class="pr-btns"><button type="button" class="pr-skip" onclick="PendReview.next()">ข้าม ›</button><button type="button" class="pr-del" onclick="PendReview.del()" aria-label="ลบรายการนี้">🗑</button>
+                      <button type="button" class="pr-save" onclick="PendReview.save()"${S.busy ? ' disabled' : ''}>${S.busy ? '⏳ กำลังบันทึก…' : '✓ บันทึก แล้วไปต่อ'}</button></div></div>`;
+                const nx = queue().filter(t => t.transaction_id !== tx.transaction_id)[0];
+                if (nx) html += `<div class="pr-next"><span>ถัดไป: ${esc(String(nx.date || '').slice(5, 10).split('-').reverse().join('/'))} · ${esc(nx.statement_desc || '-')}</span><b class="${signed(nx) < 0 ? 'neg' : 'pos'}">${fm(signed(nx))}</b></div>`;
+            }
+        }
+        root.innerHTML = html + `<datalist id="pr-contacts">${(AppState.contacts || []).slice(0, 3000).map(c => `<option value="${esc(clean(c.name))}">`).join('')}</datalist>`;
+        document.body.dataset.prMode = S.mode;
+    }
+    function mode(m) {
+        S.mode = m; try { localStorage.setItem(MKEY, m); } catch { /* */ }
+        const grp = m === 'shop';
+        if (!!AppState.pendingGroupMode !== grp) { AppState.pendingGroupMode = grp; AppState.pendingGroupKey = null; renderPendingTransactions(); try { renderPendingHero(); } catch { /* */ } }
+        render(); window.scrollTo(0, 0); document.querySelector('.main-content')?.scrollTo(0, 0);
+    }
+    const num = v => { const n = parseAmountInput(String(v || '0')); return isFinite(n) ? r2(n) : 0; };
+    function set(i, k, v) {
+        const s = S.splits[i]; if (!s) return; const tx = cur();
+        if (k === 'amount') { const n = Math.abs(num(v)); s.amount = signed(tx) < 0 ? -n : n; if (i !== S.splits.length - 1) rebalance(tx); }
+        else if (k === 'fee' || k === 'wht') { s[k] = Math.abs(num(v)); if (S.splits.length === 1 || i === S.splits.length - 1) rebalance(tx); else rebalance(tx); }
+        else s[k] = v;
+        if (k === 'category_id' && v) { const c = cats().find(x => x.category_id === v); if (c?.default_entity_id && !s.entity_id) s.entity_id = c.default_entity_id; if (c?.default_contact_id && !s.contact_id) s.contact_id = c.default_contact_id; }
+        render();
+    }
+    function setContact(i, name) { const c = (AppState.contacts || []).find(x => clean(x.name) === String(name).trim()); S.splits[i].contact_id = c ? c.contact_id : ''; render(); }
+    const netOf = x => { const sg = x.amount < 0 ? -1 : 1; return r2(r2(x.amount) - sg * (Math.abs(x.fee) + Math.abs(x.wht))); };
+    /* ส่วนสุดท้าย (หรือส่วนเดียว) = ยอด statement − ส่วนอื่น · บวกค่าธรรมเนียม/ภาษีของตัวเองกลับ (ยอดย่อย − ค่าธรรมเนียม − ภาษี = สุทธิ) */
+    function rebalance(tx) {
+        const last = S.splits[S.splits.length - 1]; if (!last || !tx) return;
+        const need = r2(signed(tx) - S.splits.slice(0, -1).reduce((t, x) => t + netOf(x), 0)), sg = need < 0 ? -1 : 1;
+        last.amount = r2(need + sg * (Math.abs(last.fee) + Math.abs(last.wht)));
+    }
+    const fillLast = rebalance;
+    function addSplit() { const tx = cur(); if (!tx) return;
+        if (S.splits.length === 1) S.splits[0].amount = r2(signed(tx) / 2);
+        S.splits.push({ amount: 0, fee: 0, wht: 0, category_id: '', entity_id: S.splits[0]?.entity_id || '', contact_id: '', note: '' });
+        rebalance(tx); S.open = S.splits.length - 1; render(); }
+    function delSplit(i) { const tx = cur(); S.splits.splice(i, 1);
+        if (!S.splits.length) S.splits.push({ amount: 0, fee: 0, wht: 0, category_id: '', entity_id: '', contact_id: '', note: '' });
+        rebalance(tx); S.open = Math.min(S.open, S.splits.length - 1); render(); }
+    function useSim() { const v = S.sim?.summary; if (!v) return; const s = S.splits[S.open] || S.splits[0];
+        if (v.category_id) s.category_id = v.category_id; if (v.entity_id) s.entity_id = v.entity_id; if (v.contact_id) s.contact_id = v.contact_id; render(); }
+    function next() { if (S.id) S.skip.add(S.id); S.id = null; S.splits = []; render(); }
+    function reset() { S.skip.clear(); S.id = null; S.splits = []; render(); }
+    function dropLocal(id) {
+        const card = document.querySelector(`#pending-cards-container .tx-card[data-txid="${CSS.escape(id)}"]`);
+        if (card && typeof removePendingCardLocal === 'function') removePendingCardLocal(card, id);
+        else { AppState.pendingTransactions = (AppState.pendingTransactions || []).filter(t => t.transaction_id !== id); try { renderPendingHero(); } catch { /* */ } }
+        try { updatePendingBadge?.(); } catch { /* */ }
+    }
+    async function del() {
+        const tx = cur(); if (!tx || !confirm('ลบรายการนี้ออกจากรอตรวจ?')) return;
+        const r = await fetch(`${API_BASE}/api/transactions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) }, body: JSON.stringify({ transaction_id: tx.transaction_id }) });
+        if (r.ok) { dropLocal(tx.transaction_id); S.id = null; S.splits = []; render(); } else alert('ลบไม่สำเร็จ');
+    }
+    function payload(tx) {
+        const tot = signed(tx), details = [];
+        for (const [i, s] of S.splits.entries()) {
+            if (!s.category_id) { S.open = i; render(); alert(`ส่วนที่ ${i + 1}: ยังไม่ได้เลือกหมวด`); return null; }
+            if (!r2(s.amount)) { S.open = i; render(); alert(`ส่วนที่ ${i + 1}: ยอดเงินเป็น 0`); return null; }
+            const c = cats().find(x => x.category_id === s.category_id), sg = s.amount < 0 ? -1 : 1;
+            let type = s.amount >= 0 ? 'INCOME' : 'EXPENSE';
+            if (c?.default_type) type = c.default_type; else if (c?.caption_behavior === 'REVENUE') type = 'INCOME'; else if (c?.caption_behavior === 'EXPENSE') type = 'EXPENSE';
+            details.push({ amount: r2(s.amount), fee: Math.abs(s.fee) * sg, wht: Math.abs(s.wht) * sg, category_id: s.category_id, contact_id: s.contact_id || null, entity_id: s.entity_id || null, note: s.note || null, type });
+        }
+        if (Math.abs(remaining(tx)) > 0.01) { alert(`ยอดที่แบ่งยังไม่ครบ — ยังเหลือ ${fm(remaining(tx))}`); return null; }
+        return { transaction_id: tx.transaction_id, account_id: tx.account_id, date: String(tx.date || '').slice(0, 10), time: tx.time || '00:00:00',
+            statement_desc: tx.statement_desc || (catName(details[0].category_id) || 'Imported Transaction'), total_amount: tot, ref_code: tx.ref_code || '', status: 'PENDING_REVIEW',
+            source: tx.source || 'PDF_IMPORT', slip_image_url: tx.slip_image_url || null, details };
+    }
+    async function save() {
+        const tx = cur(); if (!tx || S.busy) return;
+        const p = payload(tx); if (!p) return;
+        S.busy = true; render();
+        try {
+            const h = { 'Content-Type': 'application/json', 'x-user-id': encodeURIComponent(getUserIdHeader()) };
+            const r = await fetch(`${API_BASE}/api/transactions`, { method: 'POST', headers: h, body: JSON.stringify(p) });
+            if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || r.status); }
+            const c = await fetch(`${API_BASE}/api/transactions/confirm`, { method: 'POST', headers: h, body: JSON.stringify({ transaction_id: tx.transaction_id }) });
+            if (!c.ok) throw new Error('ยืนยันไม่สำเร็จ');
+            p.details.forEach(d => { bump('cat', d.category_id); bump('ent', d.entity_id); });
+            dropLocal(tx.transaction_id); S.id = null; S.splits = [];
+            if (window.showToast) showToast('✅ บันทึกแล้ว');
+        } catch (e) { alert('บันทึกไม่สำเร็จ: ' + (e.message || e)); }
+        S.busy = false; render();
+    }
+    /* ใส่แถบโหมดไว้บนสุดของหน้ารอตรวจ (มือถือ) */
+    function mount() {
+        const view = document.getElementById('view-pending'); if (!view) return;
+        let root = document.getElementById('pr-root');
+        if (!isPhone()) { root?.remove(); delete document.body.dataset.prMode; return; }
+        if (!root) { root = document.createElement('div'); root.id = 'pr-root'; const hero = document.getElementById('pending-hero'); (hero?.parentNode || view).insertBefore(root, hero || view.firstChild); }
+        render();
+    }
+    return { mount, render, mode, set, setContact, addSplit, delSplit, openSplit: i => { S.open = i; render(); }, showMore: () => { S.more = true; render(); }, useSim, next, reset, del, save };
+})();
+window.PendReview = PendReview;
+
+/* 📱 v276 มือถือ: การ์ดแบบ ก ในโหมด "รายการทั้งหมด" — รายการย่อยหลายอัน = บรรทัดสรุป แตะเพื่อแก้ทีละอัน · แถบยอดที่แบ่งแล้ว */
+const PendCardA = (() => {
+    const fm = n => { const v = Math.round((Number(n) || 0) * 100) / 100, t = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? `(${t})` : t; };
+    const txt = sel => sel?.selectedOptions?.[0] && sel.value ? sel.selectedOptions[0].text.replace(/^\s*\[[^\]]+\]\s*/, '').trim() : '';
+    function sync(card) {
+        const rows = [...card.querySelectorAll('.sub-row-item')]; if (!rows.length) return;
+        const many = rows.length > 1;
+        card.classList.toggle('pa-many', many);
+        rows.forEach((row, i) => {
+            let sum = row.previousElementSibling?.classList?.contains('pa-sum') ? row.previousElementSibling : null;
+            if (!many) { sum?.remove(); row.classList.remove('pa-open'); return; }
+            if (!sum) { sum = document.createElement('button'); sum.type = 'button'; sum.className = 'pa-sum'; row.before(sum);
+                sum.onclick = () => { const open = row.classList.contains('pa-open'); card.querySelectorAll('.sub-row-item.pa-open').forEach(r => r.classList.remove('pa-open')); if (!open) row.classList.add('pa-open'); sync(card); }; }
+            const amt = parseAmountInput(row.querySelector('.input-amount')?.value || '0');
+            const who = [txt(row.querySelector('.select-entity')), txt(row.querySelector('.select-contact'))].filter(Boolean).join(' · ');
+            sum.classList.toggle('on', row.classList.contains('pa-open'));
+            sum.innerHTML = `<span class="pa-no">${i + 1}</span><span class="pa-mid"><b>${txt(row.querySelector('.select-category')) || 'ยังไม่เลือกหมวด'}</b><small>${who || '—'}</small></span><span class="pa-v ${amt < 0 ? 'neg' : 'pos'}">${fm(amt)}</span><span class="pa-e">${row.classList.contains('pa-open') ? '▲' : '✎'}</span>`;
+        });
+        const stmt = Math.abs(parseAmountInput(card.querySelector('.input-stmt-amount')?.value || '0'));
+        let net = 0; rows.forEach(r => { const a = parseAmountInput(r.querySelector('.input-amount')?.value || '0'), f = Math.abs(parseAmountInput(r.querySelector('.input-fee')?.value || '0')), w = Math.abs(parseAmountInput(r.querySelector('.input-wht')?.value || '0')); net += Math.abs(a) - (f + w); });
+        let m = card.querySelector('.pa-meter'); const foot = card.querySelector('.tx-card-footer');
+        if (!m && foot) { m = document.createElement('div'); m.className = 'pa-meter'; m.innerHTML = '<i></i>'; foot.before(m); }
+        if (m) m.firstChild.style.width = (stmt ? Math.min(100, Math.round(net / stmt * 100)) : 0) + '%';
+    }
+    function scan() {
+        if (!isPhone()) return;
+        document.querySelectorAll('#pending-cards-container .tx-card').forEach(card => {
+            if (!card._pa) { card._pa = true; const t = () => { clearTimeout(card._paT); card._paT = setTimeout(() => sync(card), 80); }; card.addEventListener('input', t); card.addEventListener('change', t); card.addEventListener('click', e => { if (e.target.closest('.btn-add-subrow, .btn-remove-subrow, .btn-move-up-subrow, .btn-move-down-subrow, .sim-use')) t(); }); }
+            sync(card);
+        });
+    }
+    try { new MutationObserver(() => { clearTimeout(PendCardA._t); PendCardA._t = setTimeout(scan, 100); }).observe(document.getElementById('pending-cards-container') || document.body, { childList: true }); } catch { /* */ }
+    return { scan, sync };
+})();
+window.PendCardA = PendCardA;
+
+/* 📱 v276 มือถือ: ส่วนหัวหน้ารอตรวจ — ปุ่มนำเข้า 4 ปุ่มแถวเดียว · ปุ่มเครื่องมือรวมไว้ใน "🧰 เครื่องมือ" */
+function PendHeroPhone() {
+    const box = document.getElementById('pending-hero'); if (!box || !isPhone()) return;
+    const pdf = box.querySelector('.ph-pdf');
+    if (pdf && !pdf._ph) { pdf._ph = true; pdf.addEventListener('click', e => { if (!isPhone() || e.target.closest('select, button')) return; box.querySelector('#ph-pdf-go')?.click(); }); }
+    const tools = box.querySelector('.ph-tools');
+    if (tools && !tools.querySelector('.ph-tgl')) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'ph-tgl'; b.textContent = '🧰 เครื่องมือ ▾';
+        b.onclick = () => { tools.classList.toggle('open'); b.textContent = tools.classList.contains('open') ? '🧰 เครื่องมือ ▴' : '🧰 เครื่องมือ ▾'; };
+        tools.prepend(b);
+    }
+}
+(() => { try { let last = null; window.matchMedia('(max-width:768px)').addEventListener('change', e => { if (last === e.matches) return; last = e.matches;
+    if (AppState?.activeView === 'pending') { PendReview.mount(); PendCardA.scan(); PendHeroPhone(); } }); } catch { /* */ } })();
+try { new MutationObserver(() => { if (isPhone()) { clearTimeout(window._phT); window._phT = setTimeout(PendHeroPhone, 50); } }).observe(document.getElementById('pending-hero') || document.body, { childList: true }); } catch { /* */ }

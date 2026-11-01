@@ -1,6 +1,7 @@
 import { parseAiJson } from './ai-json.js';
 import { handleTripPurge } from './trip-purge.js';   /* v271 ระบบทริปปิดแล้ว — unified-trip.js / legacy-trip.js ไม่ถูกเรียกอีก */
 import { handleLineInfo } from './line-info.js';   /* v271 QR บอท LINE */
+import { idCascade } from './id-cascade.js';   /* v275 เปลี่ยนรหัส ID ตามไปทุกตาราง */
 import { handleLedgerInbox, geminiGenerate, processQueue } from './ledger-inbox.js';
 import { planSettlementKeep } from './settle-keep.js';
 import { isMonthClosed, isPeriodClosedError, PERIOD_CLOSED_MSG } from './period-close.js';
@@ -1128,6 +1129,7 @@ export default {
         const statements = [];
 
         // CASE 1: Create New Master Data Item
+        let renamedTouched = [];   // v275
         if (!old_id) {
           let dupCheckQuery = '';
           if (type === 'account') dupCheckQuery = 'SELECT account_id FROM Accounts WHERE account_id = ?';
@@ -1193,42 +1195,54 @@ export default {
         } 
         // CASE 2: Edit Existing Item (Update or Cascade ID Update)
         else {
-          const isIdChanged = (old_id !== new_id);
+          /* v275 🔁 เปลี่ยนรหัส ID: เปลี่ยนรหัสของแถวเดิมตรง ๆ (เก็บทุกคอลัมน์ไว้ครบ — เดิม INSERT ใหม่แล้วลบ ทำให้คอลัมน์ที่เพิ่มทีหลังหาย)
+             + ตามไปทุกตารางที่เก็บรหัสนี้ (id-cascade.js) ในครั้งเดียว · จากนั้นแก้ชื่อ/ค่าอื่นแบบปกติด้วยรหัสใหม่ */
+          let oid = old_id;
+          let isIdChanged = (old_id !== new_id);
+          const PK = { account: ['Accounts', 'account_id'], entity: ['Entities', 'entity_id'], caption: ['Captions', 'type_id'], category: ['Categories', 'category_id'], contact: ['Contacts', 'contact_id'] }[type];
+          if (isIdChanged && PK) {
+            if (await env.DB.prepare(`SELECT 1 AS x FROM ${PK[0]} WHERE ${PK[1]} = ?`).bind(new_id).first())
+              return new Response(JSON.stringify({ error: `รหัส ID "${new_id}" มีอยู่แล้ว กรุณาใช้รหัสอื่น` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            const cas = await idCascade(env, type, old_id, new_id);
+            await env.DB.batch([env.DB.prepare('PRAGMA defer_foreign_keys = true'), ...cas.statements,
+              env.DB.prepare(`UPDATE ${PK[0]} SET ${PK[1]} = ? WHERE ${PK[1]} = ?`).bind(new_id, old_id)]);
+            renamedTouched = cas.touched; oid = new_id; isIdChanged = false;
+          }
 
           if (type === 'account') {
             if (isIdChanged) {
-              statements.push(env.DB.prepare(`UPDATE Transactions SET account_id = ? WHERE account_id = ?`).bind(new_id, old_id));
+              statements.push(env.DB.prepare(`UPDATE Transactions SET account_id = ? WHERE account_id = ?`).bind(new_id, oid));
               statements.push(
                 env.DB.prepare(`
                   INSERT INTO Accounts (account_id, entity_id, name, bank_name, account_number, balance, pdf_password, account_type, credit_limit, statement_day, due_day)
                   SELECT ?, COALESCE(?, entity_id), ?, ?, ?, balance, ?, ?, ?, ?, ? FROM Accounts WHERE account_id = ?
-                `).bind(new_id, body_entity_id || null, name, bank_name || null, account_number || null, pdf_password || null, accType, credLimit, stmtDay, dueDay, old_id)
+                `).bind(new_id, body_entity_id || null, name, bank_name || null, account_number || null, pdf_password || null, accType, credLimit, stmtDay, dueDay, oid)
               );
-              statements.push(env.DB.prepare(`DELETE FROM Accounts WHERE account_id = ?`).bind(old_id));
+              statements.push(env.DB.prepare(`DELETE FROM Accounts WHERE account_id = ?`).bind(oid));
             } else {
               statements.push(
                 env.DB.prepare(`
                   UPDATE Accounts SET name = ?, bank_name = ?, account_number = ?, pdf_password = ?, entity_id = COALESCE(?, entity_id), account_type = ?, credit_limit = ?, statement_day = ?, due_day = ? WHERE account_id = ?
-                `).bind(name, bank_name || null, account_number || null, pdf_password || null, body_entity_id || null, accType, credLimit, stmtDay, dueDay, old_id)
+                `).bind(name, bank_name || null, account_number || null, pdf_password || null, body_entity_id || null, accType, credLimit, stmtDay, dueDay, oid)
               );
             }
           } else if (type === 'entity') {
             if (isIdChanged) {
-              statements.push(env.DB.prepare(`UPDATE Accounts SET entity_id = ? WHERE entity_id = ?`).bind(new_id, old_id));
-              statements.push(env.DB.prepare(`UPDATE TransactionDetails SET entity_id = ? WHERE entity_id = ?`).bind(new_id, old_id));
-              statements.push(env.DB.prepare(`UPDATE UserPermissions SET entity_id = ? WHERE entity_id = ?`).bind(new_id, old_id));
+              statements.push(env.DB.prepare(`UPDATE Accounts SET entity_id = ? WHERE entity_id = ?`).bind(new_id, oid));
+              statements.push(env.DB.prepare(`UPDATE TransactionDetails SET entity_id = ? WHERE entity_id = ?`).bind(new_id, oid));
+              statements.push(env.DB.prepare(`UPDATE UserPermissions SET entity_id = ? WHERE entity_id = ?`).bind(new_id, oid));
               statements.push(
                 env.DB.prepare(`
                   INSERT INTO Entities (entity_id, family_id, name, is_company)
                   SELECT ?, family_id, ?, ? FROM Entities WHERE entity_id = ?
-                `).bind(new_id, name, Number(is_company || 0), old_id)
+                `).bind(new_id, name, Number(is_company || 0), oid)
               );
-              statements.push(env.DB.prepare(`DELETE FROM Entities WHERE entity_id = ?`).bind(old_id));
+              statements.push(env.DB.prepare(`DELETE FROM Entities WHERE entity_id = ?`).bind(oid));
             } else {
               statements.push(
                 env.DB.prepare(`
                   UPDATE Entities SET name = ?, is_company = ? WHERE entity_id = ?
-                `).bind(name, Number(is_company || 0), old_id)
+                `).bind(name, Number(is_company || 0), oid)
               );
             }
             // ปรับสมาชิกผู้ถือ Company ให้ตรงกับที่เลือก (เฉพาะเมื่อส่ง entity_members มา)
@@ -1241,36 +1255,36 @@ export default {
             }
           } else if (type === 'caption') {
             if (isIdChanged) {
-              statements.push(env.DB.prepare(`UPDATE Categories SET caption_id = ? WHERE caption_id = ?`).bind(new_id, old_id));
+              statements.push(env.DB.prepare(`UPDATE Categories SET caption_id = ? WHERE caption_id = ?`).bind(new_id, oid));
               statements.push(
                 env.DB.prepare(`
                   INSERT INTO Captions (type_id, family_id, name, behavior, sub_behavior, default_entity_id, default_contact_id, default_type)
                   SELECT ?, family_id, ?, ?, ?, ?, ?, ? FROM Captions WHERE type_id = ?
-                `).bind(new_id, name, capBehavior, capSub, default_entity_id || null, default_contact_id || null, default_type || null, old_id)
+                `).bind(new_id, name, capBehavior, capSub, default_entity_id || null, default_contact_id || null, default_type || null, oid)
               );
-              statements.push(env.DB.prepare(`DELETE FROM Captions WHERE type_id = ?`).bind(old_id));
+              statements.push(env.DB.prepare(`DELETE FROM Captions WHERE type_id = ?`).bind(oid));
             } else {
               statements.push(
                 env.DB.prepare(`
                   UPDATE Captions SET name = ?, behavior = ?, sub_behavior = ?, default_entity_id = ?, default_contact_id = ?, default_type = ? WHERE type_id = ?
-                `).bind(name, capBehavior, capSub, default_entity_id || null, default_contact_id || null, default_type || null, old_id)
+                `).bind(name, capBehavior, capSub, default_entity_id || null, default_contact_id || null, default_type || null, oid)
               );
             }
           } else if (type === 'category') {
             if (isIdChanged) {
-              statements.push(env.DB.prepare(`UPDATE TransactionDetails SET category_id = ? WHERE category_id = ?`).bind(new_id, old_id));
+              statements.push(env.DB.prepare(`UPDATE TransactionDetails SET category_id = ? WHERE category_id = ?`).bind(new_id, oid));
               statements.push(
                 env.DB.prepare(`
                   INSERT INTO Categories (category_id, family_id, name, caption_id, default_entity_id, default_contact_id, default_type)
                   SELECT ?, family_id, ?, ?, ?, ?, ? FROM Categories WHERE category_id = ?
-                `).bind(new_id, name, category_type, default_entity_id || null, default_contact_id || null, default_type || null, old_id)
+                `).bind(new_id, name, category_type, default_entity_id || null, default_contact_id || null, default_type || null, oid)
               );
-              statements.push(env.DB.prepare(`DELETE FROM Categories WHERE category_id = ?`).bind(old_id));
+              statements.push(env.DB.prepare(`DELETE FROM Categories WHERE category_id = ?`).bind(oid));
             } else {
               statements.push(
                 env.DB.prepare(`
                   UPDATE Categories SET name = ?, caption_id = ?, default_entity_id = ?, default_contact_id = ?, default_type = ? WHERE category_id = ?
-                `).bind(name, category_type, default_entity_id || null, default_contact_id || null, default_type || null, old_id)
+                `).bind(name, category_type, default_entity_id || null, default_contact_id || null, default_type || null, oid)
               );
             }
           } else if (type === 'contact') {
@@ -1278,37 +1292,37 @@ export default {
               ? (contact_members && contact_members.length > 0 ? JSON.stringify(contact_members) : null)
               : undefined;
             if (isIdChanged) {
-              statements.push(env.DB.prepare(`UPDATE TransactionDetails SET contact_id = ? WHERE contact_id = ?`).bind(new_id, old_id));
+              statements.push(env.DB.prepare(`UPDATE TransactionDetails SET contact_id = ? WHERE contact_id = ?`).bind(new_id, oid));
               statements.push(
                 env.DB.prepare(`
                   INSERT INTO Contacts (contact_id, family_id, name, contact_type, members)
                   SELECT ?, family_id, ?, ?, COALESCE(?, members) FROM Contacts WHERE contact_id = ?
-                `).bind(new_id, name, contact_type || 'CUSTOMER', contactMembersJson !== undefined ? contactMembersJson : null, old_id)
+                `).bind(new_id, name, contact_type || 'CUSTOMER', contactMembersJson !== undefined ? contactMembersJson : null, oid)
               );
-              statements.push(env.DB.prepare(`DELETE FROM Contacts WHERE contact_id = ?`).bind(old_id));
+              statements.push(env.DB.prepare(`DELETE FROM Contacts WHERE contact_id = ?`).bind(oid));
             } else {
               statements.push(
                 env.DB.prepare(`
                   UPDATE Contacts SET name = ?, contact_type = ?, members = COALESCE(?, members) WHERE contact_id = ?
-                `).bind(name, contact_type || 'CUSTOMER', contactMembersJson !== undefined ? contactMembersJson : null, old_id)
+                `).bind(name, contact_type || 'CUSTOMER', contactMembersJson !== undefined ? contactMembersJson : null, oid)
               );
             }
           } else if (type === 'project') {
             const membersJson = project_members !== undefined ? JSON.stringify(project_members || []) : null;
             if (isIdChanged) {
-              statements.push(env.DB.prepare(`UPDATE TransactionDetails SET project_id = ? WHERE project_id = ?`).bind(new_id, old_id));
+              statements.push(env.DB.prepare(`UPDATE TransactionDetails SET project_id = ? WHERE project_id = ?`).bind(new_id, oid));
               statements.push(
                 env.DB.prepare(`
                   INSERT INTO Projects (project_id, family_id, name, status, members)
                   SELECT ?, family_id, ?, ?, COALESCE(?, members) FROM Projects WHERE project_id = ?
-                `).bind(new_id, name, project_status || 'active', membersJson, old_id)
+                `).bind(new_id, name, project_status || 'active', membersJson, oid)
               );
-              statements.push(env.DB.prepare(`DELETE FROM Projects WHERE project_id = ?`).bind(old_id));
+              statements.push(env.DB.prepare(`DELETE FROM Projects WHERE project_id = ?`).bind(oid));
             } else {
               statements.push(
                 env.DB.prepare(`
                   UPDATE Projects SET name = ?, status = ?, members = COALESCE(?, members) WHERE project_id = ?
-                `).bind(name, project_status || 'active', membersJson, old_id)
+                `).bind(name, project_status || 'active', membersJson, oid)
               );
             }
           }
@@ -1317,7 +1331,7 @@ export default {
         if (statements.length > 0) {
           await env.DB.batch(statements);
         }
-        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ success: true, cascade: renamedTouched }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       // 13.7. Flat Export — 1 row per TransactionDetail with all joins
