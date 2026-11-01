@@ -339,9 +339,13 @@ A single Shopee/Lazada order screenshot = "ORDER" with amount = total paid.
 If the image shows SEVERAL online ORDERS — shopping apps (Shopee, Lazada, TikTok Shop) or food/ride apps (LINE MAN, Grab, Robinhood, foodpanda): order list "การซื้อของฉัน / รายการสั่งซื้อ / ประวัติ",
 several order cards, or one checkout with several shops — set doc_type to "ORDER_LIST", amount to null, and add
 "merchant":"the APP name (Shopee / Lazada / LINE MAN / Grab / Robinhood / foodpanda …) — not the shop",
-"orders":[{"date":"YYYY-MM-DD or null if no date is printed","amount":0,"shop":"shop/restaurant name","items":"short product names (max 80 chars)","order_no":"or null","status":"completed | cancelled"}]
-— one entry per order, amount = that order's total paid ("รวมการสั่งซื้อ / รวมทั้งสิ้น / ยอดคำสั่งซื้อทั้งหมด / Order Total", or the order price shown on the card), never the price of a single item.
-status "cancelled" when the order says ยกเลิกแล้ว / คืนเงินเรียบร้อย / Cancelled / Refunded. SKIP an order whose total is cut off or not visible (do not guess).
+"orders":[{"date":"YYYY-MM-DD or null if no date is printed","amount":0,"shop":"shop/restaurant name","items":"short product names (max 80 chars)","order_no":"or null","status":"completed | cancelled | refunded","refund_amount":null}]
+— one entry per order, amount = that order's TOTAL PAID line: Shopee "สินค้ารวม N รายการ: ฿X" (e.g. item ฿1,102 but "สินค้ารวม 1 รายการ: ฿777" → 777),
+"รวมการสั่งซื้อ / รวมทั้งสิ้น / ยอดคำสั่งซื้อทั้งหมด / Order Total", or the order price on a food-app card. NEVER the item price or the crossed-out price.
+status "cancelled" when the whole order was cancelled (ยกเลิกแล้ว / Cancelled) — refund = the full amount.
+status "refunded" when the card shows a refund (คืนเงินแล้ว / การคืนเงิน/คืนสินค้า): refund_amount = "จำนวนเงินคืน / Refund amount" (the money that came back),
+and amount = the order total only if a "สินค้ารวม / Order Total" line is printed, otherwise null (an item price like "฿1,200 ฿753" is NOT the amount).
+SKIP an order whose total is cut off or not visible (do not guess).
 Thai dates: convert month names (ต.ค. = 10 …); a year above 2400 is Buddhist Era → subtract 543. The photo may be taken of a phone screen at an angle — read it anyway.
 If the image shows a LIST of many bank/wallet transactions (wallet history, statement page), set doc_type to "LIST" and amount to null.
 amount = the money that actually left/entered the account ("จำนวนเงินที่ชำระ", "Amount"), NOT the price before a government co-payment or discount
@@ -650,17 +654,35 @@ async function processOrderList(env, user, doc, ex) {
   const accounts = (await permittedAccounts(env, user)).map(a => a.account_id);
   const up = String(doc.created_at || nowIso()).slice(0, 10), results = [], used = new Set();
   for (const o of ex.orders.slice(0, 40)) {
-    const amt = round2(Math.abs(Number(o.amount) || 0)); if (!(amt > 0)) { results.push({ ...o, status: 'SKIP' }); continue; }
+    const amt = round2(Math.abs(Number(o.amount) || 0)); if (!(amt > 0) && !(Number(o.refund_amount) > 0)) { results.push({ ...o, status: 'SKIP' }); continue; }
     const hasDate = /^\d{4}-\d{2}-\d{2}$/.test(o.date || '');
     const ev = { signedAmount: -amt, date: hasDate ? o.date : up, time: null, ref: null, ...(hasDate ? {} : { from: shiftDate(up, -120), to: shiftDate(up, 7) }) };
     /* v261b: order ที่ยกเลิก/คืนเงิน → ไม่ใช่ค่าใช้จ่าย · ถ้าเจอทั้งรายการตัดเงินและเงินคืน (ยอดเดียวกัน ภายใน 45 วัน) ตัวละรายการเดียว → แนบรูปให้ทั้งคู่ไว้เป็นหลักฐาน */
+    /* v262b (North: หน้า "การคืนเงิน/คืนสินค้า" Shopee · ไม่มีวันที่ · คืนบางส่วน เช่น จ่าย 753 คืน 500):
+       ยอดคืน = refund_amount (ไม่มี = เต็มจำนวน) · หารายการตัดเงิน (−ยอดที่จ่าย) และเงินคืน (+ยอดคืน) แยกกัน · ตัวละรายการเดียว → แนบรูปให้ทั้งคู่ */
+    const refundAmt = round2(Math.abs(Number(o.refund_amount) || 0));
+    /* v263b (North: "ราคาจะเป็นราคาจำนวนเงินคืน"): หน้าคืนเงิน → จับคู่เฉพาะเงินคืน (+จำนวนเงินคืน) · ไม่หาด้วยราคาสินค้า */
+    if (refundAmt > 0 && !/cancel|ยกเลิก/i.test(String(o.status || ''))) {
+      const win = { from: hasDate ? shiftDate(o.date, -3) : shiftDate(up, -120), to: hasDate ? shiftDate(o.date, 45) : shiftDate(up, 7) };
+      const back = (await findCandidates(env, accounts, { signedAmount: refundAmt, date: ev.date, time: null, ref: null, ...win })).filter(c => !used.has(c.transaction_id));
+      const backT = back.length === 1 ? back[0] : null;
+      if (backT) { used.add(backT.transaction_id); await linkDoc(env, doc.doc_id, backT.transaction_id, 'SUPPORT'); await fillOrderNote(env, backT.transaction_id, { ...o, merchant: ex.merchant, items: `คืนเงิน · ${o.items || ''}` }); }
+      results.push({ ...o, amount: amt || null, refund_amount: refundAmt, status: 'CANCELLED', partial: !!amt && refundAmt < amt - 0.005, pay_tx: null, refund_tx: backT?.transaction_id || null,
+        transaction_ids: backT ? [backT.transaction_id] : [], refund_choices: back.length > 1 ? back.length : 0 });
+      continue;
+    }
     if (/cancel|refund|ยกเลิก|คืนเงิน/i.test(String(o.status || ''))) {
+      const back$ = refundAmt > 0 ? refundAmt : amt, partial = back$ < amt - 0.005;
       const win = { from: hasDate ? shiftDate(o.date, -3) : shiftDate(up, -120), to: hasDate ? shiftDate(o.date, 45) : shiftDate(up, 7) };
       const pay = (await findCandidates(env, accounts, { ...ev, ...win })).filter(c => !used.has(c.transaction_id));
-      const back = (await findCandidates(env, accounts, { ...ev, signedAmount: amt, ...win })).filter(c => !used.has(c.transaction_id));
-      const got = [pay.length === 1 ? pay[0] : null, back.length === 1 ? back[0] : null].filter(Boolean);
-      for (const t of got) { used.add(t.transaction_id); await linkDoc(env, doc.doc_id, t.transaction_id, 'SUPPORT'); await fillOrderNote(env, t.transaction_id, { ...o, merchant: ex.merchant, items: `ยกเลิก/คืนเงิน · ${o.items || ''}` }); }
-      results.push({ ...o, amount: amt, status: 'CANCELLED', transaction_ids: got.map(t => t.transaction_id) });
+      const back = (await findCandidates(env, accounts, { ...ev, signedAmount: back$, ...win })).filter(c => !used.has(c.transaction_id));
+      const payT = pay.length === 1 ? pay[0] : null, backT = back.length === 1 ? back[0] : null;
+      if (payT) { used.add(payT.transaction_id); await linkDoc(env, doc.doc_id, payT.transaction_id, 'SUPPORT');
+        await fillOrderNote(env, payT.transaction_id, { ...o, merchant: ex.merchant, items: `${partial ? `คืนเงินบางส่วน ${back$}` : 'ยกเลิก/คืนเงิน'} · ${o.items || ''}` }); }
+      if (backT) { used.add(backT.transaction_id); await linkDoc(env, doc.doc_id, backT.transaction_id, 'SUPPORT');
+        await fillOrderNote(env, backT.transaction_id, { ...o, merchant: ex.merchant, items: `คืนเงิน${partial ? `บางส่วน (จ่าย ${amt})` : ''} · ${o.items || ''}` }); }
+      results.push({ ...o, amount: amt, refund_amount: back$, status: 'CANCELLED', partial, pay_tx: payT?.transaction_id || null, refund_tx: backT?.transaction_id || null,
+        transaction_ids: [payT, backT].filter(Boolean).map(t => t.transaction_id), pay_choices: pay.length > 1 ? pay.length : 0, refund_choices: back.length > 1 ? back.length : 0 });
       continue;
     }
     let cands = (await findCandidates(env, accounts, ev)).filter(c => !used.has(c.transaction_id));

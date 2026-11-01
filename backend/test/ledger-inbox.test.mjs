@@ -941,5 +941,26 @@ console.log('\n── 🍜 แอปส่งอาหาร + order ที่�
   check('Detail บอกว่ายกเลิก/คืนเงิน', /ยกเลิก\/คืนเงิน/.test(lines('TX-L1')[0].note), lines('TX-L1')[0].note);
 }
 
+console.log('\n── ↩️ Shopee คืนเงินบางส่วน ไม่มีวันที่ (v262b · ตามรูปของ North) ──');
+{
+  insertStatementTx('TX-R1', 'A01', '2026-09-10', -753, { desc: 'SHOPEE BANGKOK' });
+  insertStatementTx('TX-R1b', 'A01', '2026-09-20', 500, { desc: 'SHOPEE REFUND' });
+  insertStatementTx('TX-R2', 'A01', '2026-08-15', -2899, { desc: 'SHOPEE BANGKOK' });
+  insertStatementTx('TX-R2b', 'A01', '2026-08-25', 1902, { desc: 'SHOPEE REFUND' });
+  const r = await ingest({ doc_type: 'ORDER_LIST', amount: null, merchant: 'Shopee', orders: [
+    { date: null, amount: null, refund_amount: 500, shop: 'yuedpao', items: 'Yuedpao Corduroy Navy XL', status: 'refunded' },
+    { date: null, amount: null, refund_amount: 1902, shop: 'ecowinbrand.th', items: 'Ecowin หินไมฟานชุด 4 ชิ้น', status: 'refunded' },
+    { date: null, amount: null, refund_amount: 286, shop: 'warsun.th', items: 'Warsun NB01 ไฟฉาย', status: 'refunded' } ] });
+  const d = db.prepare(`SELECT * FROM LedgerDocs WHERE doc_id=?`).get(r.doc.doc_id), os = JSON.parse(d.suggestion).orders;
+  check('หน้าคืนเงิน: แนบเฉพาะเงินคืน +500 (ไม่หาด้วยราคาสินค้า)', os[0].refund_tx === 'TX-R1b' && !os[0].pay_tx && !db.prepare(`SELECT 1 FROM LedgerDocLinks WHERE transaction_id='TX-R1'`).get(), os[0]);
+  check('order ที่ 2 แนบเงินคืน 1,902', os[1].refund_tx === 'TX-R2b', os[1]);
+  check('ไม่เจอในบัตร (459/286) → ไม่ค้างงาน · เอกสารเสร็จ', os[2].transaction_ids.length === 0 && d.status === 'DONE', [os[2], d.status]);
+  check('Detail ฝั่งเงินคืน', lines('TX-R1b')[0].note === 'Shopee · yuedpao · คืนเงิน · Yuedpao Corduroy Navy XL', lines('TX-R1b')[0].note);
+  insertStatementTx('TX-S1', 'A01', '2026-10-28', -1777, { desc: 'SHOPEE BANGKOK' }); insertStatementTx('TX-S2', 'A01', '2026-10-27', -236, { desc: 'SHOPEE BANGKOK' });
+  const rs = await ingest({ doc_type: 'ORDER_LIST', amount: null, merchant: 'Shopee', orders: [
+    { date: null, amount: 1777, shop: 'W.Daily Home', items: 'มู่ลี่ไม้ไผ่', status: 'completed' }, { date: null, amount: 236, shop: 'Nemo Mart', items: 'นีเวีย สเปรย์ แพ็ค3', status: 'completed' } ] });
+  check('หน้าสำเร็จ: จับคู่ด้วยยอด "สินค้ารวม" (777 · 236)', db.prepare(`SELECT COUNT(*) n FROM LedgerDocLinks WHERE doc_id=? AND transaction_id IN ('TX-S1','TX-S2')`).get(rs.doc.doc_id).n === 2, rs);
+}
+
 console.log(`\n${fail ? '❌' : '✅'} ผ่าน ${pass} · ไม่ผ่าน ${fail}\n`);
 process.exit(fail ? 1 : 0);
