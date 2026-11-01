@@ -6547,12 +6547,12 @@ function openSettingModal(type, oldId = '', extraData = {}) {
                     (at.sub_behavior === 'INVESTMENT') ? 'INVESTMENT' : at.behavior;
                 document.getElementById("setting-default-entity-id").value = at.default_entity_id || '';
                 document.getElementById("setting-default-contact-id").value = at.default_contact_id || '';
-                document.getElementById("setting-default-type").value = at.default_type || '';
+                (document.getElementById("setting-default-type") || {}).value = at.default_type || '';
             }
         } else {
             document.getElementById("setting-default-entity-id").value = '';
             document.getElementById("setting-default-contact-id").value = '';
-            document.getElementById("setting-default-type").value = '';
+            (document.getElementById("setting-default-type") || {}).value = '';
         }
     } else if (type === 'category') {
         const catTypeSelect = document.getElementById("setting-category-caption");
@@ -6567,12 +6567,12 @@ function openSettingModal(type, oldId = '', extraData = {}) {
                 document.getElementById("setting-category-caption").value = cat.caption_id;
                 document.getElementById("setting-default-entity-id").value = cat.default_entity_id || '';
                 document.getElementById("setting-default-contact-id").value = cat.default_contact_id || '';
-                document.getElementById("setting-default-type").value = cat.default_type || '';
+                (document.getElementById("setting-default-type") || {}).value = cat.default_type || '';
             }
         } else {
             document.getElementById("setting-default-entity-id").value = '';
             document.getElementById("setting-default-contact-id").value = '';
-            document.getElementById("setting-default-type").value = '';
+            (document.getElementById("setting-default-type") || {}).value = '';
         }
     } else if (type === 'account') {
         const entSelect = document.getElementById("setting-entity-id");
@@ -17214,11 +17214,16 @@ const PendReview = (() => {
     const catName = id => clean(cats().find(c => c.category_id === id)?.name || '');
     const entName = id => clean((AppState.entities || []).find(e => e.entity_id === id)?.name || '');
     const conName = id => clean((AppState.contacts || []).find(c => c.contact_id === id)?.name || '');
+    /* ใช้บ่อย = จากข้อมูลจริงในหน้าภาพรวม (รายรับ/รายจ่ายที่ยืนยันแล้ว) + ที่เลือกในหน้านี้ */
+    function freq() { if (S._fq) return S._fq; const f = {}; const d = (typeof DashState !== 'undefined' && DashState.data) || {};
+        for (const x of [...(d.expense || []), ...(d.income || [])]) if (x.category_id) f[x.category_id] = (f[x.category_id] || 0) + 1;
+        return (S._fq = f); }
     function topCats(sign, sel) {
-        const u = use().cat || {}, sum = S.sim?.summary?.category_id;
+        const u = use().cat || {}, sum = S.sim?.summary?.category_id, fq = freq();
+        const inDir = new Set(((typeof DashState !== 'undefined' && DashState.data) ? (sign < 0 ? DashState.data.expense : DashState.data.income) : []) .map(x => x.category_id));
         const beh = sign < 0 ? ['EXPENSE'] : ['REVENUE', 'INCOME'];
         const pool = cats().filter(c => !c.caption_behavior || beh.includes(c.caption_behavior) || u[c.category_id] || c.category_id === 'Bank_Transfer');
-        const ranked = pool.map(c => [c, (u[c.category_id] || 0) + (c.category_id === sum ? 1000 : 0)]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+        const ranked = pool.map(c => [c, (u[c.category_id] || 0) * 5 + (fq[c.category_id] || 0) + (inDir.has(c.category_id) ? 3 : 0) + (c.category_id === sum ? 100000 : 0)]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
         const out = []; for (const c of [cats().find(c => c.category_id === sel), ...ranked]) if (c && !out.includes(c) && out.length < 6) out.push(c);
         if (!out.some(c => c.category_id === 'Bank_Transfer')) { const t = cats().find(c => c.category_id === 'Bank_Transfer'); if (t) out.push(t); }
         return out;
@@ -17235,13 +17240,14 @@ const PendReview = (() => {
         const sign = signed(tx) < 0 ? -1 : 1;
         if (i !== S.open) return `<button type="button" class="pr-sr" onclick="PendReview.openSplit(${i})"><span class="pr-no">${i + 1}</span><span class="pr-mid"><b>${esc(catName(s.category_id) || 'ยังไม่เลือกหมวด')}</b><small>${esc([entName(s.entity_id), conName(s.contact_id)].filter(Boolean).join(' · ') || '—')}</small></span><span class="pr-v ${s.amount < 0 ? 'neg' : 'pos'}">${fm(s.amount)}</span></button>`;
         const chip = (on, label, fn) => `<button type="button" class="pr-chip${on ? ' on' : ''}" onclick="${fn}">${label}</button>`;
-        const catSel = `<select class="pr-other" onchange="PendReview.set(${i},'category_id',this.value)"><option value="">🔍 อื่น…</option>${cats().map(c => `<option value="${esc(c.category_id)}"${c.category_id === s.category_id ? ' selected' : ''}>${esc(clean(c.name))}</option>`).join('')}</select>`;
-        const entSel = `<select class="pr-other" onchange="PendReview.set(${i},'entity_id',this.value)"><option value="">อื่น…</option>${(AppState.entities || []).map(e => `<option value="${esc(e.entity_id)}"${e.entity_id === s.entity_id ? ' selected' : ''}>${esc(clean(e.name))}</option>`).join('')}</select>`;
+        const tc = topCats(sign, s.category_id), te = topEnts(s.entity_id, tx.account_id);
+        const catSel = `<select class="pr-other" onchange="PendReview.set(${i},'category_id',this.value)"><option value="">🔍 หมวดอื่น…</option>${cats().map(c => `<option value="${esc(c.category_id)}"${c.category_id === s.category_id && !tc.includes(c) ? ' selected' : ''}>${esc(clean(c.name))}</option>`).join('')}</select>`;
+        const entSel = `<select class="pr-other" onchange="PendReview.set(${i},'entity_id',this.value)"><option value="">Company อื่น…</option>${(AppState.entities || []).map(e => `<option value="${esc(e.entity_id)}"${e.entity_id === s.entity_id && !te.includes(e) ? ' selected' : ''}>${esc(clean(e.name))}</option>`).join('')}</select>`;
         const many = S.splits.length > 1;
         return `<div class="pr-sr open">${many ? `<div class="pr-srh"><span class="pr-no">${i + 1}</span><b>ส่วนที่ ${i + 1}</b>${i === S.splits.length - 1 ? '<small>ยอดที่เหลือเติมให้อัตโนมัติ</small>' : ''}<button type="button" class="pr-x" onclick="PendReview.delSplit(${i})" aria-label="ลบส่วนนี้">✕</button></div>` : ''}
           ${many ? `<label class="pr-f"><span>ยอดเงิน</span><input inputmode="decimal" value="${fm(s.amount).replace(/[()]/g, '')}" onchange="PendReview.set(${i},'amount',this.value)"></label>` : ''}
-          <div class="pr-lbl">หมวด</div><div class="pr-chips">${topCats(sign, s.category_id).map(c => chip(c.category_id === s.category_id, esc(clean(c.name)), `PendReview.set(${i},'category_id','${esc(c.category_id)}')`)).join('')}${catSel}</div>
-          <div class="pr-lbl">Company</div><div class="pr-chips">${topEnts(s.entity_id, tx.account_id).map(e => chip(e.entity_id === s.entity_id, esc(clean(e.name)), `PendReview.set(${i},'entity_id','${esc(e.entity_id)}')`)).join('')}${entSel}</div>
+          <div class="pr-lbl">หมวด</div><div class="pr-chips">${tc.map(c => chip(c.category_id === s.category_id, esc(clean(c.name)), `PendReview.set(${i},'category_id','${esc(c.category_id)}')`)).join('')}${catSel}</div>
+          <div class="pr-lbl">Company</div><div class="pr-chips">${te.map(e => chip(e.entity_id === s.entity_id, esc(clean(e.name)), `PendReview.set(${i},'entity_id','${esc(e.entity_id)}')`)).join('')}${entSel}</div>
           ${S.more || s.contact_id || s.fee || s.wht ? `<div class="pr-more">
             <label class="pr-f"><span>คู่ค้า (Customer)</span><input list="pr-contacts" value="${esc(conName(s.contact_id))}" placeholder="พิมพ์ชื่อเพื่อค้นหา" onchange="PendReview.setContact(${i},this.value)"></label>
             <div class="pr-two"><label class="pr-f"><span>ค่าธรรมเนียม</span><input inputmode="decimal" value="${s.fee ? fm(s.fee) : ''}" placeholder="0.00" onchange="PendReview.set(${i},'fee',this.value)"></label>
