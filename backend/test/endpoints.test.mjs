@@ -170,6 +170,13 @@ const left = id => !!db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id
 check('ลบทั้งชุด: ลบเฉพาะรอตรวจของเรา (ไม่แตะที่ยืนยันแล้ว/ครอบครัวอื่น)', r.j?.deleted === 2 && !left('TX-B1') && !left('TX-B2') && left('TX-ST2') && left('TX-BOTHER')
   && !db.prepare(`SELECT 1 FROM TransactionDetails WHERE detail_id='DB1'`).get(), { r });
 
+/* v267: statement 2 ฉบับช่วงวันทับกัน (AI กับตัวอ่านเขียนข้อความต่างกัน) → วัน+เวลา+ยอด ตรง = บรรทัดเดิม */
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: stmtRow('TX-ST3', '2026-10-12', -777, 'TR to 1487789313 Nan Yi', { time: '12:58:00' }) });
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: stmtRow('TX-ST4', '2026-10-12', -777, 'IORSWT TR to 1487789313 Nan Yi · Krungthai Business', { time: '12:58:00' }) });
+check('v267: ข้อความต่างแต่ วัน+เวลา+ยอด ตรง → ข้าม ไม่สร้างซ้ำ', r.j?.skipped && !db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='TX-ST4'`).get(), r.j);
+r = await call('/api/transactions', { user: '9North', method: 'POST', body: stmtRow('TX-ST5', '2026-10-12', -777, 'TR to other', { time: '15:30:00' }) });
+check('v267: เวลาต่าง → เป็นรายการใหม่', !r.j?.skipped && db.prepare(`SELECT 1 FROM Transactions WHERE transaction_id='TX-ST5'`).get(), r.j);
+
 /* ── จำหมวดจากรายการเดิม (category-hints) ── */
 db.exec(`INSERT INTO Transactions (transaction_id,account_id,date,total_amount,status,source,created_by_user_id,statement_desc) VALUES
  ('TX-H1','A06','2026-09-01',-120,'CONFIRMED','PDF_IMPORT','9North','7-ELEVEN 12345 BKK'),('TX-H2','A06','2026-09-05',-45,'CONFIRMED','PDF_IMPORT','9North','7-ELEVEN 99887 BKK'),

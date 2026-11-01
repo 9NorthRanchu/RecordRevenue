@@ -452,6 +452,18 @@ export default {
                 ORDER BY created_at, transaction_id LIMIT 1 OFFSET ?
               `).bind(account_id, date, time||null, time||null, total_amount, Number(total_amount), statement_desc||null, statement_desc||null, selfId, Math.max(0, parseInt(body.dup_idx, 10) || 0)).first();
             }
+            /* v267 (North: "ยอดสะสมระบบคำนวณผิด" · กรุงไทย 2 ฉบับช่วงทับกัน 01–12/06 ถูกนำเข้า 2 รอบ):
+               รายการจาก statement ที่มีเวลา → วันเดียวกัน + เวลาเดียวกัน (ถึงนาที) + ยอดเดียวกัน (เครื่องหมายตรง) = บรรทัดเดิม แม้ข้อความไม่เหมือน (AI/ตัวอ่านเขียนต่างกัน) */
+            if (!dupTx && body.match_existing && time && !/^00:00(:00)?$/.test(String(time))) {
+              dupTx = await env.DB.prepare(`
+                SELECT transaction_id, date, total_amount, status, statement_desc FROM Transactions
+                WHERE account_id = ? AND substr(date, 1, 10) = substr(?, 1, 10) AND substr(time, 1, 5) = substr(?, 1, 5)
+                  AND ABS(ABS(total_amount) - ABS(?)) < 0.01
+                  AND ((CASE WHEN status = 'PENDING_REVIEW' AND total_amount > 0 AND EXISTS (SELECT 1 FROM TransactionDetails d WHERE d.transaction_id = Transactions.transaction_id AND d.type = 'EXPENSE')
+                        THEN -total_amount ELSE total_amount END) < 0) = (? < 0)
+                  AND transaction_id != ?
+                ORDER BY created_at, transaction_id LIMIT 1 OFFSET ?`).bind(account_id, date, String(time), total_amount, Number(total_amount), selfId, Math.max(0, parseInt(body.dup_idx, 10) || 0)).first();
+            }
             /* จับคู่กับสลิป/รายการที่บันทึกไว้ก่อน (2026-10-15 · North: "สลิป รอ match กับ statement")
                บรรทัด statement ที่ยอด+บัญชีตรงกับรายการจาก LINE/พิมพ์เอง ภายใน ±3 วัน → ไม่สร้างใหม่ (กันซ้ำ)
                แต่ปรับรายการเดิมให้ใช้วันที่/ข้อความของธนาคาร และนับว่ามี statement ยืนยันแล้ว (source = PDF_IMPORT) */
