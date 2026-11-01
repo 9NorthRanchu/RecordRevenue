@@ -16477,7 +16477,8 @@ const RepHome = (() => {
         document.getElementById('rp-bar').innerHTML = `<div class="rp-ttl"><b>${m.e} ${m.t}</b><small>${m.d}</small></div>
           ${m.per ? `<div class="rb-per">${chip('month', 'รายเดือน')}${chip('year', 'รายปี')}${chip('all', 'ทั้งหมด')}
             ${S.period === 'all' ? '' : `<span class="rb-nav"><button onclick="RepHome.shift(-1)" aria-label="ก่อนหน้า"><i class="fa-solid fa-chevron-left"></i></button><b>${label()}</b><button onclick="RepHome.shift(1)" aria-label="ถัดไป"><i class="fa-solid fa-chevron-right"></i></button></span>`}</div>` : ''}
-          ${view === 'stmt' ? '' : `<div class="rp-exp"><button class="rp-x" onclick="RepHome.exp('${view}','xlsx')"><i class="fa-solid fa-file-excel"></i> Excel</button><button class="rp-p" onclick="RepHome.exp('${view}','pdf')"><i class="fa-solid fa-file-pdf"></i> PDF</button></div>`}`;
+          ${view === 'stmt' ? `<div class="rp-exp"><button class="rp-x" onclick="document.getElementById('sr-xlsx').click()"><i class="fa-solid fa-file-excel"></i> Excel</button><button class="rp-p" onclick="document.getElementById('sr-pdf').click()"><i class="fa-solid fa-file-pdf"></i> PDF</button></div>`
+            : `<div class="rp-exp"><button class="rp-x" onclick="RepHome.exp('${view}','xlsx')"><i class="fa-solid fa-file-excel"></i> Excel</button><button class="rp-p" onclick="RepHome.exp('${view}','pdf')"><i class="fa-solid fa-file-pdf"></i> PDF</button></div>`}`;   /* v272: statement ใช้ปุ่มเดิม (sr-xlsx/sr-pdf) ผ่านหัวรายงาน */
         const dyn = document.getElementById('rp-dyn');
         if (view === 'ie') {
             const d = S.data || {}, out = groups(d.expense, -1), inc = groups(d.income, 1), net = r2(inc.tot + out.tot);

@@ -893,3 +893,25 @@ body.ui-a .rp-si:not(.on):hover { background:var(--rb-soft,#F3F0FF) !important; 
 #trip-purge-card .tp-list { display:flex; flex-wrap:wrap; gap:6px 8px; margin:6px 0 8px; }
 #trip-purge-card .tp-list span { background:#fff; border:1px solid #FFC9C9; border-radius:999px; padding:3px 12px; }
 body[data-theme="dark"] #trip-purge-card .tp-list span { background:#2A1E26; border-color:#6B2F3A; }
+
+/* v272 ยอดสะสม statement: ตัวกรอง + Excel + PDF อยู่บรรทัดเดียว (เดิมช่องยืดเต็ม ทำให้ PDF ตกบรรทัด) */
+@media (min-width:769px) {
+  #report-stmt-section .sr-filter { flex-wrap:wrap; }
+  #report-stmt-section .sr-filter > select { flex:0 1 280px !important; min-width:180px; width:auto !important; }
+  #report-stmt-section .sr-filter > .rr-dwrap, #report-stmt-section .sr-filter > input[type=date] { flex:0 0 175px !important; width:175px !important; }
+  #report-stmt-section .sr-filter > .rr-dwrap .rr-date { width:100% !important; }
+  #report-stmt-section .sr-filter > .btn { flex:0 0 auto !important; padding:8px 16px; }
+  #report-stmt-section #sr-xlsx { margin-left:auto !important; }
+}
+#report-stmt-section #sr-xlsx { background:var(--card-bg,#fff) !important; color:#237032 !important; border:1px solid #8CE99A !important; }
+#report-stmt-section #sr-pdf { background:var(--card-bg,#fff) !important; color:#B02525 !important; border:1px solid #FFA8A8 !important; }
+#report-stmt-section #sr-xlsx:hover { background:#EBFBEE !important; } #report-stmt-section #sr-pdf:hover { background:#FFF5F5 !important; }
+body[data-theme="dark"] #report-stmt-section #sr-xlsx { color:#8CE99A !important; border-color:#2F6B3B !important; }
+body[data-theme="dark"] #report-stmt-section #sr-pdf { color:#FFA8A8 !important; border-color:#7A2E2E !important; }
+/* v272: ปุ่ม Excel/PDF ของ statement ย้ายไปหัวรายงาน (ปุ่มเดิมซ่อนไว้ แต่ยังทำงาน) */
+#rp-slot #report-stmt-section #sr-xlsx, #rp-slot #report-stmt-section #sr-pdf { display:none !important; }
+@media (min-width:769px) {
+  #report-stmt-section .sr-filter { flex-wrap:nowrap !important; }
+  #report-stmt-section .sr-filter > select { flex:1 1 240px !important; min-width:160px; }
+  #report-stmt-section .sr-filter > .rr-dwrap, #report-stmt-section .sr-filter > input[type=date] { flex:0 1 170px !important; width:170px !important; min-width:140px !important; }
+}

@@ -4162,3 +4162,7 @@ frontend
   · .top-header มี style="display:flex" → กฎซ่อนหัวหน้าใน ui-a.css (dashboard/reports) ไม่เคยทำงาน — หัวหน้าแสดงทุกหน้า
 - 📱 QR บอท LINE: เดิมเขียนตายตัว @recordrevenue (ไม่ใช่บอทจริง) → backend/src/line-info.js GET /api/line/bot-info ถาม LINE /v2/bot/info ได้ basicId จริง (cache 6 ชม.) · เมนูซ้ายแสดงทุกคน (เดิม admin) · มือถือ: "บอท LINE" ในเมนูเพิ่มเติม
 - เทส: backend/test/trip-purge.test.mjs (30) · ทุกไฟล์ผ่าน
+
+## v272 (2026-11-01) ยอดสะสม statement: ตัวกรองบรรทัดเดียว
+- North: "PDF excel อยู่บรรทัดเดียวกัน" — ปุ่ม Excel/PDF ย้ายไปหัวรายงาน (#rp-bar) เหมือนรายงานอื่น · กดแล้วเรียก #sr-xlsx/#sr-pdf เดิม (ซ่อนไว้ใน #rp-slot)
+- แถวตัวกรอง (บัญชี · วันที่ · ดู) บรรทัดเดียวบนจอ ≥769px (ตรวจ 1440/1024/820) · มือถือเรียงหลายบรรทัดเหมือนเดิม
