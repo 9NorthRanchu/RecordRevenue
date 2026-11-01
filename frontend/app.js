@@ -15244,7 +15244,7 @@ const StmtReport = (() => {
     const COLS = ['#', 'วันที่', 'เวลา', 'รายละเอียด', 'หมวด', 'เข้า', 'ออก', 'ยอดสะสม (ระบบ)', 'ยอดตามธนาคาร', 'ต่าง', 'สถานะ', 'หมายเหตุ'];
     const stTxt = r => r.status === 'CONFIRMED' ? '✅ ยืนยัน' : '⏳ รอตรวจ';
     const rowCells = (r, i) => [i + 1, dTh(r.date), String(r.time || '').slice(0, 5) === '00:00' ? '' : String(r.time || '').slice(0, 5),
-        [r.statement_desc, (() => { const n = String(r.notes || '').trim(), d = String(r.statement_desc || ''); return !n || n === d || n === stmtDetailNote(d) || d.includes(n) ? '' : n; })()].filter(Boolean).join(' · '), r.categories || '',   // v267: Detail ที่เติมจากข้อความ statement ไม่ต้องแสดงซ้ำ r.amount > 0 ? r.amount : null, r.amount < 0 ? -r.amount : null,
+        [r.statement_desc, (() => { const n = String(r.notes || '').trim(), d = String(r.statement_desc || ''); return !n || n === d || n === stmtDetailNote(d) || d.includes(n) ? '' : n; })()].filter(Boolean).join(' · '), r.categories || '', /* v267: Detail ที่เติมจากข้อความ statement ไม่ต้องแสดงซ้ำ */ r.amount > 0 ? r.amount : null, r.amount < 0 ? -r.amount : null,
         r._run, r._bank, r._diff, stTxt(r), (r._notes || []).join(' · ')];
     const summaryRows = reports => reports.flatMap(rep => rep.groups.map(g => [accName(rep.account), g.label, g.header?.file_name || '', g.rows.length,
         g.openBank, g.openSys, g.sumIn, -g.sumOut, g.closeSys, g.closeBank, g.closeDiff, g.pending, g.missingLines ? `ขาด ${g.missingLines} บรรทัด` : '', g.status]));
