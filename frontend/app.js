@@ -10740,7 +10740,7 @@ function debtFillDropdowns(type, keep) {
     const intr = debtCatsBy(pay ? ['EXPENSE'] : ['REVENUE']);
     const prinSel = document.getElementById('debt-principal-category');
     const intSel = document.getElementById('debt-interest-category');
-    prinSel.innerHTML = opts(prin, keep && keep.principal_category_id);
+    prinSel.innerHTML = opts(prin, null);   // v281 · North: "แสดง category จาก liability เท่านั้น" → ไม่ดึงหมวดนอกกลุ่มมาแสดง
     intSel.innerHTML = opts(intr, keep && keep.interest_category_id);
     let hint = document.getElementById('debt-prin-hint');
     if (!hint) { hint = document.createElement('small'); hint.id = 'debt-prin-hint'; hint.style.cssText = 'display:block;margin-top:4px;color:#B45309;font-size:.8rem;'; prinSel.after(hint); }
